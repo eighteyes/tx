@@ -1,0 +1,9 @@
+{
+  "mesh": "test-echo",
+  "type": "ephemeral",
+  "description": "Simple test mesh for echo agent",
+  "agents": ["test-echo/echo"],
+  "workflow_topology": "sequential",
+  "entry_point": "echo",
+  "completion_agent": "echo"
+}

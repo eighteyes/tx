@@ -1,0 +1,43 @@
+# Development Dockerfile for tmux-riffic-v2
+# This version runs with real tmux sessions (not mocked)
+FROM node:18
+
+# Install tmux and other dependencies
+RUN apt-get update && apt-get install -y \
+    tmux \
+    bash \
+    curl \
+    git \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy application files
+COPY . .
+
+# Create data directory
+RUN mkdir -p /data
+
+# Set environment variables for DEVELOPMENT (not production)
+ENV MOCK_MODE=false
+ENV DEBUG=true
+ENV NODE_ENV=development
+ENV METRICS_PORT=3001
+ENV TERM=screen-256color
+
+# Make entrypoint executable
+RUN chmod +x docker-entrypoint.sh
+
+# Expose metrics port
+EXPOSE 3001
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["start"]

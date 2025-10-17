@@ -1,0 +1,9 @@
+{
+  "mesh": "core",
+  "type": "ephemeral",
+  "description": "Core/brain mesh - entry point for TX Watch",
+  "agents": ["core/core"],
+  "workflow_topology": "sequential",
+  "entry_point": "core",
+  "completion_agent": "core"
+}

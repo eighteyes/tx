@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  # Production mode - Mock agents (no Claude Code required)
+  tx-watch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tx-watch-prod
+    environment:
+      - MOCK_MODE=true
+      - DEBUG=false
+      - NODE_ENV=production
+      - METRICS_PORT=3001
+    volumes:
+      - tx-data:/data
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Development mode - Real tmux sessions
+  tx-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: tx-watch-dev
+    environment:
+      - MOCK_MODE=false
+      - DEBUG=true
+      - NODE_ENV=development
+      - METRICS_PORT=3001
+      - TERM=screen-256color
+    volumes:
+      # Mount the entire project for live editing
+      - .:/app
+      # Persistent data directory
+      - tx-dev-data:/data
+      # Link .ai to /data for state persistence
+      - tx-dev-data:/app/.ai
+    ports:
+      - "3002:3001"
+    # TTY and stdin_open are CRITICAL for tmux to work!
+    tty: true
+    stdin_open: true
+    # Use bash as PID 1 to keep container alive
+    command: bash -c "sleep infinity"
+    profiles:
+      - dev
+
+volumes:
+  tx-data:
+    name: tx-watch-data
+  tx-dev-data:
+    name: tx-watch-dev-data
