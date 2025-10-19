@@ -8,18 +8,21 @@ const { kill } = require('../lib/commands/kill');
 const { status } = require('../lib/commands/status');
 const { stop } = require('../lib/commands/stop');
 const { prompt } = require('../lib/commands/prompt');
+const { logs } = require('../lib/commands/logs');
+const { list } = require('../lib/commands/list');
+const { clear } = require('../lib/commands/clear');
 const { Logger } = require('../lib/logger');
 
 // Initialize logger
 Logger.init();
 
-program.name('tx').description('TX Watch - Claude agent orchestration').version('2.0.0');
+program.name('tx').description('TX - Claude agent orchestration').version('2.0.0');
 
 // tx start
 program
   .command('start')
   .option('-d, --detach', 'Run in detached mode (don\'t attach to core)')
-  .description('Start TX Watch system and spawn core mesh')
+  .description('Start agent orchestration system and spawn core mesh')
   .action(async (options) => {
     await start({ detach: options.detach });
   });
@@ -56,15 +59,16 @@ program
 // tx status
 program
   .command('status')
-  .description('Show TX Watch status and queue info')
-  .action(() => {
-    status();
+  .option('-p, --prompt', 'Generate prompt-ready status summary')
+  .description('Show orchestration system status and queue info')
+  .action((options) => {
+    status({ prompt: options.prompt });
   });
 
 // tx stop
 program
   .command('stop')
-  .description('Stop TX Watch and kill all sessions')
+  .description('Stop orchestration system and kill all sessions')
   .action(async () => {
     await stop();
   });
@@ -77,12 +81,47 @@ program
     prompt(mesh, agent);
   });
 
+// tx logs
+program
+  .command('logs')
+  .option('-n, --lines <n>', 'Number of log lines to display (default: 50)')
+  .option('-c, --component <component>', 'Filter by component name (non-interactive mode only)')
+  .option('-l, --level <level>', 'Filter by log level (non-interactive mode only)')
+  .option('--no-interactive', 'Disable interactive mode (use static view with follow)')
+  .option('--no-follow', 'Disable follow mode (non-interactive mode only)')
+  .description('Display orchestration system logs with interactive filters (default: interactive mode)')
+  .action((options) => {
+    logs(options);
+  });
+
+// tx list <type>
+program
+  .command('list <type>')
+  .option('-p, --prompt', 'Generate prompt-ready output for template injection')
+  .description('List meshes, agents, or capabilities (types: meshes, agents, caps)')
+  .action((type, options) => {
+    list(type, { prompt: options.prompt });
+  });
+
+// tx clear
+program
+  .command('clear')
+  .option('-f, --force', 'Skip confirmation prompt')
+  .description('Clear all TX orchestration data (.ai/tx/ directory)')
+  .action(async (options) => {
+    await clear({ force: options.force });
+  });
+
 // tx tool <name> [args...]
 program
   .command('tool <name> [args...]')
+  .option('-s, --source <source>', 'Search specific source(s) (can be used multiple times)')
+  .option('-t, --topic <topic>', 'Search topic area (dev, docs, info, news, packages, repos, science, files, media)')
+  .option('-js', 'Enable JavaScript rendering (for get-www tool)')
+  .option('-a, --archive', 'Use archive services only (archive.is, archive.org, etc.)')
   .description('Run a capability/tool')
-  .action((name, args) => {
-    handleTool(name, args);
+  .action((name, args, options) => {
+    handleTool(name, args, options);
   });
 
 // Parse arguments
@@ -96,18 +135,47 @@ if (process.argv.length < 3) {
 /**
  * Handle tool/capability commands
  */
-async function handleTool(name, args) {
+async function handleTool(name, args, options = {}) {
   try {
     switch (name) {
       case 'search':
         const { Search } = require('../lib/tools/search');
         if (args.length === 0) {
-          console.error('❌ Usage: tx tool search "query"');
+          console.error('❌ Usage: tx tool search [options] "query"');
+          console.error('   Options:');
+          console.error('     -s <source> - Search specific source(s) (can use multiple times)');
+          console.error('     -t <topic>  - Search topic area (dev, docs, info, news, packages, repos, science, files, media)');
           process.exit(1);
         }
+
         const query = args.join(' ');
-        const results = await Search.query(query);
-        console.log(`\n📚 Search results for: "${query}"\n`);
+        if (!query.trim()) {
+          console.error('❌ Usage: tx tool search [options] "query"');
+          process.exit(1);
+        }
+
+        // Map topic to SearXNG categories using ! prefix
+        const topicMap = {
+          'dev': '!it',
+          'docs': '!it',
+          'info': '!general',
+          'news': '!news',
+          'packages': '!it',
+          'repos': '!it',
+          'science': '!science',
+          'files': '!general',
+          'media': '!general'
+        };
+
+        const categories = options.topic ? [topicMap[options.topic] || '!general'] : undefined;
+
+        // Let Search handle the options
+        const results = await Search.query(query, options.source, categories);
+
+        const sourceLabel = options.source ?
+          ` (${Array.isArray(options.source) ? options.source.join(', ') : options.source})` : '';
+        const topicLabel = options.topic ? ` [${options.topic}]` : '';
+        console.log(`\n📚 Search results for: "${query}"${sourceLabel}${topicLabel}\n`);
         if (results.length === 0) {
           console.log('No results found');
         } else {
@@ -120,6 +188,20 @@ async function handleTool(name, args) {
             console.log();
           });
         }
+        break;
+
+      case 'get-www':
+        const { GetWWW } = require('../lib/tools/get-www');
+        if (args.length === 0) {
+          console.error('❌ Usage: tx tool get-www [-js] [-a] <url> [url2] [url3] ...');
+          process.exit(1);
+        }
+        const urls = args;
+        const wwwResults = await GetWWW.fetch(urls, {
+          js: options.js,
+          archive: options.archive
+        });
+        console.log(JSON.stringify(wwwResults, null, 2));
         break;
 
       default:
