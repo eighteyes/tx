@@ -46,9 +46,14 @@ node test/test-e2e.js
 - Agent (echo) receives task and processes it
 - Output is written to agent's message directories
 
-### Step 5: Verify Completion
-- Checks for completion message in `.ai/tx/mesh/test-echo/agents/echo-{uid}/msgs/complete/`
-- Validates that at least one completion file exists
+### Step 5: Verify Completion & Response Routing
+- **Part A**: Checks for completion message in echo agent's complete directory
+  - `.ai/tx/mesh/test-echo/agents/echo-{uid}/msgs/complete/`
+  - Validates echo agent processed the task
+- **Part B**: Checks that response was routed back to core agent's inbox
+  - `.ai/tx/mesh/core/agents/core/msgs/inbox/`
+  - Validates message routing from test-echo → core worked correctly
+  - Looks for message with `from: test-echo` or `from: echo-{uid}`
 
 ## Key Configuration
 
@@ -81,15 +86,22 @@ A successful test will show:
    ⏳ Waiting 10 seconds for agent to process task...
 
 📍 Step 5: Verifying task completion
-🔍 Checking for task output...
-   ✅ Found 1 complete message(s):
-      - test-e2e-...md
+🔍 Checking for task completion and response routing...
+
+   Step 1: Check echo agent completed the task
+   Found agent: test-echo-echo-set0
+   Checking: .ai/tx/mesh/test-echo/agents/echo-set0/msgs/complete
+   ✅ Echo agent completed 1 task(s)
+
+   Step 2: Check response routed to core agent inbox
+   ✅ Found response in core inbox: 2510192026-task-complete.md
       Preview: ---
-from: echo
+from: echo-set0
 to: core
+type: task-complete
 ...
 
-✅ TEST PASSED: Task was processed and completed!
+✅ TEST PASSED: Task was processed and response routed to core!
 
 🧹 Cleaning up...
    Stopping tx system...
@@ -178,14 +190,22 @@ If test hits timeout, it will:
 
 ## Success Criteria
 
-The test passes when:
+The test passes when ALL of the following succeed:
 
-✅ TX system starts successfully (`tx start -d`)
-✅ Core session is created and Claude initializes
-✅ Spawn command is injected successfully
-✅ Spawn session appears (test-echo-echo-*)
-✅ Task completion files are created and found
-✅ Cleanup completes without errors
-✅ Exit code is 0
+1. ✅ TX system starts successfully (`tx start -d`)
+2. ✅ Core session is created and Claude initializes
+3. ✅ Spawn command is injected successfully
+4. ✅ Spawn session appears (test-echo-echo-*)
+5. ✅ Echo agent completes task:
+   - Task completion file exists in `.ai/tx/mesh/test-echo/agents/echo-*/msgs/complete/`
+6. ✅ Response is routed back to core:
+   - Response message appears in `.ai/tx/mesh/core/agents/core/msgs/inbox/`
+   - Message contains `from: echo-*` (proving it came from the test-echo agent)
+7. ✅ Cleanup completes without errors
+8. ✅ Exit code is 0
+
+**Full round-trip validation:**
+- task: core → (injects spawn) → test-echo agent
+- response: test-echo agent → (routes back) → core inbox
 
 If any step fails, test exits with code 1.
