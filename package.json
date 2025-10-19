@@ -1,7 +1,7 @@
 {
   "name": "tmux-riffic-v2",
   "version": "2.0.0",
-  "description": "TX Watch - Claude agent orchestration via tmux",
+  "description": "TX - Claude agent orchestration via tmux",
   "bin": {
     "tx": "./bin/tx.js"
   },
@@ -11,15 +11,17 @@
     "test-messages": "node test/test-messages.js",
     "test-queue": "node test/test-queue.js",
     "test-watcher": "node test/test-watcher.js",
-    "test-workflow": "node test/test-workflow-advancement.js"
+    "test-workflow": "node test/test-workflow-advancement.js",
+    "test-e2e": "node test/test-e2e.js"
   },
   "dependencies": {
-    "fs-extra": "^11.0.0",
+    "axios": "^1.12.2",
+    "cheerio": "^1.1.2",
     "chokidar": "^3.5.3",
     "commander": "^11.0.0",
-    "axios": "^1.6.0"
+    "fs-extra": "^11.0.0",
+    "puppeteer": "^22.0.0"
   },
-  "devDependencies": {},
   "keywords": [
     "claude",
     "ai",
