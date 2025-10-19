@@ -41,12 +41,22 @@ node test/test-e2e.js
 - Command is injected into core session via TmuxInjector
 - Triggers creation of echo agent session
 
-### Step 4: Task Processing
-- Waits 10 seconds for agent to process task
-- Agent (echo) receives task and processes it
-- Output is written to agent's message directories
+### Step 4: Poll for Task Completion & Response Routing
+- Polls filesystem for completion of three stages:
+  1. Echo agent session created
+  2. Echo agent writes completion message
+  3. Response routed to core agent inbox
+- **Smart timeout**: Continues until all three stages complete OR 10 seconds of idle (no file changes)
+- Polling interval: 500ms
+- Resets idle timer when file changes detected
+- Completes early if full round-trip detected
 
-### Step 5: Verify Completion & Response Routing
+**Benefits:**
+- Fast completion if system is responsive (may finish in 1-2 seconds)
+- Waits up to 10 seconds only if detecting idle/stalled state
+- Detects each milestone as it happens with progress logging
+
+### Step 5: Verify Results
 - **Part A**: Checks for completion message in echo agent's complete directory
   - `.ai/tx/mesh/test-echo/agents/echo-{uid}/msgs/complete/`
   - Validates echo agent processed the task
@@ -82,26 +92,22 @@ A successful test will show:
    Injecting: spawn test-echo echo --init "simple e2e test"
 ✅ Found spawn session: test-echo-echo-set0
 
-📍 Step 4: Waiting for task processing
-   ⏳ Waiting 10 seconds for agent to process task...
+📍 Step 4: Waiting for task completion and response routing
 
-📍 Step 5: Verifying task completion
-🔍 Checking for task completion and response routing...
+   ⏳ Polling with 10 second idle timeout...
 
-   Step 1: Check echo agent completed the task
-   Found agent: test-echo-echo-set0
-   Checking: .ai/tx/mesh/test-echo/agents/echo-set0/msgs/complete
-   ✅ Echo agent completed 1 task(s)
+🔍 Polling for task completion and response routing...
 
-   Step 2: Check response routed to core agent inbox
-   ✅ Found response in core inbox: 2510192026-task-complete.md
-      Preview: ---
-from: echo-set0
-to: core
-type: task-complete
-...
+   ✅ Echo agent found: test-echo-echo-set0
+   ✅ Echo agent completed task
+   ✅ Response routed to core inbox: 2510192026-task-complete.md
 
-✅ TEST PASSED: Task was processed and response routed to core!
+📍 Step 5: Verify result
+
+✅ TEST PASSED: Full round-trip successful!
+
+   Task: core → echo agent
+   Response: echo agent → core inbox
 
 🧹 Cleaning up...
    Stopping tx system...
@@ -177,16 +183,27 @@ rm -rf .ai/tx/mesh/test-echo/
 
 ## Timeout Behavior
 
-- **Total test timeout**: 60 seconds
-- **Core session wait**: 20 seconds
-- **Claude ready check**: 30 seconds
+- **Total test timeout**: 60 seconds (overall test limit)
+- **Core session wait**: 20 seconds (finding core tmux session)
+- **Claude ready check**: 30 seconds (Claude initialization)
 - **Spawn session wait**: 20 seconds (polling with 500ms interval)
-- **Task processing wait**: 10 seconds
+- **Task completion wait**: **10 seconds of idle time** (smart polling)
+  - Not a fixed wait, but idle detection
+  - Completes early if task completes quickly
+  - Resets idle timer when file changes detected
+  - Only fails if nothing changes for 10 consecutive seconds
+  - Polling interval: 500ms
 
-If test hits timeout, it will:
-1. Print `❌ TEST TIMEOUT` message
-2. Cleanup all resources
-3. Exit with code 1
+**Smart Idle Timeout Example:**
+- System responsive: completes in 2-3 seconds ✅
+- System slow: waits up to 10 seconds of idle, then fails ❌
+- Partial progress: keeps waiting while changes detected
+
+If test hits any timeout, it will:
+1. Print `❌ TEST TIMEOUT` or `❌ TEST FAILED` message
+2. Log what stages completed/failed
+3. Cleanup all resources
+4. Exit with code 1
 
 ## Success Criteria
 

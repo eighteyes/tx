@@ -67,85 +67,85 @@ async function waitForClaudeReady(sessionName, timeout = 30000) {
 }
 
 /**
- * Check if echo task was completed and response was routed back to core
+ * Poll for task completion and response routing
+ * Continues until both complete OR 10 seconds of idle detected
  */
-function checkTaskOutput() {
-  console.log('🔍 Checking for task completion and response routing...\n');
+async function waitForTaskCompletion(maxIdleTime = 10000, pollInterval = 500) {
+  console.log('🔍 Polling for task completion and response routing...\n');
 
-  // Step 1: Check echo agent's complete directory
-  console.log('   Step 1: Check echo agent completed the task');
-  const agentsDir = `.ai/tx/mesh/${MESH}/agents`;
+  let lastChangeTime = Date.now();
+  let agentFound = false;
+  let echoCompleted = false;
+  let responseSeen = false;
+  let lastAgentName = null;
 
-  if (!fs.existsSync(agentsDir)) {
-    console.log(`   ❌ Agents directory doesn't exist: ${agentsDir}`);
-    return false;
-  }
+  while (Date.now() - lastChangeTime < maxIdleTime) {
+    // Step 1: Check for echo agent
+    const agentsDir = `.ai/tx/mesh/${MESH}/agents`;
 
-  // Find agent directory matching pattern: echo-*
-  const agents = fs.readdirSync(agentsDir).filter(f => f.startsWith(`${AGENT}-`));
-
-  if (agents.length === 0) {
-    console.log(`   ❌ No agent directories found matching: ${AGENT}-*`);
-    console.log(`   Available: ${fs.readdirSync(agentsDir).join(', ')}`);
-    return false;
-  }
-
-  // Check first matching agent
-  const agentName = agents[0];
-  const echoCompletePath = `${agentsDir}/${agentName}/msgs/complete`;
-
-  console.log(`   Found agent: ${agentName}`);
-  console.log(`   Checking: ${echoCompletePath}`);
-
-  if (!fs.existsSync(echoCompletePath)) {
-    console.log(`   ⚠️  Complete directory doesn't exist yet`);
-    return false;
-  }
-
-  const completeFiles = fs.readdirSync(echoCompletePath).filter(f => f.endsWith('.md'));
-
-  if (completeFiles.length === 0) {
-    console.log(`   ❌ No complete messages found in echo agent`);
-    return false;
-  }
-
-  console.log(`   ✅ Echo agent completed ${completeFiles.length} task(s)\n`);
-
-  // Step 2: Check if response was routed back to core agent inbox
-  console.log('   Step 2: Check response routed to core agent inbox');
-  const coreAgentInboxPath = '.ai/tx/mesh/core/agents/core/msgs/inbox';
-
-  if (!fs.existsSync(coreAgentInboxPath)) {
-    console.log(`   ❌ Core agent inbox doesn't exist: ${coreAgentInboxPath}`);
-    return false;
-  }
-
-  const inboxFiles = fs.readdirSync(coreAgentInboxPath).filter(f => f.endsWith('.md'));
-
-  if (inboxFiles.length === 0) {
-    console.log(`   ❌ No messages in core agent inbox`);
-    return false;
-  }
-
-  // Look for a message from test-echo agent
-  let foundResponse = false;
-  inboxFiles.forEach(file => {
-    const content = fs.readFileSync(path.join(coreAgentInboxPath, file), 'utf-8');
-    if (content.includes('from: test-echo') || content.includes(`from: ${agentName}`)) {
-      foundResponse = true;
-      console.log(`   ✅ Found response in core inbox: ${file}`);
-      console.log(`      Preview: ${content.substring(0, 80)}...`);
+    if (!agentFound && fs.existsSync(agentsDir)) {
+      const agents = fs.readdirSync(agentsDir).filter(f => f.startsWith(`${AGENT}-`));
+      if (agents.length > 0) {
+        lastAgentName = agents[0];
+        if (!agentFound) {
+          console.log(`   ✅ Echo agent found: ${lastAgentName}`);
+          agentFound = true;
+          lastChangeTime = Date.now();
+        }
+      }
     }
-  });
 
-  if (!foundResponse) {
-    console.log(`   ❌ No response from test-echo found in core inbox`);
-    console.log(`   Available files: ${inboxFiles.join(', ')}`);
-    return false;
+    // Step 2: Check if echo agent completed
+    if (agentFound && !echoCompleted && lastAgentName) {
+      const echoCompletePath = `${agentsDir}/${lastAgentName}/msgs/complete`;
+      if (fs.existsSync(echoCompletePath)) {
+        const completeFiles = fs.readdirSync(echoCompletePath).filter(f => f.endsWith('.md'));
+        if (completeFiles.length > 0) {
+          if (!echoCompleted) {
+            console.log(`   ✅ Echo agent completed task`);
+            echoCompleted = true;
+            lastChangeTime = Date.now();
+          }
+        }
+      }
+    }
+
+    // Step 3: Check if response was routed to core
+    if (echoCompleted && !responseSeen) {
+      const coreAgentInboxPath = '.ai/tx/mesh/core/agents/core/msgs/inbox';
+      if (fs.existsSync(coreAgentInboxPath)) {
+        const inboxFiles = fs.readdirSync(coreAgentInboxPath).filter(f => f.endsWith('.md'));
+
+        for (const file of inboxFiles) {
+          const content = fs.readFileSync(path.join(coreAgentInboxPath, file), 'utf-8');
+          if (content.includes('from: test-echo') || (lastAgentName && content.includes(`from: ${lastAgentName}`))) {
+            if (!responseSeen) {
+              console.log(`   ✅ Response routed to core inbox: ${file}`);
+              responseSeen = true;
+              lastChangeTime = Date.now();
+            }
+            break;
+          }
+        }
+      }
+    }
+
+    // All done!
+    if (agentFound && echoCompleted && responseSeen) {
+      console.log('');
+      return true;
+    }
+
+    // Wait before next poll
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
-  console.log('');
-  return true;
+  console.log(`\n❌ Timeout: No activity for ${maxIdleTime}ms`);
+  console.log(`   Agent found: ${agentFound}`);
+  console.log(`   Echo completed: ${echoCompleted}`);
+  console.log(`   Response seen: ${responseSeen}\n`);
+
+  return false;
 }
 
 /**
@@ -267,24 +267,23 @@ async function runE2ETest() {
       console.log(`⚠️  Spawn session not found, but continuing...\n`);
     }
 
-    // Step 4: Wait for task processing
-    console.log('📍 Step 4: Waiting for task processing\n');
-    console.log('   ⏳ Waiting 10 seconds for agent to process task...\n');
+    // Step 4: Wait for task completion and response routing
+    console.log('📍 Step 4: Waiting for task completion and response routing\n');
+    console.log('   ⏳ Polling with 10 second idle timeout...\n');
 
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    const completionFound = await waitForTaskCompletion(10000, 500);
 
-    // Step 5: Check for output
-    console.log('📍 Step 5: Verifying task completion\n');
+    // Step 5: Verify results
+    console.log('📍 Step 5: Verify result\n');
 
-    const outputFound = checkTaskOutput();
-
-    if (outputFound) {
-      console.log('\n✅ TEST PASSED: Task was processed and completed!\n');
+    if (completionFound) {
+      console.log('✅ TEST PASSED: Full round-trip successful!\n');
+      console.log('   Task: core → echo agent');
+      console.log('   Response: echo agent → core inbox\n');
       testPassed = true;
     } else {
-      console.log('\n⚠️  No output found yet, but system is working.\n');
-      console.log('   (Task may still be processing in background)\n');
-      testPassed = true; // Consider it a pass if system started without errors
+      console.log('❌ TEST FAILED: Incomplete round-trip detected\n');
+      testPassed = false;
     }
 
   } catch (error) {
