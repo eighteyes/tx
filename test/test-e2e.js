@@ -154,14 +154,22 @@ async function waitForTaskCompletion(maxIdleTime = 10000, pollInterval = 500) {
 async function cleanup(spawnSessionName = null) {
   console.log('\n🧹 Cleaning up...\n');
 
+  // Always stop tx system
+  console.log('   Stopping tx system...');
+  try {
+    execSync('tx stop', { stdio: 'pipe' });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  } catch (e) {
+    // tx stop may fail if system not running, that's ok
+    console.log('   (tx stop returned error - may be expected)');
+  }
+
   // Kill tx process if running
   if (txProcess && !txProcess.killed) {
-    console.log('   Stopping tx system...');
     try {
-      execSync('tx stop', { stdio: 'pipe' });
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      txProcess.kill();
     } catch (e) {
-      // Ignore errors
+      // Ignore
     }
   }
 
