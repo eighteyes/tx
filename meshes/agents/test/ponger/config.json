@@ -1,0 +1,9 @@
+{
+  "name": "ponger",
+  "description": "Responds to ping messages from pinger agent",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

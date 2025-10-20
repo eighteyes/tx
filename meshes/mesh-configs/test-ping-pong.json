@@ -1,0 +1,10 @@
+{
+  "mesh": "test-ping-pong",
+  "description": "Test mesh for agent-to-agent ping-pong messaging - agents exchange 2 messages each",
+  "type": "ephemeral",
+  "agents": ["test/pinger", "test/ponger"],
+  "entry_point": "pinger",
+  "completion_agent": "pinger",
+  "capabilities": ["ask"],
+  "workflow_topology": "bidirectional"
+}

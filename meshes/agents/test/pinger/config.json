@@ -1,0 +1,9 @@
+{
+  "name": "pinger",
+  "description": "Sends ping messages to ponger agent twice and collects responses",
+  "capabilities": ["ask"],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}
