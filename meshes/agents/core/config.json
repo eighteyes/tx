@@ -1,0 +1,10 @@
+{
+  "name": "core",
+  "description": "coordinates all meshes",
+  "orchestrator": true,
+  "capabilities": ["search","spawn"],
+  "options": {
+    "output": "blank",
+    "model": "sonnet"
+  }
+}

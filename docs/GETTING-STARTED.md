@@ -1,4 +1,4 @@
-# TX Watch - Getting Started
+# Agent Orchestration - Getting Started
 
 ## Installation
 
@@ -69,7 +69,7 @@ tx start
 #### Terminal 2: Spawn Test Agent
 ```bash
 # Spawn echo agent
-tx spawn test-echo --init "Hello from TX Watch!"
+tx spawn test-echo --init "Hello from agent system!"
 ```
 
 #### Terminal 3: Monitor Status
@@ -100,7 +100,7 @@ Create a multi-agent mesh in `meshes/mesh-configs/researcher.json`:
     "researcher/analyzer",
     "researcher/reporter"
   ],
-  "workflow_topology": "sequential",
+  "type": "sequential",
   "entry_point": "searcher",
   "completion_agent": "reporter"
 }
@@ -326,7 +326,7 @@ tx spawn search-report searcher --init "Search: AI trends"
 Use map-reduce in mesh config:
 ```json
 {
-  "workflow_topology": "map-reduce",
+  "type": "map-reduce",
   "entry_point": "coordinator",
   "completion_agent": "synthesizer"
 }
@@ -336,7 +336,7 @@ Use map-reduce in mesh config:
 Use iterative workflow:
 ```json
 {
-  "workflow_topology": "iterative",
+  "type": "iterative",
   "entry_point": "generator",
   "completion_agent": "finalizer"
 }
@@ -354,7 +354,7 @@ Use iterative workflow:
   "type": "ephemeral",
   "description": "My custom mesh",
   "agents": ["my-mesh/agent-1", "my-mesh/agent-2"],
-  "workflow_topology": "sequential",
+  "type": "sequential",
   "entry_point": "agent-1",
   "completion_agent": "agent-2"
 }
@@ -390,7 +390,7 @@ tx status
 ## Integration with Claude Code
 
 ### @ File Attachment
-TX Watch uses Claude Code's @ file attachment:
+The orchestration system uses Claude Code's @ file attachment:
 ```
 @<file-path>
 ```
@@ -409,7 +409,7 @@ Agents can use these within Claude Code:
 
 ## Performance Tips
 
-1. **Archive old tasks**: TX Watch auto-archives tasks older than 30 days
+1. **Archive old tasks**: The system auto-archives tasks older than 30 days
 2. **Monitor logs**: Check `debug.jsonl` for slow operations
 3. **Use mock-mode for testing**: Set `MOCK_MODE=true` to skip tmux
 4. **Keep prompts concise**: Smaller prompts = faster injection

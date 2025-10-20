@@ -1,0 +1,9 @@
+{
+  "name": "echo",
+  "description": "Test agent that echoes back input",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

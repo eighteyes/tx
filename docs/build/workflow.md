@@ -1,5 +1,21 @@
-# File based message queue workflow
-Enforced with a file watcher.
+# File workflow
+
+File/Folder enabled queue based message system powered by watchers.
+
+## TX Watcher Actions
+Files arriving in active are injected at runtime.
+Files arriving in the outbox are delivered and send to complete.
+Files are moved according to the Message Flow
+
+# Message Flow 
+## Incoming Messages
+inbox (wait) > next (queue) > active (process) > complete (done)
+## Outgoing Messages
+outbox (send) > complete (done) / inbox
+
+## Example
+agentA outbox > meshB inbox > meshB next > meshB active / agentB inbox > meshB complete 
+agentB inbox > agentB Next > agentB Active > agentB outbox > agentB complete
 
 # Task Workflow
 1. Spawn
@@ -12,7 +28,7 @@ Enforced with a file watcher.
 8. If running, wait for agent to be idle, Inject File Path to first agent session
 9. ... working ...
 10. First agent writes message to outbox
-11. Watcher sends message to target and moves outbox & active message to complete.
+11. Watcher sends message to target moves outbox & active message to complete.
 12. When final agent issues 'type: task-complete' then also move mesh active message to complete. 
 
 # Ask Workflow

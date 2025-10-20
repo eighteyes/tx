@@ -22,6 +22,7 @@ name - agent name
 description - blurb
 capabilities: string[] - what capabilities to load in prompt builder
 options: { model, output } - inject /commands to claude, /model haiku, /output-styple blank
+tags: string[]
 
 ## Prompt
 Concise prompt of expected behavior, equivalent to system prompt
@@ -35,7 +36,7 @@ meshes/configs/<mesh-name>.json
 ## Config
 name - mesh name
 description - mesh descriptions
-agents = string[] OR
+agents = string['test/echo','core'] OR
 agents = AgentConfig[] (from above, for overrides)
 type - linear ( default ), iterative ( feedback until convergence ), persistant ( not ending ) 
 options - { maxIterations: 2 }

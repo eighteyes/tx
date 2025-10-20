@@ -8,6 +8,7 @@ async function testSpawning() {
 
   // Test 1: Prompt Building
   console.log('Test 1: Building Prompt');
+  console.log('Try building a prompt: PromptBuilder.build("test-mesh")\n');
   try {
     // Initialize test mesh directories first
     const dirs = [
@@ -39,6 +40,7 @@ async function testSpawning() {
 
   // Test 2: Session Management (Mock Mode)
   console.log('\nTest 2: Session Management');
+  console.log('Try creating a session: SessionManager.createSession("test-session")\n');
   try {
     // In mock mode, session creation should work
     process.env.MOCK_MODE = 'true';
@@ -60,6 +62,7 @@ async function testSpawning() {
 
   // Test 3: Configuration Loading
   console.log('\nTest 3: Mesh Configuration');
+  console.log('Try loading a mesh config: MeshConfig.load("core")\n');
   try {
     const { MeshConfig } = require('../lib/mesh-config');
 
@@ -82,6 +85,7 @@ async function testSpawning() {
 
   // Test 4: Full Mesh Spawn (Mock Mode)
   console.log('\nTest 4: Full Mesh Spawn (Mock Mode)');
+  console.log('Try spawning a mesh: Spawner.spawnMesh("test-spawn-mesh")\n');
   try {
     process.env.MOCK_MODE = 'true';
 
@@ -113,6 +117,7 @@ async function testSpawning() {
 
   // Test 5: List Sessions
   console.log('\nTest 5: List Sessions');
+  console.log('Try listing sessions: SessionManager.listSessions()\n');
   try {
     const sessions = SessionManager.listSessions();
     console.log('✓ Sessions listed:', sessions.length, 'session(s)');

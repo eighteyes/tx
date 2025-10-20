@@ -1,32 +1,25 @@
-const fs = require('fs-extra');
-const path = require('path');
 const { execSync, spawn } = require('child_process');
 const { TmuxInjector } = require('../lib/tmux-injector');
-const { Watcher } = require('../lib/watcher');
-const { Queue } = require('../lib/queue');
+const { E2EWorkflow } = require('../lib/e2e-workflow');
 
 /**
- * E2E Test: Full workflow with `tx start -d`
+ * E2E Test: test-echo mesh
  *
- * Steps:
- * 1. Start tx system in detached mode (`tx start -d`)
- * 2. Wait for system readiness (core session created)
- * 3. Inject spawn command for test-echo agent
- * 4. Wait for task completion
- * 5. Verify output
- * 6. Cleanup
+ * Tests the core->echo->core workflow:
+ * 1. Start tx system in detached mode
+ * 2. Wait for core session + Claude ready + idle
+ * 3. Inject spawn command for test-echo mesh
+ * 4. Monitor for all workflow stages to complete
+ * 5. Cleanup
  */
 
-console.log('=== E2E Test: tx start -d → spawn test-echo → send task ===\n');
+console.log('=== E2E Test: test-echo mesh ===\n');
 
 // Configuration
-const TEST_TIMEOUT = 120000; // 120 seconds total timeout
+const TEST_TIMEOUT = 120000; // 2 minutes total timeout
 const CORE_SESSION = 'core';
 const MESH = 'test-echo';
 const AGENT = 'echo';
-// Task string for spawn - UID will be generated from this
-const TASK_STRING = 'simple e2e test';
-// Generated UID will be: "set0" (s, e, t from "simple e2e test" + 0 padding)
 
 // Tracking
 let txProcess = null;
@@ -67,112 +60,17 @@ async function waitForClaudeReady(sessionName, timeout = 30000) {
 }
 
 /**
- * Poll for task completion using tmux session checks
- * Tests: 1) Core spawned, 2) test-echo spawned, 3) test-echo received message, 4) core received response
- */
-async function waitForTaskCompletion(maxIdleTime = 30000, pollInterval = 500) {
-  console.log('🔍 Polling using tmux session checks...\n');
-
-  let lastChangeTime = Date.now();
-  let coreSpawned = false;
-  let echoSpawned = false;
-  let echoReceivedMessage = false;
-  let coreReceivedResponse = false;
-  let echoSessionName = null;
-
-  while (Date.now() - lastChangeTime < maxIdleTime) {
-    // Test 1: Check if core session exists
-    if (!coreSpawned) {
-      if (TmuxInjector.sessionExists(CORE_SESSION)) {
-        console.log(`   ✅ 1) Core spawned (session: ${CORE_SESSION})`);
-        coreSpawned = true;
-        lastChangeTime = Date.now();
-      }
-    }
-
-    // Test 2: Check if test-echo session exists
-    if (coreSpawned && !echoSpawned) {
-      const sessions = TmuxInjector.listSessions();
-      const expectedSession = `${MESH}-${AGENT}`;
-      const echoSession = sessions.find(s => s === expectedSession || s.startsWith(`${expectedSession}-`));
-      if (echoSession) {
-        echoSessionName = echoSession;
-        console.log(`   ✅ 2) test-echo spawned (session: ${echoSessionName})`);
-        echoSpawned = true;
-        lastChangeTime = Date.now();
-      }
-    }
-
-    // Test 3: Check if test-echo received the message (check tmux output)
-    if (echoSpawned && !echoReceivedMessage && echoSessionName) {
-      try {
-        const output = execSync(`tmux capture-pane -t ${echoSessionName} -p`, {
-          stdio: 'pipe',
-          encoding: 'utf-8'
-        });
-
-        // Look for message indicators in tmux output
-        if (output.includes('simple task') || output.includes('test-echo')) {
-          console.log(`   ✅ 3) test-echo received message (visible in tmux)`);
-          echoReceivedMessage = true;
-          lastChangeTime = Date.now();
-        }
-      } catch (e) {
-        // Session might not be ready yet
-      }
-    }
-
-    // Test 4: Check if core received response (check tmux output)
-    if (echoReceivedMessage && !coreReceivedResponse) {
-      try {
-        const output = execSync(`tmux capture-pane -t ${CORE_SESSION} -p`, {
-          stdio: 'pipe',
-          encoding: 'utf-8'
-        });
-
-        // Look for response indicators in core tmux output
-        if (output.includes(`${MESH}`) || output.includes('echo')) {
-          console.log(`   ✅ 4) core received response (visible in tmux)`);
-          coreReceivedResponse = true;
-          lastChangeTime = Date.now();
-        }
-      } catch (e) {
-        // Ignore errors
-      }
-    }
-
-    // All tests passed!
-    if (coreSpawned && echoSpawned && echoReceivedMessage && coreReceivedResponse) {
-      console.log('');
-      return true;
-    }
-
-    // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-
-  console.log(`\n❌ Timeout: No activity for ${maxIdleTime}ms`);
-  console.log(`   1) Core spawned: ${coreSpawned}`);
-  console.log(`   2) Echo spawned: ${echoSpawned}`);
-  console.log(`   3) Echo received message: ${echoReceivedMessage}`);
-  console.log(`   4) Core received response: ${coreReceivedResponse}\n`);
-
-  return false;
-}
-
-/**
  * Cleanup function
  */
-async function cleanup(spawnSessionName = null) {
+async function cleanup() {
   console.log('\n🧹 Cleaning up...\n');
 
-  // Always stop tx system
+  // Stop tx system
   console.log('   Stopping tx system...');
   try {
     execSync('tx stop', { stdio: 'pipe' });
     await new Promise(resolve => setTimeout(resolve, 1000));
   } catch (e) {
-    // tx stop may fail if system not running, that's ok
     console.log('   (tx stop returned error - may be expected)');
   }
 
@@ -185,13 +83,8 @@ async function cleanup(spawnSessionName = null) {
     }
   }
 
-  // Kill all test sessions
+  // Kill sessions
   const sessionsToKill = [CORE_SESSION];
-  if (spawnSessionName) {
-    sessionsToKill.push(spawnSessionName);
-  }
-
-  // Also kill any matching sessions
   const allSessions = TmuxInjector.listSessions();
   const matchingSessions = allSessions.filter(s => s.startsWith(`${MESH}-${AGENT}-`));
   sessionsToKill.push(...matchingSessions);
@@ -207,13 +100,6 @@ async function cleanup(spawnSessionName = null) {
     }
   });
 
-  // Clean up test mesh
-  const testMeshDir = `.ai/tx/mesh/${MESH}`;
-  if (fs.existsSync(testMeshDir)) {
-    console.log(`   Removing test mesh: ${testMeshDir}`);
-    fs.removeSync(testMeshDir);
-  }
-
   console.log('✅ Cleanup complete\n');
 }
 
@@ -222,7 +108,6 @@ async function cleanup(spawnSessionName = null) {
  */
 async function runE2ETest() {
   const testStartTime = Date.now();
-  let spawnSessionName = null;
 
   try {
     // Step 1: Start tx in detached mode
@@ -234,9 +119,7 @@ async function runE2ETest() {
       stdio: 'pipe'
     });
 
-    let txOutput = '';
     txProcess.stdout.on('data', (data) => {
-      txOutput += data.toString();
       console.log(`   [tx stdout] ${data}`);
     });
 
@@ -261,59 +144,26 @@ async function runE2ETest() {
       throw new Error('Claude not ready in core session');
     }
 
-    // Wait for session to be idle (5 seconds of no output changes)
-    console.log('⏳ Waiting for session to be idle (5 seconds)...\n');
-    const isIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 5000, 10000);
-    
+    // Wait for session to be idle (1 second of no output changes)
+    console.log('⏳ Waiting for session to be idle (1 second)...\n');
+    const isIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 1000, 10000);
     if (!isIdle) {
       console.log('⚠️  Warning: Session may not be fully idle, but continuing...\n');
     } else {
       console.log('✅ Session is idle\n');
     }
 
-    // Step 3: Inject spawn command
-    console.log('📍 Step 3: Injecting spawn command\n');
+    // Step 3: Use E2EWorkflow to test the complete workflow
+    console.log('\n📍 Step 3: Testing mesh workflow\n');
 
-    const spawnCmd = `spawn a ${MESH} mesh and send it a simple task`;
-    console.log(`   Injecting: ${spawnCmd}\n`);
+    const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and send it a simple task`);
+    const workflowPassed = await workflow.test();
 
-    TmuxInjector.injectText(CORE_SESSION, spawnCmd);
-
-    // Wait for spawn session to be created
-    const expectedSession = `${MESH}-${AGENT}`;
-    console.log(`   Waiting for session: ${expectedSession}\n`);
-    const maxRetries = 40;
-    for (let i = 0; i < maxRetries; i++) {
-      const sessions = TmuxInjector.listSessions();
-      const matchingSession = sessions.find(s => s === expectedSession || s.startsWith(`${expectedSession}-`));
-      if (matchingSession) {
-        spawnSessionName = matchingSession;
-        console.log(`✅ Found spawn session: ${spawnSessionName}\n`);
-        break;
-      }
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    if (!spawnSessionName) {
-      console.log(`⚠️  Spawn session not found, but continuing...\n`);
-    }
-
-    // Step 4: Wait for task completion and response routing
-    console.log('📍 Step 4: Waiting for task completion and response routing\n');
-    console.log('   ⏳ Polling with 10 second idle timeout...\n');
-
-    const completionFound = await waitForTaskCompletion(30000, 500);
-
-    // Step 5: Verify results
-    console.log('📍 Step 5: Verify result\n');
-
-    if (completionFound) {
-      console.log('✅ TEST PASSED: Full round-trip successful!\n');
-      console.log('   Task: core → echo agent');
-      console.log('   Response: echo agent → core inbox\n');
+    if (workflowPassed) {
+      console.log('✅ TEST PASSED: Workflow successful!\n');
       testPassed = true;
     } else {
-      console.log('❌ TEST FAILED: Incomplete round-trip detected\n');
+      console.log('❌ TEST FAILED: Workflow incomplete\n');
       testPassed = false;
     }
 
@@ -325,7 +175,7 @@ async function runE2ETest() {
     const testDuration = Date.now() - testStartTime;
     console.log(`📊 Test duration: ${testDuration}ms\n`);
 
-    await cleanup(spawnSessionName);
+    await cleanup();
 
     // Exit with appropriate code
     const exitCode = testPassed ? 0 : 1;
@@ -338,12 +188,12 @@ async function runE2ETest() {
 const overallTimeout = setTimeout(() => {
   console.error('\n❌ TEST TIMEOUT: Test took longer than 120 seconds');
   testPassed = false;
-  cleanup(null).then(() => process.exit(1));
+  cleanup().then(() => process.exit(1));
 }, TEST_TIMEOUT);
 
 // Run test
 runE2ETest().catch(error => {
   console.error('Unhandled error:', error);
   clearTimeout(overallTimeout);
-  cleanup(null).then(() => process.exit(1));
+  cleanup().then(() => process.exit(1));
 });

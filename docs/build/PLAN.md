@@ -1,4 +1,4 @@
-# TX Watch System Rebuild - Bottom-Up (Tests First)
+# Agent Orchestration System Rebuild - Bottom-Up (Tests First)
 
 ## Build Strategy
 **Bottom-up approach**: Build lib/ components → pass tests → then CLI commands

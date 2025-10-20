@@ -75,6 +75,7 @@ async function testWorkflowAdvancement() {
 
   // Step 1: Complete first task
   console.log('Step 1: Completing task for researcher agent...');
+  console.log('Try completing a task: Queue.complete(meshName, "initial-task.md")\n');
   Queue.complete(meshName, 'initial-task.md');
 
   // Verify state update
@@ -101,6 +102,7 @@ async function testWorkflowAdvancement() {
 
   // Step 2: Verify workflow transition
   console.log('Step 2: Verifying workflow transition...');
+  console.log('Try reading state: const state = fs.readJsonSync(path.join(meshDir, "state.json"))\n');
   console.log(`  Previous agent: ${state1.previous_agent || 'none'}`);
   console.log(`  Current agent: ${state1.current_agent}`);
   console.log(`  Position: ${state1.workflow_position}/${state1.workflow.length}`);
@@ -108,6 +110,7 @@ async function testWorkflowAdvancement() {
 
   // Step 3: Move handoff to active and complete for analyzer
   console.log('\nStep 3: Simulating analyzer completion...');
+  console.log('Try completing handoff: Queue.complete(meshName, handoffFile)\n');
   if (handoffFile) {
     // Move handoff to active
     fs.moveSync(
@@ -134,6 +137,7 @@ async function testWorkflowAdvancement() {
 
   // Step 4: Complete final task
   console.log('\nStep 4: Completing final task for reporter agent...');
+  console.log('Try completing final task: Queue.complete(meshName, handoffFile)\n');
   const inboxFiles3 = fs.readdirSync(path.join(meshDir, 'msgs/inbox'));
   const handoffFile3 = inboxFiles3.find(f => f.includes('handoff'));
 

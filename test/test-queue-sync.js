@@ -44,6 +44,7 @@ async function runTests() {
 
   // Test 1: Unit Test - Mesh Active Cleanup in completeAgentTask()
   console.log('Test 1: Mesh Active Cleanup on Agent Completion');
+  console.log('Try creating a test message: const messageFile = "250928123000-test-task.md"; fs.writeFileSync(...)\n');
   try {
     setup();
 
@@ -95,6 +96,7 @@ async function runTests() {
 
   // Test 2: Edge Case - Mesh Active File Doesn't Exist
   console.log('\nTest 2: Edge Case - Mesh Active File Missing');
+  console.log('Try creating a test message with missing mesh active: fs.writeFileSync(`${agentDir}/msgs/active/${messageFile}`, ...)\n');
   try {
     setup();
 
@@ -129,6 +131,7 @@ async function runTests() {
 
   // Test 3: Edge Case - File Already in Mesh Complete
   console.log('\nTest 3: Edge Case - File Already in Mesh Complete');
+  console.log('Try creating a test message already in complete: fs.writeFileSync(`${meshDir}/msgs/complete/${messageFile}`, ...)\n');
   try {
     setup();
 
@@ -173,6 +176,7 @@ async function runTests() {
 
   // Test 4: Integration Test - Full Workflow
   console.log('\nTest 4: Integration Test - Full Two-Tier Workflow');
+  console.log('Try running a full workflow: fs.writeFileSync(`${meshDir}/msgs/inbox/${messageFile}`, ...); Queue.processInbox(testMesh); ...\n');
   try {
     setup();
 
@@ -242,6 +246,7 @@ async function runTests() {
 
   // Test 5: No Active Messages Edge Case
   console.log('\nTest 5: Edge Case - No Active Messages');
+  console.log('Try completing a task when none exist: Queue.completeAgentTask(testMesh, testAgent)\n');
   try {
     setup();
 

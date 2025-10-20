@@ -1,0 +1,9 @@
+{
+  "name": "ping",
+  "description": "Test agent that sends ping to pong",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

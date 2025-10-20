@@ -37,7 +37,7 @@ tx spawn my-mesh --init "test task"
     "my-mesh/agent-2",
     "my-mesh/agent-3"
   ],
-  "workflow_topology": "sequential",
+  "type": "sequential",
   "entry_point": "agent-1",
   "completion_agent": "agent-3"
 }
@@ -80,7 +80,7 @@ Use `send-next agent-name` or `respond` when done.
 ```json
 {
   "agents": ["mesh/a", "mesh/b", "mesh/c"],
-  "workflow_topology": "sequential",
+  "type": "sequential",
   "entry_point": "a",
   "completion_agent": "c"
 }
@@ -90,7 +90,7 @@ Use `send-next agent-name` or `respond` when done.
 ```json
 {
   "agents": ["mesh/coordinator", "mesh/worker-1", "mesh/worker-2", "mesh/synthesizer"],
-  "workflow_topology": "map-reduce",
+  "type": "map-reduce",
   "entry_point": "coordinator",
   "completion_agent": "synthesizer"
 }
@@ -102,7 +102,7 @@ Coordinator broadcasts to workers, synthesizer combines results.
 ```json
 {
   "agents": ["mesh/generator", "mesh/critic", "mesh/improver", "mesh/finalizer"],
-  "workflow_topology": "iterative",
+  "type": "iterative",
   "entry_point": "generator",
   "completion_agent": "finalizer"
 }
@@ -114,7 +114,7 @@ Loop until quality threshold met.
 ```json
 {
   "agents": ["mesh/router", "mesh/simple", "mesh/complex", "mesh/research"],
-  "workflow_topology": "conditional",
+  "type": "conditional",
   "entry_point": "router"
 }
 ```
@@ -131,7 +131,7 @@ Router picks path based on task type.
     "mesh/synthesizer",
     "mesh/validator"
   ],
-  "workflow_topology": "map-reduce",
+  "type": "map-reduce",
   "entry_point": "coordinator",
   "completion_agent": "validator"
 }
@@ -340,7 +340,7 @@ meshes/
   "mesh": "researcher",
   "type": "ephemeral",
   "agents": ["researcher/searcher", "researcher/reporter"],
-  "workflow_topology": "sequential",
+  "type": "sequential",
   "entry_point": "searcher",
   "completion_agent": "reporter"
 }

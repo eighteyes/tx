@@ -4,10 +4,11 @@ const { Message } = require('../lib/message');
 const { Logger } = require('../lib/logger');
 const { MockAgent } = require('../lib/mock-agent');
 
-console.log('=== TX Watch Test Suite ===\n');
+console.log('=== Agent Orchestration Test Suite ===\n');
 
 // Test 1: Message Creation
 console.log('Test 1: Message Creation');
+console.log('Try sending a sample task: Message.send("brain", "Analyze codebase", "Looking for patterns")\n');
 try {
   const result = Message.send('brain', 'Analyze codebase', 'Looking for patterns');
   console.log('✓ Message created:', result.id);
@@ -24,6 +25,7 @@ try {
 
 // Test 2: Message Parsing
 console.log('\nTest 2: Message Parsing');
+console.log('Try parsing a message: Message.parseMessage(".ai/tx/mesh/test/msgs/inbox/test-message.md")\n');
 try {
   // Create a test message
   const testPath = '.ai/tx/mesh/test/msgs/inbox/test-message.md';
@@ -53,45 +55,34 @@ Test context`);
 
 // Test 3: Mock Agent Processing
 console.log('\nTest 3: Mock Agent Processing');
+console.log('Try sending a task and let the agent process it: Message.send("test-mesh", "Test task", "Test context")\n');
 const agent = new MockAgent('test-mesh');
-
-// Initialize test mesh
-fs.ensureDirSync('.ai/tx/mesh/test-mesh/msgs/inbox');
-fs.ensureDirSync('.ai/tx/mesh/test-mesh/msgs/next');
-fs.ensureDirSync('.ai/tx/mesh/test-mesh/msgs/active');
-fs.ensureDirSync('.ai/tx/mesh/test-mesh/msgs/complete');
-fs.writeJsonSync('.ai/tx/mesh/test-mesh/state.json', {
-  mesh: 'test-mesh',
-  status: 'active'
-});
 
 // Send a test message
 Message.send('test-mesh', 'Test task', 'Test context');
 
-// Start agent
+// Start agent (creates both mesh and agent directories)
 agent.start();
 
-// Manually trigger queue processing (processNext returns after each step)
-agent.processQueue(); // 1. processInbox: inbox → next
-agent.processQueue(); // 2. processNext: next → active
-agent.processQueue(); // 3. handleMessage: active → complete
+// Manually trigger queue processing (new architecture has 4 steps)
+agent.processQueue(); // 1. processInbox: mesh inbox → agent inbox
+agent.processQueue(); // 2. processAgentInbox: agent inbox → agent next
+agent.processQueue(); // 3. processAgentNext: agent next → agent active
+agent.processQueue(); // 4. handleMessage + completeAgentTask: agent active → agent complete
 
-// COMMENTED: No longer needed since mock agent processes synchronously now
-// Wait for processing
-// setTimeout(() => {
-  // Check if message was processed
-  const completeDir = '.ai/tx/mesh/test-mesh/msgs/complete';
-  const completeFiles = fs.readdirSync(completeDir);
+// Check if message was processed (check agent-level complete directory)
+const agentCompleteDir = '.ai/tx/mesh/test-mesh/agents/test-mesh/msgs/complete';
+const completeFiles = fs.readdirSync(agentCompleteDir);
 
-  if (completeFiles.length > 0) {
-    console.log('✓ Mock agent processed message');
-  } else {
-    console.log('✗ Mock agent failed to process message');
-  }
+if (completeFiles.length > 0) {
+  console.log('✓ Mock agent processed message');
+} else {
+  console.log('✗ Mock agent failed to process message');
+}
 
-  // Stop agent and cleanup
-  agent.stop();
-  fs.removeSync('.ai/tx/mesh/test-mesh');
+// Stop agent and cleanup
+agent.stop();
+fs.removeSync('.ai/tx/mesh/test-mesh');
 
   console.log('\n=== Test Suite Complete ===');
   process.exit(0);
@@ -99,6 +90,7 @@ agent.processQueue(); // 3. handleMessage: active → complete
 
 // Test 4: Logging
 console.log('\nTest 4: Logging System');
+console.log('Try creating a log entry: Logger.log("test", "Test log entry", { data: "test" })\n');
 try {
   Logger.log('test', 'Test log entry', { data: 'test' });
   Logger.warn('test', 'Test warning');

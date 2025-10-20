@@ -1,0 +1,2 @@
+- use `tx prompt <mesh> <agent>` to test prompts
+- Read .ai/tx/logs/evidence.jsonl for agentic insights.

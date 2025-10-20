@@ -1,9 +1,0 @@
-{
-  "name": "core",
-  "description": "TX Watch brain - coordinates all meshes",
-  "capabilities": ["search"],
-  "options": {
-    "model": "claude-opus",
-    "output": "clean"
-  }
-}

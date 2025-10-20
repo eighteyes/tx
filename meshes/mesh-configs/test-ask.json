@@ -1,0 +1,6 @@
+{
+  "mesh": "test-ask",
+  "description": "Test ask/answer workflow - asker sends ask to answerer, then reports to core",
+  "agents": ["test/asker", "test/answerer"],
+  "capabilities": ["ask"]
+}

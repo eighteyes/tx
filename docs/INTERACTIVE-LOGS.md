@@ -1,27 +1,37 @@
 # Interactive Log Viewer
 
-The TX system now includes an interactive log viewer that lets you filter logs in real-time using keyboard shortcuts.
+The TX system includes an interactive log viewer that lets you filter logs in real-time using keyboard shortcuts with **toggle-based filtering**.
 
 ## Usage
 
-Start the interactive log viewer:
+Start the interactive log viewer (now the default):
 
 ```bash
-node bin/tx.js logs -i
-# or
-node bin/tx.js logs --interactive
+node bin/tx.js logs
 ```
 
 ## Keyboard Shortcuts
 
-Once the interactive viewer is running, use these keys to filter the log display:
+The viewer uses **toggle filters** - you can turn multiple filters on/off to combine them:
 
-- **F** - File view: Shows only file operations (watcher component)
-- **I** - Injection view: Shows only tmux injections (tmux-injector component)
-- **E** - Event view: Shows only system events (event-bus component)
-- **A** - All view: Shows all logs (no filter)
-- **Q** - Quit: Exit the viewer
+- **f** - Toggle file operations filter (watcher component)
+- **i** - Toggle injections filter (tmux-injector component)
+- **e** - Toggle events filter (event-bus component)
+- **a** - Clear all filters (show all logs)
+- **c** - Clear log files (useful for starting fresh)
+- **q** - Quit: Exit the viewer
 - **Ctrl+C** - Also exits the viewer
+
+## Filter Modes
+
+- **All mode** `[all]`: No filters active - shows everything
+- **Filter mode** `[filtered]`: One or more filters active - shows only matching logs
+
+You can combine filters! For example:
+- Press `f` to see only file operations
+- Press `i` to also see injections (now showing files + injections)
+- Press `e` to also see events (now showing files + injections + events)
+- Press `a` to clear all filters and see everything again
 
 ## Features
 
@@ -71,16 +81,16 @@ Shows everything including:
 
 ## Examples
 
-1. Start the viewer in interactive mode:
+1. Start the viewer (interactive is now default):
    ```bash
-   node bin/tx.js logs -i
+   node bin/tx.js logs
    ```
 
-2. Press `F` to see only file operations
-3. Press `I` to see only tmux injections
-4. Press `E` to see only events
-5. Press `A` to see all logs again
-6. Press `Q` to exit
+2. Press `f` to toggle file operations filter on
+3. Press `i` to also include injections (now showing files + injections)
+4. Press `f` again to turn off files filter (now showing only injections)
+5. Press `a` to clear all filters and see everything
+6. Press `q` to exit
 
 ## Note
 

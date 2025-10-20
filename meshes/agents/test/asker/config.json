@@ -1,0 +1,9 @@
+{
+  "name": "asker",
+  "description": "Test agent that sends an ask to answerer",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}
