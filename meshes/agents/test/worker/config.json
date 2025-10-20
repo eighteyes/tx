@@ -1,0 +1,9 @@
+{
+  "name": "worker",
+  "description": "Creates content, receives feedback from reviewer, and refines until approved",
+  "capabilities": ["ask"],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "mesh": "test-iterative",
+  "description": "Iterative refinement workflow - worker creates content, reviewer provides feedback, worker refines, reviewer approves",
+  "type": "iterative",
+  "agents": ["test/worker", "test/reviewer"],
+  "entry_point": "worker",
+  "completion_agent": "worker",
+  "capabilities": ["ask"],
+  "workflow_topology": "bidirectional"
+}
