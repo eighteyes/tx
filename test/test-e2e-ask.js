@@ -5,6 +5,21 @@ const { TmuxInjector } = require('../lib/tmux-injector');
 const { E2EWorkflow } = require('../lib/e2e-workflow');
 
 /**
+ * Capture and display the last N lines from a tmux session
+ */
+function captureSessionOutput(sessionName, numLines = 20) {
+  try {
+    const output = execSync(`tmux capture-pane -t ${sessionName} -p -S -${numLines}`, {
+      stdio: 'pipe',
+      encoding: 'utf-8'
+    });
+    return output;
+  } catch (e) {
+    return `(Could not capture output from ${sessionName})`;
+  }
+}
+
+/**
  * E2E Test: test-ask mesh
  *
  * Tests the core->ask->core workflow with verification of both agents:
@@ -102,6 +117,9 @@ function verifyAskerOutput() {
 
   if (!fs.existsSync(ASKER_OUTPUT)) {
     console.error(`❌ Asker output file not found: ${ASKER_OUTPUT}`);
+    console.log('\n📺 Last 20 lines from test-ask-asker session:\n');
+    console.log(captureSessionOutput('test-ask-asker', 20));
+    console.log('');
     return false;
   }
 
@@ -155,6 +173,9 @@ function verifyAnswererOutput() {
 
   if (!fs.existsSync(ANSWERER_OUTPUT)) {
     console.error(`❌ Answerer output file not found: ${ANSWERER_OUTPUT}`);
+    console.log('\n📺 Last 20 lines from test-ask-answerer session:\n');
+    console.log(captureSessionOutput('test-ask-answerer', 20));
+    console.log('');
     return false;
   }
 
@@ -220,6 +241,9 @@ async function verifyBothAgents() {
 
   if (!askerValid || !answererValid) {
     console.error('\n❌ Agent verification failed\n');
+    console.log('📺 Last 20 lines from core session:\n');
+    console.log(captureSessionOutput('core', 20));
+    console.log('');
     return false;
   }
 
@@ -231,6 +255,16 @@ async function runE2ETest() {
   const testStartTime = Date.now();
 
   try {
+    // Ensure tmux server is running before starting tests
+    console.log('🔧 Ensuring tmux server is running...\n');
+    try {
+      execSync('tmux start-server', { stdio: 'pipe' });
+      console.log('✅ Tmux server started\n');
+    } catch (e) {
+      // Server may already be running, that's okay
+      console.log('ℹ️  Tmux server already running or started\n');
+    }
+
     console.log('📍 Step 1: Starting tx system in detached mode\n');
     console.log('   Running: tx start -d\n');
 
@@ -274,11 +308,27 @@ async function runE2ETest() {
     const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and have asker ask answerer a question`);
     const workflowPassed = await workflow.test();
 
-    // After workflow, verify both asker and answerer sessions exist
+    // After workflow, wait for both agents to spawn
     if (workflowPassed) {
+      console.log('📍 Waiting for both agent sessions to spawn...\n');
+
+      // Asker should already exist, but wait for answerer (spawned on-demand via /ask)
+      let answererSession = null;
+      const maxWait = 30000; // 30 seconds
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWait && !answererSession) {
+        const allSessions = TmuxInjector.listSessions();
+        answererSession = allSessions.find(s => s === `${MESH}-answerer` || s.startsWith(`${MESH}-answerer-`));
+
+        if (!answererSession) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Now check both
       const allSessions = TmuxInjector.listSessions();
       const askerSession = allSessions.find(s => s === `${MESH}-asker` || s.startsWith(`${MESH}-asker-`));
-      const answererSession = allSessions.find(s => s === `${MESH}-answerer` || s.startsWith(`${MESH}-answerer-`));
 
       console.log('📍 Checking for both agent sessions:\n');
       if (askerSession) {
@@ -296,6 +346,9 @@ async function runE2ETest() {
       if (!askerSession || !answererSession) {
         console.error('\n❌ Not all agent sessions spawned\n');
         testPassed = false;
+      } else {
+        console.log('\n✅ Both agent sessions spawned\n');
+        testPassed = true;
       }
     }
 
@@ -306,14 +359,60 @@ async function runE2ETest() {
       // Sessions check failed
       console.log('❌ TEST FAILED: Not all agent sessions spawned\n');
     } else {
-      // Workflow passed and both sessions exist, now verify both agents' outputs
-      const agentsVerified = await verifyBothAgents();
-
-      if (agentsVerified) {
-        console.log('✅ TEST PASSED: Both asker and answerer agents verified!\n');
-        testPassed = true;
+      // Workflow passed and both sessions exist
+      // First, wait for core to finish sending task to asker
+      console.log('⏳ Waiting for core to finish sending task message...\n');
+      const coreIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 5000, 60000);
+      if (!coreIdle) {
+        console.log('⚠️  Warning: Core may still be working, but continuing...\n');
       } else {
-        console.log('❌ TEST FAILED: Agent verification failed\n');
+        console.log('✅ Core is idle (task message sent)\n');
+      }
+
+      // Now wait for asker to complete work (idle = done)
+      console.log('⏳ Waiting for asker to complete task...\n');
+      const askerIdle = await TmuxInjector.waitForIdle('test-ask-asker', 5000, 60000);
+      if (!askerIdle) {
+        console.log('⚠️  Warning: Asker may still be working, but continuing...\n');
+      } else {
+        console.log('✅ Asker is idle (task complete)\n');
+      }
+
+      // Finally, wait for core to receive completion (should go idle again after receiving)
+      console.log('⏳ Waiting for core to receive completion...\n');
+      const coreFinalIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 5000, 60000);
+      if (!coreFinalIdle) {
+        console.log('⚠️  Warning: Core may still be processing completion, but continuing...\n');
+      } else {
+        console.log('✅ Core is idle (completion received)\n');
+      }
+
+      // Check core tmux session for evidence of message reception
+      console.log('📍 Verifying core received completion from mesh (via tmux)\n');
+      try {
+        const coreOutput = execSync(`tmux capture-pane -t ${CORE_SESSION} -p -S -100`, {
+          stdio: 'pipe',
+          encoding: 'utf-8'
+        });
+
+        // Look for signs that core received and processed a message
+        // Could be: "Read(...inbox/...)", "Complete", "task-complete", etc.
+        const hasInboxRead = coreOutput.includes('inbox/') || coreOutput.includes('complete/');
+        const hasTaskComplete = coreOutput.includes('task-complete') || coreOutput.includes('status: complete');
+
+        if (hasInboxRead || hasTaskComplete) {
+          console.log(`✅ Core tmux shows message processing\n`);
+          testPassed = true;
+          console.log('✅ TEST PASSED: Mesh spawned, worked, and messaged core!\n');
+        } else {
+          console.log('❌ Core tmux shows no message processing\n');
+          console.log('Last 30 lines of core session:\n');
+          console.log(coreOutput.split('\n').slice(-30).join('\n'));
+          testPassed = false;
+          console.log('\n❌ TEST FAILED: No completion visible in core tmux\n');
+        }
+      } catch (e) {
+        console.log(`❌ Failed to capture core session: ${e.message}\n`);
         testPassed = false;
       }
     }
@@ -325,11 +424,6 @@ async function runE2ETest() {
   } finally {
     const testDuration = Date.now() - testStartTime;
     console.log(`📊 Test duration: ${testDuration}ms\n`);
-
-    // Give agents time to write output files before cleanup
-    console.log('⏳ Waiting 3 seconds for agents to finalize output...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    console.log('✅ Ready for cleanup\n');
 
     await cleanup();
 

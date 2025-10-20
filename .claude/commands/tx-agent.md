@@ -15,7 +15,7 @@ Arguments: $ARGUMENTS
 
 ## Context
 
-Read: @`.ai/tx/mesh/$ARGUMENTS[0]/agents/$ARGUMENTS[1]/prompts/prompt.md`
+Read: @`.ai/tx/mesh/<mesh-name>/agents/<agent-name>/prompts/prompt.md`
 
 The prompt file above contains your system-level instructions. You must:
 

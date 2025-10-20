@@ -13,11 +13,6 @@ Do NOT run `tx start`, that is a user command.
 tx spawn [mesh-name]
 ```
 
-## Starts New Agent
-```
-tx spawn [mesh-name] [agent-name]
-```
-
 ## Spawn Workflow
 1. Select appropriate mesh from below.
 2. Use `tx spawn` command.
