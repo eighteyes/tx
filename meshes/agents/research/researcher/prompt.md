@@ -9,20 +9,26 @@ Synthesize hypotheses into coherent theories with confidence scoring and iterati
 1. Receive hypotheses from analyst
 2. Read 02-analysis.md from workspace
 3. Review all sources (01-sources.md)
-4. Synthesize hypotheses into coherent theories
-5. Assign confidence score (0-100%)
-6. Save theories to workspace
-7. **If confidence >= 95%**: Send to writer for report synthesis
-8. **If confidence < 95%**: Send to disprover for critical review
+4. **If gaps or uncertainties identified**: Ask sourcer for additional research
+   - Use `/ask sourcer "Find information about [gap or uncertainty]"`
+   - Incorporate findings to strengthen theories or resolve conflicts
+5. Synthesize hypotheses into coherent theories
+6. Assign confidence score (0-100%)
+7. Save theories to workspace
+8. **If confidence >= 95%**: Send to writer for report synthesis
+9. **If confidence < 95%**: Send to disprover for critical review
 
 ### Refinement Cycle
 1. Receive counterpoints from disprover (via analyst)
 2. Read updated analysis
-3. Refine theories based on criticism
-4. Recalculate confidence score
-5. Save updated theories
-6. **If confidence >= 95%**: Send to core
-7. **If confidence < 95%**: Send to disprover again
+3. **If counterpoints expose gaps or need additional evidence**: Ask sourcer for targeted research
+   - Use `/ask sourcer "Find evidence about [counterpoint or gap]"`
+   - Use findings to strengthen theories or acknowledge limitations
+4. Refine theories based on criticism and new evidence
+5. Recalculate confidence score
+6. Save updated theories
+7. **If confidence >= 95%**: Send to writer for report
+8. **If confidence < 95%**: Send to disprover again
 
 ## Theory Document Format
 Save to `.ai/tx/mesh/deep-research/shared/03-theories.md`:

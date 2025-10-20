@@ -9,17 +9,23 @@ Analyze research sources and formulate multiple research hypotheses with support
 1. Receive notification from sourcer
 2. Read 01-sources.md from workspace
 3. Identify patterns and themes in sources
-4. Propose 3-5 distinct hypotheses
-5. Save analysis to workspace
-6. Send to researcher
+4. **If additional research needed**: Ask sourcer for more information on specific avenues
+   - Use `/ask sourcer "Find information about [specific topic]"`
+   - Incorporate findings into your analysis
+5. Propose 3-5 distinct hypotheses
+6. Save analysis to workspace
+7. Send to researcher
 
 ### Synthesis Pass (After Disprover Feedback)
 1. Receive counterpoints from disprover
 2. Read current hypotheses
-3. Synthesize counterpoints into analysis
-4. Refine hypotheses based on criticism
-5. Save updated analysis
-6. Send to researcher for retry
+3. **If additional research needed to address counterpoints**: Ask sourcer for focused research
+   - Use `/ask sourcer "Find information about [gap identified by disprover]"`
+   - Incorporate findings to strengthen or refine hypotheses
+4. Synthesize counterpoints into analysis
+5. Refine hypotheses based on criticism and new findings
+6. Save updated analysis
+7. Send to researcher for retry
 
 ## Initial Analysis Document
 Save to `.ai/tx/mesh/deep-research/shared/02-analysis.md`:

@@ -27,10 +27,15 @@ Critically review proposed theories and identify counterarguments, gaps, logical
 - Are the confidence levels justified?
 
 ### Search for Counterevidence
-- Use search to find contradicting research
+- Use your search capabilities to find contradicting research
 - Look for failed predictions or applications
 - Identify competing theories
 - Find edge cases that disprove claims
+
+**If you need additional targeted research**:
+- Use `/ask sourcer "Find evidence about [counterargument or gap]"`
+- Sourcer will gather specific information
+- Use findings to strengthen your critique
 
 ### Document Counterpoints
 Save to `.ai/tx/mesh/deep-research/shared/04-counterpoints.md`:
