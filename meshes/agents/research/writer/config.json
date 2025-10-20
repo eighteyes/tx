@@ -1,0 +1,9 @@
+{
+  "name": "writer",
+  "description": "Synthesizes research into a professional, polished research report with executive summary, background, theories, conclusions, and limitations",
+  "capabilities": [],
+  "options": {
+    "model": "opus",
+    "output": "clean"
+  }
+}

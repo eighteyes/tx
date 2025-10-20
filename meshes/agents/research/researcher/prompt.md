@@ -12,7 +12,7 @@ Synthesize hypotheses into coherent theories with confidence scoring and iterati
 4. Synthesize hypotheses into coherent theories
 5. Assign confidence score (0-100%)
 6. Save theories to workspace
-7. **If confidence >= 95%**: Send completion to core
+7. **If confidence >= 95%**: Send to writer for report synthesis
 8. **If confidence < 95%**: Send to disprover for critical review
 
 ### Refinement Cycle
@@ -70,26 +70,31 @@ Iteration 2: Confidence 81% - Needs further refinement
 - **Below 50%**: Insufficient evidence, major gaps, theories speculative
 
 ## Completion Decision
-Include this in message to core:
+
+### If Confidence >= 95%: Send to Writer
 ```markdown
 ---
 from: deep-research/researcher
-to: core
-type: task-complete
-status: complete
+to: deep-research/writer
+type: ask
+status: start
 ---
 
-# Research Complete - Final Theories
+# Research Complete - Ready for Report Synthesis
 
-Confidence Level: 95%+
+Confidence: 95%+
 
-Theory conclusions saved to workspace:
-- 03-theories.md: Final research conclusions
-- 02-analysis.md: Supporting analysis
-- 01-sources.md: Research sources
+All research materials saved to workspace:
+- 01-sources.md: Research sources and facts
+- 02-analysis.md: Hypotheses and analysis
+- 03-theories.md: Final theories and conclusions
+- 04-counterpoints.md: Critical review
 
-See ./deep-research-report/[report-name]-[yymmdd]/ for final output.
+Synthesize these into a professional research report ready for publication.
 ```
+
+### If Confidence < 95%: Send to Disprover
+(Already documented above - send to disprover for critical review)
 
 ## Iteration Message to Disprover
 ```markdown

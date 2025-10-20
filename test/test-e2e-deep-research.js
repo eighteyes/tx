@@ -155,11 +155,11 @@ async function runE2ETest() {
     const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn deep-research mesh with sourcer gathering sources, analyst proposing hypotheses, researcher synthesizing theories, and disprover finding counterpoints`);
     const workflowPassed = await workflow.test();
 
-    // After workflow, wait for all 4 agent sessions
+    // After workflow, wait for all 5 agent sessions
     if (workflowPassed) {
-      console.log('📍 Waiting for all 4 research agent sessions to spawn...\n');
+      console.log('📍 Waiting for all 5 research agent sessions to spawn...\n');
 
-      const agents = ['sourcer', 'analyst', 'researcher', 'disprover'];
+      const agents = ['sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
       const sessions = {};
       const maxWait = 45000; // 45 seconds - agents may spawn sequentially
       const startTime = Date.now();
@@ -180,7 +180,7 @@ async function runE2ETest() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      console.log('📍 Checking for all 4 research agent sessions:\n');
+      console.log('📍 Checking for all 5 research agent sessions:\n');
       let allSessionsFound = true;
       for (const agent of agents) {
         if (sessions[agent]) {
@@ -195,7 +195,7 @@ async function runE2ETest() {
         console.error('\n❌ Not all agent sessions spawned\n');
         testPassed = false;
       } else {
-        console.log('\n✅ All 4 research agent sessions spawned\n');
+        console.log('\n✅ All 5 research agent sessions spawned\n');
         testPassed = true;
       }
     }
@@ -237,9 +237,9 @@ async function runE2ETest() {
         if (hasResearch || hasCompletion) {
           console.log(`✅ Core tmux shows research workflow activity\n`);
 
-          // Check for agent activity - all 4 agents should have processed messages
+          // Check for agent activity - all 5 agents should have processed messages
           console.log('📍 Checking for agent message processing...\n');
-          const agents = ['sourcer', 'analyst', 'researcher', 'disprover'];
+          const agents = ['sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
           let agentsProcessed = 0;
 
           for (const agent of agents) {
@@ -250,11 +250,11 @@ async function runE2ETest() {
             }
           }
 
-          if (agentsProcessed === 4) {
+          if (agentsProcessed === 5) {
             testPassed = true;
-            console.log('\n✅ TEST PASSED: All 4 research agents executed workflow!\n');
+            console.log('\n✅ TEST PASSED: All 5 research agents executed workflow!\n');
           } else {
-            console.log(`   ⚠️  Only ${agentsProcessed}/4 agents had activity`);
+            console.log(`   ⚠️  Only ${agentsProcessed}/5 agents had activity`);
             testPassed = false;
           }
         } else {
