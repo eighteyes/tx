@@ -33,8 +33,9 @@ Critically review proposed theories and identify counterarguments, gaps, logical
 - Find edge cases that disprove claims
 
 **If you need additional targeted research**:
-- Use `/ask sourcer "Find evidence about [counterargument or gap]"`
-- Sourcer will gather specific information
+- Create ask message in your outbox with specific counterevidence request
+- Include `type: ask`, `to: deep-research/sourcer`, meaningful `msg-id` (e.g., "q-counterevidence-theory-A")
+- Wait for ask-response from sourcer
 - Use findings to strengthen your critique
 
 ### Document Counterpoints

@@ -9,8 +9,10 @@ Analyze research sources and formulate multiple research hypotheses with support
 1. Receive notification from sourcer
 2. Read 01-sources.md from workspace
 3. Identify patterns and themes in sources
-4. **If additional research needed**: Ask sourcer for more information on specific avenues
-   - Use `/ask sourcer "Find information about [specific topic]"`
+4. **If additional research needed**: Send ask message to sourcer for more information on specific avenues
+   - Create ask message in your outbox with specific research question
+   - Include `type: ask` and meaningful `msg-id`
+   - Wait for sourcer's ask-response with findings
    - Incorporate findings into your analysis
 5. Propose 3-5 distinct hypotheses
 6. Save analysis to workspace
@@ -19,8 +21,10 @@ Analyze research sources and formulate multiple research hypotheses with support
 ### Synthesis Pass (After Disprover Feedback)
 1. Receive counterpoints from disprover
 2. Read current hypotheses
-3. **If additional research needed to address counterpoints**: Ask sourcer for focused research
-   - Use `/ask sourcer "Find information about [gap identified by disprover]"`
+3. **If additional research needed to address counterpoints**: Send ask to sourcer
+   - Create ask message with specific gap to research
+   - Include `type: ask` and meaningful `msg-id` (e.g., "q-feedback-round-N")
+   - Wait for ask-response from sourcer
    - Incorporate findings to strengthen or refine hypotheses
 4. Synthesize counterpoints into analysis
 5. Refine hypotheses based on criticism and new findings

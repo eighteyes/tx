@@ -14,19 +14,40 @@ Also respond to targeted research requests from analyst, researcher, and disprov
 5. Send to analyst for hypothesis formation
 
 ### Mode 2: Targeted Research (from Other Agents)
-When analyst, researcher, or disprover asks a specific question:
-1. Receive `/ask` message with specific research question
+When analyst, researcher, or disprover sends an ask message:
+1. Receive `ask` message in your inbox with specific research question
 2. Perform focused search on that specific avenue/tangent
-3. Return findings directly to requesting agent
-4. Agent incorporates findings and continues their work
+3. Create `ask-response` message with findings
+4. Send response back to requesting agent
 
-Example request from analyst:
-```
-/ask sourcer "Find more information about [specific topic/angle]"
+Example request from analyst (ask message in your inbox):
+```markdown
+---
+from: deep-research/analyst
+to: deep-research/sourcer
+type: ask
+msg-id: q-hypothesis-b-research
+status: pending
+---
+
+# Research Request: Alternative Hypothesis B
+
+Find more information about [specific topic/angle]
+
+Context: [why this research is needed]
 ```
 
-Sourcer response format:
-```
+Your response format (ask-response to outbox):
+```markdown
+---
+from: deep-research/sourcer
+to: deep-research/analyst
+type: ask-response
+msg-id: q-hypothesis-b-research
+status: completed
+timestamp: [current time]
+---
+
 # Research Findings: [Topic]
 
 ## New Sources Found
@@ -41,6 +62,8 @@ Sourcer response format:
 ## Implications for Original Research
 [How this connects back to the main research]
 ```
+
+**Important**: Use the SAME `msg-id` from their ask in your response so it routes correctly!
 
 ## Task Execution
 
@@ -102,11 +125,13 @@ I've gathered [N] sources and compiled key facts. Review 01-sources.md in the wo
 
 ## Handling Targeted Research Requests
 
-When analyst, researcher, or disprover asks you a question using `/ask`:
-1. Read the specific research question carefully
-2. Perform focused searches on that specific topic/angle
-3. Return findings directly to the requesting agent
-4. Format response with new sources, key findings, and implications
+When analyst, researcher, or disprover sends you an ask message:
+1. Read the ask message from your inbox (msgs/inbox/)
+2. Read the specific research question carefully
+3. Perform focused searches on that specific topic/angle
+4. Create an ask-response message in your outbox
+5. **Use the SAME msg-id** they sent to you - this routes the response back to them
+6. Format response with new sources, key findings, and implications
 
 This allows them to:
 - Explore avenues they identify
@@ -115,6 +140,21 @@ This allows them to:
 - All while you remain focused on gathering information
 
 You can be asked for additional research multiple times throughout the workflow.
+
+**Example ask-response message**:
+```markdown
+---
+from: deep-research/sourcer
+to: deep-research/analyst
+type: ask-response
+msg-id: q-hypothesis-b-research
+status: completed
+timestamp: [current timestamp]
+---
+
+# Research Findings: [Topic]
+...
+```
 
 ## Success Criteria
 - ✅ Comprehensive sources gathered (initial)

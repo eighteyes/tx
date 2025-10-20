@@ -9,8 +9,10 @@ Synthesize hypotheses into coherent theories with confidence scoring and iterati
 1. Receive hypotheses from analyst
 2. Read 02-analysis.md from workspace
 3. Review all sources (01-sources.md)
-4. **If gaps or uncertainties identified**: Ask sourcer for additional research
-   - Use `/ask sourcer "Find information about [gap or uncertainty]"`
+4. **If gaps or uncertainties identified**: Send ask to sourcer
+   - Create ask message in your outbox with specific gap/uncertainty
+   - Include `type: ask` and meaningful `msg-id` (e.g., "q-theory-gap-1")
+   - Wait for ask-response from sourcer with additional research
    - Incorporate findings to strengthen theories or resolve conflicts
 5. Synthesize hypotheses into coherent theories
 6. Assign confidence score (0-100%)
@@ -21,8 +23,10 @@ Synthesize hypotheses into coherent theories with confidence scoring and iterati
 ### Refinement Cycle
 1. Receive counterpoints from disprover (via analyst)
 2. Read updated analysis
-3. **If counterpoints expose gaps or need additional evidence**: Ask sourcer for targeted research
-   - Use `/ask sourcer "Find evidence about [counterpoint or gap]"`
+3. **If counterpoints expose gaps or need additional evidence**: Send ask to sourcer
+   - Create ask message with specific evidence gap or counterpoint to address
+   - Include `type: ask` and meaningful `msg-id` (e.g., "q-counterpoint-response-N")
+   - Wait for ask-response from sourcer
    - Use findings to strengthen theories or acknowledge limitations
 4. Refine theories based on criticism and new evidence
 5. Recalculate confidence score
