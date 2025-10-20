@@ -282,3 +282,66 @@ See `test/test-e2e-ping-pong.js` for complete working example.
 
 See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for design patterns.
 ```
+
+## Iterative Workflow Testing
+
+For meshes with feedback loops and multi-iteration workflows:
+
+### Key Differences
+
+1. **Longer Message Chains**: Multiple back-and-forth exchanges extend test duration
+2. **Version State in Content**: Track progress via message content ("Version 1", "Version 2"), not files
+3. **Conditional Logic**: Agents respond based on message content inspection
+4. **Higher Timeout**: Iterative workflows need more time (180+ seconds)
+
+### Test Pattern
+
+```javascript
+// Iterative workflows need even more patience
+const TEST_TIMEOUT = 180000; // 3 minutes
+
+// Instruction can be high-level (agent figures out iterations)
+const instruction = "spawn a test-iterative mesh and have worker and reviewer iterate";
+
+// Wait for all agent sessions
+await waitForSession(`${MESH}-worker`);
+await waitForSession(`${MESH}-reviewer`);
+
+// Validate multiple iterations occurred
+const workerOutput = execSync('tmux capture-pane -t test-iterative-worker -p');
+const hasV1 = workerOutput.includes('Version 1');
+const hasV2 = workerOutput.includes('Version 2');
+const hasApproval = workerOutput.includes('approved');
+```
+
+### Real Example: test-iterative
+
+See `test/test-e2e-iterative.js` for complete working example.
+
+**Key points:**
+- Simplified instruction to "iterate" - let agent figure out the workflow
+- Both agent sessions spawned before validation
+- Multiple idle waits: core → worker iteration → core completion
+- Validates via message content (Version 1, Version 2, approval)
+- 180 second timeout sufficient for 2 iteration cycles
+
+### New Learnings from Iterative Testing
+
+1. **Instruction Clarity**: Simple high-level instructions work better than detailed step-by-step for iterative workflows
+
+2. **Version Markers Work Well**: Put "Version 1", "Version 2" directly in message content - simpler than state machines
+
+3. **Conditional Response Based on Content**: Agents can inspect message content and respond accordingly (e.g., check version and respond with approval or rejection)
+
+4. **Pseudo-Antagonistic Pattern**: Agents naturally implement approval gates when told "reject on v1, approve on v2"
+
+5. **Message Content is State**: Don't overcomplicate - message body tracks progress better than external state files
+
+6. **Simple Feedback Signals Work**: "approved", "needs revision", "rejected" - Claude understands these without elaboration
+
+7. **Two Iterations Enough**: 2 cycles (submit → feedback → revise → approve) proves the pattern
+
+8. **Agents Understand Approval Logic**: When instructed to implement approval gates or QA checks, Claude does it correctly
+
+See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for iterative refinement pattern details.
+```

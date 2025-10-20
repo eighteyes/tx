@@ -172,6 +172,112 @@ Core → Distributor
        → Core
 ```
 
+## Iterative Refinement with Feedback Loops
+
+Multiple iterations where one agent requests changes and approves based on versions.
+
+### Use Case
+- Approval workflows (draft → feedback → revision → approval)
+- Quality gates (QA reject → fix → QA approve)
+- Collaborative refinement
+- Multi-pass processing
+
+### Pattern
+
+```
+Worker submits Version 1
+  ↓ Reviewer: "needs revision"
+  ↓ Worker: creates Version 2
+  ↓ Reviewer: "approved"
+  ↓ Worker: reports completion
+```
+
+### Config
+
+```json
+{
+  "mesh": "iterative-workflow",
+  "type": "iterative",
+  "agents": ["workflow/worker", "workflow/reviewer"],
+  "entry_point": "worker",
+  "completion_agent": "worker",
+  "workflow_topology": "bidirectional"
+}
+```
+
+### Key Implementation Details
+
+1. **Version Markers in Message Content**
+   - Include "Version 1", "Version 2", etc. in the actual message text
+   - Agents read content to determine which version they're reviewing
+   - Simpler than complex state tracking
+
+2. **Conditional Response Logic**
+   - Reviewer reads version number from message
+   - If Version 1 → send "needs revision" feedback
+   - If Version 2 → send "approved" response
+   - Agents respond based on message content, not external state
+
+3. **Simple Feedback Signals**
+   - Don't overcomplicate feedback
+   - "needs revision" or "approved" works fine
+   - Claude understands these simple approval signals
+
+4. **Pseudo-Antagonistic Pattern**
+   - Reviewer intentionally rejects on first pass
+   - Accepts on second pass (or after certain conditions)
+   - Great for testing approval workflows
+   - Can implement QA gates, validation checks, etc.
+
+### Full Workflow Example
+
+```markdown
+# Message 1: Worker submits v1
+---
+from: iterative/worker
+to: iterative/reviewer
+type: ask
+---
+# Work Version 1
+Initial draft for your review.
+
+# Message 2: Reviewer feedback
+---
+from: iterative/reviewer
+to: iterative/worker
+type: ask-response
+---
+# Feedback on Version 1
+This needs more work. Please revise and resubmit.
+
+# Message 3: Worker submits v2
+---
+from: iterative/worker
+to: iterative/reviewer
+type: ask
+---
+# Work Version 2
+Revised version based on your feedback.
+
+# Message 4: Reviewer approval
+---
+from: iterative/reviewer
+to: iterative/worker
+type: ask-response
+---
+# Feedback on Version 2
+Looks good! Approved.
+
+# Message 5: Worker completion
+---
+from: iterative/worker
+to: core
+type: task-complete
+---
+# Iteration Complete
+Completed after 2 iterations.
+```
+
 ## Sequential Pipeline
 
 Agents process data in sequence, each transforming it.

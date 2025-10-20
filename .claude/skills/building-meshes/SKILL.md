@@ -327,6 +327,44 @@ Core → Pinger → Ponger → Pinger → Core
 
 See: [multi-agent-patterns.md](references/multi-agent-patterns.md) for more examples.
 
+## Example: Iterative Refinement with Feedback (Worker-Reviewer)
+
+Pattern for workflows that require multiple iterations with approval gates:
+
+### Mesh Config
+```json
+{
+  "mesh": "test-iterative",
+  "type": "iterative",
+  "agents": ["test/worker", "test/reviewer"],
+  "entry_point": "worker",
+  "completion_agent": "worker",
+  "workflow_topology": "bidirectional"
+}
+```
+
+### Agent Flow
+```
+Core → Worker (v1)
+       ↓ sends to reviewer
+              Reviewer → "needs revision"
+       ↓ receives feedback
+       ↓ creates v2
+       ↓ sends to reviewer
+              Reviewer → "approved"
+       ↓ receives approval
+       → Core (completion)
+```
+
+### Key Patterns
+- **Version markers in content**: Put "Version 1" or "Version 2" in message body
+- **Conditional responses**: Reviewer checks version and responds accordingly
+- **Simple feedback signals**: Just "approved" or "needs revision" works fine
+- **Message content as state**: Use message text to track progress, not complex state
+- **Pseudo-antagonistic logic**: Agents can implement approval gates or QA checks
+
+See: [multi-agent-patterns.md](references/multi-agent-patterns.md) for more examples.
+
 ## Next Steps
 
 - Test with `tx spawn {mesh-name}`
