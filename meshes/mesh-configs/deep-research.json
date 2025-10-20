@@ -1,0 +1,10 @@
+{
+  "mesh": "deep-research",
+  "description": "Multi-agent deep research workflow: sourcer gathers sources, analyst proposes hypotheses, researcher builds theories, disprover critiques in iterative loop until 95% confidence",
+  "type": "iterative",
+  "agents": ["research/sourcer", "research/analyst", "research/researcher", "research/disprover"],
+  "entry_point": "sourcer",
+  "completion_agent": "researcher",
+  "capabilities": ["search", "ask"],
+  "workflow_topology": "sequential-with-feedback"
+}

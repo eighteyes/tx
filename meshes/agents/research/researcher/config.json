@@ -1,0 +1,9 @@
+{
+  "name": "researcher",
+  "description": "Synthesizes hypotheses into coherent research theories with confidence scoring",
+  "capabilities": ["ask", "search"],
+  "options": {
+    "model": "opus",
+    "output": "clean"
+  }
+}
