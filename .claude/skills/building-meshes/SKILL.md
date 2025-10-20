@@ -290,9 +290,47 @@ tx spawn hello-world
 
 That's it! You've created a mesh.
 
+## Example: Bidirectional Agent Communication (Ping-Pong)
+
+A more complex pattern where two agents communicate with each other:
+
+### Mesh Config
+```json
+{
+  "mesh": "test-ping-pong",
+  "description": "Two agents exchange ping-pong messages",
+  "agents": ["test/pinger", "test/ponger"],
+  "entry_point": "pinger",
+  "completion_agent": "pinger",
+  "workflow_topology": "bidirectional"
+}
+```
+
+### Agent Flow
+```
+Core → Pinger → Ponger → Pinger → Core
+       ↓ sends ping 1
+              ↓ responds pong 1
+       ↓ receives pong 1
+       ↓ sends ping 2
+              ↓ responds pong 2
+       ↓ receives pong 2
+       ↓ reports completion
+                            ↓ receives result
+```
+
+### Key Patterns
+- **Simple agent prompts**: Clear step-by-step instructions work better than complex workflows
+- **Message-based flow**: Each exchange creates a message file with frontmatter
+- **Automatic routing**: System routes messages based on frontmatter (from/to/type/status)
+- **Idle sequencing**: Use tmux idle detection to wait for agent handoffs
+
+See: [multi-agent-patterns.md](references/multi-agent-patterns.md) for more examples.
+
 ## Next Steps
 
 - Test with `tx spawn {mesh-name}`
 - Write E2E tests using the [testing-meshes](../testing-meshes/SKILL.md) skill
 - Add more agents to the mesh
 - Experiment with multi-agent workflows
+- Check out [multi-agent-patterns.md](references/multi-agent-patterns.md) for advanced topologies

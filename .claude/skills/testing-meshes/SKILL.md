@@ -223,3 +223,62 @@ async function test() {
 
 test();
 ```
+
+## Multi-Agent Mesh Testing
+
+For meshes with 2+ agents communicating with each other (like ping-pong):
+
+### Key Differences from Single-Agent Tests
+
+1. **Multiple Sessions Spawned**: Need to wait for all agent sessions, not just entry point
+2. **Sequencing Critical**: Must validate proper idle sequencing
+3. **Longer Timeouts**: Multi-agent exchanges take longer
+4. **Message Validation**: Validate via tmux output, not filesystem
+
+### Test Pattern
+
+```javascript
+// Step 1: Start system
+execSync('tmux start-server');
+spawn('tx', ['start', '-d']);
+
+// Step 2: Instruction to core
+// "spawn a test-ping-pong mesh and have agents exchange messages"
+
+// Step 3: Wait for ALL agent sessions
+const agents = ['pinger', 'ponger'];
+for (const agent of agents) {
+  await waitForSession(`${MESH}-${agent}`, 30000);
+}
+
+// Step 4: Idle sequencing - validate proper flow
+const coreIdle1 = await TmuxInjector.waitForIdle('core', 5000, 60000);
+const agentIdle = await TmuxInjector.waitForIdle(`${MESH}-pinger`, 5000, 60000);
+const coreIdle2 = await TmuxInjector.waitForIdle('core', 5000, 60000);
+
+// Step 5: Validate via tmux output
+const coreOutput = execSync('tmux capture-pane -t core -p -S -100');
+const hasMessaging = coreOutput.includes('outbox/') || coreOutput.includes('routing');
+```
+
+### Real Example: test-ping-pong
+
+See `test/test-e2e-ping-pong.js` for complete working example.
+
+**Key points from implementation:**
+- 180 second timeout (agents exchanging messages take time)
+- Polling for both agent sessions with 30 second wait
+- Exact name matching AND suffix variant matching
+- Tmux idle detection between sequential steps
+- Core tmux output validation (look for `outbox/`, `message`, `routing`)
+
+### Learnings from Ping-Pong Testing
+
+1. **Agent Prompts Matter**: Simple, step-by-step prompts → successful exchanges
+2. **Message Routing is Automatic**: System handles routing if frontmatter is correct
+3. **Tmux is Source of Truth**: Validate via tmux output, not filesystem
+4. **Idle Detection Reliable**: Use it to sequence handoffs
+5. **Verbose Logging Helps**: Check agent prompts and output during debug
+
+See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for design patterns.
+```
