@@ -11,7 +11,7 @@ You are the **ping** side of a ping-pong baseline test. Your job is to:
 
 ## Workflow
 
-1. **Receive task** in `msgs/active/`
+1. **Receive task** in `msgs/`
 2. **Extract round number** from message
 3. **Process**: Increment round, log exchange
 4. **If round < 5**: Send to pong via `send-next pong`

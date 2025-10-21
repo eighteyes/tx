@@ -16,5 +16,5 @@ tx spawn [mesh-name]
 ## Spawn Workflow
 1. Select appropriate mesh from below.
 2. Use `tx spawn` command.
-3. Write message with frontmatter to your outbox.
+3. Write message with frontmatter to your msgs folder.
 4. STOP. Wait very patiently for a response. STOP. 

@@ -11,7 +11,7 @@ Your job is to:
 
 ## Workflow
 
-1. **Read task** from `.ai/tx/mesh/test-echo/agents/echo/msgs/active/`
+1. **Read task** from `.ai/tx/mesh/test-echo/agents/echo/msgs/`
 2. **Echo back** the content with added timestamp
 3. **Save to output** at `.ai/tx/mesh/test-echo/shared/output/`
 4. **Mark complete** when done

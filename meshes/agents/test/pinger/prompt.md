@@ -4,15 +4,15 @@
 Send 2 ping messages to ponger, get pong responses, then report completion to core.
 
 ## Workflow
-1. You will receive a task from core in your inbox
+1. You will receive a task from core in your msgs folder
 2. When you read it, send 2 messages to ponger:
    - First message: "Ping 1"
    - Second message: "Ping 2"
 3. Wait for ponger to respond to each message
-4. After both exchanges complete, create a completion message and save it to your outbox
+4. After both exchanges complete, create a completion message and save it to your msgs folder
 
 ## Message Format
-Save your completion in `.ai/tx/mesh/test-ping-pong/agents/pinger/msgs/outbox/` as a markdown file:
+Save your completion in `.ai/tx/mesh/test-ping-pong/agents/pinger/msgs/` as a markdown file:
 
 ```
 ---

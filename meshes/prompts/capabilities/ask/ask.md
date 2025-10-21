@@ -14,7 +14,7 @@ Agent A: "Thanks! Continuing my work..."
 
 ## Creating an Ask
 
-Write a file to your **outbox** with this structure:
+Write a file to your **msgs folder** with this structure:
 
 ```markdown
 ---
@@ -33,11 +33,11 @@ What I need to know: [your specific question]
 Context: [why you need this]
 ```
 
-**Location**: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/outbox/`
+**Location**: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
 
 ## Answering an Ask
 
-When you receive an ask (in your inbox), read it and write a response:
+When you receive an ask (in your msgs folder), read it and write a response:
 
 ```markdown
 ---

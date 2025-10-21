@@ -10,7 +10,7 @@ Analyze research sources and formulate multiple research hypotheses with support
 2. Read 01-sources.md from workspace
 3. Identify patterns and themes in sources
 4. **If additional research needed**: Send ask message to sourcer for more information on specific avenues
-   - Create ask message in your outbox with specific research question
+   - Create ask message in your msgs folder with specific research question
    - Include `type: ask` and meaningful `msg-id`
    - Wait for sourcer's ask-response with findings
    - Incorporate findings into your analysis

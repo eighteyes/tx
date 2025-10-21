@@ -33,7 +33,7 @@ Critically review proposed theories and identify counterarguments, gaps, logical
 - Find edge cases that disprove claims
 
 **If you need additional targeted research**:
-- Create ask message in your outbox with specific counterevidence request
+- Create ask message in your msgs folder with specific counterevidence request
 - Include `type: ask`, `to: deep-research/sourcer`, meaningful `msg-id` (e.g., "q-counterevidence-theory-A")
 - Wait for ask-response from sourcer
 - Use findings to strengthen your critique

@@ -205,68 +205,40 @@ async function runE2ETest() {
         console.log('⏳ Waiting for agents to process self-messages (90 seconds)...\n');
         await new Promise(resolve => setTimeout(resolve, 90000));
 
-        // Check for evidence of self-messaging in all message directories
+        // Check for evidence of self-messaging in simplified msgs/ directory
         console.log('📍 Verifying self-improver sent messages to itself\n');
-        const completePath = path.join(process.cwd(), '.ai/tx/mesh/test-recursive/agents/self-improver/msgs/complete');
-        const inboxPath = path.join(process.cwd(), '.ai/tx/mesh/test-recursive/agents/self-improver/msgs/inbox');
-        const nextPath = path.join(process.cwd(), '.ai/tx/mesh/test-recursive/agents/self-improver/msgs/next');
-        const activePath = path.join(process.cwd(), '.ai/tx/mesh/test-recursive/agents/self-improver/msgs/active');
+        const msgsPath = path.join(process.cwd(), '.ai/tx/mesh/test-recursive/agents/self-improver/msgs');
 
         try {
           let selfMessageCount = 0;
 
-          // Check complete directory for self-messages
-          if (fs.existsSync(completePath)) {
-            const completeFiles = fs.readdirSync(completePath);
-            const completeSelfMessages = completeFiles.filter(f => {
-              const content = fs.readFileSync(path.join(completePath, f), 'utf-8');
+          // Check msgs directory for self-messages (simplified queue with single folder)
+          if (fs.existsSync(msgsPath)) {
+            const msgFiles = fs.readdirSync(msgsPath).filter(f => f.endsWith('.md'));
+
+            const selfMessages = msgFiles.filter(f => {
+              const content = fs.readFileSync(path.join(msgsPath, f), 'utf-8');
               // Look for messages sent to self (from self-improver to self-improver)
               return content.includes('to: test-recursive/self-improver');
             });
-            selfMessageCount += completeSelfMessages.length;
-            console.log(`   Found ${completeSelfMessages.length} self-addressed messages in complete/\n`);
-          }
 
-          // Check next directory for self-messages (in queue)
-          if (fs.existsSync(nextPath)) {
-            const nextFiles = fs.readdirSync(nextPath);
-            const nextSelfMessages = nextFiles.filter(f => {
-              const content = fs.readFileSync(path.join(nextPath, f), 'utf-8');
-              return content.includes('to: test-recursive/self-improver');
-            });
-            selfMessageCount += nextSelfMessages.length;
-            console.log(`   Found ${nextSelfMessages.length} self-addressed messages in next/\n`);
-          }
+            selfMessageCount = selfMessages.length;
+            console.log(`   Found ${selfMessages.length} self-addressed messages in msgs/\n`);
 
-          // Check active directory for self-messages (currently processing)
-          if (fs.existsSync(activePath)) {
-            const activeFiles = fs.readdirSync(activePath);
-            const activeSelfMessages = activeFiles.filter(f => {
-              const content = fs.readFileSync(path.join(activePath, f), 'utf-8');
-              return content.includes('to: test-recursive/self-improver');
-            });
-            selfMessageCount += activeSelfMessages.length;
-            console.log(`   Found ${activeSelfMessages.length} self-addressed messages in active/\n`);
-          }
-
-          // Check inbox directory for received self-messages
-          if (fs.existsSync(inboxPath)) {
-            const inboxFiles = fs.readdirSync(inboxPath);
-            const inboxSelfMessages = inboxFiles.filter(f => {
-              const content = fs.readFileSync(path.join(inboxPath, f), 'utf-8');
-              // Look for messages from self (from self-improver)
-              return content.includes('from: test-recursive/self-improver');
-            });
-            console.log(`   Found ${inboxSelfMessages.length} messages from self in inbox/\n`);
+            if (selfMessages.length > 0) {
+              console.log(`   Self-message files: ${selfMessages.join(', ')}\n`);
+            }
+          } else {
+            console.log(`   ⚠️  msgs/ directory does not exist: ${msgsPath}\n`);
           }
 
           // Also check for completion message to core
-          const coreNextPath = path.join(process.cwd(), '.ai/tx/mesh/core/agents/core/msgs/next');
+          const coreMsgsPath = path.join(process.cwd(), '.ai/tx/mesh/core/agents/core/msgs');
           let hasCompletion = false;
-          if (fs.existsSync(coreNextPath)) {
-            const coreFiles = fs.readdirSync(coreNextPath);
+          if (fs.existsSync(coreMsgsPath)) {
+            const coreFiles = fs.readdirSync(coreMsgsPath).filter(f => f.endsWith('.md'));
             const completionMsg = coreFiles.find(f => {
-              const content = fs.readFileSync(path.join(coreNextPath, f), 'utf-8');
+              const content = fs.readFileSync(path.join(coreMsgsPath, f), 'utf-8');
               return content.includes('from: test-recursive/self-improver') &&
                      content.includes('type: task-complete');
             });

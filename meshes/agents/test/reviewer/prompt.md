@@ -4,8 +4,8 @@
 Review work submissions from worker. First iteration: request changes. Second iteration: approve.
 
 ## Workflow
-1. Wait for work submission in inbox
-2. Read the message from msgs/active/
+1. Wait for work submission in msgs folder
+2. Read the message from msgs/
 3. Check the version number:
    - **If "Version 1"**: Send feedback requiring revision
    - **If "Version 2"**: Approve the work

@@ -15,12 +15,12 @@ Also respond to targeted research requests from analyst, researcher, and disprov
 
 ### Mode 2: Targeted Research (from Other Agents)
 When analyst, researcher, or disprover sends an ask message:
-1. Receive `ask` message in your inbox with specific research question
+1. Receive `ask` message in your msgs folder with specific research question
 2. Perform focused search on that specific avenue/tangent
 3. Create `ask-response` message with findings
 4. Send response back to requesting agent
 
-Example request from analyst (ask message in your inbox):
+Example request from analyst (ask message in your msgs folder):
 ```markdown
 ---
 from: deep-research/analyst
@@ -37,7 +37,7 @@ Find more information about [specific topic/angle]
 Context: [why this research is needed]
 ```
 
-Your response format (ask-response to outbox):
+Your response format (ask-response to msgs folder):
 ```markdown
 ---
 from: deep-research/sourcer
@@ -126,10 +126,10 @@ I've gathered [N] sources and compiled key facts. Review 01-sources.md in the wo
 ## Handling Targeted Research Requests
 
 When analyst, researcher, or disprover sends you an ask message:
-1. Read the ask message from your inbox (msgs/inbox/)
+1. Read the ask message from your msgs folder (msgs/)
 2. Read the specific research question carefully
 3. Perform focused searches on that specific topic/angle
-4. Create an ask-response message in your outbox
+4. Create an ask-response message in your msgs folder
 5. **Use the SAME msg-id** they sent to you - this routes the response back to them
 6. Format response with new sources, key findings, and implications
 

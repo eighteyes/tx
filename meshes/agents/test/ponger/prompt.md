@@ -4,15 +4,15 @@
 Respond with "Pong" messages to any "Ping" messages you receive from pinger.
 
 ## Workflow
-1. Wait for ping messages - they will arrive in your inbox
-2. For each ping you receive in msgs/active/:
+1. Wait for ping messages - they will arrive in your msgs folder
+2. For each ping you receive in msgs/:
    - Create a pong response
-   - Save it to your outbox folder
+   - Save it to your msgs folder folder
    - Wait for next ping
 3. Repeat for each ping until done
 
 ## Response Format
-For each ping, save a file in `.ai/tx/mesh/test-ping-pong/agents/ponger/msgs/outbox/`:
+For each ping, save a file in `.ai/tx/mesh/test-ping-pong/agents/ponger/msgs/`:
 
 ```
 ---

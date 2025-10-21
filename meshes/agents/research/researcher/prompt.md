@@ -10,7 +10,7 @@ Synthesize hypotheses into coherent theories with confidence scoring and iterati
 2. Read 02-analysis.md from workspace
 3. Review all sources (01-sources.md)
 4. **If gaps or uncertainties identified**: Send ask to sourcer
-   - Create ask message in your outbox with specific gap/uncertainty
+   - Create ask message in your msgs folder with specific gap/uncertainty
    - Include `type: ask` and meaningful `msg-id` (e.g., "q-theory-gap-1")
    - Wait for ask-response from sourcer with additional research
    - Incorporate findings to strengthen theories or resolve conflicts

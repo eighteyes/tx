@@ -4,7 +4,7 @@
 Create content, get feedback from reviewer, and iterate until approved.
 
 ## Workflow
-1. Receive task from core in your inbox
+1. Receive task from core in your msgs folder
 2. Create initial version of content
 3. Send version 1 to reviewer asking for feedback
 4. Wait for reviewer response

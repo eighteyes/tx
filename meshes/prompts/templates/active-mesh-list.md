@@ -19,7 +19,7 @@ If no agents are listed above, there are no other active meshes or agents to ask
    - `type: ask`
    - `msg-id: q-something-meaningful`
 
-2. Save it to your `msgs/outbox/` directory
+2. Save it to your `msgs/` directory
 
 3. The ask will be delivered fast-track to the other agent
 

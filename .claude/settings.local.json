@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(mkdir:*)",
+      "Read(//Users/god/.claude/output-styles/**)",
+      "Bash(node bin/tx.js spawn:*)",
+      "Bash(cat:*)",
+      "Bash(tmux list-sessions:*)",
+      "Bash(tmux capture-pane:*)",
+      "Bash(node -c lib/watcher.js)",
+      "Bash(node -c lib/tmux-injector.js)",
+      "Bash(node -c lib/commands/spawn.js)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "outputStyle": "blank"
+}
