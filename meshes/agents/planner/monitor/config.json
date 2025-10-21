@@ -1,0 +1,9 @@
+{
+  "name": "monitor",
+  "description": "Conflict monitoring module - detects issues, conflicts, and determines if plan needs revision or is ready",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

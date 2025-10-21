@@ -1,0 +1,9 @@
+{
+  "name": "decomposer",
+  "description": "Task decomposition module - breaks complex tasks into subtasks and identifies dependencies",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

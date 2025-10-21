@@ -1,0 +1,9 @@
+{
+  "name": "evaluator",
+  "description": "State evaluation module - scores quality, feasibility, and risk of predicted outcomes",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

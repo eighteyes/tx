@@ -1,0 +1,9 @@
+{
+  "name": "coordinator",
+  "description": "Task coordination module - assembles final executable plan and delivers to core",
+  "capabilities": [],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}
