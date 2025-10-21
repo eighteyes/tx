@@ -134,7 +134,33 @@ await TmuxInjector.waitForIdle('test-ask-asker', 5000, 60000);
 await TmuxInjector.waitForIdle('core', 5000, 60000);
 ```
 
-### 5. Validate via Tmux
+### 5. Message Format with Timestamps
+
+**All agent messages must include timestamps at the beginning in `yymmdd-hhmm` format:**
+
+```markdown
+---
+from: deep-research/analyst
+to: deep-research/sourcer
+type: ask
+msg-id: q-hypothesis-b
+status: pending
+---
+
+251020-1415
+
+# Research Request: Topic
+
+Find additional information about...
+```
+
+**Timestamp placement**: After frontmatter block, before the message body content.
+
+**Format**: `yymmdd-hhmm` (e.g., `251020-1415` for Oct 20, 2025 at 2:15 PM)
+
+**Rationale**: Timestamps help with debugging, tracing workflow timing, validating message sequencing, and understanding when operations occur.
+
+### 6. Validate via Tmux
 
 Check tmux output for evidence of completion:
 
@@ -152,7 +178,7 @@ if (hasInboxRead || hasTaskComplete) {
 }
 ```
 
-### 6. Cleanup
+### 7. Cleanup
 
 Always cleanup sessions:
 
@@ -279,6 +305,7 @@ See `test/test-e2e-ping-pong.js` for complete working example.
 3. **Tmux is Source of Truth**: Validate via tmux output, not filesystem
 4. **Idle Detection Reliable**: Use it to sequence handoffs
 5. **Verbose Logging Helps**: Check agent prompts and output during debug
+6. **Timestamps Essential**: All messages must include `yymmdd-hhmm` timestamp after frontmatter
 
 See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for design patterns.
 ```
@@ -342,6 +369,8 @@ See `test/test-e2e-iterative.js` for complete working example.
 7. **Two Iterations Enough**: 2 cycles (submit → feedback → revise → approve) proves the pattern
 
 8. **Agents Understand Approval Logic**: When instructed to implement approval gates or QA checks, Claude does it correctly
+
+9. **Timestamps Track Workflow Timing**: Include `yymmdd-hhmm` timestamp in all messages to trace iteration timing and debugging
 
 See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for iterative refinement pattern details.
 ```
