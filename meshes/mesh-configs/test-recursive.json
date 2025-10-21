@@ -1,0 +1,10 @@
+{
+  "mesh": "test-recursive",
+  "description": "Test mesh for self-improving agent that sends messages to itself iteratively",
+  "type": "ephemeral",
+  "agents": ["test/self-improver"],
+  "entry_point": "self-improver",
+  "completion_agent": "self-improver",
+  "capabilities": ["ask"],
+  "workflow_topology": "self-referential"
+}
