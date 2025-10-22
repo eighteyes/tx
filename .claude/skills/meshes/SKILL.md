@@ -1,18 +1,15 @@
 ---
 name: meshes
-description: Comprehensive guide for building, testing, and debugging meshes in the tx system. Covers mesh architecture, agent design, prompt templates, E2E testing, and validation strategies. Use when creating new meshes, defining agent roles, writing tests, or debugging multi-agent workflows.
+description: Comprehensive guide for building, testing, and debugging meshes in the tx system. Covers mesh architecture, agent design, prompt templates, E2E testing, validation strategies, and Human-In-The-Loop workflows. Use when creating new meshes, defining agent roles, writing tests, or debugging multi-agent workflows.
 ---
 
 # Meshes: Building & Testing
 
-This skill provides comprehensive guidance for creating, testing, and debugging meshes and agent configurations.
+This skill provides comprehensive guidance for creating, testing, and debugging meshes and agent configurations in the tx system.
 
-## Part 1: Building Meshes
+## Core Concepts
 
-### Core Concepts
-
-#### What is a Mesh?
-
+### What is a Mesh?
 A **mesh** is a named collection of agents that work together to accomplish a goal. It defines:
 - Which agents participate
 - How they're organized
@@ -21,164 +18,49 @@ A **mesh** is a named collection of agents that work together to accomplish a go
 
 Example: `test-ask` mesh has an `asker` and `answerer` agent that work together.
 
-#### What is an Agent?
-
-An **agent** is a Claude instance running in a tmux session. It:
+### What is an Agent?
+An **agent** is a Claude instance running in a tmux session that:
 - Receives tasks via message files
 - Processes work and generates output
 - Sends responses via message files
 - Communicates through message passing only
 
 ### Directory Structure
-
 ```
 meshes/
-├── mesh-configs/
-│   ├── core.json              # Core orchestrator mesh
-│   ├── test-ask.json          # Example: multi-agent mesh
-│   └── test-echo.json         # Example: single-agent mesh
-│
-└── agents/
-    ├── core/
-    │   ├── config.json        # Core agent config
-    │   └── prompt.md          # Core agent prompt
-    │
-    ├── test/
-    │   ├── asker/
-    │   │   ├── config.json
-    │   │   └── prompt.md
-    │   ├── answerer/
-    │   │   ├── config.json
-    │   │   └── prompt.md
-    │   └── echo/
-    │       ├── config.json
-    │       └── prompt.md
-    │
-    └── research/
-        ├── analyst/
-        ├── sourcer/
-        └── writer/
+├── mesh-configs/         # Mesh configuration files
+│   └── {mesh-name}.json
+└── agents/              # Agent prompts and configs
+    └── {category}/
+        └── {agent-name}/
+            ├── config.json
+            └── prompt.md
 ```
 
-### Building a New Mesh
+## Part 1: Building Meshes
 
-#### 1. Define Mesh Configuration
+### Quick Start
 
-File: `meshes/mesh-configs/your-mesh.json`
+1. **Plan Your Mesh** - Define name, agents, flow, entry/completion points
+2. **Create Mesh Config** - `meshes/mesh-configs/{mesh-name}.json`
+3. **Create Agent Configs** - `meshes/agents/{category}/{agent}/config.json`
+4. **Write Agent Prompts** - `meshes/agents/{category}/{agent}/prompt.md`
 
-```json
-{
-  "mesh": "your-mesh",
-  "type": "ephemeral",
-  "description": "What this mesh does",
-  "agents": ["category/agent1", "category/agent2"],
-  "workflow_topology": "sequential",
-  "entry_point": "agent1",
-  "completion_agent": "agent2"
-}
-```
+See: [mesh-config-reference.md](references/mesh-config-reference.md) and [agent-config-reference.md](references/agent-config-reference.md)
 
-#### 2. Create Agent Directory
-
-```bash
-mkdir -p meshes/agents/category/agent-name
-```
-
-#### 3. Configure Agent
-
-File: `meshes/agents/category/agent-name/config.json`
-
-```json
-{
-  "name": "agent-name",
-  "description": "What this agent does",
-  "capabilities": ["capability1", "capability2"],
-  "options": {
-    "model": "sonnet",
-    "output": "clean"
-  }
-}
-```
-
-#### 4. Write Agent Prompts
-
-File: `meshes/agents/category/agent-name/prompt.md`
-
-##### Template Variables
-
-The PromptBuilder automatically injects template variables into agent prompts:
-- `{{ mesh }}` - The mesh instance ID (e.g., `test-echo-abc123`)
-- `{{ agent }}` - The agent name
-
-This allows dynamic path generation without hardcoding:
-```markdown
-Write message to `.ai/tx/mesh/{{ mesh }}/agents/{{ agent }}/msgs/`
-```
-
-##### Lightweight Test Agent Prompts
-
-**Test agents should be SUPER LIGHTWEIGHT** - only Role and Workflow sections:
-
-```markdown
-# Role
-You are an echo test agent. When you receive a task, echo it back to core.
-
-# Workflow
-1. Read the incoming task message
-2. Write a response message with:
-   - `to: core/core`
-   - `type: task-complete`
-   - Include the original task content in your response
-```
-
-**For test agents, DO NOT include:**
-- Examples
-- Output formats
-- Detailed instructions
-- Multiple sections
-- Complex logic
-
-##### Production Agent Prompts
-
-Production agents can have full structure:
-
-```markdown
-# Agent Name
-
-## Your Role
-You are... [what you do]
-
-## Workflow
-1. Read task from inbox
-2. Process the task
-3. Send response to outbox
-
-## Output Format
-Save to outbox with frontmatter...
-```
-
-### Core Building Principles
+### Core Principles
 
 #### 1. Message-Based Communication
+- Agents communicate **only** via message files in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+- Messages are **moved** (not copied) between agents based on frontmatter routing
+- System injects messages via `@filepath` attachment to Claude
 
-Agents communicate **only** via message files in directories:
-- `msgs/` - Main message directory
-- Messages include frontmatter for routing
+#### 2. Reactive Agents
+- No "START NOW" in prompts - agents wait for messages
+- Process when message is injected via `@filepath`
+- Write response to `msgs/` with proper frontmatter
 
-**Never** use shared files or direct communication.
-
-#### 2. Agents Are Reactive
-
-Agents **wait for messages**, they don't start work spontaneously:
-- No "START NOW" in prompts
-- Wait for task in inbox
-- Process when ready
-- Send response to outbox
-
-#### 3. Frontmatter Metadata
-
-Every message file starts with YAML frontmatter:
-
+#### 3. Frontmatter Routing
 ```markdown
 ---
 from: mesh/agent
@@ -189,264 +71,229 @@ timestamp: 2025-10-20T00:00:00Z
 ---
 ```
 
-This metadata routes messages and tracks workflow state.
+#### 4. Template Variables
+- `{{ mesh }}` - The mesh instance ID (e.g., `test-echo-abc123`)
+- `{{ agent }}` - The agent name
+
+Use these for dynamic path generation in prompts.
+
+### Agent Prompt Guidelines
+
+#### Test Agents - SUPER LIGHTWEIGHT
+```markdown
+# Role
+You are an echo test agent. When you receive a task, echo it back to core.
+
+# Workflow
+1. Read the incoming task message
+2. Write a response message with:
+   - `to: core/core`
+   - `type: task-complete`
+   - Include the original task content
+```
+
+**NO examples, output formats, or complex logic for test agents!**
+
+#### Production Agents
+Can have full structure with Role, Workflow, Output Format sections.
+
+See: [prompt-templates.md](references/prompt-templates.md)
+
+### Common Patterns
+
+- **Single Agent**: One agent handles everything → See simple examples
+- **Multi-Agent Sequential**: Agents in sequence → See [workflows.md](references/workflows.md)
+- **Bidirectional**: Two-way agent communication → See [multi-agent-patterns.md](references/multi-agent-patterns.md)
+- **Iterative**: Feedback loops with approval gates → See [multi-agent-patterns.md](references/multi-agent-patterns.md)
+- **HITL**: Human-in-the-loop Q&A → See [hitl-testing.md](references/hitl-testing.md)
 
 ## Part 2: Testing Meshes
 
-### 🔑 Key Testing Principle: Session-Based File Validation
+### 🔑 Key Principle: Session-Based Validation
 
-**Check the session to verify files were injected and created. The tmux session is the source of truth.**
-
-Tests must validate by monitoring what Claude actually does in the session:
-- Watch for `Read()` calls showing Claude reading message files
-- Look for `Write()` calls showing Claude creating messages
-- Check for file paths in session output (e.g., `/msgs/task-123.md`)
-- Verify file operations completed before checking filesystem
-- The session shows intent AND execution - both matter
+**The tmux session is the source of truth.** Validate by checking:
+- `Read()` calls showing Claude reading messages
+- `Write()` calls showing Claude creating messages
+- File paths mentioned in session output
+- THEN verify files actually exist on disk
 
 ```javascript
-// Session-based validation - check what Claude actually did
+// Check session first
 const sessionOutput = execSync(`tmux capture-pane -t ${session} -p -S -100`);
-
-// Look for evidence of file injection/creation in the session
-const readMessages = sessionOutput.includes('Read(') && sessionOutput.includes('/msgs/');
 const wroteMessages = sessionOutput.includes('Write(') && sessionOutput.includes('/msgs/');
-const filePathsMentioned = sessionOutput.match(/\/msgs\/[^\/\s]+\.md/g) || [];
 
-// THEN verify those files actually exist
-const msgsDir = `.ai/tx/mesh/${meshInstance}/agents/${agentName}/msgs`;
-const actualFiles = fs.existsSync(msgsDir) ?
-  fs.readdirSync(msgsDir).filter(f => f.endsWith('.md')) : [];
-
-console.log('Session shows Read operations:', readMessages);
-console.log('Session shows Write operations:', wroteMessages);
-console.log('Files mentioned in session:', filePathsMentioned);
-console.log('Files actually on disk:', actualFiles);
+// Then verify files
+const actualFiles = fs.readdirSync(msgsDir).filter(f => f.endsWith('.md'));
 ```
 
 ### ⚠️ CRITICAL: Injection Rule
 
-**`TmuxInjector.injectText()` can ONLY be used with the 'core' session.**
+**`TmuxInjector.injectText()` can ONLY be used with 'core' session**
 
-- ✅ **ALLOWED**: `TmuxInjector.injectText('core', 'your instruction here')`
-- ❌ **FORBIDDEN**: `TmuxInjector.injectText('mesh-agent', 'any text')`
-- ❌ **FORBIDDEN**: `TmuxInjector.injectText(agentSession, 'any text')`
+- ✅ CORRECT: `TmuxInjector.injectText('core', 'spawn test-echo mesh')`
+- ❌ WRONG: `TmuxInjector.injectText('mesh-agent', 'any text')`
 
-The 'core' session represents the user. Only users can type commands. Mesh agents communicate exclusively through the message routing system - they never receive direct text injection.
+Mesh agents communicate via messages only, never direct injection.
 
 ### Core Testing Principles
 
-#### 1. Minimal Test Injection
+1. **Minimal Injection** - Only inject natural language to core, let Claude orchestrate
+2. **Dynamic Validation** - Check what actually happened, not hardcoded patterns
+3. **Idle = Done** - Use idle state, not arbitrary timeouts
+4. **Proper Sequencing** - Wait for each step to complete
 
-**Tests should inject ONLY the initial natural language instruction to core, nothing else. Let Claude do ALL the work.**
+### Test Architecture & Separation of Responsibilities
 
-```javascript
-// ✅ CORRECT: Single natural language instruction to CORE ONLY
-TmuxInjector.injectText(coreSession, 'spawn a test-echo mesh and send it a simple echo task');
+#### E2EWorkflow Class
+The `E2EWorkflow` class handles ALL spawning and workflow testing:
+- Injects natural language to core
+- Sends Enter keys at proper times
+- Waits for idle states between operations
+- Checks for mesh session creation with UUID patterns
+- Validates message flow through the system
 
-// ❌ WRONG: Creating files directly
-fs.writeFileSync('.ai/tx/mesh/test-echo/msgs/task.md', taskContent);  // NEVER DO THIS!
+#### Individual Test Files
+Test files (test-e2e-echo.js, test-e2e-ask.js) should ONLY:
+1. Set up the system (start tx)
+2. Create and call E2EWorkflow
+3. Clean up afterwards
 
-// ❌ WRONG: Injecting to agent sessions
-TmuxInjector.injectText(agentSession, 'Execute your task...');  // NEVER DO THIS!
-```
+**DO NOT duplicate E2EWorkflow logic in test files!**
 
-#### 2. Dynamic Message Validation
-
-**Validate by checking what files are actually written, not hardcoded patterns.**
-
-```javascript
-// ✅ CORRECT: Dynamically check what files were written
-const coreMsgsDir = '.ai/tx/mesh/core/agents/core/msgs';
-const files = fs.existsSync(coreMsgsDir) ? fs.readdirSync(coreMsgsDir) : [];
-const hasMessages = files.filter(f => f.endsWith('.md')).length > 0;
-
-// Check tmux output to see what Claude actually did
-const coreOutput = execSync(`tmux capture-pane -t core -p -S -100`);
-const wroteMessage = coreOutput.includes('Write(') && coreOutput.includes('/msgs/');
-```
-
-#### 3. Idle = Done
-
-**Use session idle state to know when work is complete, not arbitrary timeouts.**
+### Quick Test Template
 
 ```javascript
-// ✅ CORRECT: Wait for idle state
-const isIdle = await TmuxInjector.waitForIdle(session, 5000, 60000);
-
-// ❌ WRONG: Fixed wait time
-await new Promise(resolve => setTimeout(resolve, 30000));
-```
-
-### Quick Test Example
-
-```javascript
-const { execSync, spawn } = require('child_process');
-const { TmuxInjector } = require('../lib/tmux-injector');
-const fs = require('fs');
-
-const MESH = 'test-ask';
-const CORE = 'core';
+const { E2EWorkflow } = require('../lib/e2e-workflow');
 
 async function test() {
-  try {
-    // Start tmux
-    execSync('tmux start-server', { stdio: 'pipe' });
+  // Start system
+  spawn('tx', ['start', '-d']);
+  await waitForSession('core');
+  await TmuxInjector.claudeReadyCheck('core', 30000);
 
-    // Start tx system
-    spawn('tx', ['start', '-d']);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  // Use E2EWorkflow for ALL spawning/testing
+  const workflow = new E2EWorkflow('test-echo', 'echo',
+    'spawn a test-echo mesh and send task');
+  const passed = await workflow.test();
 
-    // Wait for core
-    while (!TmuxInjector.listSessions().includes(CORE)) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    // Wait for Claude ready
-    await TmuxInjector.claudeReadyCheck(CORE, 30000);
-
-    // Inject instruction (simulating human typing)
-    TmuxInjector.injectText(CORE, `spawn a ${MESH} mesh and do work`);
-
-    // Wait for work
-    await TmuxInjector.waitForIdle(CORE, 5000, 60000);
-
-    // SESSION-BASED VALIDATION: Check session FIRST
-    const coreOutput = execSync(`tmux capture-pane -t ${CORE} -p -S -100`, { encoding: 'utf-8' });
-
-    // 1. Check for file operations in the session
-    const sessionShowsRead = coreOutput.includes('Read(') && coreOutput.includes('/msgs/');
-    const sessionShowsWrite = coreOutput.includes('Write(') && coreOutput.includes('/msgs/');
-
-    // 2. THEN verify those files actually exist on disk
-    const coreMsgs = `.ai/tx/mesh/core/agents/core/msgs`;
-    const filesOnDisk = fs.existsSync(coreMsgs) ?
-      fs.readdirSync(coreMsgs).filter(f => f.endsWith('.md')) : [];
-
-    // Success requires session evidence AND files on disk
-    const success = sessionShowsWrite && filesOnDisk.length > 0;
-    console.log(success ? '✅ PASSED' : '❌ FAILED');
-    process.exit(success ? 0 : 1);
-  } finally {
-    execSync('tx stop', { stdio: 'pipe' }).catch(() => {});
-  }
-}
-
-test();
-```
-
-## Common Patterns
-
-### Single Agent Mesh (Simple)
-
-One agent handles everything:
-
-```json
-{
-  "mesh": "simple-task",
-  "agents": ["test/echo"],
-  "entry_point": "echo",
-  "completion_agent": "echo"
+  // Clean up
+  await cleanup();
+  return passed;
 }
 ```
 
-**Flow**: core → echo → core
+See: [helpers.md](references/helpers.md) for utility functions
 
-### Multi-Agent Mesh (Sequential)
+### Message Timestamps
 
-Multiple agents in sequence:
+All agent messages should include timestamps after frontmatter:
+```markdown
+---
+from: mesh/agent
+to: recipient
+---
 
-```json
-{
-  "mesh": "test-ask",
-  "agents": ["test/asker", "test/answerer"],
-  "entry_point": "asker",
-  "completion_agent": "asker"
-}
+251020-1415
+
+# Message Content
 ```
 
-**Flow**: core → asker → answerer → asker → core
+Format: `yymmdd-hhmm`
 
-### Research Mesh (Complex)
+### Testing Patterns
 
-Multiple specialized agents:
+- **Basic Testing** → [patterns.md](references/patterns.md)
+- **Multi-Agent Testing** → [multi-agent-testing.md](references/multi-agent-testing.md)
+- **Iterative Testing** → [iterative-testing.md](references/iterative-testing.md)
+- **HITL Testing** → [hitl-testing.md](references/hitl-testing.md)
+- **Debugging Guide** → [debugging.md](references/debugging.md)
+- **Testing Checklist** → [checklist.md](references/checklist.md)
 
-```json
-{
-  "mesh": "deep-research",
-  "agents": ["research/analyst", "research/sourcer", "research/writer"],
-  "workflow_topology": "sequential",
-  "entry_point": "analyst",
-  "completion_agent": "writer"
-}
-```
+## Debugging
 
-**Flow**: core → analyst → sourcer → writer → core
-
-## Debugging Tips
-
-### Check Session Output
-
-Always check what Claude actually did in the session:
-
+### Quick Commands
 ```bash
 # View session output
-tmux capture-pane -t session-name -p
-
-# Check last 100 lines
 tmux capture-pane -t session-name -p -S -100
-```
 
-### Monitor Message Flow
-
-Track messages through the system:
-
-```bash
-# Watch message directories
+# Monitor messages
 watch -n 1 'find .ai/tx/mesh -name "*.md" | sort'
 
-# Check specific agent's messages
-ls -la .ai/tx/mesh/mesh-name/agents/agent-name/msgs/
+# Check agent messages
+ls -la .ai/tx/mesh/{mesh}/agents/{agent}/msgs/
 ```
 
 ### Common Issues
+1. **Agent not receiving**: Check `to:` field in frontmatter
+2. **Test timeouts**: Agent still processing - increase wait time
+3. **EPIPE errors**: Normal on process termination
+4. **Session not found**: Check UUID pattern matching
+5. **HITL issues**: Need explicit wait instructions
 
-1. **Agent not receiving messages**: Check routing in frontmatter (`to:` field)
-2. **Test failing at Step 3**: Usually timing issue - agent still processing
-3. **EPIPE errors**: Normal when processes terminate, handled gracefully
-4. **Sessions not found**: Check UUID pattern matching for mesh instances
+See: [debugging.md](references/debugging.md) for detailed troubleshooting
+
+## Complete Example
+
+### Simple Hello World Mesh
+
+**1. Mesh Config** (`meshes/mesh-configs/hello-world.json`):
+```json
+{
+  "mesh": "hello-world",
+  "agents": ["tutorial/greeter"],
+  "entry_point": "greeter",
+  "completion_agent": "greeter"
+}
+```
+
+**2. Agent Config** (`meshes/agents/tutorial/greeter/config.json`):
+```json
+{
+  "name": "greeter",
+  "options": { "model": "haiku", "output": "clean" }
+}
+```
+
+**3. Agent Prompt** (`meshes/agents/tutorial/greeter/prompt.md`):
+```markdown
+# Role
+You greet users warmly.
+
+# Workflow
+1. Read incoming message
+2. Send greeting to core with `to: core/core` and `type: task-complete`
+```
+
+**4. Test**: `tx spawn hello-world`
 
 ## Resources
 
 ### Building References
-- Agent configuration options
-- Capability templates
-- Prompt design patterns
+- [mesh-config-reference.md](references/mesh-config-reference.md) - Mesh configuration spec
+- [agent-config-reference.md](references/agent-config-reference.md) - Agent configuration spec
+- [prompt-templates.md](references/prompt-templates.md) - Agent prompt examples
+- [workflows.md](references/workflows.md) - Common topologies
+- [multi-agent-patterns.md](references/multi-agent-patterns.md) - Advanced patterns
 
 ### Testing References
-- **helpers.md** - Reusable utility functions
-- **patterns.md** - Advanced patterns
-- **debugging.md** - Common issues and solutions
-- **checklist.md** - Pre-test, during-test, and post-test checklists
-
-### Specialized Testing
-- **multi-agent-testing.md** - Testing multi-agent communication
-- **iterative-testing.md** - Testing iterative refinement workflows
-- **hitl-testing.md** - Testing Human-In-The-Loop workflows
+- [helpers.md](references/helpers.md) - Utility functions
+- [patterns.md](references/patterns.md) - Testing patterns
+- [debugging.md](references/debugging.md) - Troubleshooting
+- [checklist.md](references/checklist.md) - Test checklists
+- [multi-agent-testing.md](references/multi-agent-testing.md) - Multi-agent tests
+- [iterative-testing.md](references/iterative-testing.md) - Iterative workflows
+- [hitl-testing.md](references/hitl-testing.md) - Human-in-the-loop
 
 ## Key Takeaways
 
-### For Building:
-1. Keep test agent prompts super lightweight (Role + Workflow only)
-2. Use template variables (`{{ mesh }}`, `{{ agent }}`) for dynamic paths
-3. Message-based communication only
-4. Agents are reactive, not proactive
+### Building
+- Keep test agents lightweight (Role + Workflow only)
+- Use template variables for dynamic paths
+- Message-based communication only
+- Agents are reactive, not proactive
 
-### For Testing:
-1. Only inject text to core session
-2. Let Claude handle all orchestration
-3. Validate via session output first, then files
-4. Use idle state to detect completion
-5. Clean state between tests
-
-This merged approach ensures you understand both how to build meshes correctly and how to validate they work as expected.
+### Testing
+- Only inject to core session
+- Validate via session output first
+- Use idle state for completion
+- Dynamic validation over hardcoded patterns

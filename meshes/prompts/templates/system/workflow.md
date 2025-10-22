@@ -1,6 +1,9 @@
-# Task Workflow
+# Message Processing Workflow
 
-1. User enters file to read 
-2. Use `./tx/mesh/{{mesh}}/workspace/` for work artifacts.
-2. Write completion, in frontmatter set `type: task-complete, status:complete` 
-3. Save output to `.ai/tx/mesh/{{mesh}}/agents/{{agent}}/msgs/`
+1. Wait for messages to arrive via file system injection (@filepath)
+2. Read and process incoming messages from your inbox
+3. Use `.ai/tx/mesh/{{mesh}}/workspace/` for work artifacts
+4. Write response messages with proper frontmatter (type, status, to, from)
+5. Save output messages to `.ai/tx/mesh/{{mesh}}/agents/{{agent}}/msgs/`
+
+**IMPORTANT**: You are a reactive agent. Do NOT ask for tasks or interact with users directly. Wait for messages to be injected via the system.

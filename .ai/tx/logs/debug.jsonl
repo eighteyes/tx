@@ -1,532 +1,3 @@
-{"timestamp":"2025-10-22T18:07:58.020Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:08:06.330Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:08:06.330Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:08:06.332Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:08:06.333Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:08:06.335Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:08:06.338Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:08:06.340Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:08:06.377Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:08:06.444Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:08:06.448Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:08:06.453Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:08:06.462Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:08:06.467Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:08:06.472Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:08:08.237Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:08:08.246Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":8}
-{"timestamp":"2025-10-22T18:08:08.251Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:08:08.489Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":2017}
-{"timestamp":"2025-10-22T18:08:08.491Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:08:08.493Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:08:10.002Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:08:10.003Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:08:10.900Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1015,"totalWaitTime":2650}
-{"timestamp":"2025-10-22T18:08:10.903Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:08:10.905Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1}
-{"timestamp":"2025-10-22T18:08:10.905Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:08:13.517Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:08:13.518Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:08:15.533Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:08:15.533Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221803-prompt.md"}
-{"timestamp":"2025-10-22T18:08:15.534Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:08:17.041Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:08:17.048Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:08:17.050Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:08:17.054Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:08:25.997Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:08:26.606Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:08:27.111Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:08:35.530Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:08:35.534Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-e03c7f/echo"}
-{"timestamp":"2025-10-22T18:08:35.540Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-e03c7f-echo","mesh":"test-echo-e03c7f","agent":"echo"}
-{"timestamp":"2025-10-22T18:08:35.545Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-e03c7f-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:08:35.552Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-e03c7f-echo"}
-{"timestamp":"2025-10-22T18:08:37.067Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-e03c7f-echo","waitTime":1515}
-{"timestamp":"2025-10-22T18:08:37.070Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-e03c7f"}
-{"timestamp":"2025-10-22T18:08:37.073Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-e03c7f/echo"}
-{"timestamp":"2025-10-22T18:08:38.588Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-e03c7f-echo"}
-{"timestamp":"2025-10-22T18:08:38.590Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:08:42.098Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-e03c7f-echo"}
-{"timestamp":"2025-10-22T18:08:42.099Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:08:42.195Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:08:44.124Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-e03c7f","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:08:44.128Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-e03c7f","agent":"echo","filepath":".ai/tx/mesh/test-echo-e03c7f/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:08:45.641Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-e03c7f echo","session":"test-echo-e03c7f-echo"}
-{"timestamp":"2025-10-22T18:08:45.661Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:08:45.665Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-e03c7f","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:08:45.671Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-e03c7f","agent":"echo","sessionName":"test-echo-e03c7f-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:08:56.982Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-echo-test.md"}
-{"timestamp":"2025-10-22T18:08:56.990Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:08:58.505Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-e03c7f/echo"}
-{"timestamp":"2025-10-22T18:09:03.247Z","level":"info","component":"watcher","message":"New agent message detected: test-echo-e03c7f/echo - task-complete-echo-task-001.md"}
-{"timestamp":"2025-10-22T18:09:03.248Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:09:04.756Z","level":"info","component":"queue","message":"Routed: test-echo-e03c7f/echo → core/core"}
-{"timestamp":"2025-10-22T18:09:12.433Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:09:12.434Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:09:12.435Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:09:12.437Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:09:12.439Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:09:12.441Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:09:12.442Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:09:12.942Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:09:12.955Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-e03c7f-echo"}
-{"timestamp":"2025-10-22T18:09:12.966Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:09:38.995Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:09:38.998Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:09:39.000Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:09:39.003Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:09:39.005Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:09:39.009Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:09:39.011Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:09:39.056Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:09:39.115Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:09:39.134Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:09:39.140Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:09:39.155Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:09:39.163Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:09:39.172Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:09:40.693Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1521}
-{"timestamp":"2025-10-22T18:09:40.695Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:09:40.698Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:09:42.210Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:09:42.213Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:09:45.723Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:09:45.730Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:09:47.747Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:09:47.750Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221808-prompt.md"}
-{"timestamp":"2025-10-22T18:09:47.754Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:09:49.267Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:09:49.275Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:09:49.276Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:09:49.276Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:13:33.751Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:13:33.756Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-5a5566/echo"}
-{"timestamp":"2025-10-22T18:13:33.762Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-5a5566-echo","mesh":"test-echo-5a5566","agent":"echo"}
-{"timestamp":"2025-10-22T18:13:33.765Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-5a5566-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:13:33.769Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-5a5566-echo"}
-{"timestamp":"2025-10-22T18:13:35.790Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-5a5566-echo","waitTime":2020}
-{"timestamp":"2025-10-22T18:13:35.791Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-5a5566"}
-{"timestamp":"2025-10-22T18:13:35.794Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-5a5566/echo"}
-{"timestamp":"2025-10-22T18:13:37.301Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-5a5566-echo"}
-{"timestamp":"2025-10-22T18:13:37.302Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:13:40.810Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-5a5566-echo"}
-{"timestamp":"2025-10-22T18:13:40.811Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:13:42.816Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-5a5566","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:13:42.817Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-5a5566","agent":"echo","filepath":".ai/tx/mesh/test-echo-5a5566/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:13:44.322Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-5a5566 echo","session":"test-echo-5a5566-echo"}
-{"timestamp":"2025-10-22T18:13:44.328Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:13:44.330Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-5a5566","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:13:44.332Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-5a5566","agent":"echo","sessionName":"test-echo-5a5566-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:13:59.996Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-echo-test.md"}
-{"timestamp":"2025-10-22T18:13:59.997Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:14:01.505Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-5a5566/echo"}
-{"timestamp":"2025-10-22T18:14:08.111Z","level":"info","component":"watcher","message":"New agent message detected: test-echo-5a5566/echo - task-echo-test-response.md"}
-{"timestamp":"2025-10-22T18:14:08.112Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:14:09.620Z","level":"info","component":"queue","message":"Routed: test-echo-5a5566/echo → core/core"}
-{"timestamp":"2025-10-22T18:15:01.420Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:15:01.422Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:15:01.424Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:15:01.424Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:15:01.425Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:15:01.426Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:15:01.426Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:15:01.930Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:15:01.936Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-5a5566-echo"}
-{"timestamp":"2025-10-22T18:15:01.942Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:15:09.282Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:15:09.283Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:15:09.284Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:15:09.285Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:15:09.285Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:15:09.286Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:15:09.287Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:15:09.304Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:15:09.389Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:15:09.392Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:15:09.394Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:15:09.401Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:15:09.403Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:15:09.406Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:15:10.919Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1513}
-{"timestamp":"2025-10-22T18:15:10.921Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:15:10.921Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:15:11.238Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:15:11.751Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":514}
-{"timestamp":"2025-10-22T18:15:11.752Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:15:12.427Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:15:12.428Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:15:13.171Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1010,"totalWaitTime":1419}
-{"timestamp":"2025-10-22T18:15:13.174Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:15:13.176Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":2}
-{"timestamp":"2025-10-22T18:15:13.177Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:15:15.934Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:15:15.935Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:15:17.947Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:15:17.948Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221809-prompt.md"}
-{"timestamp":"2025-10-22T18:15:17.949Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:15:19.454Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:15:19.456Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:15:19.456Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:15:19.457Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:15:28.226Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:15:28.831Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:15:40.144Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:15:40.148Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-24d6dd/echo"}
-{"timestamp":"2025-10-22T18:15:40.151Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-24d6dd-echo","mesh":"test-echo-24d6dd","agent":"echo"}
-{"timestamp":"2025-10-22T18:15:40.154Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-24d6dd-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:15:40.159Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-24d6dd-echo"}
-{"timestamp":"2025-10-22T18:15:41.671Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-24d6dd-echo","waitTime":1511}
-{"timestamp":"2025-10-22T18:15:41.672Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-24d6dd"}
-{"timestamp":"2025-10-22T18:15:41.673Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-24d6dd/echo"}
-{"timestamp":"2025-10-22T18:15:43.177Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-24d6dd-echo"}
-{"timestamp":"2025-10-22T18:15:43.178Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:15:46.687Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-24d6dd-echo"}
-{"timestamp":"2025-10-22T18:15:46.688Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:15:48.693Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-24d6dd","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:15:48.694Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-24d6dd","agent":"echo","filepath":".ai/tx/mesh/test-echo-24d6dd/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:15:50.199Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-24d6dd echo","session":"test-echo-24d6dd-echo"}
-{"timestamp":"2025-10-22T18:15:50.202Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:15:50.203Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-24d6dd","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:15:50.204Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-24d6dd","agent":"echo","sessionName":"test-echo-24d6dd-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:15:58.941Z","level":"info","component":"watcher","message":"New agent message detected: core/core - echo-task-001.md"}
-{"timestamp":"2025-10-22T18:15:58.942Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:16:00.450Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-24d6dd/echo"}
-{"timestamp":"2025-10-22T18:16:04.516Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:16:04.517Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:16:04.518Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:16:04.519Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:16:04.519Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:16:04.520Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:16:04.521Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:16:05.022Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:16:05.026Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-24d6dd-echo"}
-{"timestamp":"2025-10-22T18:16:05.033Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:19:53.674Z","level":"info","component":"stop","message":"System stopped","sessionCount":0,"stateFilesCleared":0}
-{"timestamp":"2025-10-22T18:19:55.806Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:19:55.810Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:19:55.810Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:19:55.811Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:19:55.812Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:19:55.814Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:19:55.817Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:19:55.855Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:19:55.924Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:19:55.932Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:19:55.936Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:19:55.951Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:19:55.955Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:19:55.959Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:19:57.720Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:19:57.722Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":2}
-{"timestamp":"2025-10-22T18:19:57.723Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:19:57.975Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":2016}
-{"timestamp":"2025-10-22T18:19:57.976Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:19:57.977Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:19:59.483Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:19:59.488Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:20:00.379Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1023,"totalWaitTime":2656}
-{"timestamp":"2025-10-22T18:20:00.382Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:20:00.385Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":3}
-{"timestamp":"2025-10-22T18:20:00.387Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:20:03.003Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:20:03.004Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:20:05.026Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:20:05.028Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221815-prompt.md"}
-{"timestamp":"2025-10-22T18:20:05.030Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:20:06.536Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:20:06.538Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:20:06.539Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:20:06.540Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:20:15.420Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:20:16.025Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:20:29.274Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:20:29.277Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-e35b3d/echo"}
-{"timestamp":"2025-10-22T18:20:29.280Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-e35b3d-echo","mesh":"test-echo-e35b3d","agent":"echo"}
-{"timestamp":"2025-10-22T18:20:29.283Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-e35b3d-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:20:29.287Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-e35b3d-echo"}
-{"timestamp":"2025-10-22T18:20:30.801Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-e35b3d-echo","waitTime":1513}
-{"timestamp":"2025-10-22T18:20:30.802Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-e35b3d"}
-{"timestamp":"2025-10-22T18:20:30.803Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-e35b3d/echo"}
-{"timestamp":"2025-10-22T18:20:32.307Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-e35b3d-echo"}
-{"timestamp":"2025-10-22T18:20:32.308Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:20:35.816Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-e35b3d-echo"}
-{"timestamp":"2025-10-22T18:20:35.817Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:20:37.821Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-e35b3d","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:20:37.822Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-e35b3d","agent":"echo","filepath":".ai/tx/mesh/test-echo-e35b3d/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:20:39.328Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-e35b3d echo","session":"test-echo-e35b3d-echo"}
-{"timestamp":"2025-10-22T18:20:39.343Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:20:39.349Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-e35b3d","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:20:39.355Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-e35b3d","agent":"echo","sessionName":"test-echo-e35b3d-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:25:52.359Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:25:52.362Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-e35b3d-echo"}
-{"timestamp":"2025-10-22T18:25:52.366Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:25:54.454Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:25:54.455Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:25:54.456Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:25:54.457Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:25:54.457Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:25:54.458Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:25:54.459Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:25:54.478Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:25:54.561Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:25:54.564Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:25:54.566Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:25:54.573Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:25:54.575Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:25:54.579Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:25:56.093Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1515}
-{"timestamp":"2025-10-22T18:25:56.096Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:25:56.098Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:25:56.404Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:25:56.912Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":507}
-{"timestamp":"2025-10-22T18:25:56.913Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:25:57.605Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:25:57.608Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:25:58.334Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1012,"totalWaitTime":1421}
-{"timestamp":"2025-10-22T18:25:58.338Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:25:58.340Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":3}
-{"timestamp":"2025-10-22T18:25:58.341Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:26:01.116Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:26:01.118Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:26:03.130Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:26:03.132Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221820-prompt.md"}
-{"timestamp":"2025-10-22T18:26:03.133Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:26:04.638Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:26:04.641Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:26:04.642Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:26:04.643Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:26:13.368Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:26:13.972Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:26:22.065Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:26:22.070Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-50d19c/echo"}
-{"timestamp":"2025-10-22T18:26:22.074Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-50d19c-echo","mesh":"test-echo-50d19c","agent":"echo"}
-{"timestamp":"2025-10-22T18:26:22.078Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-50d19c-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:26:22.083Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-50d19c-echo"}
-{"timestamp":"2025-10-22T18:26:23.595Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-50d19c-echo","waitTime":1512}
-{"timestamp":"2025-10-22T18:26:23.597Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-50d19c"}
-{"timestamp":"2025-10-22T18:26:23.598Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-50d19c/echo"}
-{"timestamp":"2025-10-22T18:26:25.103Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-50d19c-echo"}
-{"timestamp":"2025-10-22T18:26:25.104Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:26:28.613Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-50d19c-echo"}
-{"timestamp":"2025-10-22T18:26:28.614Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:26:30.620Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-50d19c","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:26:30.621Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-50d19c","agent":"echo","filepath":".ai/tx/mesh/test-echo-50d19c/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:26:32.126Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-50d19c echo","session":"test-echo-50d19c-echo"}
-{"timestamp":"2025-10-22T18:26:32.130Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:26:32.131Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-50d19c","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:26:32.133Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-50d19c","agent":"echo","sessionName":"test-echo-50d19c-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:26:41.659Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-echo-test.md"}
-{"timestamp":"2025-10-22T18:26:41.662Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:26:43.171Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-50d19c/echo"}
-{"timestamp":"2025-10-22T18:26:50.043Z","level":"info","component":"watcher","message":"New agent message detected: test-echo-50d19c/echo - task-echo-test-complete.md"}
-{"timestamp":"2025-10-22T18:26:50.045Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:26:51.552Z","level":"info","component":"queue","message":"Routed: test-echo-50d19c/echo → core/core"}
-{"timestamp":"2025-10-22T18:26:51.681Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:26:51.682Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:26:51.684Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:26:51.685Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:26:51.686Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:26:51.688Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:26:51.688Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:26:52.187Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:26:52.192Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-50d19c-echo"}
-{"timestamp":"2025-10-22T18:26:52.201Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:50:44.567Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:50:44.569Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:50:44.570Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:50:44.572Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:50:44.573Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:50:44.575Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:50:44.576Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:50:44.601Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:50:44.678Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:50:44.683Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:50:44.686Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:50:44.694Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:50:44.698Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:50:44.702Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:50:46.219Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1517}
-{"timestamp":"2025-10-22T18:50:46.222Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:50:46.224Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:50:46.538Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:50:47.048Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":510}
-{"timestamp":"2025-10-22T18:50:47.050Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:50:47.732Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:50:47.733Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:50:48.475Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1012,"totalWaitTime":1425}
-{"timestamp":"2025-10-22T18:50:48.478Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:50:48.481Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":3}
-{"timestamp":"2025-10-22T18:50:48.484Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:50:51.244Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:50:51.245Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:50:53.257Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:50:53.259Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221826-prompt.md"}
-{"timestamp":"2025-10-22T18:50:53.260Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:50:54.766Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:50:54.769Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:50:54.770Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:50:54.772Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:51:03.510Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:51:04.516Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:51:14.300Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:51:14.305Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-4f1642/echo"}
-{"timestamp":"2025-10-22T18:51:14.309Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-4f1642-echo","mesh":"test-echo-4f1642","agent":"echo"}
-{"timestamp":"2025-10-22T18:51:14.314Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-4f1642-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:51:14.319Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-4f1642-echo"}
-{"timestamp":"2025-10-22T18:51:15.832Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-4f1642-echo","waitTime":1514}
-{"timestamp":"2025-10-22T18:51:15.833Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4f1642"}
-{"timestamp":"2025-10-22T18:51:15.835Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4f1642/echo"}
-{"timestamp":"2025-10-22T18:51:17.340Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-4f1642-echo"}
-{"timestamp":"2025-10-22T18:51:17.341Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:51:20.849Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-4f1642-echo"}
-{"timestamp":"2025-10-22T18:51:20.850Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:51:22.855Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-4f1642","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:51:22.857Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-4f1642","agent":"echo","filepath":".ai/tx/mesh/test-echo-4f1642/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:51:24.361Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-4f1642 echo","session":"test-echo-4f1642-echo"}
-{"timestamp":"2025-10-22T18:51:24.367Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:51:24.370Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-4f1642","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:51:24.372Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-4f1642","agent":"echo","sessionName":"test-echo-4f1642-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:51:33.953Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-echo-test-001.md"}
-{"timestamp":"2025-10-22T18:51:33.954Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:51:35.463Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-4f1642/echo"}
-{"timestamp":"2025-10-22T18:51:40.719Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:51:40.721Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:51:40.723Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:51:40.724Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:51:40.725Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:51:40.726Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:51:40.727Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:51:41.226Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:51:41.236Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-4f1642-echo"}
-{"timestamp":"2025-10-22T18:51:41.250Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:53:31.123Z","level":"info","component":"message","message":"Message sent","mesh":"brain","messageId":"brain-2510221853-52nle8","filepath":".ai/tx/mesh/brain/msgs/2510221853-analyze-codebase.md","task":"Analyze codebase"}
-{"timestamp":"2025-10-22T18:53:31.125Z","level":"warn","component":"message","message":"⚠️ Frontmatter validation failed (message will still be delivered): Missing required field: type","filepath":".ai/tx/mesh/test/msgs/inbox/test-message.md","metadata":{"from":"test","to":"brain","task":"test-task","timestamp":"2025-01-01T00:00:00Z","id":"test-123"}}
-{"timestamp":"2025-10-22T18:53:31.128Z","level":"info","component":"message","message":"Message sent","mesh":"test-mesh","messageId":"test-mesh-2510221853-vwueap","filepath":".ai/tx/mesh/test-mesh/msgs/2510221853-test-task.md","task":"Test task"}
-{"timestamp":"2025-10-22T18:53:31.132Z","level":"info","component":"mock-agent","message":"Mock agent started","mesh":"test-mesh","agent":"test-mesh"}
-{"timestamp":"2025-10-22T18:53:31.135Z","level":"info","component":"mock-agent","message":"Mock agent stopped","mesh":"test-mesh","agent":"test-mesh"}
-{"timestamp":"2025-10-22T18:53:31.178Z","level":"info","component":"message","message":"Message sent","mesh":"test-queue","messageId":"test-queue-2510221853-nluj2i","filepath":".ai/tx/mesh/test-queue/msgs/2510221853-test-task-1.md","task":"Test task 1"}
-{"timestamp":"2025-10-22T18:53:31.182Z","level":"info","component":"message","message":"Message sent","mesh":"test-queue","messageId":"test-queue-2510221853-aqosoh","filepath":".ai/tx/mesh/test-queue/msgs/2510221853-task-2.md","task":"Task 2"}
-{"timestamp":"2025-10-22T18:53:31.183Z","level":"info","component":"message","message":"Message sent","mesh":"test-queue","messageId":"test-queue-2510221853-fskgm4","filepath":".ai/tx/mesh/test-queue/msgs/2510221853-task-3.md","task":"Task 3"}
-{"timestamp":"2025-10-22T18:53:31.184Z","level":"info","component":"message","message":"Message sent","mesh":"test-queue","messageId":"test-queue-2510221853-vbyucy","filepath":".ai/tx/mesh/test-queue/msgs/2510221853-task-4.md","task":"Task 4"}
-{"timestamp":"2025-10-22T18:53:31.389Z","level":"info","component":"queue","message":"Archived 0 messages","mesh":"test-queue","daysOld":0}
-{"timestamp":"2025-10-22T18:53:31.438Z","level":"info","component":"queue","message":"Queue system initialized"}
-{"timestamp":"2025-10-22T18:53:31.439Z","level":"info","component":"watcher","message":"Starting watcher (v4 - directory mode)","basePath":".ai/tx/mesh","mode":"recursive with filter","ignoreInitial":false,"stabilityThreshold":100}
-{"timestamp":"2025-10-22T18:53:31.441Z","level":"info","component":"watcher","message":"Watcher instance created, registering event handlers"}
-{"timestamp":"2025-10-22T18:53:31.442Z","level":"info","component":"watcher","message":"File watcher started successfully"}
-{"timestamp":"2025-10-22T18:53:31.444Z","level":"info","component":"event-bus","message":"Event emitted: watcher:started","event":"watcher:started"}
-{"timestamp":"2025-10-22T18:53:31.470Z","level":"info","component":"watcher","message":"Watcher ready - initial scan complete"}
-{"timestamp":"2025-10-22T18:53:31.472Z","level":"info","component":"watcher","message":"Watcher tracking 102 directories","watchedDirs":["/workspace/tmux-riffic-v2/.ai/tx","/workspace/tmux-riffic-v2/.ai/tx/mesh","/workspace/tmux-riffic-v2/.ai/tx/mesh/brain","/workspace/tmux-riffic-v2/.ai/tx/mesh/core","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-11ef95","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-22a866","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-24d6dd","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-4f1642","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-362e97","/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-50d19c"]}
-{"timestamp":"2025-10-22T18:53:31.546Z","level":"info","component":"message","message":"Message sent","mesh":"test-watcher","messageId":"test-watcher-2510221853-fqp6ha","filepath":".ai/tx/mesh/test-watcher/msgs/2510221853-watcher-test.md","task":"Watcher test"}
-{"timestamp":"2025-10-22T18:53:34.561Z","level":"info","component":"watcher","message":"Stopping watcher..."}
-{"timestamp":"2025-10-22T18:53:42.440Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:53:42.441Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:53:42.443Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:53:42.444Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:53:42.445Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:53:42.447Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:53:42.448Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:53:42.472Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:53:42.551Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:53:42.554Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:53:42.557Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:53:42.564Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:53:42.567Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:53:42.571Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:53:44.083Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1513}
-{"timestamp":"2025-10-22T18:53:44.086Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:53:44.090Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:53:44.393Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:53:44.908Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":515}
-{"timestamp":"2025-10-22T18:53:44.920Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:53:45.603Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:53:45.604Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:53:46.348Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1014,"totalWaitTime":1429}
-{"timestamp":"2025-10-22T18:53:46.351Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:53:46.355Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":4}
-{"timestamp":"2025-10-22T18:53:46.356Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:53:49.114Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:53:49.116Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:53:51.129Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:53:51.131Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221850-prompt.md"}
-{"timestamp":"2025-10-22T18:53:51.132Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:53:52.638Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:53:52.641Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:53:52.642Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:53:52.643Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:54:01.377Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:54:02.381Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:54:12.342Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:54:12.346Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-4c5576/echo"}
-{"timestamp":"2025-10-22T18:54:12.350Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-4c5576-echo","mesh":"test-echo-4c5576","agent":"echo"}
-{"timestamp":"2025-10-22T18:54:12.356Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-4c5576-echo","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:54:12.360Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-4c5576-echo"}
-{"timestamp":"2025-10-22T18:54:13.873Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-4c5576-echo","waitTime":1512}
-{"timestamp":"2025-10-22T18:54:13.874Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4c5576"}
-{"timestamp":"2025-10-22T18:54:13.876Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4c5576/echo"}
-{"timestamp":"2025-10-22T18:54:15.381Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-4c5576-echo"}
-{"timestamp":"2025-10-22T18:54:15.383Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
-{"timestamp":"2025-10-22T18:54:18.897Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-4c5576-echo"}
-{"timestamp":"2025-10-22T18:54:18.898Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
-{"timestamp":"2025-10-22T18:54:20.906Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-4c5576","agent":"echo","section.preamble":408,"section.agent-prompt":946,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1575,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:54:20.908Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-4c5576","agent":"echo","filepath":".ai/tx/mesh/test-echo-4c5576/agents/echo/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:54:22.414Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-4c5576 echo","session":"test-echo-4c5576-echo"}
-{"timestamp":"2025-10-22T18:54:22.419Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:54:22.420Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-4c5576","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
-{"timestamp":"2025-10-22T18:54:22.422Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-4c5576","agent":"echo","sessionName":"test-echo-4c5576-echo","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:54:33.704Z","level":"info","component":"watcher","message":"New agent message detected: core/core - echo-task-001.md"}
-{"timestamp":"2025-10-22T18:54:33.706Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
-{"timestamp":"2025-10-22T18:54:35.219Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-4c5576/echo"}
-{"timestamp":"2025-10-22T18:54:40.145Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
-{"timestamp":"2025-10-22T18:54:40.149Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
-{"timestamp":"2025-10-22T18:54:40.153Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:54:40.155Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
-{"timestamp":"2025-10-22T18:54:40.157Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
-{"timestamp":"2025-10-22T18:54:40.159Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
-{"timestamp":"2025-10-22T18:54:40.160Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
-{"timestamp":"2025-10-22T18:54:40.651Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
-{"timestamp":"2025-10-22T18:54:40.658Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-4c5576-echo"}
-{"timestamp":"2025-10-22T18:54:40.664Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
-{"timestamp":"2025-10-22T18:59:28.175Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
-{"timestamp":"2025-10-22T18:59:28.177Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
-{"timestamp":"2025-10-22T18:59:28.178Z","level":"info","component":"queue","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:59:28.179Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
-{"timestamp":"2025-10-22T18:59:28.180Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
-{"timestamp":"2025-10-22T18:59:28.182Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
-{"timestamp":"2025-10-22T18:59:28.183Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
-{"timestamp":"2025-10-22T18:59:28.211Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
-{"timestamp":"2025-10-22T18:59:28.285Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
-{"timestamp":"2025-10-22T18:59:28.291Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
-{"timestamp":"2025-10-22T18:59:28.294Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
-{"timestamp":"2025-10-22T18:59:28.302Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
-{"timestamp":"2025-10-22T18:59:28.306Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
-{"timestamp":"2025-10-22T18:59:28.312Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:59:29.825Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1511}
-{"timestamp":"2025-10-22T18:59:29.827Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
-{"timestamp":"2025-10-22T18:59:29.832Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
-{"timestamp":"2025-10-22T18:59:30.111Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:59:30.626Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":514}
-{"timestamp":"2025-10-22T18:59:30.631Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
-{"timestamp":"2025-10-22T18:59:31.343Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
-{"timestamp":"2025-10-22T18:59:31.344Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
-{"timestamp":"2025-10-22T18:59:32.066Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1017,"totalWaitTime":1434}
-{"timestamp":"2025-10-22T18:59:32.073Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
-{"timestamp":"2025-10-22T18:59:32.076Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":4}
-{"timestamp":"2025-10-22T18:59:32.078Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
-{"timestamp":"2025-10-22T18:59:34.853Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
-{"timestamp":"2025-10-22T18:59:34.854Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
-{"timestamp":"2025-10-22T18:59:36.869Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1567,"task.source":"task.md"}
-{"timestamp":"2025-10-22T18:59:36.871Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510221853-prompt.md"}
-{"timestamp":"2025-10-22T18:59:36.872Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
-{"timestamp":"2025-10-22T18:59:38.378Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
-{"timestamp":"2025-10-22T18:59:38.381Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
-{"timestamp":"2025-10-22T18:59:38.382Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
-{"timestamp":"2025-10-22T18:59:38.383Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
-{"timestamp":"2025-10-22T18:59:47.134Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
-{"timestamp":"2025-10-22T18:59:48.143Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
-{"timestamp":"2025-10-22T18:59:55.920Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
-{"timestamp":"2025-10-22T18:59:55.924Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-7b817b/echo"}
-{"timestamp":"2025-10-22T18:59:55.928Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-7b817b-echo","mesh":"test-echo-7b817b","agent":"echo"}
 {"timestamp":"2025-10-22T18:59:55.932Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-7b817b-echo","configPath":".tmux.conf"}
 {"timestamp":"2025-10-22T18:59:55.936Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-7b817b-echo"}
 {"timestamp":"2025-10-22T18:59:57.448Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-7b817b-echo","waitTime":1512}
@@ -998,3 +469,532 @@
 {"timestamp":"2025-10-22T21:13:13.822Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
 {"timestamp":"2025-10-22T21:13:13.828Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-016fb9-echo"}
 {"timestamp":"2025-10-22T21:13:13.842Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
+{"timestamp":"2025-10-22T21:52:05.401Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T21:52:05.402Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T21:52:05.404Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:52:05.405Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:52:05.407Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T21:52:05.409Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T21:52:05.410Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T21:52:05.451Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T21:52:05.514Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T21:52:05.518Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T21:52:05.521Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T21:52:05.529Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T21:52:05.534Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:52:05.539Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:52:07.054Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1515}
+{"timestamp":"2025-10-22T21:52:07.057Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T21:52:07.060Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T21:52:07.335Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:52:07.848Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":513}
+{"timestamp":"2025-10-22T21:52:08.569Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T21:52:08.572Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T21:52:08.855Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-ask mesh and have asker ask answerer a question\"","session":"core","textLength":60,"chunks":1}
+{"timestamp":"2025-10-22T21:52:08.859Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":5000}
+{"timestamp":"2025-10-22T21:52:12.087Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T21:52:12.089Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T21:52:14.103Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T21:52:14.105Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222112-prompt.md"}
+{"timestamp":"2025-10-22T21:52:14.106Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T21:52:15.615Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T21:52:15.618Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T21:52:15.620Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T21:52:15.621Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T21:52:26.986Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":5094,"totalWaitTime":18126}
+{"timestamp":"2025-10-22T21:52:27.044Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T21:52:27.046Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T21:52:27.048Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:52:27.049Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:52:27.050Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T21:52:27.053Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T21:52:27.054Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T21:52:27.550Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T21:52:27.553Z","level":"info","component":"stop","message":"System stopped","sessionCount":1,"stateFilesCleared":1}
+{"timestamp":"2025-10-22T21:52:48.352Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T21:52:48.354Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T21:52:48.355Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:52:48.357Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:52:48.359Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T21:52:48.361Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T21:52:48.362Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T21:52:48.396Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T21:52:48.464Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T21:52:48.470Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T21:52:48.473Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T21:52:48.482Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T21:52:48.487Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:52:48.493Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:52:50.007Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1514}
+{"timestamp":"2025-10-22T21:52:50.010Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T21:52:50.013Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T21:52:50.290Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:52:50.802Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":511}
+{"timestamp":"2025-10-22T21:52:51.521Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T21:52:51.525Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T21:52:51.813Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-ask mesh and have asker ask answerer a question\"","session":"core","textLength":60,"chunks":1}
+{"timestamp":"2025-10-22T21:52:51.814Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":5000}
+{"timestamp":"2025-10-22T21:52:55.035Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T21:52:55.036Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T21:52:57.054Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T21:52:57.056Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222152-prompt.md"}
+{"timestamp":"2025-10-22T21:52:57.057Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T21:52:58.563Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T21:52:58.565Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T21:52:58.568Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T21:52:58.571Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T21:53:09.172Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":5105,"totalWaitTime":17358}
+{"timestamp":"2025-10-22T21:53:09.227Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T21:53:09.229Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T21:53:09.232Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:53:09.233Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:53:09.234Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T21:53:09.235Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T21:53:09.237Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T21:53:09.738Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T21:53:09.742Z","level":"info","component":"stop","message":"System stopped","sessionCount":1,"stateFilesCleared":1}
+{"timestamp":"2025-10-22T21:53:24.250Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T21:53:24.251Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T21:53:24.253Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:53:24.255Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:53:24.256Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T21:53:24.260Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T21:53:24.263Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T21:53:24.307Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T21:53:24.367Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T21:53:24.379Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T21:53:24.386Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T21:53:24.395Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T21:53:24.403Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:53:24.410Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:53:25.927Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1517}
+{"timestamp":"2025-10-22T21:53:25.929Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T21:53:25.933Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T21:53:27.441Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T21:53:27.447Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T21:53:30.960Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T21:53:30.962Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T21:53:32.983Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T21:53:32.985Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222152-prompt.md"}
+{"timestamp":"2025-10-22T21:53:32.987Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T21:53:34.493Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T21:53:34.496Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T21:53:34.498Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T21:53:34.500Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T21:53:40.819Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/asker/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T21:53:40.824Z","level":"info","component":"directory-init","message":"Initialized directories for test-ask-cb072c/asker"}
+{"timestamp":"2025-10-22T21:53:40.829Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-ask-cb072c-asker","mesh":"test-ask-cb072c","agent":"asker"}
+{"timestamp":"2025-10-22T21:53:40.834Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-ask-cb072c-asker","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:53:40.839Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-ask-cb072c-asker"}
+{"timestamp":"2025-10-22T21:53:42.352Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-ask-cb072c-asker","waitTime":1513}
+{"timestamp":"2025-10-22T21:53:42.353Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-cb072c"}
+{"timestamp":"2025-10-22T21:53:42.355Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-cb072c/asker"}
+{"timestamp":"2025-10-22T21:53:43.863Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-ask-cb072c-asker"}
+{"timestamp":"2025-10-22T21:53:43.864Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T21:53:47.375Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-ask-cb072c-asker"}
+{"timestamp":"2025-10-22T21:53:47.376Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T21:53:49.385Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-ask","meshInstance":"test-ask-cb072c","agent":"asker","section.preamble":406,"section.agent-prompt":508,"section.task":0,"section.capabilities":0,"section.workflow":272,"section.frontmatter":1580,"task.source":"task.md"}
+{"timestamp":"2025-10-22T21:53:49.388Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-ask-cb072c","agent":"asker","filepath":".ai/tx/mesh/test-ask-cb072c/agents/asker/prompts/prompt.md"}
+{"timestamp":"2025-10-22T21:53:50.899Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-ask-cb072c asker","session":"test-ask-cb072c-asker"}
+{"timestamp":"2025-10-22T21:53:50.902Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T21:53:50.903Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-ask-cb072c","changes":{"status":"active","current_agent":"asker","base_mesh":"test-ask"}}
+{"timestamp":"2025-10-22T21:53:50.905Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-ask","meshInstance":"test-ask-cb072c","agent":"asker","sessionName":"test-ask-cb072c-asker","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T21:53:50.907Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/answerer/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T21:53:50.911Z","level":"info","component":"directory-init","message":"Initialized directories for test-ask-cb072c/answerer"}
+{"timestamp":"2025-10-22T21:53:50.915Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-ask-cb072c-answerer","mesh":"test-ask-cb072c","agent":"answerer"}
+{"timestamp":"2025-10-22T21:53:50.919Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-ask-cb072c-answerer","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:53:50.925Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-ask-cb072c-answerer"}
+{"timestamp":"2025-10-22T21:53:52.436Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-ask-cb072c-answerer","waitTime":1511}
+{"timestamp":"2025-10-22T21:53:52.438Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-cb072c"}
+{"timestamp":"2025-10-22T21:53:52.439Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-cb072c/answerer"}
+{"timestamp":"2025-10-22T21:53:52.440Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-cb072c/asker"}
+{"timestamp":"2025-10-22T21:53:53.946Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-ask-cb072c-answerer"}
+{"timestamp":"2025-10-22T21:53:53.948Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T21:53:57.460Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-ask-cb072c-answerer"}
+{"timestamp":"2025-10-22T21:53:57.461Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T21:53:59.475Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-ask","meshInstance":"test-ask-cb072c","agent":"answerer","section.preamble":478,"section.agent-prompt":339,"section.task":0,"section.capabilities":0,"section.workflow":275,"section.frontmatter":1583,"task.source":"task.md"}
+{"timestamp":"2025-10-22T21:53:59.477Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-ask-cb072c","agent":"answerer","filepath":".ai/tx/mesh/test-ask-cb072c/agents/answerer/prompts/prompt.md"}
+{"timestamp":"2025-10-22T21:54:00.988Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-ask-cb072c answerer","session":"test-ask-cb072c-answerer"}
+{"timestamp":"2025-10-22T21:54:00.991Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T21:54:00.992Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-ask-cb072c","changes":{"status":"active","current_agent":"answerer","base_mesh":"test-ask"}}
+{"timestamp":"2025-10-22T21:54:00.994Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-ask","meshInstance":"test-ask-cb072c","agent":"answerer","sessionName":"test-ask-cb072c-answerer","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T21:54:28.546Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T21:54:28.547Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T21:54:28.551Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:54:28.552Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T21:54:28.553Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T21:54:28.556Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T21:54:28.557Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T21:54:29.055Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T21:54:29.064Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-ask-cb072c-answerer"}
+{"timestamp":"2025-10-22T21:54:29.079Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-ask-cb072c-asker"}
+{"timestamp":"2025-10-22T21:54:29.097Z","level":"info","component":"stop","message":"System stopped","sessionCount":3,"stateFilesCleared":2}
+{"timestamp":"2025-10-22T21:59:53.502Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T21:59:53.504Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T21:59:53.505Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:59:53.506Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T21:59:53.508Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T21:59:53.510Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T21:59:53.512Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T21:59:53.549Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T21:59:53.614Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T21:59:53.619Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T21:59:53.622Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T21:59:53.629Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T21:59:53.634Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T21:59:53.638Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:59:55.153Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1515}
+{"timestamp":"2025-10-22T21:59:55.155Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T21:59:55.158Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T21:59:55.438Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T21:59:55.947Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":509}
+{"timestamp":"2025-10-22T21:59:56.665Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T21:59:56.669Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T21:59:56.957Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-ask mesh and have asker ask answerer a question\"","session":"core","textLength":60,"chunks":1}
+{"timestamp":"2025-10-22T21:59:56.959Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":5000}
+{"timestamp":"2025-10-22T22:00:00.179Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T22:00:00.199Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T22:00:02.226Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:00:02.228Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222153-prompt.md"}
+{"timestamp":"2025-10-22T22:00:02.230Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:00:03.735Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T22:00:03.738Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:00:03.739Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T22:00:03.740Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:00:08.601Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":5126,"totalWaitTime":11643}
+{"timestamp":"2025-10-22T22:00:08.717Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T22:00:08.721Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T22:00:08.724Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:00:08.726Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:00:08.730Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T22:00:08.734Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T22:00:08.738Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T22:00:09.225Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T22:00:09.230Z","level":"info","component":"stop","message":"System stopped","sessionCount":1,"stateFilesCleared":1}
+{"timestamp":"2025-10-22T22:04:41.488Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T22:04:41.490Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T22:04:41.492Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:04:41.493Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:04:41.495Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T22:04:41.497Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T22:04:41.499Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T22:04:41.540Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T22:04:41.602Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T22:04:41.607Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T22:04:41.610Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T22:04:41.621Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T22:04:41.626Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:04:41.631Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:04:43.150Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1519}
+{"timestamp":"2025-10-22T22:04:43.154Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T22:04:43.159Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T22:04:43.422Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:04:43.941Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":520}
+{"timestamp":"2025-10-22T22:04:43.952Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
+{"timestamp":"2025-10-22T22:04:44.673Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T22:04:44.675Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T22:04:45.590Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1019,"totalWaitTime":1640}
+{"timestamp":"2025-10-22T22:04:45.595Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:04:45.601Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":5}
+{"timestamp":"2025-10-22T22:04:45.605Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:04:48.190Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T22:04:48.191Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T22:04:50.212Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:04:50.214Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222200-prompt.md"}
+{"timestamp":"2025-10-22T22:04:50.215Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:04:51.724Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T22:04:51.727Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:04:51.728Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T22:04:51.730Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:05:00.659Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
+{"timestamp":"2025-10-22T22:05:01.665Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-ask mesh and have asker ask answerer a question\"","session":"core","textLength":60,"chunks":1}
+{"timestamp":"2025-10-22T22:05:02.169Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:05:06.423Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/asker/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T22:05:06.429Z","level":"info","component":"directory-init","message":"Initialized directories for test-ask-b8e807/asker"}
+{"timestamp":"2025-10-22T22:05:06.436Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-ask-b8e807-asker","mesh":"test-ask-b8e807","agent":"asker"}
+{"timestamp":"2025-10-22T22:05:06.442Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-ask-b8e807-asker","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:05:06.446Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-ask-b8e807-asker"}
+{"timestamp":"2025-10-22T22:05:07.959Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-ask-b8e807-asker","waitTime":1513}
+{"timestamp":"2025-10-22T22:05:07.963Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-b8e807"}
+{"timestamp":"2025-10-22T22:05:07.967Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-b8e807/asker"}
+{"timestamp":"2025-10-22T22:05:09.480Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-ask-b8e807-asker"}
+{"timestamp":"2025-10-22T22:05:09.481Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T22:05:12.990Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-ask-b8e807-asker"}
+{"timestamp":"2025-10-22T22:05:12.992Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T22:05:15.001Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-ask","meshInstance":"test-ask-b8e807","agent":"asker","section.preamble":406,"section.agent-prompt":508,"section.task":0,"section.capabilities":0,"section.workflow":272,"section.frontmatter":1580,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:05:15.002Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-ask-b8e807","agent":"asker","filepath":".ai/tx/mesh/test-ask-b8e807/agents/asker/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:05:16.511Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-ask-b8e807 asker","session":"test-ask-b8e807-asker"}
+{"timestamp":"2025-10-22T22:05:16.515Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:05:16.516Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-ask-b8e807","changes":{"status":"active","current_agent":"asker","base_mesh":"test-ask"}}
+{"timestamp":"2025-10-22T22:05:16.518Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-ask","meshInstance":"test-ask-b8e807","agent":"asker","sessionName":"test-ask-b8e807-asker","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:05:16.519Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/answerer/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T22:05:16.523Z","level":"info","component":"directory-init","message":"Initialized directories for test-ask-b8e807/answerer"}
+{"timestamp":"2025-10-22T22:05:16.530Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-ask-b8e807-answerer","mesh":"test-ask-b8e807","agent":"answerer"}
+{"timestamp":"2025-10-22T22:05:16.535Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-ask-b8e807-answerer","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:05:16.539Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-ask-b8e807-answerer"}
+{"timestamp":"2025-10-22T22:05:18.054Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-ask-b8e807-answerer","waitTime":1515}
+{"timestamp":"2025-10-22T22:05:18.056Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-b8e807"}
+{"timestamp":"2025-10-22T22:05:18.057Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-b8e807/answerer"}
+{"timestamp":"2025-10-22T22:05:18.058Z","level":"info","component":"queue","message":"Processing queue backlog for test-ask-b8e807/asker"}
+{"timestamp":"2025-10-22T22:05:19.569Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-ask-b8e807-answerer"}
+{"timestamp":"2025-10-22T22:05:19.574Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T22:05:23.086Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-ask-b8e807-answerer"}
+{"timestamp":"2025-10-22T22:05:23.088Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T22:05:25.096Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-ask","meshInstance":"test-ask-b8e807","agent":"answerer","section.preamble":478,"section.agent-prompt":339,"section.task":0,"section.capabilities":0,"section.workflow":275,"section.frontmatter":1583,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:05:25.098Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-ask-b8e807","agent":"answerer","filepath":".ai/tx/mesh/test-ask-b8e807/agents/answerer/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:05:26.606Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-ask-b8e807 answerer","session":"test-ask-b8e807-answerer"}
+{"timestamp":"2025-10-22T22:05:26.609Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:05:26.610Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-ask-b8e807","changes":{"status":"active","current_agent":"answerer","base_mesh":"test-ask"}}
+{"timestamp":"2025-10-22T22:05:26.612Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-ask","meshInstance":"test-ask-b8e807","agent":"answerer","sessionName":"test-ask-b8e807-answerer","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:05:32.287Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":30000}
+{"timestamp":"2025-10-22T22:05:32.295Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:05:33.453Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-test-ask-b8e807.md"}
+{"timestamp":"2025-10-22T22:05:33.455Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:05:34.971Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/task-test-ask-b8e807.md","session":"test-ask-b8e807-asker","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/task-test-ask-b8e807.md"}
+{"timestamp":"2025-10-22T22:05:34.981Z","level":"info","component":"queue","message":"Routed: core/core → test-ask-b8e807/asker"}
+{"timestamp":"2025-10-22T22:05:38.160Z","level":"info","component":"watcher","message":"New agent message detected: test-ask-b8e807/answerer - ask-001.md"}
+{"timestamp":"2025-10-22T22:05:38.162Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:05:38.164Z","level":"warn","component":"message","message":"⚠️ Frontmatter validation failed (message will still be delivered): Invalid status: pending. Must be one of: start, in-progress, rejected, approved, complete","filepath":".ai/tx/mesh/test-ask-b8e807/agents/answerer/msgs/ask-001.md","metadata":{"to":"test-ask-b8e807/answerer","from":"test-ask-b8e807/asker","type":"ask","status":"pending","msg-id":"ask-001","parent-task":"task-001","timestamp":"2025-10-22T00:00:00Z"}}
+{"timestamp":"2025-10-22T22:05:39.678Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/test-ask-b8e807/agents/answerer/msgs/ask-001.md","session":"test-ask-b8e807-answerer","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/test-ask-b8e807/agents/answerer/msgs/ask-001.md"}
+{"timestamp":"2025-10-22T22:05:39.680Z","level":"info","component":"queue","message":"Routed: test-ask-b8e807/asker → test-ask-b8e807/answerer"}
+{"timestamp":"2025-10-22T22:05:44.643Z","level":"info","component":"watcher","message":"New agent message detected: test-ask-b8e807/answerer - ask-response-001.md"}
+{"timestamp":"2025-10-22T22:05:44.646Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:05:46.152Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":3052,"totalWaitTime":13857}
+{"timestamp":"2025-10-22T22:05:46.155Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"test-ask-b8e807-asker","idleTime":3000}
+{"timestamp":"2025-10-22T22:05:46.162Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/test-ask-b8e807/agents/answerer/msgs/ask-response-001.md","session":"test-ask-b8e807-asker","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/test-ask-b8e807/agents/answerer/msgs/ask-response-001.md"}
+{"timestamp":"2025-10-22T22:05:46.164Z","level":"info","component":"queue","message":"Routed: test-ask-b8e807/answerer → test-ask-b8e807/asker"}
+{"timestamp":"2025-10-22T22:05:54.349Z","level":"info","component":"watcher","message":"New agent message detected: core/core - task-complete-test-ask-b8e807.md"}
+{"timestamp":"2025-10-22T22:05:54.353Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:05:55.863Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/task-complete-test-ask-b8e807.md","session":"core","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/task-complete-test-ask-b8e807.md"}
+{"timestamp":"2025-10-22T22:05:55.866Z","level":"info","component":"queue","message":"Routed: test-ask-b8e807/asker → core/core"}
+{"timestamp":"2025-10-22T22:06:00.387Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"test-ask-b8e807-asker","idleDuration":3049,"totalWaitTime":14232}
+{"timestamp":"2025-10-22T22:06:20.622Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T22:06:20.628Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T22:06:20.632Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:06:20.633Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:06:20.635Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T22:06:20.636Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T22:06:20.637Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T22:06:21.137Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T22:06:21.148Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-ask-b8e807-answerer"}
+{"timestamp":"2025-10-22T22:06:21.154Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-ask-b8e807-asker"}
+{"timestamp":"2025-10-22T22:06:21.163Z","level":"info","component":"stop","message":"System stopped","sessionCount":3,"stateFilesCleared":2}
+{"timestamp":"2025-10-22T22:06:53.737Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T22:06:53.738Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T22:06:53.740Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:06:53.741Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:06:53.743Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T22:06:53.745Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T22:06:53.746Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T22:06:53.782Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T22:06:53.848Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T22:06:53.858Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T22:06:53.863Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T22:06:53.875Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T22:06:53.883Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:06:53.893Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:06:55.411Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1518}
+{"timestamp":"2025-10-22T22:06:55.413Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T22:06:55.414Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T22:06:55.678Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:06:56.186Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":508}
+{"timestamp":"2025-10-22T22:06:56.191Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
+{"timestamp":"2025-10-22T22:06:56.925Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T22:06:56.928Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T22:06:57.823Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1017,"totalWaitTime":1632}
+{"timestamp":"2025-10-22T22:06:57.827Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:06:57.834Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":7}
+{"timestamp":"2025-10-22T22:06:57.840Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:07:00.444Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T22:07:00.446Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T22:07:02.468Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:07:02.470Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222204-prompt.md"}
+{"timestamp":"2025-10-22T22:07:02.472Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:07:03.979Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T22:07:03.985Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:07:03.988Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T22:07:03.991Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:07:12.898Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
+{"timestamp":"2025-10-22T22:07:13.904Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
+{"timestamp":"2025-10-22T22:07:14.410Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:07:18.999Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T22:07:19.005Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-db89fd/echo"}
+{"timestamp":"2025-10-22T22:07:19.016Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-db89fd-echo","mesh":"test-echo-db89fd","agent":"echo"}
+{"timestamp":"2025-10-22T22:07:19.022Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-db89fd-echo","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:07:19.031Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-db89fd-echo"}
+{"timestamp":"2025-10-22T22:07:20.548Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-db89fd-echo","waitTime":1517}
+{"timestamp":"2025-10-22T22:07:20.551Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-db89fd"}
+{"timestamp":"2025-10-22T22:07:20.553Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-db89fd/echo"}
+{"timestamp":"2025-10-22T22:07:22.063Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-db89fd-echo"}
+{"timestamp":"2025-10-22T22:07:22.067Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T22:07:25.576Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-db89fd-echo"}
+{"timestamp":"2025-10-22T22:07:25.577Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T22:07:27.583Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-db89fd","agent":"echo","section.preamble":408,"section.agent-prompt":267,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1580,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:07:27.584Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-db89fd","agent":"echo","filepath":".ai/tx/mesh/test-echo-db89fd/agents/echo/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:07:29.090Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-db89fd echo","session":"test-echo-db89fd-echo"}
+{"timestamp":"2025-10-22T22:07:29.096Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:07:29.098Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-db89fd","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
+{"timestamp":"2025-10-22T22:07:29.101Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-db89fd","agent":"echo","sessionName":"test-echo-db89fd-echo","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:07:36.781Z","level":"info","component":"watcher","message":"New agent message detected: core/core - echo-task-001.md"}
+{"timestamp":"2025-10-22T22:07:36.784Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:07:38.294Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/echo-task-001.md","session":"test-echo-db89fd-echo","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/echo-task-001.md"}
+{"timestamp":"2025-10-22T22:07:38.297Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-db89fd/echo"}
+{"timestamp":"2025-10-22T22:07:40.726Z","level":"info","component":"watcher","message":"New agent message detected: test-echo-db89fd/echo - echo-response-001.md"}
+{"timestamp":"2025-10-22T22:07:40.729Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:07:42.238Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-db89fd/agents/echo/msgs/echo-response-001.md","session":"core","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-db89fd/agents/echo/msgs/echo-response-001.md"}
+{"timestamp":"2025-10-22T22:07:42.241Z","level":"info","component":"queue","message":"Routed: test-echo-db89fd/echo → core/core"}
+{"timestamp":"2025-10-22T22:07:44.520Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":30000}
+{"timestamp":"2025-10-22T22:07:44.527Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:07:52.670Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":3056,"totalWaitTime":8143}
+{"timestamp":"2025-10-22T22:07:52.672Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"test-echo-db89fd-echo","idleTime":3000}
+{"timestamp":"2025-10-22T22:07:55.723Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"test-echo-db89fd-echo","idleDuration":3047,"totalWaitTime":3051}
+{"timestamp":"2025-10-22T22:07:55.726Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"test-echo-db89fd-echo","idleTime":3000}
+{"timestamp":"2025-10-22T22:07:58.780Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"test-echo-db89fd-echo","idleDuration":3051,"totalWaitTime":3054}
+{"timestamp":"2025-10-22T22:08:19.022Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T22:08:19.024Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T22:08:19.028Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:08:19.032Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:08:19.035Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T22:08:19.037Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T22:08:19.039Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T22:08:19.528Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T22:08:19.536Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-db89fd-echo"}
+{"timestamp":"2025-10-22T22:08:19.543Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
+{"timestamp":"2025-10-22T22:08:49.325Z","level":"info","component":"stop","message":"System stopped","sessionCount":0,"stateFilesCleared":0}
+{"timestamp":"2025-10-22T22:08:51.395Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T22:08:51.397Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T22:08:51.398Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:08:51.400Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:08:51.401Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T22:08:51.402Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T22:08:51.404Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T22:08:51.442Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T22:08:51.506Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T22:08:51.511Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T22:08:51.514Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T22:08:51.524Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T22:08:51.529Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:08:51.533Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:08:53.048Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1511}
+{"timestamp":"2025-10-22T22:08:53.053Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T22:08:53.055Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T22:08:54.561Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T22:08:54.562Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T22:08:58.075Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T22:08:58.080Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T22:09:00.095Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:09:00.097Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222207-prompt.md"}
+{"timestamp":"2025-10-22T22:09:00.098Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:09:01.604Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T22:09:01.607Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:09:01.608Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T22:09:01.609Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:09:44.737Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T22:09:44.746Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-9945cf/echo"}
+{"timestamp":"2025-10-22T22:09:44.755Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-9945cf-echo","mesh":"test-echo-9945cf","agent":"echo"}
+{"timestamp":"2025-10-22T22:09:44.763Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-9945cf-echo","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:09:44.771Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-9945cf-echo"}
+{"timestamp":"2025-10-22T22:09:46.286Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-9945cf-echo","waitTime":1515}
+{"timestamp":"2025-10-22T22:09:46.288Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-9945cf"}
+{"timestamp":"2025-10-22T22:09:46.290Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-9945cf/echo"}
+{"timestamp":"2025-10-22T22:09:47.796Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-9945cf-echo"}
+{"timestamp":"2025-10-22T22:09:47.797Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T22:09:51.309Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-9945cf-echo"}
+{"timestamp":"2025-10-22T22:09:51.311Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T22:09:53.316Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-9945cf","agent":"echo","section.preamble":408,"section.agent-prompt":267,"section.task":0,"section.capabilities":0,"section.workflow":273,"section.frontmatter":1580,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:09:53.318Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-9945cf","agent":"echo","filepath":".ai/tx/mesh/test-echo-9945cf/agents/echo/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:09:54.826Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-9945cf echo","session":"test-echo-9945cf-echo"}
+{"timestamp":"2025-10-22T22:09:54.831Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:09:54.834Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-9945cf","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
+{"timestamp":"2025-10-22T22:09:54.836Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-9945cf","agent":"echo","sessionName":"test-echo-9945cf-echo","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:14:29.161Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T22:14:29.164Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T22:14:29.169Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:14:29.170Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:14:29.173Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T22:14:29.175Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T22:14:29.177Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T22:14:29.668Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T22:14:29.673Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-9945cf-echo"}
+{"timestamp":"2025-10-22T22:14:29.683Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
+{"timestamp":"2025-10-22T22:14:31.794Z","level":"info","component":"system-manager","message":"Starting simplified orchestration system..."}
+{"timestamp":"2025-10-22T22:14:31.796Z","level":"info","component":"queue","message":"Initializing simplified queue system"}
+{"timestamp":"2025-10-22T22:14:31.797Z","level":"info","component":"queue","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:14:31.799Z","level":"info","component":"system-manager","message":"Simplified queue initialized"}
+{"timestamp":"2025-10-22T22:14:31.800Z","level":"info","component":"watcher","message":"Starting simplified watcher for msgs/ directories"}
+{"timestamp":"2025-10-22T22:14:31.802Z","level":"info","component":"watcher","message":"Simplified watcher started successfully"}
+{"timestamp":"2025-10-22T22:14:31.803Z","level":"info","component":"system-manager","message":"Simplified watcher started"}
+{"timestamp":"2025-10-22T22:14:31.839Z","level":"info","component":"watcher","message":"Simplified watcher ready"}
+{"timestamp":"2025-10-22T22:14:31.905Z","level":"info","component":"system-manager","message":"Simplified orchestration system started successfully"}
+{"timestamp":"2025-10-22T22:14:31.909Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/core/config.json","options":{"output":"blank","model":"sonnet"}}
+{"timestamp":"2025-10-22T22:14:31.912Z","level":"info","component":"directory-init","message":"Initialized directories for core/core"}
+{"timestamp":"2025-10-22T22:14:31.919Z","level":"info","component":"tmux-injector","message":"Session created","session":"core","mesh":"core","agent":"core"}
+{"timestamp":"2025-10-22T22:14:31.924Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"core","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:14:31.928Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:14:33.439Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1511}
+{"timestamp":"2025-10-22T22:14:33.441Z","level":"info","component":"queue","message":"Processing queue backlog for core"}
+{"timestamp":"2025-10-22T22:14:33.443Z","level":"info","component":"queue","message":"Processing queue backlog for core/core"}
+{"timestamp":"2025-10-22T22:14:33.738Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:14:34.767Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":1029}
+{"timestamp":"2025-10-22T22:14:34.778Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":1000}
+{"timestamp":"2025-10-22T22:14:34.955Z","level":"info","component":"tmux-injector","message":"Command: model sonnet","session":"core"}
+{"timestamp":"2025-10-22T22:14:34.961Z","level":"info","component":"spawn","message":"Model command injected","model":"sonnet"}
+{"timestamp":"2025-10-22T22:14:36.030Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":1026,"totalWaitTime":1253}
+{"timestamp":"2025-10-22T22:14:36.038Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"core"}
+{"timestamp":"2025-10-22T22:14:36.043Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"core","waitTime":5}
+{"timestamp":"2025-10-22T22:14:36.046Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:14:38.476Z","level":"info","component":"tmux-injector","message":"Command: output-style blank","session":"core"}
+{"timestamp":"2025-10-22T22:14:38.480Z","level":"info","component":"spawn","message":"Output style command injected","output":"blank"}
+{"timestamp":"2025-10-22T22:14:40.499Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"core","meshInstance":"core","agent":"core","section.preamble":325,"section.agent-prompt":210,"section.task":0,"section.capabilities":4820,"section.workflow":0,"section.frontmatter":1572,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:14:40.501Z","level":"info","component":"prompt-builder","message":"Prompt archived","mesh":"core","agent":"core","from":".ai/tx/mesh/core/agents/core/prompts/prompt.md","to":".ai/tx/mesh/core/agents/core/prompts/2510222209-prompt.md"}
+{"timestamp":"2025-10-22T22:14:40.503Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"core","agent":"core","filepath":".ai/tx/mesh/core/agents/core/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:14:42.014Z","level":"info","component":"tmux-injector","message":"Command: tx-agent core core","session":"core"}
+{"timestamp":"2025-10-22T22:14:42.017Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:14:42.017Z","level":"info","component":"atomic-state","message":"State updated","mesh":"core","changes":{"status":"active","current_agent":"core","base_mesh":"core"}}
+{"timestamp":"2025-10-22T22:14:42.019Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"core","meshInstance":"core","agent":"core","sessionName":"core","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:14:51.111Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":15000}
+{"timestamp":"2025-10-22T22:14:52.117Z","level":"info","component":"tmux-injector","message":"Text injected: \"spawn a test-echo mesh and send it a simple echo task\"","session":"core","textLength":53,"chunks":1}
+{"timestamp":"2025-10-22T22:14:52.622Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:15:00.564Z","level":"info","component":"spawn","message":"Agent config loaded","configPath":"meshes/agents/test/echo/config.json","options":{"model":"haiku","output":"clean"}}
+{"timestamp":"2025-10-22T22:15:00.569Z","level":"info","component":"directory-init","message":"Initialized directories for test-echo-4d4572/echo"}
+{"timestamp":"2025-10-22T22:15:00.573Z","level":"info","component":"tmux-injector","message":"Session created","session":"test-echo-4d4572-echo","mesh":"test-echo-4d4572","agent":"echo"}
+{"timestamp":"2025-10-22T22:15:00.578Z","level":"info","component":"tmux-injector","message":"Config loaded","session":"test-echo-4d4572-echo","configPath":".tmux.conf"}
+{"timestamp":"2025-10-22T22:15:00.582Z","level":"info","component":"tmux-injector","message":"Waiting for Claude to be ready...","session":"test-echo-4d4572-echo"}
+{"timestamp":"2025-10-22T22:15:02.102Z","level":"info","component":"tmux-injector","message":"Claude is ready","session":"test-echo-4d4572-echo","waitTime":1519}
+{"timestamp":"2025-10-22T22:15:02.107Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4d4572"}
+{"timestamp":"2025-10-22T22:15:02.112Z","level":"info","component":"queue","message":"Processing queue backlog for test-echo-4d4572/echo"}
+{"timestamp":"2025-10-22T22:15:03.624Z","level":"info","component":"tmux-injector","message":"Command: model haiku","session":"test-echo-4d4572-echo"}
+{"timestamp":"2025-10-22T22:15:03.625Z","level":"info","component":"spawn","message":"Model command injected","model":"haiku"}
+{"timestamp":"2025-10-22T22:15:07.139Z","level":"info","component":"tmux-injector","message":"Command: output-style clean","session":"test-echo-4d4572-echo"}
+{"timestamp":"2025-10-22T22:15:07.143Z","level":"info","component":"spawn","message":"Output style command injected","output":"clean"}
+{"timestamp":"2025-10-22T22:15:09.150Z","level":"info","component":"prompt-builder","message":"Prompt built","mesh":"test-echo","meshInstance":"test-echo-4d4572","agent":"echo","section.preamble":408,"section.agent-prompt":577,"section.task":0,"section.capabilities":0,"section.workflow":532,"section.frontmatter":1580,"task.source":"task.md"}
+{"timestamp":"2025-10-22T22:15:09.152Z","level":"info","component":"prompt-builder","message":"Prompt saved","mesh":"test-echo-4d4572","agent":"echo","filepath":".ai/tx/mesh/test-echo-4d4572/agents/echo/prompts/prompt.md"}
+{"timestamp":"2025-10-22T22:15:10.664Z","level":"info","component":"tmux-injector","message":"Command: tx-agent test-echo-4d4572 echo","session":"test-echo-4d4572-echo"}
+{"timestamp":"2025-10-22T22:15:10.670Z","level":"info","component":"event-bus","message":"Event emitted: state:changed","event":"state:changed"}
+{"timestamp":"2025-10-22T22:15:10.673Z","level":"info","component":"atomic-state","message":"State updated","mesh":"test-echo-4d4572","changes":{"status":"active","current_agent":"echo","base_mesh":"test-echo"}}
+{"timestamp":"2025-10-22T22:15:10.680Z","level":"info","component":"spawn","message":"Agent spawned","mesh":"test-echo","meshInstance":"test-echo-4d4572","agent":"echo","sessionName":"test-echo-4d4572-echo","taskUID":"","hasInitTask":false}
+{"timestamp":"2025-10-22T22:15:22.681Z","level":"warn","component":"tmux-injector","message":"Idle wait timeout","session":"core","timeout":30000}
+{"timestamp":"2025-10-22T22:15:22.687Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"core","idleTime":3000}
+{"timestamp":"2025-10-22T22:15:23.246Z","level":"info","component":"watcher","message":"New agent message detected: core/core - echo-task-001.md"}
+{"timestamp":"2025-10-22T22:15:23.249Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:15:24.758Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/echo-task-001.md","session":"test-echo-4d4572-echo","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/core/agents/core/msgs/echo-task-001.md"}
+{"timestamp":"2025-10-22T22:15:24.759Z","level":"info","component":"queue","message":"Routed: core/core → test-echo-4d4572/echo"}
+{"timestamp":"2025-10-22T22:15:27.052Z","level":"info","component":"watcher","message":"New agent message detected: test-echo-4d4572/echo - echo-response-001.md"}
+{"timestamp":"2025-10-22T22:15:27.054Z","level":"info","component":"event-bus","message":"Event emitted: file:msgs:new","event":"file:msgs:new"}
+{"timestamp":"2025-10-22T22:15:28.562Z","level":"info","component":"tmux-injector","message":"File injected: /workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-4d4572/agents/echo/msgs/echo-response-001.md","session":"core","filepath":"/workspace/tmux-riffic-v2/.ai/tx/mesh/test-echo-4d4572/agents/echo/msgs/echo-response-001.md"}
+{"timestamp":"2025-10-22T22:15:28.566Z","level":"info","component":"queue","message":"Routed: test-echo-4d4572/echo → core/core"}
+{"timestamp":"2025-10-22T22:15:39.192Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"core","idleDuration":3051,"totalWaitTime":16504}
+{"timestamp":"2025-10-22T22:15:39.205Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"test-echo-4d4572-echo","idleTime":3000}
+{"timestamp":"2025-10-22T22:15:42.277Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"test-echo-4d4572-echo","idleDuration":3064,"totalWaitTime":3074}
+{"timestamp":"2025-10-22T22:15:42.282Z","level":"info","component":"tmux-injector","message":"Waiting for session to be idle...","session":"test-echo-4d4572-echo","idleTime":3000}
+{"timestamp":"2025-10-22T22:15:45.339Z","level":"info","component":"tmux-injector","message":"Session is idle","session":"test-echo-4d4572-echo","idleDuration":3054,"totalWaitTime":3057}
+{"timestamp":"2025-10-22T22:16:05.416Z","level":"info","component":"system-manager","message":"Stopping orchestration system..."}
+{"timestamp":"2025-10-22T22:16:05.418Z","level":"info","component":"watcher","message":"Stopping simplified watcher..."}
+{"timestamp":"2025-10-22T22:16:05.422Z","level":"info","component":"watcher","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:16:05.426Z","level":"info","component":"system-manager","message":"Simplified watcher stopped"}
+{"timestamp":"2025-10-22T22:16:05.433Z","level":"info","component":"queue","message":"Shutting down simplified queue"}
+{"timestamp":"2025-10-22T22:16:05.436Z","level":"info","component":"system-manager","message":"Simplified queue shut down"}
+{"timestamp":"2025-10-22T22:16:05.438Z","level":"info","component":"system-manager","message":"Orchestration system stopped"}
+{"timestamp":"2025-10-22T22:16:05.922Z","level":"info","component":"tmux-injector","message":"Session killed","session":"core"}
+{"timestamp":"2025-10-22T22:16:05.932Z","level":"info","component":"tmux-injector","message":"Session killed","session":"test-echo-4d4572-echo"}
+{"timestamp":"2025-10-22T22:16:05.944Z","level":"info","component":"stop","message":"System stopped","sessionCount":2,"stateFilesCleared":2}
