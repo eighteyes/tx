@@ -77,7 +77,7 @@ Save to `.ai/tx/mesh/planner/shared/01-decomposition.md`:
 
 ## Message to Predictor
 
-Create in your `msgs/outbox/` directory:
+Create in your `msgs/` directory:
 
 ```markdown
 ---

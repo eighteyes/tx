@@ -98,7 +98,7 @@ Save to `.ai/tx/mesh/planner/shared/02-predictions.md`:
 
 ## Message to Evaluator
 
-Create in your `msgs/outbox/` directory:
+Create in your `msgs/` directory:
 
 ```markdown
 ---

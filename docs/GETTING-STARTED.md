@@ -183,7 +183,7 @@ Message content here...
 
 ### Example: Completing a Task
 
-Agent saves to `.ai/tx/mesh/researcher/agents/searcher/msgs/outbox/`:
+Agent saves to `.ai/tx/mesh/researcher/agents/searcher/msgs/`:
 
 ```markdown
 ---
@@ -215,12 +215,6 @@ System will automatically:
 ### Mesh Directory
 ```
 .ai/tx/mesh/researcher/
-├── msgs/
-│   ├── inbox/           # Incoming tasks
-│   ├── next/            # Waiting for active slot
-│   ├── active/          # Currently being processed
-│   ├── complete/        # Finished tasks
-│   └── archive/         # Old completed tasks
 ├── agents/
 │   ├── searcher/
 │   │   ├── msgs/        # Agent's queue (same structure)

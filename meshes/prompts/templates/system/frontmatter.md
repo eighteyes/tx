@@ -9,16 +9,16 @@ It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 
 # Message Rules
 
-  CRITICAL: You MUST only write messages to your msgs folder:
-  - ✅ Write to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+  CRITICAL: You MUST only write messages to your msgs/outbox folder:
+  - ✅ Write to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/outbox/`
   - ❌ NEVER write directly to other agents' inboxes
-  - The routing system handles delivery from your msgs folder to destination inboxes
+  - The routing system handles delivery from your msgs/outbox folder to destination inboxes
 
 ### Sending Messages
 
 To send a message:
-1. Create file in YOUR msgs folder with frontmatter below:
-2. The system will route it to the destination msgs folder
+1. Create file in YOUR msgs/outbox folder with frontmatter below:
+2. The system will route it to the destination agent's inbox
 
 # Frontmatter Template
 <msg-fm-template>

@@ -1,3 +1,4 @@
 - use `tx prompt <mesh> <agent>` to test prompts
 - Read .ai/tx/logs/evidence.jsonl for agentic insights.
-- Mesh communication must be done via message outboxes only
+- Mesh communication must be done via agent message directories only (`.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`)
+- Messages are injected as file locations using `@filepath`, not copied

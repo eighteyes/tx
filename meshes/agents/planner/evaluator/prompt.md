@@ -111,7 +111,7 @@ Priority weights for this task:
 
 ## Message to Monitor
 
-Create in your `msgs/outbox/` directory:
+Create in your `msgs/` directory:
 
 ```markdown
 ---

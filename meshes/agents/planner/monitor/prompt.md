@@ -89,7 +89,7 @@ This validates the feedback loop works correctly.
 
 ## Message Format: APPROVAL
 
-Create in your `msgs/outbox/` directory when APPROVING:
+Create in your `msgs/` directory when APPROVING:
 
 ```markdown
 ---
@@ -132,7 +132,7 @@ Please assemble final executable plan and deliver to core.
 
 ## Message Format: REJECTION
 
-Create in your `msgs/outbox/` directory when REJECTING:
+Create in your `msgs/` directory when REJECTING:
 
 ```markdown
 ---

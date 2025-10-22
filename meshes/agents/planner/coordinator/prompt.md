@@ -121,7 +121,7 @@ If things go wrong:
 
 ## Message to Core (Completion)
 
-Create in your `msgs/outbox/` directory:
+Create in your `msgs/` directory:
 
 ```markdown
 ---
