@@ -31,11 +31,13 @@ program
 program
   .command('spawn <mesh> [agent]')
   .option('-i, --init <task>', 'Initial task to send')
+  .option('--id <summary>', 'Generate mesh ID from task summary (first letters of 4-8 words)')
   .option('-m, --model <model>', 'Model to use (default: claude-opus)')
   .description('Spawn a new agent in a mesh')
   .action(async (mesh, agent, options) => {
     await spawn(mesh, agent, {
       init: options.init,
+      id: options.id,
       model: options.model
     });
   });

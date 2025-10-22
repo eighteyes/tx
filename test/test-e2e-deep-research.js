@@ -7,7 +7,8 @@ const { E2EWorkflow } = require('../lib/e2e-workflow');
 /**
  * E2E Test: deep-research mesh
  *
- * Tests the comprehensive multi-agent research workflow:
+ * Tests the comprehensive multi-agent research workflow with HITL requirements gathering:
+ * - interviewer gathers requirements via Q&A (HITL)
  * - sourcer gathers sources (haiku)
  * - analyst proposes hypotheses (sonnet)
  * - researcher synthesizes theories (opus)
@@ -16,12 +17,13 @@ const { E2EWorkflow } = require('../lib/e2e-workflow');
  * - final report saved to workspace
  */
 
-console.log('=== E2E Test: deep-research mesh (multi-agent research) ===\n');
+console.log('=== E2E Test: deep-research mesh (HITL + multi-agent research) ===\n');
 
-const TEST_TIMEOUT = 300000; // 5 minutes - complex workflow
+const TEST_TIMEOUT = 360000; // 6 minutes - HITL + complex workflow
 const CORE_SESSION = 'core';
 const MESH = 'deep-research';
-const ENTRY_AGENT = 'sourcer';
+const ENTRY_AGENT = 'interviewer';
+const INTERVIEWER_SESSION = `${MESH}-${ENTRY_AGENT}`;
 
 let txProcess = null;
 let testPassed = false;
@@ -99,6 +101,170 @@ async function cleanup() {
   console.log('');
 }
 
+/**
+ * Simulate human responses to interviewer's questions
+ * Dynamic Q&A until interviewer has enough for Grade-A research
+ */
+async function simulateResearchRequirementsGathering() {
+  console.log('\n📍 Step 4: Simulating HITL requirements gathering\n');
+
+  const agentMsgsDir = `.ai/tx/mesh/${MESH}/agents/${ENTRY_AGENT}/msgs`;
+  const coreMsgsDir = `.ai/tx/mesh/core/agents/core/msgs`;
+
+  // Predefined responses for a research project on AI alignment
+  const responses = [
+    {
+      trigger: /research question|research topic|main.*topic/i,
+      response: `I want to research the effectiveness of Constitutional AI and RLHF approaches in AI alignment. Specifically, how do these techniques compare in creating safer, more aligned AI systems?`
+    },
+    {
+      trigger: /scope|boundaries|aspects|important/i,
+      response: `Focus on: (1) technical mechanisms of both approaches, (2) empirical results from real deployments, (3) failure modes and limitations. Out of scope: general AI safety theory, non-technical governance aspects.`
+    },
+    {
+      trigger: /depth|deep|level.*detail|overview.*analysis/i,
+      response: `I need an analytical deep-dive. This is for a technical audience that needs to understand the trade-offs between these approaches to make implementation decisions.`
+    },
+    {
+      trigger: /specific questions|questions.*answer|key questions/i,
+      response: `Key questions: (1) What are the core technical differences? (2) Which approach scales better? (3) What are the failure modes of each? (4) Can they be combined effectively? (5) What does empirical evidence show about their effectiveness? (6) What are the computational costs?`
+    },
+    {
+      trigger: /audience|use.*for|purpose/i,
+      response: `This is for ML engineers and researchers evaluating which alignment approach to use in their systems. They need actionable insights backed by evidence.`
+    },
+    {
+      trigger: /constraints|avoid|limitations|timeline/i,
+      response: `No major constraints. Prioritize peer-reviewed sources and documented real-world results over speculation. No rush, but aim for thoroughness.`
+    }
+  ];
+
+  let questionCount = 0;
+  const maxQuestions = 10; // Safety limit
+  let lastQuestionTime = Date.now();
+
+  while (questionCount < maxQuestions) {
+    // Wait for ask message to appear
+    console.log(`\n⏳ Waiting for question ${questionCount + 1}...\n`);
+
+    let askFile = null;
+    const maxWait = 45000; // 45 seconds per question
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWait && !askFile) {
+      try {
+        const files = fs.readdirSync(agentMsgsDir).filter(f => f.endsWith('.md'));
+        // Look for new ask messages
+        askFile = files.find(f => {
+          const fullPath = path.join(agentMsgsDir, f);
+          const stat = fs.statSync(fullPath);
+          if (stat.mtimeMs < lastQuestionTime) return false; // Too old
+
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          return content.includes('type: ask') && content.includes('to: core/core');
+        });
+      } catch (e) {
+        // Directory might not exist yet
+      }
+
+      if (!askFile) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    if (!askFile) {
+      console.log(`ℹ️  No more questions after ${questionCount} questions - interviewer likely ready\n`);
+      break;
+    }
+
+    questionCount++;
+    lastQuestionTime = Date.now();
+
+    console.log(`✅ Question ${questionCount} received: ${askFile}\n`);
+
+    // Read the question
+    const askContent = fs.readFileSync(path.join(agentMsgsDir, askFile), 'utf-8');
+    console.log('📋 Question preview:\n');
+    const lines = askContent.split('\n');
+    const previewLines = lines.slice(0, 20).join('\n');
+    console.log(previewLines);
+    console.log('\n');
+
+    // Extract msg-id
+    const msgIdMatch = askContent.match(/msg-id:\s*(.+)/);
+    const msgId = msgIdMatch ? msgIdMatch[1].trim() : `research-req-${questionCount}`;
+
+    // Find appropriate response
+    let responseText = null;
+    for (const resp of responses) {
+      if (resp.trigger.test(askContent)) {
+        responseText = resp.response;
+        break;
+      }
+    }
+
+    // Fallback response if no match
+    if (!responseText) {
+      responseText = `That's a great question. Let me provide additional context: I'm looking for a comprehensive, evidence-based analysis that can guide practical implementation decisions. The research should be thorough but focused on actionable insights.`;
+    }
+
+    // Create ask-response message
+    console.log(`📍 Creating response ${questionCount}...\n`);
+    const responseFileName = `response-req-${questionCount}.md`;
+    const responseFilePath = path.join(agentMsgsDir, responseFileName);
+    const responseContent = `---
+to: ${MESH}/${ENTRY_AGENT}
+from: core/core
+type: ask-response
+msg-id: ${msgId}
+status: complete
+timestamp: ${new Date().toISOString()}
+headline: Response to requirements question ${questionCount}
+---
+
+# Response
+
+${responseText}
+`;
+
+    fs.writeFileSync(responseFilePath, responseContent);
+    console.log(`✅ Sent response ${questionCount}: ${responseFileName}\n`);
+
+    // Notify interviewer
+    console.log(`📍 Notifying interviewer of new response...\n`);
+    TmuxInjector.injectText(INTERVIEWER_SESSION, `You have a new ask-response message (${responseFileName}) in your msgs folder. Please read and process it.`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    TmuxInjector.send(INTERVIEWER_SESSION, 'Enter');
+
+    // Wait for interviewer to process
+    console.log(`⏳ Waiting for interviewer to process (20 seconds)...\n`);
+    await new Promise(resolve => setTimeout(resolve, 20000));
+  }
+
+  console.log(`✅ Requirements gathering complete (${questionCount} Q&A rounds)\n`);
+
+  // Wait for research-brief.md to be created
+  console.log('📍 Waiting for research-brief.md...\n');
+  const briefPath = `.ai/tx/mesh/${MESH}/workspace/research-brief.md`;
+  const maxBriefWait = 30000;
+  const briefStartTime = Date.now();
+
+  while (Date.now() - briefStartTime < maxBriefWait) {
+    if (fs.existsSync(briefPath)) {
+      console.log('✅ Research brief created!\n');
+      const brief = fs.readFileSync(briefPath, 'utf-8');
+      console.log('📋 Research brief preview:\n');
+      console.log(brief.split('\n').slice(0, 30).join('\n'));
+      console.log('\n...\n');
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  console.log('⚠️  Research brief not found, but continuing...\n');
+  return false;
+}
+
 async function runE2ETest() {
   const testStartTime = Date.now();
 
@@ -152,14 +318,85 @@ async function runE2ETest() {
 
     console.log('\n📍 Step 3: Testing deep research workflow\n');
 
-    const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn deep-research mesh with sourcer gathering sources, analyst proposing hypotheses, researcher synthesizing theories, and disprover finding counterpoints`);
+    const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn deep-research mesh to research AI alignment techniques - interviewer will gather requirements first`);
     const workflowPassed = await workflow.test();
 
-    // After workflow, wait for all 5 agent sessions
+    // Wait for interviewer session
     if (workflowPassed) {
-      console.log('📍 Waiting for all 5 research agent sessions to spawn...\n');
+      console.log('📍 Waiting for interviewer session...\n');
+      const interviewerReady = await waitForSession(INTERVIEWER_SESSION, 45000);
+      if (!interviewerReady) {
+        throw new Error('Interviewer session not created');
+      }
 
-      const agents = ['sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
+      const interviewerClaudeReady = await waitForClaudeReady(INTERVIEWER_SESSION, 60000);
+      if (!interviewerClaudeReady) {
+        throw new Error('Claude not ready in interviewer session');
+      }
+
+      // Wait for interviewer to be idle and ready
+      console.log('⏳ Waiting for interviewer to be idle and ready...\n');
+      const interviewerIdle = await TmuxInjector.waitForIdle(INTERVIEWER_SESSION, 2000, 30000);
+      if (!interviewerIdle) {
+        console.log('⚠️  Warning: Interviewer may not be fully idle, but continuing...\n');
+      } else {
+        console.log('✅ Interviewer is idle and ready\n');
+      }
+
+      // Manually deliver task message to interviewer
+      console.log('📍 Manually delivering task message to interviewer...\n');
+      const taskMsgPath = `.ai/tx/mesh/${MESH}/agents/${ENTRY_AGENT}/msgs`;
+      const taskSourcePath = `.ai/tx/mesh/core/agents/core/msgs/task-deep-research.md`;
+      const taskDestPath = path.join(taskMsgPath, 'task-deep-research.md');
+
+      // Create task if it doesn't exist
+      if (!fs.existsSync(taskSourcePath)) {
+        const taskContent = `---
+to: ${MESH}/${ENTRY_AGENT}
+from: core/core
+type: task
+status: start
+requester: core/core
+timestamp: ${new Date().toISOString()}
+headline: Research AI alignment techniques
+---
+
+# Research Task
+
+I need comprehensive research on AI alignment techniques. Please gather requirements through your interview process and then coordinate the research team.
+`;
+        fs.writeFileSync(taskSourcePath, taskContent);
+      }
+
+      try {
+        const taskContent = fs.readFileSync(taskSourcePath, 'utf-8');
+        fs.writeFileSync(taskDestPath, taskContent);
+        console.log(`✅ Task message delivered: ${taskDestPath}\n`);
+      } catch (e) {
+        console.log(`❌ Failed to deliver task message: ${e.message}\n`);
+      }
+
+      // Instruct the interviewer to process the task
+      console.log('📍 Instructing interviewer to read task...\n');
+      TmuxInjector.injectText(INTERVIEWER_SESSION, 'Read and process the task message in your msgs folder');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      TmuxInjector.send(INTERVIEWER_SESSION, 'Enter');
+
+      // Give interviewer time to start
+      await new Promise(resolve => setTimeout(resolve, 10000));
+
+      // Run HITL requirements gathering simulation
+      const briefCreated = await simulateResearchRequirementsGathering();
+      if (!briefCreated) {
+        console.log('⚠️  Warning: Research brief not created, but continuing...\n');
+      }
+    }
+
+    // After HITL, wait for all 6 agent sessions (including interviewer)
+    if (workflowPassed) {
+      console.log('📍 Waiting for all 6 research agent sessions to spawn...\n');
+
+      const agents = ['interviewer', 'sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
       const sessions = {};
       const maxWait = 45000; // 45 seconds - agents may spawn sequentially
       const startTime = Date.now();
@@ -180,7 +417,7 @@ async function runE2ETest() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      console.log('📍 Checking for all 5 research agent sessions:\n');
+      console.log('📍 Checking for all 6 research agent sessions:\n');
       let allSessionsFound = true;
       for (const agent of agents) {
         if (sessions[agent]) {
@@ -195,7 +432,7 @@ async function runE2ETest() {
         console.error('\n❌ Not all agent sessions spawned\n');
         testPassed = false;
       } else {
-        console.log('\n✅ All 5 research agent sessions spawned\n');
+        console.log('\n✅ All 6 research agent sessions spawned\n');
         testPassed = true;
       }
     }
@@ -237,9 +474,9 @@ async function runE2ETest() {
         if (hasResearch || hasCompletion) {
           console.log(`✅ Core tmux shows research workflow activity\n`);
 
-          // Check for agent activity - all 5 agents should have processed messages
+          // Check for agent activity - all 6 agents should have processed messages
           console.log('📍 Checking for agent message processing...\n');
-          const agents = ['sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
+          const agents = ['interviewer', 'sourcer', 'analyst', 'researcher', 'disprover', 'writer'];
           let agentsProcessed = 0;
 
           for (const agent of agents) {
@@ -250,11 +487,11 @@ async function runE2ETest() {
             }
           }
 
-          if (agentsProcessed === 5) {
+          if (agentsProcessed === 6) {
             testPassed = true;
-            console.log('\n✅ TEST PASSED: All 5 research agents executed workflow!\n');
+            console.log('\n✅ TEST PASSED: All 6 research agents executed workflow!\n');
           } else {
-            console.log(`   ⚠️  Only ${agentsProcessed}/5 agents had activity`);
+            console.log(`   ⚠️  Only ${agentsProcessed}/6 agents had activity`);
             testPassed = false;
           }
         } else {

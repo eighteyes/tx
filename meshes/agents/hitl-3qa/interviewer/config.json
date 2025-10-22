@@ -1,0 +1,9 @@
+{
+  "name": "interviewer",
+  "description": "HITL agent that conducts 3 Q&A sessions with core before completing task",
+  "capabilities": ["ask"],
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

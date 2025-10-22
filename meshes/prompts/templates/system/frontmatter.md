@@ -23,16 +23,21 @@ To send a message:
 # Frontmatter Template
 <msg-fm-template>
 ---
-to: [next-agent]
-from: [mesh]/[this-agent]
+to: [target-mesh-instance]/[target-agent] or core
+from: {{ mesh }}/{{ agent }}
 type: ask, ask-response, task, task-complete, update
 status: start, in-progress, rejected, approved, complete
 requester: [mesh]/[agent] - self if sending to a mesh, otherwise use original msg requester
-msg-id: [uuid for ask or task]
+msg-id: [short uuid for ask / task]
 headline: [summary]
 timestamp: [timestamp]
 ---
 </msg-fm-template>
+
+**IMPORTANT**: Use the FULL mesh instance name (with UUID) for `to` field:
+- ✅ Correct: `to: test-echo-abc123/echo`
+- ❌ Wrong: `to: test-echo/echo`
+- Find active mesh instances in the "TX Status" section above
 
 ## Types
 `ask` - stop after asking, other agent will reply

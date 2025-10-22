@@ -156,7 +156,7 @@ async function runE2ETest() {
     // Step 3: Use E2EWorkflow to test the complete workflow
     console.log('\n📍 Step 3: Testing mesh workflow\n');
 
-    const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and send it a simple task`);
+    const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and send it a simple echo task`);
     const workflowPassed = await workflow.test();
 
     if (workflowPassed) {

@@ -29,3 +29,4 @@ build/
 logs/
 *.log
 .ai
+.ai/tx/.tx-start.pid

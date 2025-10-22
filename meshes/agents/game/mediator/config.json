@@ -1,0 +1,10 @@
+{
+  "name": "mediator",
+  "description": "Riddle game mediator and scorekeeper - manages rounds, validates answers, tracks scores",
+  "capabilities": ["riddle"],
+  "options": {
+    "model": "sonnet",
+    "output": "clean"
+  },
+  "orchestrator": true
+}

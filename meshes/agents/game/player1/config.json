@@ -1,0 +1,9 @@
+{
+  "name": "player1",
+  "description": "First competitive riddle player - asks and answers riddles",
+  "capabilities": ["riddle"],
+  "options": {
+    "model": "sonnet",
+    "output": "clean"
+  }
+}

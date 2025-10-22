@@ -1,10 +1,10 @@
 {
   "mesh": "deep-research",
-  "description": "Multi-agent deep research workflow: sourcer gathers sources, analyst proposes hypotheses, researcher builds theories, disprover critiques in iterative loop until 95% confidence, writer synthesizes final report",
+  "description": "Multi-agent deep research workflow with HITL requirements gathering: interviewer gathers requirements, sourcer gathers sources, analyst proposes hypotheses, researcher builds theories, disprover critiques in iterative loop until 95% confidence, writer synthesizes final report",
   "type": "iterative",
-  "agents": ["research/sourcer", "research/analyst", "research/researcher", "research/disprover", "research/writer"],
-  "entry_point": "sourcer",
+  "agents": ["research/interviewer", "research/sourcer", "research/analyst", "research/researcher", "research/disprover", "research/writer"],
+  "entry_point": "interviewer",
   "completion_agent": "writer",
   "capabilities": ["search", "ask"],
-  "workflow_topology": "sequential-with-feedback"
+  "workflow_topology": "hitl-then-sequential-with-feedback"
 }
