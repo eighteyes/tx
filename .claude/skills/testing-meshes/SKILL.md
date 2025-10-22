@@ -7,39 +7,129 @@ description: Guide for writing and debugging E2E tests for the tx mesh system. U
 
 This skill provides guidance for writing effective E2E tests for the tx mesh system.
 
+## 🔑 Key Principle: Session-Based File Validation
+
+**Check the session to verify files were injected and created. The tmux session is the source of truth.**
+
+Tests must validate by monitoring what Claude actually does in the session:
+- Watch for `Read()` calls showing Claude reading message files
+- Look for `Write()` calls showing Claude creating messages
+- Check for file paths in session output (e.g., `/msgs/task-123.md`)
+- Verify file operations completed before checking filesystem
+- The session shows intent AND execution - both matter
+
+```javascript
+// Session-based validation - check what Claude actually did
+const sessionOutput = execSync(`tmux capture-pane -t ${session} -p -S -100`);
+
+// Look for evidence of file injection/creation in the session
+const readMessages = sessionOutput.includes('Read(') && sessionOutput.includes('/msgs/');
+const wroteMessages = sessionOutput.includes('Write(') && sessionOutput.includes('/msgs/');
+const filePathsMentioned = sessionOutput.match(/\/msgs\/[^\/\s]+\.md/g) || [];
+
+// THEN verify those files actually exist
+const msgsDir = `.ai/tx/mesh/${meshInstance}/agents/${agentName}/msgs`;
+const actualFiles = fs.existsSync(msgsDir) ?
+  fs.readdirSync(msgsDir).filter(f => f.endsWith('.md')) : [];
+
+console.log('Session shows Read operations:', readMessages);
+console.log('Session shows Write operations:', wroteMessages);
+console.log('Files mentioned in session:', filePathsMentioned);
+console.log('Files actually on disk:', actualFiles);
+```
+
+## ⚠️ CRITICAL: Injection Rule
+
+**`TmuxInjector.injectText()` can ONLY be used with the 'core' session.**
+
+- ✅ **ALLOWED**: `TmuxInjector.injectText('core', 'your instruction here')`
+- ❌ **FORBIDDEN**: `TmuxInjector.injectText('mesh-agent', 'any text')`
+- ❌ **FORBIDDEN**: `TmuxInjector.injectText(agentSession, 'any text')`
+
+The 'core' session represents the user. Only users can type commands. Mesh agents communicate exclusively through the message routing system - they never receive direct text injection.
+
+## 📝 Test Agent Prompt Design
+
+**Test agent prompts must be SUPER LIGHTWEIGHT - only Role and Workflow sections.**
+
+Test agents exist to validate system mechanics, not complex capabilities:
+
+```markdown
+# Role
+You are a [test type] agent. [One sentence about what you do].
+
+# Workflow
+1. [Simple action 1]
+2. [Simple action 2 with key details like `to: core/core`]
+3. [Simple action 3 if needed]
+```
+
+**DO NOT INCLUDE:**
+- Examples
+- Output formats
+- Detailed instructions
+- Multiple sections
+- Complex logic
+
+**Example - Echo Test Agent:**
+```markdown
+# Role
+You are an echo test agent. When you receive a task, echo it back to core.
+
+# Workflow
+1. Read the incoming task message
+2. Write a response message with:
+   - `to: core/core`
+   - `type: task-complete`
+   - Include the original task content in your response
+```
+
+This minimal approach ensures tests focus on system behavior, not agent complexity.
+
 ## Core Principles
 
 ### 1. Minimal Test Injection
 
-**Tests should inject ONLY the initial natural language instruction to core, nothing else.**
+**Tests should inject ONLY the initial natural language instruction to core, nothing else. Let Claude do ALL the work.**
 
 ```javascript
-// ✅ CORRECT: Single natural language instruction
-TmuxInjector.injectText(coreSession, 'spawn a test-ask mesh and have asker ask answerer a question');
-TmuxInjector.send(coreSession, 'Enter');
+// ✅ CORRECT: Single natural language instruction to CORE ONLY
+TmuxInjector.injectText(coreSession, 'spawn a test-echo mesh and send it a simple echo task');
 
-// ❌ WRONG: Orchestrating every step
-TmuxInjector.injectText(coreSession, 'tx spawn test-ask');
-// ... later ...
-TmuxInjector.injectText(askerSession, 'Execute your task...');
+// ❌ WRONG: Creating files directly
+fs.writeFileSync('.ai/tx/mesh/test-echo/msgs/task.md', taskContent);  // NEVER DO THIS!
+
+// ❌ WRONG: Injecting to agent sessions
+TmuxInjector.injectText(agentSession, 'Execute your task...');  // NEVER DO THIS!
 ```
 
-**Rationale**: Tests validate the system as users experience it. Let Claude interpret the instruction and decide how to execute it.
+**Critical Rules**:
+- `TmuxInjector.injectText()` must ONLY be used with the 'core' session
+- NEVER create message files directly - let Claude write them
+- Send Enter to continue when Claude needs permission bypass
+- Monitor tmux sessions to verify behavior, don't manipulate files
 
-### 2. Tmux Sessions Are Source of Truth
+**Rationale**: Tests validate the system as users experience it. Only users (core) can inject text. Claude handles all the orchestration, message writing, and routing.
 
-**Validate using tmux session output, not files.**
+### 2. Dynamic Message Validation
+
+**Validate by checking what files are actually written, not hardcoded patterns.**
 
 ```javascript
-// ✅ CORRECT: Check tmux for evidence of work
+// ✅ CORRECT: Dynamically check what files were written
+const coreMsgsDir = '.ai/tx/mesh/core/agents/core/msgs';
+const files = fs.existsSync(coreMsgsDir) ? fs.readdirSync(coreMsgsDir) : [];
+const hasMessages = files.filter(f => f.endsWith('.md')).length > 0;
+
+// Check tmux output to see what Claude actually did
 const coreOutput = execSync(`tmux capture-pane -t core -p -S -100`);
-const hasInboxRead = coreOutput.includes('inbox/') || coreOutput.includes('complete/');
+const wroteMessage = coreOutput.includes('Write(') && coreOutput.includes('/msgs/');
 
-// ❌ WRONG: Check files directly
-const files = fs.readdirSync('.ai/tx/mesh/core/agents/core/msgs/complete');
+// ❌ WRONG: Looking for hardcoded patterns
+const hasInboxRead = coreOutput.includes('inbox/') || coreOutput.includes('complete/');
 ```
 
-**Rationale**: Tmux shows what actually happened. Files are implementation details that may change.
+**Rationale**: The system evolves. Check what's actually happening, not what used to happen.
 
 ### 3. Idle = Done
 
@@ -75,6 +165,34 @@ const result = checkForCompletion(); // Too early!
 ```
 
 **Rationale**: Message passing takes time. Each agent must complete its work before the next step.
+
+## Simplified E2E Workflow Pattern
+
+The E2E workflow has been simplified to focus on pure human simulation:
+
+```javascript
+// Step 1: Inject natural language (human types)
+TmuxInjector.injectText('core', 'spawn a test-echo mesh and send it a simple echo task');
+
+// Step 3: Wait for mesh to spawn
+const meshSpawned = await this._waitForMeshSpawn();
+
+// Step 4: Send another Enter for message writing
+TmuxInjector.send('core', 'Enter');  // Continue after message write
+await new Promise(resolve => setTimeout(resolve, 5000));
+
+// Step 5: Check if mesh received message
+const meshReceivedMessage = await this._checkMeshReceivedMessage();
+
+// Step 6: Check if mesh sent response back to core
+const meshRespondedToCore = await this._checkMeshRespondedToCore();
+```
+
+**Key Points**:
+- Only inject natural language to core
+- Let Claude handle ALL orchestration
+- Monitor tmux sessions to verify behavior
+- Check for complete round-trip communication
 
 ## Test Structure
 
@@ -115,7 +233,6 @@ Inject natural language instruction:
 
 ```javascript
 TmuxInjector.injectText('core', 'spawn a test-ask mesh and have asker ask answerer a question');
-TmuxInjector.send('core', 'Enter');
 ```
 
 ### 4. Wait for Workflow Completion
@@ -160,27 +277,105 @@ Find additional information about...
 
 **Rationale**: Timestamps help with debugging, tracing workflow timing, validating message sequencing, and understanding when operations occur.
 
-### 6. Validate via Tmux
+### 6. Dynamic Validation
 
-Check tmux output for evidence of completion:
+Check what actually happened by looking at files written and tmux output:
 
 ```javascript
+// Check what files were created in each agent's msgs directory
+function checkMessagesWritten(meshInstance, agentName) {
+  const msgsDir = `.ai/tx/mesh/${meshInstance}/agents/${agentName}/msgs`;
+  if (fs.existsSync(msgsDir)) {
+    const files = fs.readdirSync(msgsDir).filter(f => f.endsWith('.md'));
+    console.log(`Found ${files.length} messages in ${agentName}:`, files);
+    return files;
+  }
+  return [];
+}
+
+// Validate by checking tmux output for actual work done
 const coreOutput = execSync(`tmux capture-pane -t core -p -S -100`);
+const meshOutput = execSync(`tmux capture-pane -t ${meshSession} -p -S -100`);
 
-const hasInboxRead = coreOutput.includes('inbox/') || coreOutput.includes('complete/');
-const hasTaskComplete = coreOutput.includes('task-complete') || coreOutput.includes('status: complete');
+// Look for evidence of message writing and routing
+const coreWroteMessage = coreOutput.includes('Write(') && coreOutput.includes('/msgs/');
+const meshReceivedMessage = checkMessagesWritten(meshInstance, agentName).length > 0;
+const meshWroteResponse = meshOutput.includes('Write(') || meshOutput.includes('-done.md');
 
-if (hasInboxRead || hasTaskComplete) {
-  console.log('✅ Test passed');
+if (coreWroteMessage && meshReceivedMessage && meshWroteResponse) {
+  console.log('✅ Test passed - complete message flow verified');
 } else {
   console.log('❌ Test failed');
-  console.log('Last 30 lines:', coreOutput.split('\n').slice(-30).join('\n'));
+  console.log('Core wrote message:', coreWroteMessage);
+  console.log('Mesh received message:', meshReceivedMessage);
+  console.log('Mesh wrote response:', meshWroteResponse);
 }
 ```
 
 ### 7. Cleanup
 
 Always cleanup sessions:
+
+```javascript
+try {
+  execSync('tx stop', { stdio: 'pipe' });
+} catch (e) {
+  // May return error, that's ok
+}
+```
+
+## Recent Improvements
+
+### EPIPE Error Handling
+
+The spawn command now handles EPIPE errors gracefully with a `safeConsoleLog` wrapper:
+
+```javascript
+function safeConsoleLog(...args) {
+  try {
+    console.log(...args);
+  } catch (error) {
+    if (error.code === 'EPIPE' || error.code === 'ERR_STREAM_DESTROYED') {
+      // Silently ignore - output stream was closed
+    } else {
+      throw error;
+    }
+  }
+}
+```
+
+This prevents crashes when the parent process terminates or pipe is broken.
+
+### Automatic Core Message Cleanup
+
+The `tx start` command now automatically cleans up old messages from core:
+
+```javascript
+// On system start, clean core's message directory
+const coreMsgsDir = '.ai/tx/mesh/core/agents/core/msgs';
+if (fs.existsSync(coreMsgsDir)) {
+  const files = fs.readdirSync(coreMsgsDir).filter(f => f.endsWith('.md'));
+  files.forEach(file => fs.unlinkSync(path.join(coreMsgsDir, file)));
+  console.log(`🧹 Cleaned ${files.length} old message file(s) from core`);
+}
+```
+
+This ensures tests always start with a clean state.
+
+### Mesh Instance UUIDs
+
+Meshes now get unique 6-character UUIDs to allow parallel instances:
+
+```javascript
+// Sessions are named: {mesh}-{uuid}-{agent}
+// Example: test-echo-a1b2c3-echo
+const meshSession = sessions.find(s => {
+  const pattern = new RegExp(`^${this.meshName}-[0-9a-f]{6}-${this.agentName}$`);
+  return pattern.test(s);
+});
+```
+
+### Complete Cleanup Pattern
 
 ```javascript
 try {
@@ -211,6 +406,7 @@ For detailed guidance, see:
 ```javascript
 const { execSync, spawn } = require('child_process');
 const { TmuxInjector } = require('../lib/tmux-injector');
+const fs = require('fs');
 
 const MESH = 'test-ask';
 const CORE = 'core';
@@ -229,18 +425,36 @@ async function test() {
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // Inject instruction
+    // Wait for Claude ready
+    await TmuxInjector.claudeReadyCheck(CORE, 30000);
+
+    // Inject instruction (simulating human typing)
     TmuxInjector.injectText(CORE, `spawn a ${MESH} mesh and do work`);
-    TmuxInjector.send(CORE, 'Enter');
 
     // Wait for work
     await TmuxInjector.waitForIdle(CORE, 5000, 60000);
 
-    // Validate
-    const output = execSync(`tmux capture-pane -t ${CORE} -p -S -100`);
-    const success = output.includes('complete/');
+    // SESSION-BASED VALIDATION: Check session FIRST
+    const coreOutput = execSync(`tmux capture-pane -t ${CORE} -p -S -100`, { encoding: 'utf-8' });
 
-    console.log(success ? '✅ PASSED' : '❌ FAILED');
+    // 1. Check for file operations in the session
+    const sessionShowsRead = coreOutput.includes('Read(') && coreOutput.includes('/msgs/');
+    const sessionShowsWrite = coreOutput.includes('Write(') && coreOutput.includes('/msgs/');
+    const filePathsInSession = coreOutput.match(/\/msgs\/[^\/\s]+\.md/g) || [];
+
+    console.log('Session shows Read operations:', sessionShowsRead);
+    console.log('Session shows Write operations:', sessionShowsWrite);
+    console.log('Files mentioned in session:', filePathsInSession);
+
+    // 2. THEN verify those files actually exist on disk
+    const coreMsgs = `.ai/tx/mesh/core/agents/core/msgs`;
+    const filesOnDisk = fs.existsSync(coreMsgs) ?
+      fs.readdirSync(coreMsgs).filter(f => f.endsWith('.md')) : [];
+    console.log('Files actually on disk:', filesOnDisk);
+
+    // Success requires session evidence AND files on disk
+    const success = sessionShowsWrite && filesOnDisk.length > 0;
+    console.log(success ? '✅ PASSED - Session validated' : '❌ FAILED - Check session output');
     process.exit(success ? 0 : 1);
   } finally {
     execSync('tx stop', { stdio: 'pipe' }).catch(() => {});
@@ -250,127 +464,26 @@ async function test() {
 test();
 ```
 
-## Multi-Agent Mesh Testing
+## Specialized Testing Patterns
 
-For meshes with 2+ agents communicating with each other (like ping-pong):
+For testing more complex workflows, see these specialized references:
 
-### Key Differences from Single-Agent Tests
+### Multi-Agent Testing
+For meshes with 2+ agents communicating (like ping-pong):
+- **[multi-agent-testing.md](references/multi-agent-testing.md)** - Testing multi-agent communication patterns
 
-1. **Multiple Sessions Spawned**: Need to wait for all agent sessions, not just entry point
-2. **Sequencing Critical**: Must validate proper idle sequencing
-3. **Longer Timeouts**: Multi-agent exchanges take longer
-4. **Message Validation**: Validate via tmux output, not filesystem
+### Iterative Workflow Testing
+For meshes with feedback loops and multiple iterations:
+- **[iterative-testing.md](references/iterative-testing.md)** - Testing iterative refinement workflows
 
-### Test Pattern
+### Human-In-The-Loop (HITL) Testing
+For meshes requiring human interaction via ask/ask-response messages:
+- **[hitl-testing.md](references/hitl-testing.md)** - Testing HITL workflows with Q&A patterns
 
-```javascript
-// Step 1: Start system
-execSync('tmux start-server');
-spawn('tx', ['start', '-d']);
-
-// Step 2: Instruction to core
-// "spawn a test-ping-pong mesh and have agents exchange messages"
-
-// Step 3: Wait for ALL agent sessions
-const agents = ['pinger', 'ponger'];
-for (const agent of agents) {
-  await waitForSession(`${MESH}-${agent}`, 30000);
-}
-
-// Step 4: Idle sequencing - validate proper flow
-const coreIdle1 = await TmuxInjector.waitForIdle('core', 5000, 60000);
-const agentIdle = await TmuxInjector.waitForIdle(`${MESH}-pinger`, 5000, 60000);
-const coreIdle2 = await TmuxInjector.waitForIdle('core', 5000, 60000);
-
-// Step 5: Validate via tmux output
-const coreOutput = execSync('tmux capture-pane -t core -p -S -100');
-const hasMessaging = coreOutput.includes('outbox/') || coreOutput.includes('routing');
-```
-
-### Real Example: test-ping-pong
-
-See `test/test-e2e-ping-pong.js` for complete working example.
-
-**Key points from implementation:**
-- 180 second timeout (agents exchanging messages take time)
-- Polling for both agent sessions with 30 second wait
-- Exact name matching AND suffix variant matching
-- Tmux idle detection between sequential steps
-- Core tmux output validation (look for `outbox/`, `message`, `routing`)
-
-### Learnings from Ping-Pong Testing
-
-1. **Agent Prompts Matter**: Simple, step-by-step prompts → successful exchanges
-2. **Message Routing is Automatic**: System handles routing if frontmatter is correct
-3. **Tmux is Source of Truth**: Validate via tmux output, not filesystem
-4. **Idle Detection Reliable**: Use it to sequence handoffs
-5. **Verbose Logging Helps**: Check agent prompts and output during debug
-6. **Timestamps Essential**: All messages must include `yymmdd-hhmm` timestamp after frontmatter
-
-See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for design patterns.
-```
-
-## Iterative Workflow Testing
-
-For meshes with feedback loops and multi-iteration workflows:
-
-### Key Differences
-
-1. **Longer Message Chains**: Multiple back-and-forth exchanges extend test duration
-2. **Version State in Content**: Track progress via message content ("Version 1", "Version 2"), not files
-3. **Conditional Logic**: Agents respond based on message content inspection
-4. **Higher Timeout**: Iterative workflows need more time (180+ seconds)
-
-### Test Pattern
-
-```javascript
-// Iterative workflows need even more patience
-const TEST_TIMEOUT = 180000; // 3 minutes
-
-// Instruction can be high-level (agent figures out iterations)
-const instruction = "spawn a test-iterative mesh and have worker and reviewer iterate";
-
-// Wait for all agent sessions
-await waitForSession(`${MESH}-worker`);
-await waitForSession(`${MESH}-reviewer`);
-
-// Validate multiple iterations occurred
-const workerOutput = execSync('tmux capture-pane -t test-iterative-worker -p');
-const hasV1 = workerOutput.includes('Version 1');
-const hasV2 = workerOutput.includes('Version 2');
-const hasApproval = workerOutput.includes('approved');
-```
-
-### Real Example: test-iterative
-
-See `test/test-e2e-iterative.js` for complete working example.
-
-**Key points:**
-- Simplified instruction to "iterate" - let agent figure out the workflow
-- Both agent sessions spawned before validation
-- Multiple idle waits: core → worker iteration → core completion
-- Validates via message content (Version 1, Version 2, approval)
-- 180 second timeout sufficient for 2 iteration cycles
-
-### New Learnings from Iterative Testing
-
-1. **Instruction Clarity**: Simple high-level instructions work better than detailed step-by-step for iterative workflows
-
-2. **Version Markers Work Well**: Put "Version 1", "Version 2" directly in message content - simpler than state machines
-
-3. **Conditional Response Based on Content**: Agents can inspect message content and respond accordingly (e.g., check version and respond with approval or rejection)
-
-4. **Pseudo-Antagonistic Pattern**: Agents naturally implement approval gates when told "reject on v1, approve on v2"
-
-5. **Message Content is State**: Don't overcomplicate - message body tracks progress better than external state files
-
-6. **Simple Feedback Signals Work**: "approved", "needs revision", "rejected" - Claude understands these without elaboration
-
-7. **Two Iterations Enough**: 2 cycles (submit → feedback → revise → approve) proves the pattern
-
-8. **Agents Understand Approval Logic**: When instructed to implement approval gates or QA checks, Claude does it correctly
-
-9. **Timestamps Track Workflow Timing**: Include `yymmdd-hhmm` timestamp in all messages to trace iteration timing and debugging
-
-See: **[multi-agent-patterns.md](../building-meshes/references/multi-agent-patterns.md)** for iterative refinement pattern details.
-```
+Each reference covers:
+- Key differences from basic tests
+- Test patterns and code examples
+- Real examples from the test suite
+- Session-based validation techniques
+- Common pitfalls and solutions
+- Tips specific to that testing type
