@@ -7,15 +7,8 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "test": "node test/test-messages.js && node test/test-queue.js && node test/test-watcher.js && node test/test-workflow-advancement.js",
-    "test-messages": "node test/test-messages.js",
-    "test-queue": "node test/test-queue.js",
-    "test-watcher": "node test/test-watcher.js",
-    "test-workflow": "node test/test-workflow-advancement.js",
-    "test-e2e": "node test/test-e2e.js && node test/test-e2e-ask.js && node test/test-e2e-pingpong.js",
-    "test-e2e-echo": "node test/test-e2e.js",
-    "test-e2e-ask": "node test/test-e2e-ask.js",
-    "test-e2e-pingpong": "node test/test-e2e-pingpong.js"
+    "test": "node --test test/unit",
+    "test:e2e": "node --test test/e2e"
   },
   "dependencies": {
     "axios": "^1.12.2",

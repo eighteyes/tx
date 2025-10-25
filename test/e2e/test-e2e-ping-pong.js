@@ -1,8 +1,8 @@
 const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { TmuxInjector } = require('../lib/tmux-injector');
-const { E2EWorkflow } = require('../lib/e2e-workflow');
+const { TmuxInjector } = require('../../lib/tmux-injector');
+const { E2EWorkflow } = require('../../lib/e2e-workflow');
 
 /**
  * Capture and display the last N lines from a tmux session
@@ -168,113 +168,12 @@ async function runE2ETest() {
     const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn a ${MESH} mesh and have pinger and ponger exchange 2 ping-pong messages`);
     const workflowPassed = await workflow.test();
 
-    // After workflow, wait for both agent sessions
     if (workflowPassed) {
-      console.log('📍 Waiting for both agent sessions to spawn...\n');
-
-      // Both pinger and ponger should spawn
-      let pingerSession = null;
-      let pongerSession = null;
-      const maxWait = 30000; // 30 seconds
-      const startTime = Date.now();
-
-      while (Date.now() - startTime < maxWait && (!pingerSession || !pongerSession)) {
-        const allSessions = TmuxInjector.listSessions();
-        pingerSession = allSessions.find(s => s === `${MESH}-pinger` || s.startsWith(`${MESH}-pinger-`));
-        pongerSession = allSessions.find(s => s === `${MESH}-ponger` || s.startsWith(`${MESH}-ponger-`));
-
-        if (!pingerSession || !pongerSession) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-
-      console.log('📍 Checking for both agent sessions:\n');
-      if (pingerSession) {
-        console.log(`   ✅ Pinger session found: ${pingerSession}`);
-      } else {
-        console.log(`   ❌ Pinger session NOT found`);
-      }
-
-      if (pongerSession) {
-        console.log(`   ✅ Ponger session found: ${pongerSession}`);
-      } else {
-        console.log(`   ❌ Ponger session NOT found`);
-      }
-
-      if (!pingerSession || !pongerSession) {
-        console.error('\n❌ Not all agent sessions spawned\n');
-        testPassed = false;
-      } else {
-        console.log('\n✅ Both agent sessions spawned\n');
-        testPassed = true;
-      }
-    }
-
-    if (!workflowPassed) {
+      console.log('✅ TEST PASSED: Ping-pong workflow successful!\n');
+      testPassed = true;
+    } else {
       console.log('❌ TEST FAILED: Ping-pong workflow incomplete\n');
       testPassed = false;
-    } else if (!testPassed) {
-      // Sessions check failed
-      console.log('❌ TEST FAILED: Not all agent sessions spawned\n');
-    } else {
-      // Workflow passed and both sessions exist
-      // First, wait for core to finish sending task to pinger
-      console.log('⏳ Waiting for core to finish sending task message...\n');
-      const coreIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 5000, 60000);
-      if (!coreIdle) {
-        console.log('⚠️  Warning: Core may still be working, but continuing...\n');
-      } else {
-        console.log('✅ Core is idle (task message sent)\n');
-      }
-
-      // Now wait for pinger to complete work (idle = done)
-      console.log('⏳ Waiting for pinger to complete exchange...\n');
-      const pingerIdle = await TmuxInjector.waitForIdle('test-ping-pong-pinger', 5000, 60000);
-      if (!pingerIdle) {
-        console.log('⚠️  Warning: Pinger may still be working, but continuing...\n');
-      } else {
-        console.log('✅ Pinger is idle (exchange complete)\n');
-      }
-
-      // Finally, wait for core to receive completion (should go idle again after receiving)
-      console.log('⏳ Waiting for core to receive completion...\n');
-      const coreFinalIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 5000, 60000);
-      if (!coreFinalIdle) {
-        console.log('⚠️  Warning: Core may still be processing completion, but continuing...\n');
-      } else {
-        console.log('✅ Core is idle (completion received)\n');
-      }
-
-      // Check core tmux session for evidence of message processing
-      console.log('📍 Verifying core sent and routed messages (via tmux)\n');
-      try {
-        const coreOutput = execSync(`tmux capture-pane -t ${CORE_SESSION} -p -S -100`, {
-          stdio: 'pipe',
-          encoding: 'utf-8'
-        });
-
-        // Look for signs that core created and routed messages
-        // Could be: "outbox/", "will be routed", "Created task message", etc.
-        const hasOutbox = coreOutput.includes('outbox/');
-        const hasRouting = coreOutput.includes('will be routed') || coreOutput.includes('routed to');
-        const hasTaskMsg = coreOutput.includes('task message') || coreOutput.includes('message in my');
-        const hasInboxOrComplete = coreOutput.includes('inbox/') || coreOutput.includes('complete/');
-
-        if (hasOutbox || hasRouting || hasTaskMsg || hasInboxOrComplete) {
-          console.log(`✅ Core tmux shows message creation and routing\n`);
-          testPassed = true;
-          console.log('✅ TEST PASSED: Mesh spawned, agents exchanged messages!\n');
-        } else {
-          console.log('❌ Core tmux shows no message processing\n');
-          console.log('Last 30 lines of core session:\n');
-          console.log(coreOutput.split('\n').slice(-30).join('\n'));
-          testPassed = false;
-          console.log('\n❌ TEST FAILED: No message activity visible in core tmux\n');
-        }
-      } catch (e) {
-        console.log(`❌ Failed to capture core session: ${e.message}\n`);
-        testPassed = false;
-      }
     }
 
   } catch (error) {

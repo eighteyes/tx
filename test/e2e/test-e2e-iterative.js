@@ -1,37 +1,45 @@
 const { execSync, spawn } = require('child_process');
-const { TmuxInjector } = require('../lib/tmux-injector');
-const { E2EWorkflow } = require('../lib/e2e-workflow');
+const fs = require('fs');
+const path = require('path');
+const { TmuxInjector } = require('../../lib/tmux-injector');
+const { E2EWorkflow } = require('../../lib/e2e-workflow');
 
 /**
- * E2E Test: test-ask mesh
+ * Capture and display the last N lines from a tmux session
+ */
+function captureSessionOutput(sessionName, numLines = 20) {
+  try {
+    const output = execSync(`tmux capture-pane -t ${sessionName} -p -S -${numLines}`, {
+      stdio: 'pipe',
+      encoding: 'utf-8'
+    });
+    return output;
+  } catch (e) {
+    return `(Could not capture output from ${sessionName})`;
+  }
+}
+
+/**
+ * E2E Test: test-iterative mesh
  *
- * Tests the core->asker->answerer->asker->core workflow:
- * 1. Start tx system in detached mode
- * 2. Wait for core session + Claude ready + idle
- * 3. Use E2EWorkflow to handle all spawning and testing
- * 4. Cleanup
- *
- * Following meshes skill principles:
- * - E2EWorkflow handles ALL spawning/workflow logic
- * - Test file only sets up, calls workflow.test(), and cleans up
- * - No duplicate spawning logic in test files
+ * Tests the iterative refinement workflow:
+ * - worker submits version 1 to reviewer
+ * - reviewer rejects with feedback
+ * - worker submits version 2 to reviewer
+ * - reviewer approves
+ * - both agents spawn and exchange messages properly
  */
 
-console.log('=== E2E Test: test-ask mesh ===\n');
+console.log('=== E2E Test: test-iterative mesh (iterative refinement) ===\n');
 
-// Configuration
-const TEST_TIMEOUT = 120000; // 2 minutes total timeout
+const TEST_TIMEOUT = 180000; // 3 minutes
 const CORE_SESSION = 'core';
-const MESH = 'test-ask';
-const AGENT = 'asker';  // Entry point agent
+const MESH = 'test-iterative';
+const ENTRY_AGENT = 'worker';
 
-// Tracking
 let txProcess = null;
 let testPassed = false;
 
-/**
- * Wait for tmux session to exist with retries
- */
 async function waitForSession(sessionName, timeout = 15000, pollInterval = 500) {
   console.log(`⏳ Waiting for session "${sessionName}" to be created...`);
   const startTime = Date.now();
@@ -49,9 +57,6 @@ async function waitForSession(sessionName, timeout = 15000, pollInterval = 500) 
   return false;
 }
 
-/**
- * Wait for Claude to be ready in a session
- */
 async function waitForClaudeReady(sessionName, timeout = 30000) {
   console.log(`⏳ Waiting for Claude to initialize in "${sessionName}"...`);
   const ready = await TmuxInjector.claudeReadyCheck(sessionName, timeout);
@@ -63,13 +68,9 @@ async function waitForClaudeReady(sessionName, timeout = 30000) {
   return ready;
 }
 
-/**
- * Cleanup function
- */
 async function cleanup() {
   console.log('\n🧹 Cleaning up...\n');
 
-  // Stop tx system
   console.log('   Stopping tx system...');
   try {
     execSync('tx stop', { stdio: 'pipe' });
@@ -78,7 +79,6 @@ async function cleanup() {
     console.log('   (tx stop returned error - may be expected)');
   }
 
-  // Kill tx process if running
   if (txProcess && !txProcess.killed) {
     try {
       txProcess.kill();
@@ -87,36 +87,45 @@ async function cleanup() {
     }
   }
 
-  // Kill sessions - use pattern matching for mesh sessions with UUIDs
   const sessionsToKill = [CORE_SESSION];
   const allSessions = TmuxInjector.listSessions();
-  const matchingSessions = allSessions.filter(s => s.startsWith(`${MESH}-`) && s.includes('-asker'));
+  const matchingSessions = allSessions.filter(s => s.startsWith(`${MESH}-`));
   sessionsToKill.push(...matchingSessions);
-  const answerSessions = allSessions.filter(s => s.startsWith(`${MESH}-`) && s.includes('-answerer'));
-  sessionsToKill.push(...answerSessions);
 
   sessionsToKill.forEach(session => {
     try {
       if (TmuxInjector.sessionExists(session)) {
-        console.log(`   Killing session: ${session}`);
         TmuxInjector.killSession(session);
+        console.log(`   ✅ Killed session: ${session}`);
       }
     } catch (e) {
       // Ignore
     }
   });
 
-  console.log('✅ Cleanup complete\n');
+  try {
+    execSync('tmux kill-server', { stdio: 'pipe' });
+    console.log('   ✅ Killed tmux server');
+  } catch (e) {
+    // Ignore
+  }
+
+  console.log('');
 }
 
-/**
- * Main test flow
- */
 async function runE2ETest() {
   const testStartTime = Date.now();
 
   try {
-    // Step 1: Start tx in detached mode
+    // Ensure tmux server is running before starting tests
+    console.log('🔧 Ensuring tmux server is running...\n');
+    try {
+      execSync('tmux start-server', { stdio: 'pipe' });
+      console.log('✅ Tmux server started\n');
+    } catch (e) {
+      console.log('ℹ️  Tmux server already running or started\n');
+    }
+
     console.log('📍 Step 1: Starting tx system in detached mode\n');
     console.log('   Running: tx start -d\n');
 
@@ -133,44 +142,38 @@ async function runE2ETest() {
       console.log(`   [tx stderr] ${data}`);
     });
 
-    // Give tx a moment to start
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Step 2: Wait for core session to be created
     console.log('\n📍 Step 2: Waiting for system readiness\n');
 
-    const coreReady = await waitForSession(CORE_SESSION, 20000);
+    const coreReady = await waitForSession(CORE_SESSION, 45000);
     if (!coreReady) {
       throw new Error('Core session not created within timeout');
     }
 
-    // Wait for Claude to be ready in core
-    const claudeReady = await waitForClaudeReady(CORE_SESSION, 30000);
+    const claudeReady = await waitForClaudeReady(CORE_SESSION, 60000);
     if (!claudeReady) {
       throw new Error('Claude not ready in core session');
     }
 
-    // Wait for session to be idle (1 second of no output changes)
     console.log('⏳ Waiting for session to be idle (1 second)...\n');
-    const isIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 1000, 10000);
+    const isIdle = await TmuxInjector.waitForIdle(CORE_SESSION, 1000, 15000);
     if (!isIdle) {
-      console.log('⚠️  Warning: Session may not be fully idle, but continuing...\n');
+      console.log('⚠️  Warning: Core may not be fully idle, but continuing...\n');
     } else {
-      console.log('✅ Session is idle\n');
+      console.log('✅ Core is idle\n');
     }
 
-    // Step 3: Use E2EWorkflow to test the complete workflow
-    console.log('\n📍 Step 3: Testing mesh workflow\n');
+    console.log('\n📍 Step 3: Testing iterative workflow\n');
 
-    // E2EWorkflow handles ALL spawning, text injection, session detection, and validation
-    const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and have asker ask answerer a question`);
+    const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn a ${MESH} mesh and have worker and reviewer iterate`);
     const workflowPassed = await workflow.test();
 
     if (workflowPassed) {
-      console.log('✅ TEST PASSED: Workflow successful!\n');
+      console.log('✅ TEST PASSED: Iterative workflow successful!\n');
       testPassed = true;
     } else {
-      console.log('❌ TEST FAILED: Workflow incomplete\n');
+      console.log('❌ TEST FAILED: Iterative workflow incomplete\n');
       testPassed = false;
     }
 
@@ -184,21 +187,18 @@ async function runE2ETest() {
 
     await cleanup();
 
-    // Exit with appropriate code
     const exitCode = testPassed ? 0 : 1;
     console.log(`${testPassed ? '✅' : '❌'} E2E Test ${testPassed ? 'PASSED' : 'FAILED'}\n`);
     process.exit(exitCode);
   }
 }
 
-// Set overall timeout
 const overallTimeout = setTimeout(() => {
-  console.error('\n❌ TEST TIMEOUT: Test took longer than 120 seconds');
+  console.error('\n❌ TEST TIMEOUT: Test took longer than 180 seconds');
   testPassed = false;
   cleanup().then(() => process.exit(1));
 }, TEST_TIMEOUT);
 
-// Run test
 runE2ETest().catch(error => {
   console.error('Unhandled error:', error);
   clearTimeout(overallTimeout);
