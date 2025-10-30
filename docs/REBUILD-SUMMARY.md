@@ -147,9 +147,8 @@ Total: 14/14 tests PASSING
 | `tx start` | Start system + core mesh | ✅ |
 | `tx spawn <mesh> [agent]` | Spawn agent in tmux session | ✅ |
 | `tx attach` | Attach to active session | ✅ |
-| `tx kill <mesh> [agent]` | Kill session | ✅ |
+| `tx stop [mesh] [agent]` | Stop system/mesh/agent | ✅ |
 | `tx status` | Show mesh/queue status | ✅ |
-| `tx stop` | Stop all sessions + system | ✅ |
 | `tx prompt <mesh> [agent]` | Display generated prompt | ✅ |
 | `tx tool search "query"` | Search via SearXNG | ✅ |
 

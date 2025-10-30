@@ -62,10 +62,10 @@ Send multiple messages to Agent B and collect responses.
 Use `/ask agent-b-name "message content"`
 
 ## Receiving Responses
-Responses arrive in your inbox. Read from msgs/active/.
+Responses arrive in your msgs/ directory. Read from msgs/active/.
 
 ## Reporting Completion
-Save completion file to msgs/outbox/:
+Save completion file to msgs/:
 ```markdown
 ---
 from: mesh/agent-a
@@ -84,10 +84,10 @@ status: complete
 Respond to each message from Agent A.
 
 ## Workflow
-1. Wait for message in msgs/inbox/
+1. Wait for message in msgs/
 2. Read message from msgs/active/
 3. Create response
-4. Save to msgs/outbox/ with frontmatter
+4. Save to msgs/ with frontmatter
 
 ## Response Format
 ```markdown
@@ -104,13 +104,13 @@ status: complete
 ### Message Files Created
 
 ```
-Agent A msgs/outbox/  → ask-msg-1.md
-Agent B msgs/inbox/   ← routed here
-Agent B msgs/active/  ← moved here for processing
-Agent B msgs/outbox/  → ask-response-1.md
-Agent A msgs/inbox/   ← routed here
-Agent A msgs/active/  ← moved here for processing
+Agent A msgs/  → ask-msg-1.md (STAYS in A's msgs/)
+Agent B receives  ← @filepath reference (file stays in A's msgs/)
+Agent B msgs/  → ask-response-1.md (STAYS in B's msgs/)
+Agent A receives  ← @filepath reference (file stays in B's msgs/)
 (repeat for message 2, 3, etc.)
+
+NOTE: Messages NEVER move. Only @filepath references are injected.
 ```
 
 ### Full Flow Example
@@ -318,6 +318,207 @@ Core → Extractor
        Core
 ```
 
+## Human-In-The-Loop (HITL) Pattern
+
+Agent asks questions to gather requirements or clarification from a human user before proceeding with work.
+
+### Use Case
+- Requirements gathering via Q&A
+- Interactive configuration
+- Research topic refinement
+- User preference collection
+- Ambiguity resolution
+
+### Pattern
+
+```
+Core sends task → Agent (interviewer)
+Agent creates ask message → Core/User
+User responds via ask-response → Agent
+Agent processes response
+(repeat for multiple questions)
+Agent completes task → Core
+```
+
+### Config Example
+
+```json
+{
+  "mesh": "hitl-3qa",
+  "description": "Human-in-the-loop Q&A workflow",
+  "agents": ["hitl/interviewer"],
+  "entry_point": "interviewer",
+  "completion_agent": "interviewer",
+  "workflow_topology": "hitl"
+}
+```
+
+### Agent Prompt (Interviewer)
+
+```markdown
+## Your Role
+Conduct a 3-question interview to gather requirements.
+
+## Workflow
+1. Receive task from core
+2. For each question:
+   - Write ask message to core
+   - Wait for ask-response from user
+   - Record the answer
+3. After 3 questions, synthesize results and send completion
+
+## Ask Message Format
+```markdown
+---
+to: core/core
+from: hitl-3qa/interviewer
+type: ask
+msg-id: q1-topic-name
+status: pending
+requester: core/core
+headline: Question 1: Topic
+---
+# Question 1
+What are your primary concerns about [topic]?
+```
+
+## Response Format (What You Receive)
+```markdown
+---
+to: hitl-3qa/interviewer
+from: core/core
+type: ask-response
+msg-id: q1-topic-name
+status: complete
+---
+# Response
+[User's answer]
+```
+
+## Completion Format
+```markdown
+---
+from: hitl-3qa/interviewer
+to: core/core
+type: task-complete
+status: complete
+---
+# Interview Results
+Conducted 3-question interview. Key findings:
+[synthesis]
+```
+```
+
+### Testing HITL with E2EWorkflow
+
+Use `E2EWorkflow` from `lib/e2e-workflow.js` with HITL configuration:
+
+```javascript
+const workflow = new E2EWorkflow(
+  'hitl-3qa',
+  'interviewer',
+  'spawn hitl-3qa mesh to conduct an interview about AI safety',
+  {
+    workflowTimeout: 120000,
+    hitl: {
+      enabled: true,
+      autoRespond: true,
+      maxQuestions: 3,
+      questionTimeout: 60000,
+      responses: {
+        'default': 'My primary concern is...',
+        'pattern:/concern|worry/i': 'My primary concern about safety...',
+        'pattern:/solution|approach/i': 'The most promising approach...',
+        'pattern:/priority|next/i': 'The next priority should be...'
+      }
+    }
+  }
+);
+
+const passed = await workflow.test();
+```
+
+### HITL Configuration Options
+
+- `enabled`: Enable HITL auto-response mode
+- `autoRespond`: Automatically respond to ask messages (for testing)
+- `maxQuestions`: Maximum number of questions to handle
+- `questionTimeout`: Max time to wait for each question (ms)
+- `responses`: Object mapping patterns to responses
+  - `'default'`: Fallback response if no pattern matches
+  - `'pattern:/regex/i'`: Use regex to match question content
+  - Direct text matching also supported
+
+### How HITL Auto-Response Works
+
+1. **Background Polling**: Starts in background at test Step 2.5 (before agent receives task)
+2. **Directory Watching**: Monitors `.ai/tx/mesh/{mesh-instance-id}/agents/{agent}/msgs/` for new ask messages
+3. **Message Detection**: Polls every 100ms for new ask files (type: `ask`, status: `pending`)
+4. **Response Matching**:
+   - Reads ask message content
+   - Tests against pattern regex (if specified with `pattern:/regex/i`)
+   - Falls back to `default` response if no match
+5. **Response Injection**:
+   - Creates ask-response file in agent's msgs directory
+   - Uses `@filepath` injection to make response available to agent
+   - Waits 5s for agent to process response
+6. **Completion**: Continues until `maxQuestions` reached or no new questions for `questionTimeout` period
+
+### Critical Implementation Detail: Directory Path
+
+**IMPORTANT**: Mesh instance directories include UUID suffix:
+- Session name: `hitl-3qa-858fc7-interviewer`
+- Mesh instance ID: `hitl-3qa-858fc7` (extracted from session name)
+- Directory path: `.ai/tx/mesh/hitl-3qa-858fc7/agents/interviewer/msgs/`
+
+**Extract mesh instance ID from session name**:
+```javascript
+const meshInstanceId = this.meshSession.replace(`-${this.agentName}`, '');
+// "hitl-3qa-858fc7-interviewer" → "hitl-3qa-858fc7"
+const agentMsgsDir = `.ai/tx/mesh/${meshInstanceId}/agents/${this.agentName}/msgs`;
+```
+
+Do NOT use static mesh name - it will miss the UUID suffix and watch wrong directory.
+
+### Full HITL Flow Example
+
+```markdown
+# File 1: Agent asks question
+---
+to: core/core
+from: hitl-3qa-858fc7/interviewer
+type: ask
+msg-id: q1-primary-concern
+status: pending
+requester: core/core
+headline: Question 1
+---
+What are your primary concerns about AI safety?
+
+# File 2: User responds
+---
+to: hitl-3qa-858fc7/interviewer
+from: core/core
+type: ask-response
+msg-id: q1-primary-concern
+status: complete
+---
+My primary concern is ensuring alignment between AI systems and human values.
+
+# (Repeat for questions 2 and 3)
+
+# File 7: Agent completes
+---
+from: hitl-3qa-858fc7/interviewer
+to: core/core
+type: task-complete
+status: complete
+---
+# Interview Complete
+Conducted 3-question interview about AI safety.
+Key concerns: alignment, transparency, robustness.
+```
+
 ## Best Practices for Multi-Agent Meshes
 
 ### 1. Keep Agent Prompts Simple
@@ -381,7 +582,7 @@ tx attach  # or tmux attach -t core
 
 ### Agent Never Completes
 - **Cause**: Agent waiting for something that won't arrive
-- **Fix**: Debug with tmux; check msgs/active/ and msgs/inbox/
+- **Fix**: Debug with tmux; check msgs/active/ and msgs/
 
 ## References
 

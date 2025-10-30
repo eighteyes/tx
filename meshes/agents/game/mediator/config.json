@@ -4,7 +4,7 @@
   "capabilities": ["riddle"],
   "options": {
     "model": "sonnet",
-    "output": "clean"
+    "output": "blank"
   },
   "orchestrator": true
 }

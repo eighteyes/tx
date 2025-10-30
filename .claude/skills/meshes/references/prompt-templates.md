@@ -15,9 +15,9 @@ All agent prompts follow this structure:
 You are... [what you do]
 
 ## Communication Rules
-- Messages arrive in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/inbox/`
-- Read active task from `msgs/active/`
-- Write responses to `msgs/outbox/`
+- Messages arrive in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+- Messages are injected via @filepath
+- Write responses to `msgs/`
 - Use frontmatter for metadata
 
 ## Workflow
@@ -37,7 +37,7 @@ timestamp: {now}
 
 ## Success Criteria
 - ✅ All steps completed
-- ✅ Output saved to outbox
+- ✅ Output saved to msgs/
 - ✅ Message has frontmatter
 ```
 
@@ -52,8 +52,8 @@ Simple agent that echoes back input.
 You echo back input with metadata. Test agent for verifying communication.
 
 ## Communication Rules
-- Read task from `.ai/tx/mesh/test-echo/agents/echo/msgs/active/`
-- Write response to `.ai/tx/mesh/test-echo/agents/echo/msgs/outbox/`
+- Read task from `.ai/tx/mesh/test-echo/agents/echo/msgs/`
+- Write response to `.ai/tx/mesh/test-echo/agents/echo/msgs/`
 
 ## Workflow
 1. Read the incoming message from active folder
@@ -62,7 +62,7 @@ You echo back input with metadata. Test agent for verifying communication.
 4. Save response with frontmatter
 
 ## Output Format
-Create file in outbox:
+Create file in msgs/:
 ---
 from: test-echo/echo
 to: core
@@ -82,7 +82,7 @@ Status: ✅ Complete
 ## Success Criteria
 - ✅ Message read from inbox
 - ✅ Content echoed back
-- ✅ Response in outbox with frontmatter
+- ✅ Response in msgs/ with frontmatter
 - ✅ Timestamp included
 ```
 
@@ -97,7 +97,7 @@ Sends questions and collects responses.
 You ask a series of questions to the answerer and log all exchanges.
 
 ## Communication Rules
-- Messages via `msgs/inbox/`, `msgs/active/`, `msgs/outbox/`
+- Messages via `msgs/`, `msgs/active/`, `msgs/`
 - Send questions using `/ask answerer "question text"`
 - Wait for and collect responses
 - Log all Q&A exchanges
@@ -155,9 +155,9 @@ Answers questions from other agents.
 You answer questions sent to you by the asker agent.
 
 ## Communication Rules
-- Questions arrive in `msgs/inbox/`
+- Questions arrive in `msgs/`
 - Read active question from `msgs/active/`
-- Send answers via outbox with frontmatter
+- Send answers via msgs/ with frontmatter
 - Wait for next question
 
 ## Workflow
@@ -165,7 +165,7 @@ You answer questions sent to you by the asker agent.
 2. Read the question carefully
 3. Think about the answer
 4. Provide accurate response
-5. Send response to outbox
+5. Send response to msgs/
 6. Repeat for next question
 
 ## Output Format
@@ -198,7 +198,7 @@ A: Paris
 ## Success Criteria
 - ✅ All questions received
 - ✅ All questions answered
-- ✅ Responses sent to outbox
+- ✅ Responses sent to msgs/
 - ✅ Frontmatter includes from/to/type
 ```
 
@@ -213,15 +213,15 @@ Generic template for processing workers.
 You process tasks by [describe what you do].
 
 ## Communication Rules
-- Receive task in `.ai/tx/mesh/{mesh}/agents/{name}/msgs/inbox/`
+- Receive task in `.ai/tx/mesh/{mesh}/agents/{name}/msgs/`
 - Active task in `msgs/active/`
-- Send responses to `msgs/outbox/`
+- Send responses to `msgs/`
 
 ## Workflow
 1. Read task from inbox
 2. [Your processing steps]
 3. Generate output
-4. Save result to outbox with frontmatter
+4. Save result to msgs/ with frontmatter
 
 ## Output Format
 ---
@@ -252,7 +252,7 @@ Agent that coordinates within a mesh.
 You coordinate work between multiple agents in this mesh.
 
 ## Communication Rules
-- Receive coordination tasks in `msgs/inbox/`
+- Receive coordination tasks in `msgs/`
 - Send work to other agents using `/ask`
 - Collect responses
 - Synthesize results
@@ -282,7 +282,7 @@ status: complete
 - ✅ All agents queried
 - ✅ All responses collected
 - ✅ Results synthesized
-- ✅ Final output in outbox
+- ✅ Final output in msgs/
 ```
 
 ## Multi-Step Workflow
@@ -296,9 +296,9 @@ Agent with multiple sequential steps.
 You process data through multiple stages: [Stage1] → [Stage2] → [Stage3].
 
 ## Communication Rules
-- Input in `msgs/inbox/`
+- Input in `msgs/`
 - Intermediate outputs in workspace
-- Final output to `msgs/outbox/`
+- Final output to `msgs/`
 
 ## Workflow
 
@@ -315,7 +315,7 @@ You process data through multiple stages: [Stage1] → [Stage2] → [Stage3].
 ### Stage 3: Format
 - Load processed data
 - Format for output
-- Save to outbox with frontmatter
+- Save to msgs/ with frontmatter
 
 ## Output Format
 ---
@@ -355,8 +355,8 @@ You extract entities from text and categorize them by type
 ### 2. Explicit Communication Rules
 ```markdown
 # Include
-- Read from: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/inbox/`
-- Write to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/outbox/`
+- Read from: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+- Write to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
 - Use frontmatter with: from, to, type, status
 
 # Don't leave it vague
@@ -372,7 +372,7 @@ You extract entities from text and categorize them by type
 # Better
 1. Read task from msgs/active/task-*.md
 2. For each item: [specific processing]
-3. Save result to msgs/outbox/ with frontmatter
+3. Save result to msgs/ with frontmatter
 ```
 
 ### 4. Success Criteria
@@ -381,7 +381,7 @@ You extract entities from text and categorize them by type
 - ✅ All inputs processed
 - ✅ Output format correct
 - ✅ Frontmatter included
-- ✅ Saved to outbox
+- ✅ Saved to msgs/
 ```
 
 ### 5. Examples

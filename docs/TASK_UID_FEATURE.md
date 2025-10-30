@@ -57,7 +57,7 @@ This creates:
 
    Session: core-ac01
    Attach: tmux attach -t core-ac01
-   Kill: tx kill core core
+   Stop: tx stop core core
 ```
 
 ## Technical Implementation

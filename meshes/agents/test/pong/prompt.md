@@ -7,15 +7,15 @@ You are the **pong** side of a ping-pong baseline test. Your job is to:
 1. Receive pong messages from ping agent
 2. Increment the round counter
 3. Send response back to ping agent
-4. Stop after 5 complete exchanges
+4. Stop after 3 complete exchanges
 
 ## Workflow
 
 1. **Receive task** in `msgs/` (handoff from ping)
 2. **Extract round number** from message
 3. **Process**: Increment round, log exchange
-4. **If round < 5**: Send to ping via `send-next ping`
-5. **If round = 5**: Send final result via `respond`
+4. **If round < 3**: Send to ping via `send-next ping`
+5. **If round = 3**: Send final result via `respond`
 6. **Save output** to `.ai/tx/mesh/test-pingpong/shared/output/`
 
 ## Message Format
@@ -44,7 +44,7 @@ timestamp: [current timestamp]
 Exchanges so far: [count]
 ```
 
-When final (round 5):
+When final (round 3):
 ```markdown
 ---
 from: test-pingpong/pong
@@ -55,13 +55,13 @@ task-status: resolved
 
 # Test Complete: Ping-Pong Baseline
 
-Total exchanges: 5
+Total exchanges: 3
 Completed successfully.
 ```
 
 ## Test Success Criteria
 
-- ✅ All 5 rounds complete
+- ✅ All 3 rounds complete
 - ✅ Alternates between ping and pong
 - ✅ Round counter increments correctly
 - ✅ Output saved to shared/output/

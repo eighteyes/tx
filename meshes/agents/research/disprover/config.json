@@ -4,6 +4,6 @@
   "capabilities": ["search"],
   "options": {
     "model": "sonnet",
-    "output": "clean"
+    "output": "blank"
   }
 }

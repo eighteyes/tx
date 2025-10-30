@@ -4,13 +4,13 @@ const { program } = require('commander');
 const { start } = require('../lib/commands/start');
 const { spawn } = require('../lib/commands/spawn');
 const { attach } = require('../lib/commands/attach');
-const { kill } = require('../lib/commands/kill');
 const { status } = require('../lib/commands/status');
 const { stop } = require('../lib/commands/stop');
 const { prompt } = require('../lib/commands/prompt');
 const { logs } = require('../lib/commands/logs');
 const { list } = require('../lib/commands/list');
 const { clear } = require('../lib/commands/clear');
+const { watch } = require('../lib/commands/watch');
 const { Logger } = require('../lib/logger');
 
 // Initialize logger
@@ -32,7 +32,7 @@ program
   .command('spawn <mesh> [agent]')
   .option('-i, --init <task>', 'Initial task to send')
   .option('--id <summary>', 'Generate mesh ID from task summary (first letters of 4-8 words)')
-  .option('-m, --model <model>', 'Model to use (default: claude-opus)')
+  .option('-m, --model <model>', 'Model to use (default: sonnet)')
   .description('Spawn a new agent in a mesh')
   .action(async (mesh, agent, options) => {
     await spawn(mesh, agent, {
@@ -42,20 +42,27 @@ program
     });
   });
 
+// tx watch <file> --mesh <mesh>
+program
+  .command('watch <file>')
+  .option('--mesh <mesh>', 'Mesh to process file changes')
+  .option('-d, --detach', 'Run in background (detached mode)')
+  .description('Watch a file and process changes through a mesh')
+  .action(async (file, options) => {
+    if (!options.mesh) {
+      console.error('❌ --mesh option is required');
+      console.error('   Usage: tx watch <file> --mesh <mesh-name> [-d]');
+      process.exit(1);
+    }
+    await watch(file, options.mesh, { detach: options.detach });
+  });
+
 // tx attach
 program
   .command('attach')
   .description('Attach to active tmux session')
   .action(() => {
     attach();
-  });
-
-// tx kill <mesh> [agent]
-program
-  .command('kill <mesh> [agent]')
-  .description('Kill a mesh or agent session')
-  .action((mesh, agent) => {
-    kill(mesh, agent);
   });
 
 // tx status
@@ -67,12 +74,12 @@ program
     status({ prompt: options.prompt });
   });
 
-// tx stop
+// tx stop [mesh] [agent]
 program
-  .command('stop')
-  .description('Stop orchestration system and kill all sessions')
-  .action(async () => {
-    await stop();
+  .command('stop [mesh] [agent]')
+  .description('Stop orchestration system, mesh, or specific agent')
+  .action(async (mesh, agent) => {
+    await stop(mesh, agent);
   });
 
 // tx prompt <mesh> [agent]
@@ -121,7 +128,7 @@ program
   .option('-t, --topic <topic>', 'Search topic area (dev, docs, info, news, packages, repos, science, files, media)')
   .option('-js', 'Enable JavaScript rendering (for get-www tool)')
   .option('-a, --archive', 'Use archive services only (archive.is, archive.org, etc.)')
-  .description('Run a capability/tool')
+  .description('Run a capability/tool (search, get-www, know)')
   .action((name, args, options) => {
     handleTool(name, args, options);
   });
@@ -204,6 +211,11 @@ async function handleTool(name, args, options = {}) {
           archive: options.archive
         });
         console.log(JSON.stringify(wwwResults, null, 2));
+        break;
+
+      case 'know':
+        const { tool } = require('../lib/commands/tool');
+        await tool('know', args);
         break;
 
       default:

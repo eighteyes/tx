@@ -61,7 +61,7 @@ node test/test-e2e.js
   - `.ai/tx/mesh/test-echo/agents/echo-{uid}/msgs/complete/`
   - Validates echo agent processed the task
 - **Part B**: Checks that response was routed back to core agent's inbox
-  - `.ai/tx/mesh/core/agents/core/msgs/inbox/`
+  - `.ai/tx/mesh/core/agents/core/msgs/`
   - Validates message routing from test-echo → core worked correctly
   - Looks for message with `from: test-echo` or `from: echo-{uid}`
 
@@ -216,7 +216,7 @@ The test passes when ALL of the following succeed:
 5. ✅ Echo agent completes task:
    - Task completion file exists in `.ai/tx/mesh/test-echo/agents/echo-*/msgs/complete/`
 6. ✅ Response is routed back to core:
-   - Response message appears in `.ai/tx/mesh/core/agents/core/msgs/inbox/`
+   - Response message appears in `.ai/tx/mesh/core/agents/core/msgs/`
    - Message contains `from: echo-*` (proving it came from the test-echo agent)
 7. ✅ Cleanup completes without errors
 8. ✅ Exit code is 0

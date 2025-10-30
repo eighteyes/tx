@@ -10,7 +10,16 @@
       "Bash(tmux capture-pane:*)",
       "Bash(node -c lib/watcher.js)",
       "Bash(node -c lib/tmux-injector.js)",
-      "Bash(node -c lib/commands/spawn.js)"
+      "Bash(node -c lib/commands/spawn.js)",
+      "Read(//Users/god/projects/know-cli/**)",
+      "Bash(./know:*)",
+      "Bash(node bin/tx.js:*)",
+      "Bash(test:*)",
+      "Bash(npm install:*)",
+      "Read(//Users/god/projects/ai-jank/tmux-riffic/meshes/agents/brain/**)",
+      "Bash(chmod:*)",
+      "Bash(codex --help:*)",
+      "mcp__sequential-thinking__sequentialthinking"
     ],
     "deny": [],
     "ask": []

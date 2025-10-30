@@ -2,6 +2,97 @@
 
 This reference covers testing patterns for meshes that require human interaction via ask/ask-response message exchanges.
 
+## ⭐ RECOMMENDED: Use E2EWorkflow for HITL Tests
+
+**The simplest and most reliable way to test HITL meshes is to use the `E2EWorkflow` abstraction from `lib/e2e-workflow.js`.**
+
+### Quick Example
+
+```javascript
+const { E2EWorkflow } = require('../lib/e2e-workflow');
+
+const workflow = new E2EWorkflow(
+  'hitl-3qa',
+  'interviewer',
+  'spawn hitl-3qa mesh to conduct an interview about AI safety',
+  {
+    workflowTimeout: 120000,
+    hitl: {
+      enabled: true,
+      autoRespond: true,
+      maxQuestions: 3,
+      questionTimeout: 60000,
+      responses: {
+        'default': 'My primary concern is...',
+        'pattern:/concern|worry/i': 'My primary concern about safety...',
+        'pattern:/solution|approach/i': 'The most promising approach...'
+      }
+    }
+  }
+);
+
+const passed = await workflow.test();
+```
+
+### Why Use E2EWorkflow?
+
+✅ **Handles HITL automatically** - No need to manually simulate responses
+✅ **Pattern-based responses** - Smart matching against question content
+✅ **Correct directory paths** - Automatically extracts mesh instance ID with UUID
+✅ **Background polling** - Starts HITL handler before agent receives task
+✅ **File-based injection** - Uses `@filepath` injection for responses
+✅ **Comprehensive logging** - Shows each Q&A round with timestamps
+✅ **Works for all meshes** - Same API for HITL, multi-agent, and simple workflows
+
+### HITL Configuration Reference
+
+```javascript
+{
+  hitl: {
+    enabled: true,              // Enable HITL auto-response mode
+    autoRespond: true,          // Automatically respond to ask messages
+    maxQuestions: 10,           // Maximum number of questions to handle
+    questionTimeout: 60000,     // Max wait time per question (ms)
+    responses: {
+      // Default fallback response
+      'default': 'My default answer',
+
+      // Pattern-based responses (uses regex)
+      'pattern:/keyword1|keyword2/i': 'Response for keyword match',
+      'pattern:/question.*topic/i': 'Response for pattern match',
+
+      // Can have multiple patterns - first match wins
+      'pattern:/concern|worry/i': 'Concern-specific response',
+      'pattern:/solution|fix/i': 'Solution-specific response'
+    }
+  }
+}
+```
+
+### How Pattern Matching Works
+
+1. HITL handler reads the ask message content
+2. Tests each `pattern:/regex/i` against the content
+3. Returns response for first matching pattern
+4. Falls back to `default` if no pattern matches
+
+Example:
+```javascript
+// Question content: "What are your primary concerns about AI safety?"
+// Matches: 'pattern:/concern|worry/i'
+// Response: 'My primary concern about safety...'
+```
+
+### Complete Test Example
+
+See `test/test-e2e-hitl-3qa.js` for a complete working example (reduced from 441 lines to 201 lines using E2EWorkflow).
+
+---
+
+## Manual HITL Testing (Legacy Approach)
+
+**⚠️ Only use this if E2EWorkflow doesn't fit your needs. The abstraction is preferred.**
+
 ## Test Agent Prompt Design for HITL
 
 **HITL test agents must be SUPER LIGHTWEIGHT - only Role and Workflow sections.**

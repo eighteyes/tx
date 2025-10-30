@@ -4,6 +4,6 @@
   "capabilities": ["search", "ask"],
   "options": {
     "model": "haiku",
-    "output": "clean"
+    "output": "blank"
   }
 }

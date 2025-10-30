@@ -4,6 +4,6 @@
   "capabilities": ["ask"],
   "options": {
     "model": "haiku",
-    "output": "clean"
+    "output": "blank"
   }
 }

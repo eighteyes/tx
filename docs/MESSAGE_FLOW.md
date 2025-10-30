@@ -1,27 +1,56 @@
-# Message Flow - Location-Based Injection System
+# Message Flow - Stay-In-Place Message System
 
 ## Overview
 
-The tx message system uses a **location-based injection pattern** where messages are routed via file moves and injected as file locations into agent sessions. There are no inbox/outbox subdirectories - all messages for an agent live in a single flat directory.
+The tx message system uses a **stay-in-place pattern** where messages NEVER move or get copied. Each agent writes messages to their own `msgs/` folder, and the system injects file references (`@filepath`) to destination agents. Messages remain at their origin throughout their lifecycle.
+
+## ❌ What NOT to Do
+
+**These patterns are WRONG and from the old system:**
+- ❌ Moving files from one agent's msgs/ to another's
+- ❌ Copying message files between agents
+- ❌ Using `fs.rename()` or `fs.move()` for message delivery
+- ❌ Writing messages to other agents' directories
+- ❌ Assuming messages "travel" to their destination
+
+**✅ Correct behavior:**
+- ✅ Messages stay in creator's msgs/ folder forever
+- ✅ Only @filepath references are injected to recipients
+- ✅ Recipients read from the original location
 
 ## Core Architecture
+
+### Mental Model: Messages Stay Home
+```
+┌─────────────────┐       ┌─────────────────┐
+│   Agent A       │       │   Agent B       │
+│   msgs/         │       │   msgs/         │
+│   ├─ msg1.md ───┼──@──→ │                 │
+│   └─ msg2.md    │       │   └─ reply.md ──┼──@──→ Agent C
+└─────────────────┘       └─────────────────┘
+     ↑ stays here              ↑ stays here
+
+Messages NEVER move. Only @filepath references are injected.
+```
 
 ### Message Storage
 ```
 .ai/tx/mesh/{mesh}/agents/{agent}/msgs/
 ```
 - Single flat directory per agent
-- All messages (sent and received) in one place
+- Messages stay where created (never move to other agents)
 - No subdirectories (no inbox/outbox)
 
 ### Message Routing Flow
 ```
-1. Agent writes message → msgs/
-2. Watcher detects new message (lib/simple-watcher.js)
-3. Router moves file to destination (lib/simple-queue.js)
-4. Injector attaches file location (lib/tmux-injector.js)
-5. Destination agent receives via @filepath
+1. Agent writes message → their own msgs/
+2. Watcher detects new message (lib/watcher.js)
+3. Router reads frontmatter to find destination (lib/queue.js)
+4. Injector injects file reference via @filepath (lib/tmux-injector.js)
+5. Destination agent receives reference to original location
 ```
+
+**CRITICAL: Files NEVER move from their creation location**
 
 ## Implementation Details
 
@@ -46,15 +75,16 @@ watcher.add(msgDir);
 ```
 
 ### 3. Message Routing
-`lib/simple-queue.js` handles routing via **file move**:
+`lib/queue.js` handles routing via **file reference injection**:
 ```javascript
 // Parse destination from message frontmatter
-const message = Message.fromFile(filePath);
-const [destMesh, destAgent] = message.to.split('/');
+const message = Message.parseMessage(filepath);
+const { to } = message.metadata;
 
-// Move (not copy) to destination
-const destPath = path.join(destAgentDir, 'msgs', filename);
-await fs.rename(sourcePath, destPath);
+// Inject filepath reference (file stays at origin)
+TmuxInjector.injectFile(sessionName, filepath);
+
+// ❌ NO file move/copy - file remains at creation location
 ```
 
 ### 4. Message Injection
@@ -77,9 +107,10 @@ sendKeys('Enter');
 | Aspect | Old System | Current System |
 |--------|------------|----------------|
 | Directory Structure | `msgs/inbox/`, `msgs/outbox/` | Single `msgs/` directory |
-| Message Transfer | Copy between directories | Move to destination |
-| Delivery Method | File copy | Location injection via `@filepath` |
-| Queue Implementation | `lib/queue.js` (1427 lines) | `lib/simple-queue.js` (simpler) |
+| Message Transfer | Copy/move between directories | ❌ NO TRANSFER - stays at origin |
+| Delivery Method | File copy to destination | Reference injection via `@filepath` |
+| Message Location | Changes (moves to receiver) | Fixed (stays with sender) |
+| Queue Implementation | `lib/queue.js` with inbox/outbox | `lib/queue.js` with stay-in-place |
 
 ## Message Lifecycle Example
 
@@ -88,28 +119,33 @@ sendKeys('Enter');
 1. Agent A writes: .ai/tx/mesh/test/agents/A/msgs/msg-001.md
 2. Watcher detects new file in A's msgs/
 3. Router reads frontmatter, sees "to: test/B"
-4. Router moves file to: .ai/tx/mesh/test/agents/B/msgs/msg-001.md
-5. Injector runs: @/workspace/...test/agents/B/msgs/msg-001.md
-6. Agent B receives message as attached file
+4. Router injects: @/workspace/.ai/tx/mesh/test/agents/A/msgs/msg-001.md
+5. Agent B receives file reference (file STAYS in A's msgs/)
+6. Agent B reads from A's location
 ```
+
+**KEY INSIGHT: msg-001.md NEVER leaves A's msgs/ folder**
 
 ## Message States
 
 Messages don't have explicit state directories. State is tracked by:
-- **Location**: Which agent's `msgs/` directory contains the file
+- **Ownership**: Messages stay in creator's `msgs/` directory (never move)
 - **Filename**: Can include status prefixes (e.g., `complete-task-001.md`)
 - **Frontmatter**: Contains status field
+- **Visibility**: Destination agents receive references, not copies
 
 ## Multi-Agent Communication
 
 ### Sequential Flow
 ```
 Agent A → Agent B → Agent C
-1. A writes to msgs/ with "to: B"
-2. File moves to B's msgs/
-3. B processes and writes response with "to: C"
-4. File moves to C's msgs/
-5. C processes and completes workflow
+1. A writes msg-001.md to A/msgs/ with "to: B"
+2. System injects @.../A/msgs/msg-001.md to B
+3. B processes and writes msg-002.md to B/msgs/ with "to: C"
+4. System injects @.../B/msgs/msg-002.md to C
+5. C processes msg-002.md from B's location
+
+Note: Each message stays in its creator's msgs/ folder
 ```
 
 ### Parallel Processing
@@ -176,5 +212,8 @@ In agent's tmux session, type:
 If upgrading from old outbox/inbox system:
 1. Update all agent prompts to write to `msgs/` not `msgs/outbox/`
 2. Remove references to inbox/outbox subdirectories
-3. Ensure using `lib/simple-queue.js` not `lib/queue.js`
-4. Verify tmux-injector is configured for location injection
+3. ❌ Remove any code that moves/copies message files
+4. ✅ Understand messages stay at origin (never move)
+5. Verify tmux-injector is configured for location injection
+
+**CRITICAL: If you see code that moves or copies message files, it's WRONG**

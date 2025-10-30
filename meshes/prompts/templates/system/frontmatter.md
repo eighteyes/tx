@@ -1,24 +1,27 @@
 
-{{ nextAgentInstructions }}
-
 Tasks and asks are types of messages that agents send to eachother via files.
 
-Frontmatter is used to route messages to meshes / agents and advance the queue system. 
+Frontmatter is used to route messages to meshes / agents and advance the queue system.
 
 It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 
+{{ nextAgentInstructions }}
+
 # Message Rules
 
-  CRITICAL: You MUST only write messages to your msgs/outbox folder:
-  - ✅ Write to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/outbox/`
-  - ❌ NEVER write directly to other agents' inboxes
-  - The routing system handles delivery from your msgs/outbox folder to destination inboxes
+  CRITICAL: Stay-in-place messaging rules:
+  - ✅ Write ONLY to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+  - ❌ NEVER write to other agents' directories
+  - ❌ NEVER move or copy message files
+  - ✅ Messages stay at origin - system injects file references (@filepath)
+  - ✅ Routing system delivers references, NOT file contents
 
 ### Sending Messages
 
 To send a message:
-1. Create file in YOUR msgs/outbox folder with frontmatter below:
-2. The system will route it to the destination agent's inbox
+1. Create file in YOUR msgs folder with frontmatter below
+2. File stays in YOUR folder (never moves)
+3. System injects @filepath reference to destination agent
 
 # Frontmatter Template
 <msg-fm-template>

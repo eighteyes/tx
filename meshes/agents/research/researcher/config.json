@@ -4,6 +4,6 @@
   "capabilities": ["ask", "search"],
   "options": {
     "model": "opus",
-    "output": "clean"
+    "output": "blank"
   }
 }

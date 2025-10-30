@@ -308,7 +308,7 @@ tx status
 tail -f .ai/tx/logs/error.jsonl
 
 # Check agent inbox
-ls .ai/tx/mesh/{mesh}/agents/{agent}/msgs/inbox/
+ls .ai/tx/mesh/{mesh}/agents/{agent}/msgs/
 
 # Attach to agent
 tmux attach -t {mesh}-{agent}

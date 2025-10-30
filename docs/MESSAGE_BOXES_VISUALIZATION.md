@@ -39,7 +39,7 @@
 ```
 USER SENDS TASK
       ↓
-  MESH INBOX  ← .ai/tx/mesh/{mesh}/msgs/inbox/file.md
+  MESH INBOX  ← .ai/tx/mesh/{mesh}/msgs/file.md
       ↓
 Queue.processInbox()
       ↓
@@ -184,10 +184,10 @@ continues through queue...
 
 | Location | Meaning | Next Step |
 |----------|---------|-----------|
-| `msgs/inbox/` | New tasks waiting | → processInbox() |
+| `msgs/` | New tasks waiting | → processInbox() |
 | `msgs/next/` | Queued, not started | → processNext() |
 | `msgs/active/` | Processing now | agent reads it |
 | `msgs/complete/` | Done! | → archive (after 30 days) |
 | `msgs/archive/` | Old/historical | read-only |
-| `agents/{name}/msgs/inbox/` | Task for agent | agent processes |
+| `agents/{name}/msgs/` | Task for agent | agent processes |
 | `outbox/` | Response waiting | → route to inbox |

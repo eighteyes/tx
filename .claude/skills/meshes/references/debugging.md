@@ -129,7 +129,7 @@ allSessions.forEach(session => {
 **Check What Happened**:
 ```javascript
 // 1. Did agent write to outbox?
-const agentOutbox = `.ai/tx/mesh/test-ask/agents/asker/msgs/outbox`;
+const agentMsgs = `.ai/tx/mesh/test-ask/agents/asker/msgs/`;
 const outboxFiles = fs.readdirSync(agentOutbox);
 console.log('Agent outbox:', outboxFiles);
 
@@ -177,3 +177,58 @@ if (!hasMessageProcessing) {
 ```
 
 **Key**: Be flexible with validation - Claude's output may vary. Look for evidence of work, not exact strings.
+
+## HITL Directory Path Mismatch
+
+**Symptom**: E2EWorkflow HITL reports "0 Q&A rounds" but agent is creating ask messages
+
+**Root Cause**: Mesh instance directories include UUID suffix (e.g., `hitl-3qa-858fc7`) but HITL handler was constructing path without it
+
+**Wrong Path Construction**:
+```javascript
+// ❌ Missing the UUID suffix
+const agentMsgsDir = `.ai/tx/mesh/${this.mesh}/agents/${this.agentName}/msgs`;
+// Looks in: .ai/tx/mesh/hitl-3qa/agents/interviewer/msgs
+// But actual: .ai/tx/mesh/hitl-3qa-858fc7/agents/interviewer/msgs
+```
+
+**Correct Path Construction**:
+```javascript
+// ✅ Extract mesh instance ID from session name
+const meshInstanceId = this.meshSession.replace(`-${this.agentName}`, '');
+const agentMsgsDir = `.ai/tx/mesh/${meshInstanceId}/agents/${this.agentName}/msgs`;
+// Correctly finds: .ai/tx/mesh/hitl-3qa-858fc7/agents/interviewer/msgs
+```
+
+**Session Name Pattern**: `{mesh}-{uid}-{agent}`
+- Example: `hitl-3qa-858fc7-interviewer`
+- Mesh instance ID: `hitl-3qa-858fc7` (includes mesh name + UID)
+- Agent name: `interviewer`
+
+**Fixed Location**: `lib/e2e-workflow.js:620` in `_handleHITL()` method
+
+**Why This Matters**:
+- Spawned meshes get unique instance directories with UIDs
+- Session names reflect this: `{mesh}-{uid}-{agent}`
+- Directory paths must match the actual instance directory
+- Can't assume static mesh names without UID suffixes
+
+**Debugging Steps**:
+```javascript
+// 1. Check actual session name
+console.log('Session:', this.meshSession);
+// Output: "hitl-3qa-858fc7-interviewer"
+
+// 2. Extract mesh instance ID
+const meshInstanceId = this.meshSession.replace(`-${this.agentName}`, '');
+console.log('Mesh instance:', meshInstanceId);
+// Output: "hitl-3qa-858fc7"
+
+// 3. Verify directory exists
+const agentMsgsDir = `.ai/tx/mesh/${meshInstanceId}/agents/${this.agentName}/msgs`;
+console.log('Watching:', agentMsgsDir);
+const exists = fs.existsSync(agentMsgsDir);
+console.log('Directory exists:', exists);
+```
+
+**Test Validation**: Successfully tested with both `hitl-3qa` and `deep-research` meshes, confirming HITL auto-response works correctly.

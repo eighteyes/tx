@@ -245,7 +245,7 @@ tx stop               # Stop everything
 ```bash
 tx spawn <mesh> [agent]           # Spawn agent
 tx spawn <mesh> --init "task"     # With initial task
-tx kill <mesh> [agent]            # Kill session
+tx stop <mesh> [agent]            # Stop mesh or agent
 tx attach                         # Attach to active
 ```
 

@@ -179,7 +179,7 @@ Writer needs confirmation from Researcher
 
 ### Message Storage
 ```
-.ai/tx/mesh/{mesh}/agents/{agent}/msgs/inbox/
+.ai/tx/mesh/{mesh}/agents/{agent}/msgs/
 ├── {timestamp}-ask-{msgId}.md          # Incoming questions
 ├── {timestamp}-ask-response-{msgId}.md # Incoming responses
 └── ...
@@ -303,7 +303,7 @@ tx spawn research analyzer
 
 ### Ask Message Not Appearing
 ```
-Check: .ai/tx/mesh/{mesh}/agents/{toAgent}/msgs/inbox/
+Check: .ai/tx/mesh/{mesh}/agents/{toAgent}/msgs/
 Look for: *-ask-*.md files
 Debug: tail -f .ai/tx/logs/debug.jsonl | grep ask
 ```

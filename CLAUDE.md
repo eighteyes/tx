@@ -1,4 +1,6 @@
-- use `tx prompt <mesh> <agent>` to test prompts
+- use `tx prompt <mesh> <agent>` to render fonts for testing
 - Read .ai/tx/logs/evidence.jsonl for agentic insights.
-- Mesh communication must be done via agent message directories only (`.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`)
-- Messages are injected as file locations using `@filepath`, not copied
+- **Stay-in-place messaging**: Messages NEVER move from their creation location
+- Messages stay in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/` where they were created
+- System injects file references via `@filepath` to destination agents
+- ❌ NO copying, NO moving - references only

@@ -17,9 +17,9 @@ The biggest change in v4 is the **removal of glob pattern support**.
 **Old v3 approach (broken in v4):**
 ```javascript
 const watchPatterns = [
-  '.ai/tx/mesh/*/msgs/inbox/*.md',
+  '.ai/tx/mesh/*/msgs/*.md',
   '.ai/tx/mesh/*/msgs/next/*.md',
-  '.ai/tx/mesh/*/agents/*/msgs/inbox/*.md'
+  '.ai/tx/mesh/*/agents/*/msgs/*.md'
 ];
 chokidar.watch(watchPatterns, options);
 ```

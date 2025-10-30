@@ -7,6 +7,17 @@ description: Comprehensive guide for building, testing, and debugging meshes in 
 
 This skill provides comprehensive guidance for creating, testing, and debugging meshes and agent configurations in the tx system.
 
+## ⚠️ CRITICAL: Stay-In-Place Messaging
+
+**The tx system uses stay-in-place messaging:**
+- ❌ Messages NEVER move or get copied between agents
+- ❌ There are NO inbox/outbox/active subdirectories (old pattern)
+- ✅ Messages stay in creator's `msgs/` folder permanently
+- ✅ System injects `@filepath` references to recipients
+- ✅ Recipients read from original location
+
+**If you see references to inbox/outbox/active in this skill, IGNORE them - they're from the old system.**
+
 ## Core Concepts
 
 ### What is a Mesh?

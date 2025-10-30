@@ -4,6 +4,6 @@
   "capabilities": [],
   "options": {
     "model": "opus",
-    "output": "clean"
+    "output": "blank"
   }
 }

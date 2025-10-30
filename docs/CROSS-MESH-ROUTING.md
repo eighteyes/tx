@@ -46,7 +46,7 @@ to: core
 type: task-complete
 status: completed
 ```
-→ Routes to `.ai/tx/mesh/core/agents/core/msgs/inbox/`
+→ Routes to `.ai/tx/mesh/core/agents/core/msgs/`
 
 ### Route to specific agent in another mesh
 ```yaml
@@ -55,7 +55,7 @@ to: core/processor
 type: task
 status: pending
 ```
-→ Routes to `.ai/tx/mesh/core/agents/processor/msgs/inbox/`
+→ Routes to `.ai/tx/mesh/core/agents/processor/msgs/`
 
 ### Route within same mesh (backward compatible)
 ```yaml
@@ -64,7 +64,7 @@ to: agent-b
 type: ask
 status: pending
 ```
-→ Routes to `.ai/tx/mesh/current-mesh/agents/agent-b/msgs/inbox/`
+→ Routes to `.ai/tx/mesh/current-mesh/agents/agent-b/msgs/`
 
 ## Implementation Details
 
@@ -126,7 +126,7 @@ The test-echo mesh previously had 3 undelivered messages trying to route to `to:
 
 **Before:**
 ```
-.ai/tx/mesh/test-echo/agents/test-echo-hfcp/msgs/outbox
+.ai/tx/mesh/test-echo/agents/test-echo-hfcp/msgs
 ├── task-complete-qvn6w0.md
 ├── task-complete-vp1tgc.md
 └── task-complete-zsoqru.md
@@ -134,7 +134,7 @@ The test-echo mesh previously had 3 undelivered messages trying to route to `to:
 
 **After cross-mesh routing:**
 ```
-.ai/tx/mesh/core/agents/core/msgs/inbox
+.ai/tx/mesh/core/agents/core/msgs
 ├── task-complete-qvn6w0.md  ✓
 ├── task-complete-vp1tgc.md  ✓
 └── task-complete-zsoqru.md  ✓
