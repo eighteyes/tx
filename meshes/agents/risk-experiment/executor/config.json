@@ -1,0 +1,12 @@
+{
+  "name": "executor",
+  "description": "Executes risk experiments within time boxes, collects data, documents findings",
+  "capabilities": [
+    "ask",
+    "search",
+    "spawn"
+  ],
+  "options": {
+    "model": "sonnet"
+  }
+}

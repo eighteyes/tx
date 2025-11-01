@@ -1,0 +1,43 @@
+{
+  "mesh": "research",
+  "description": "Web research mesh: search → analyze → write informal article with inline references",
+  "agents": [
+    "research/searcher",
+    "research/analyzer",
+    "research/writer"
+  ],
+  "entry_point": "searcher",
+  "completion_agent": "writer",
+  "routing": {
+    "searcher": {
+      "complete": {
+        "analyzer": "Search results collected and ready for analysis"
+      },
+      "blocked": {
+        "core": "Cannot search - technical issues or unclear topic"
+      }
+    },
+    "analyzer": {
+      "complete": {
+        "writer": "Analysis complete - themes, patterns, and contradictions identified"
+      },
+      "needs-more-data": {
+        "searcher": "Insufficient information - need additional sources"
+      },
+      "blocked": {
+        "core": "Cannot analyze - conflicting or unclear data"
+      }
+    },
+    "writer": {
+      "complete": {
+        "core": "Article written and saved to research/"
+      },
+      "needs-clarification": {
+        "analyzer": "Need more context or clearer analysis for article"
+      },
+      "blocked": {
+        "core": "Cannot write - insufficient material or unclear direction"
+      }
+    }
+  }
+}

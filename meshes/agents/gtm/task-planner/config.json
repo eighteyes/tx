@@ -1,0 +1,6 @@
+{
+  "name": "task-planner",
+  "options": {
+    "model": "sonnet"
+  }
+}

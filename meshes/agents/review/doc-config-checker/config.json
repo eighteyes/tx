@@ -1,0 +1,8 @@
+{
+  "name": "doc-config-checker",
+  "description": "Analyzes documentation and configuration consistency, ensuring docs match code reality and configs are well-documented",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

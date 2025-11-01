@@ -2,9 +2,12 @@
   "name": "core",
   "description": "coordinates all meshes",
   "orchestrator": true,
-  "capabilities": ["search","spawn","watch"],
+  "capabilities": [
+    "search",
+    "spawn",
+    "watch"
+  ],
   "options": {
-    "output": "blank",
     "model": "sonnet"
   }
 }

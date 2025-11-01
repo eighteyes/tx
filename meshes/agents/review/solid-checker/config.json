@@ -1,0 +1,8 @@
+{
+  "name": "solid-checker",
+  "description": "Analyzes codebase for SOLID principles violations and provides recommendations",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

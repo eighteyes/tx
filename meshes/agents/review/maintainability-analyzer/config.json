@@ -1,0 +1,8 @@
+{
+  "name": "maintainability-analyzer",
+  "description": "Analyzes code maintainability, readability, and complexity - identifies code smells, complex functions, and areas needing refactoring",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

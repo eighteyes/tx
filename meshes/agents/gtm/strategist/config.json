@@ -1,0 +1,6 @@
+{
+  "name": "strategist",
+  "options": {
+    "model": "sonnet"
+  }
+}

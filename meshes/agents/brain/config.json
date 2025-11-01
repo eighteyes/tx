@@ -1,0 +1,8 @@
+{
+  "name": "brain",
+  "description": "System knowledge keeper, pattern tracker, and strategic advisor. Maintains project memory and provides context to agents.",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

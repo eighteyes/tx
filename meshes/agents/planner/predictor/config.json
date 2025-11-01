@@ -3,7 +3,6 @@
   "description": "State prediction module - predicts outcomes and consequences for different execution paths",
   "capabilities": [],
   "options": {
-    "model": "haiku",
-    "output": "blank"
+    "model": "haiku"
   }
 }

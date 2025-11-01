@@ -1,0 +1,17 @@
+{
+  "mesh": "brain",
+  "type": "persistent",
+  "description": "System awareness, knowledge keeper, and strategic advisor. Maintains project memory through observations, patterns, and learnings. Uses spec-graph (.ai/spec-graph.json via know-cli) to structure codebase knowledge. Provides context to agents and formulates development plans.",
+  "agents": ["brain"],
+  "workflow_topology": "sequential",
+  "entry_point": "brain",
+  "completion_agent": "brain",
+  "capabilities": [],
+  "routing": {
+    "brain": {
+      "complete": {
+        "core": "Brain operation complete - knowledge updated"
+      }
+    }
+  }
+}

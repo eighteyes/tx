@@ -1,0 +1,11 @@
+{
+  "name": "validator",
+  "description": "Validates analysis quality - checks for biases, blindspots, unjustified confidence, and ensures recommendations are supported by data",
+  "capabilities": [
+    "ask",
+    "search"
+  ],
+  "options": {
+    "model": "sonnet"
+  }
+}

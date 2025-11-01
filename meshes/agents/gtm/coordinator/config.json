@@ -1,0 +1,6 @@
+{
+  "name": "coordinator",
+  "options": {
+    "model": "sonnet"
+  }
+}

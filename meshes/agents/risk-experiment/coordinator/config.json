@@ -1,0 +1,13 @@
+{
+  "name": "coordinator",
+  "description": "Coordinates risk experiment workflow - receives project plans, routes to designer, manages execution flow, synthesizes final recommendations",
+  "orchestrator": true,
+  "capabilities": [
+    "ask",
+    "spawn",
+    "watch"
+  ],
+  "options": {
+    "model": "sonnet"
+  }
+}

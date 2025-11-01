@@ -1,9 +1,11 @@
 {
   "name": "analyst",
   "description": "Analyzes sources and proposes research hypotheses with evidence",
-  "capabilities": ["ask", "search"],
+  "capabilities": [
+    "ask",
+    "search"
+  ],
   "options": {
-    "model": "sonnet",
-    "output": "blank"
+    "model": "sonnet"
   }
 }

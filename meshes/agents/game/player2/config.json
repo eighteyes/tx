@@ -1,9 +1,10 @@
 {
   "name": "player2",
   "description": "Second competitive riddle player - asks and answers riddles",
-  "capabilities": ["riddle"],
+  "capabilities": [
+    "riddle"
+  ],
   "options": {
-    "model": "sonnet",
-    "output": "blank"
+    "model": "sonnet"
   }
 }

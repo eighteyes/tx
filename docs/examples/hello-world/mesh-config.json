@@ -1,0 +1,16 @@
+{
+  "mesh": "hello-world",
+  "type": "sequential",
+  "description": "Simple echo mesh for testing basic TX functionality",
+  "agents": ["greeter"],
+  "entry_point": "greeter",
+  "completion_agent": "greeter",
+  "capabilities": [],
+  "routing": {
+    "greeter": {
+      "complete": {
+        "core": "Greeting complete"
+      }
+    }
+  }
+}

@@ -4,11 +4,19 @@
 
 Use the `tx search` command to find current, detailed, or reference information from multiple sources.
 
+## Search Strategy
+
+The search tool uses a sequential fallback approach:
+1. **SearXNG First** - Attempts search via SearXNG (local instance at port 12321) with optional topic/category filtering
+2. **Individual API Fallbacks** - If SearXNG fails, tries individual sources sequentially until results are found:
+   - DuckDuckGo → Stack Overflow → Reddit → GitHub → Hacker News → arXiv
+3. **Premium APIs** - If configured and free APIs fail, tries Brave → Tavily → Exa
+
 ## Basic Usage
 
-1. `tx tool search '[search terms]'` - Multi-source search across APIs
-2. `tx tool search -s <source> '[search terms]'` - Search specific source
-3. `tx tool search -t <topic> '[search]'` - Search topic area
+1. `tx tool search '[search terms]'` - Default search via SearXNG, with API fallbacks
+2. `tx tool search -s <source> '[search terms]'` - Search specific source directly
+3. `tx tool search -t <topic> '[search]'` - Search topic area (uses SearXNG categories)
 4. Returns list of URLs / titles with source information
 5. Use `tx tool get-www url [..url]` to read results
 6. Use `tx tool get-www -js url` if you encounter a site that needs JavaScript

@@ -1,0 +1,15 @@
+{
+  "mesh": "risk-experiment",
+  "type": "persistent",
+  "agents": [
+    "risk-experiment/designer",
+    "risk-experiment/executor",
+    "risk-experiment/analyzer",
+    "risk-experiment/validator",
+    "risk-experiment/coordinator"
+  ],
+  "entry_point": "coordinator",
+  "completion_agent": "coordinator",
+  "workflow_topology": "iterative",
+  "description": "Designs and executes proactive risk-reduction experiments to validate assumptions before committing to major implementation work"
+}

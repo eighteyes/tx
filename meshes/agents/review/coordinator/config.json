@@ -1,0 +1,8 @@
+{
+  "name": "coordinator",
+  "description": "Coordinates code review by distributing tasks to specialized analyzers, collecting results, and saving comprehensive report to .ai/reports",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

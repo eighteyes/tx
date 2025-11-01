@@ -1,465 +1,576 @@
-# Agent Orchestration - Getting Started
+# Getting Started with TX
+
+This guide will walk you through installing TX, configuring your environment, and spawning your first mesh.
+
+---
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [Configuration](#configuration)
+4. [First Run](#first-run)
+5. [Your First Mesh](#your-first-mesh)
+6. [Understanding the Output](#understanding-the-output)
+7. [Next Steps](#next-steps)
+
+---
+
+## Prerequisites
+
+### Required Software
+
+Before installing TX, verify you have these installed:
+
+#### 1. Node.js (>= 18.0.0)
+
+```bash
+node --version  # Should be v18.0.0 or higher
+```
+
+If not installed: [Download Node.js](https://nodejs.org/)
+
+#### 2. tmux (>= 3.0)
+
+```bash
+tmux -V  # Should be tmux 3.0 or higher
+```
+
+**Install tmux:**
+
+```bash
+# macOS
+brew install tmux
+
+# Ubuntu/Debian
+sudo apt-get install tmux
+
+# Fedora/RHEL
+sudo dnf install tmux
+
+# From source
+git clone https://github.com/tmux/tmux.git
+cd tmux
+sh autogen.sh
+./configure && make
+sudo make install
+```
+
+**Why tmux?**
+- Session isolation for each agent
+- Programmatic control (send-keys for prompt injection)
+- Attach/detach without killing agents
+- Persistent sessions across terminal disconnects
+
+#### 3. AI CLI Tool (Choose One)
+
+TX orchestrates existing AI CLIs. You need at least one:
+
+**Option A: Claude Code (Recommended)**
+
+```bash
+# Install Claude Code
+npm install -g @anthropic-ai/claude-code
+
+# Verify installation
+claude --version
+
+# Accept dangerous permissions (required for TX)
+claude --dangerously-skip-permissions
+```
+
+**Option B: Codex**
+```bash
+npm install -g codex-cli
+```
+
+**Option C: Gemini CLI**
+```bash
+npm install -g gemini-cli
+```
+
+**Option D: OpenCode**
+```bash
+npm install -g opencode
+```
+
+### Optional Requirements
+
+#### Docker (Recommended for Isolation)
+
+TX agents have full system access. Docker provides isolation:
+
+```bash
+# See DOCKER.md for containerized setup
+docker --version
+```
+
+**Security options:**
+- [safe-claude](https://github.com/eighteyes/safe-claude) - Sandboxed Claude
+- Docker containers ([DOCKER.md](../../DOCKER.md))
+- Virtual machines
+- Dedicated development servers
+
+#### SearXNG (Enhanced Search)
+
+For self-hosted meta-search:
+
+```bash
+# See SearXNG installation guide
+# Configure SEARXNG_URL in .env
+```
+
+---
 
 ## Installation
 
-### Prerequisites
-- Node.js 16+
-- tmux
-- SearXNG (for search capability) at `http://localhost:12321`
+### Step 1: Install TX Globally
 
-### Setup
 ```bash
-# Navigate to project
-cd /workspace/tmux-riffic-v2
-
-# Install dependencies
-npm install
-
-# Make CLI global
-npm link
+npm install -g tx-cli
 ```
 
-### Verify Installation
+**Verify installation:**
+
 ```bash
-tx --version    # Should show 2.0.0
-tx --help       # Should show all commands
+tx --version
 ```
 
----
+### Step 2: Install to Project (Optional)
 
-## Basic Usage
+If you want TX integrated into a specific project:
 
-### 1. View Generated Prompts
-
-See what Claude will receive (no tmux needed):
 ```bash
-# Core brain prompt
-tx prompt core
-
-# Test echo agent
-tx prompt test-echo
+cd /path/to/your/project
+tx repo-install
 ```
 
-### 2. Check System Status
+**What `tx repo-install` installs:**
+
+```
+your-project/
+├── .claude/
+│   ├── commands/
+│   │   └── tx-*.md          # TX slash commands (/spawn, /watch, etc.)
+│   └── skills/
+│       └── tx-skills/       # TX-specific skills
+└── .ai/
+    └── tx/                  # TX runtime directory
+        ├── mesh/            # Agent workspaces and messages
+        └── logs/            # System logs
+```
+
+**When to use repo-install:**
+- ✅ Integrating TX into an existing project
+- ✅ Using TX with project-specific slash commands
+- ✅ Sharing TX workflows with team members
+- ❌ Just trying TX out (global install is enough)
+
+### Step 3: Verify Installation
 
 ```bash
-# See all active meshes and queues
 tx status
 ```
 
-### 3. Search the Web
+**Expected output:**
+```
+No active meshes.
+```
 
-Requires SearXNG at localhost:12321:
+✅ Success! TX is installed and ready.
+
+---
+
+## Configuration
+
+### Basic Configuration (Optional)
+
+TX works out of the box, but configuration unlocks advanced features.
+
+#### 1. Environment Variables
+
+Copy the example configuration:
+
 ```bash
-tx tool search "quantum computing"
+cp .env.example .env
+```
+
+Edit `.env` to add API keys for search capabilities:
+
+```bash
+# Free tier (no credit card required)
+GITHUB_TOKEN=ghp_xxxxxxxxxxxx           # 5000 req/hr (vs 60)
+BRAVE_API_KEY=BSA-xxxxxxxxxxxx          # 2000 queries/month
+TAVILY_API_KEY=tvly-xxxxxxxxxxxx        # 1000 queries/month
+EXA_API_KEY=exa-xxxxxxxxxxxx            # 100 queries/month
+
+# Paid APIs (optional)
+BING_SEARCH_KEY=xxxxxxxxxxxxxx
+YOUTUBE_API_KEY=xxxxxxxxxxxxxx
+TWITTER_BEARER_TOKEN=xxxxxxxxxxxxxx
+```
+
+**What these enable:**
+- `GITHUB_TOKEN`: Higher rate limits for GitHub searches
+- `BRAVE_API_KEY`: Modern search engine results
+- `TAVILY_API_KEY`: AI-optimized semantic search
+- `EXA_API_KEY`: Semantic web search
+
+**See all options:** [.env.example](../../.env.example)
+
+#### 2. Default Runtime Provider
+
+TX defaults to `claude-code`. To use a different provider:
+
+```bash
+# In your shell profile (~/.bashrc, ~/.zshrc, etc.)
+export TX_RUNTIME=codex
+
+# Or per-session
+TX_RUNTIME=gemini tx start
 ```
 
 ---
 
-## Working with Agents
+## First Run
 
-### Single Agent Example
+### Launch TX
 
-#### Terminal 1: Start System
 ```bash
-# Start core mesh (this would spawn Claude in tmux)
 tx start
 ```
 
-#### Terminal 2: Spawn Test Agent
-```bash
-# Spawn echo agent
-tx spawn test-echo --init "Hello from agent system!"
+**What happens:**
+
+1. **Tmux session created:** TX creates a session named `core`
+2. **Core agent loads:** The coordinator agent initializes
+3. **Prompt injection:** System prompt sent to Claude via tmux
+4. **Interactive mode:** You're dropped into the core session
+
+**You should see:**
+
+```
+🚀 Starting TX...
+✅ Core mesh spawned
+✅ Session initialized
+
+You are now in the core mesh. Try:
+  - "spawn brain mesh to analyze the codebase"
+  - "spawn deep-research mesh about [topic]"
+  - "help" for available commands
 ```
 
-#### Terminal 3: Monitor Status
-```bash
-# Watch queue in real-time
-watch -n 1 tx status
+### Your First Command
+
+Once inside the core session, try:
+
+```
+help
 ```
 
-#### Attach to Session
-```bash
-# Attach to running echo agent
-tmux attach -t test-echo-echo
+**Output:**
+```
+Available commands:
+- spawn <mesh> - Start a new mesh
+- status - View active meshes
+- stop - End current session
+- attach <mesh> - Connect to another mesh
 ```
 
 ---
 
-## Multi-Agent Workflow
+## Your First Mesh
 
-Create a multi-agent mesh in `meshes/mesh-configs/researcher.json`:
+Let's spawn the `brain` mesh to understand your codebase:
 
-```json
-{
-  "mesh": "researcher",
-  "type": "ephemeral",
-  "description": "Multi-agent research workflow",
-  "agents": [
-    "researcher/searcher",
-    "researcher/analyzer",
-    "researcher/reporter"
-  ],
-  "type": "sequential",
-  "entry_point": "searcher",
-  "completion_agent": "reporter"
-}
+### Step 1: Spawn Brain
+
+Inside the core session:
+
+```
+spawn brain mesh to analyze the codebase structure
 ```
 
-Create agent prompts:
+### Step 2: Watch the Output
 
-**meshes/agents/researcher/searcher/prompt.md:**
-```markdown
-# Researcher - Searcher
+You'll see real-time progress:
 
-## Your Role
-Search the web for information on given topics.
+```
+🧠 Persistent mesh: brain (stable path)
 
-## Workflow
-1. Receive search query
-2. Use /search to find information
-3. Send findings to analyzer
+🚀 Spawning brain/brain...
+✅ Agent validated: brain
+
+📂 Initializing communication directories...
+✅ Directories created
+
+📦 Creating tmux session...
+✅ Session brain created
+
+🤖 Starting Claude in session...
+⏳ Waiting for Claude to initialize...
+✅ Claude is ready
+
+📝 Building agent prompt...
+✅ Prompt saved: .ai/tx/mesh/brain/agents/brain/prompts/prompt.md
+
+📡 Instructing Claude to load prompt...
+✅ Prompt load command sent
+
+✅ brain/brain spawned!
+
+   Session: brain
+   Attach: tmux attach -t brain
+   Stop: tx stop brain
 ```
 
-**meshes/agents/researcher/analyzer/prompt.md:**
-```markdown
-# Researcher - Analyzer
+### Step 3: Check Status
 
-## Your Role
-Analyze search results and extract key findings.
-
-## Workflow
-1. Receive search results from searcher
-2. Analyze and summarize
-3. Send to reporter
-```
-
-**meshes/agents/researcher/reporter/prompt.md:**
-```markdown
-# Researcher - Reporter
-
-## Your Role
-Compile final report from findings.
-
-## Workflow
-1. Receive analyzed findings
-2. Write comprehensive report
-3. Mark complete
-```
-
-### Run Multi-Agent Workflow
+In another terminal:
 
 ```bash
-# Spawn searcher (entry point)
-tx spawn researcher searcher --init "Research machine learning"
-
-# Monitor progress
 tx status
-
-# See all active agents
-tmux list-sessions
 ```
 
----
+**Output:**
 
-## Message Format
+```
+Active Meshes (2):
 
-All messages are Markdown with YAML frontmatter:
+  🟢 core (persistent)
+     State: idle
+     Attached: yes
 
-```markdown
----
-from: mesh/agent
-to: next-agent
-type: task | task-complete | ask | handoff
-status: pending | completed | rejected
-msg-id: unique-id
-timestamp: ISO-timestamp
----
-
-# Message Title
-
-Message content here...
+  🟢 brain (persistent)
+     State: working
+     Last activity: 5s ago
 ```
 
-### Example: Completing a Task
+### Step 4: Attach to Brain (Optional)
 
-Agent saves to `.ai/tx/mesh/researcher/agents/searcher/msgs/`:
+To watch the brain work:
 
-```markdown
+```bash
+tx attach brain
+```
+
+**Keyboard shortcuts:**
+- `Ctrl+B, D` - Detach without stopping
+- `Ctrl+C` - Interrupt current operation
+- `Ctrl+D` - Exit (stops the mesh!)
+
+**To detach safely:** Always use `Ctrl+B, D` (not `Ctrl+D`)
+
+### Step 5: Wait for Response
+
+Brain will analyze your codebase and send a message back to core.
+
+**In core session, you'll see:**
+
+```
+📬 New message from brain/brain:
+
 ---
-from: researcher/searcher
-to: researcher/analyzer
+from: brain/brain
+to: core/core
 type: task-complete
-status: completed
-timestamp: 2025-10-17T06:00:00Z
 ---
 
-# Search Results: Machine Learning
+# Codebase Analysis Complete
 
-Found 10 articles about machine learning:
+I've analyzed your project structure and created:
+- Spec graph with 48 entities
+- 6 data model schemas
+- 36 dependency relationships
 
-1. "Introduction to ML" - example.com/ml-intro
-2. "Deep Learning Guide" - example.com/deep-learning
-...
+Key insights:
+- Entry point: bin/tx.js
+- 18 mesh configurations available
+- File watcher using Chokidar v4
+- Test suite with Node.js test runner
+
+Ready to provide context for development tasks.
 ```
 
-System will automatically:
-1. Move message to complete
-2. Create handoff to next agent
-3. Queue next agent for processing
-
----
-
-## File Structure During Execution
-
-### Mesh Directory
-```
-.ai/tx/mesh/researcher/
-├── agents/
-│   ├── searcher/
-│   │   ├── msgs/        # Agent's queue (same structure)
-│   │   └── prompts/     # Saved prompts
-│   ├── analyzer/
-│   │   └── msgs/
-│   └── reporter/
-│       └── msgs/
-├── shared/
-│   └── output/          # Shared workspace
-├── state.json           # Mesh state
-└── agents/
-    └── [agent-name]/prompts/
-        └── [timestamp]-prompt.md
-```
+🎉 **Success!** You've spawned your first mesh and received a response.
 
 ---
 
-## Commands Reference
+## Understanding the Output
 
-### System Control
+### Directory Structure
+
+After spawning meshes, check `.ai/tx/`:
+
 ```bash
-tx start              # Start system + core mesh
-tx stop               # Stop everything
+tree .ai/tx -L 3
 ```
 
-### Agent Management
-```bash
-tx spawn <mesh> [agent]           # Spawn agent
-tx spawn <mesh> --init "task"     # With initial task
-tx stop <mesh> [agent]            # Stop mesh or agent
-tx attach                         # Attach to active
+**Output:**
+
+```
+.ai/tx/
+├── mesh/
+│   ├── core/
+│   │   └── agents/
+│   │       └── core/
+│   │           ├── msgs/          # Messages from core
+│   │           └── prompts/       # Generated prompts
+│   └── brain/
+│       ├── agents/
+│       │   └── brain/
+│       │       ├── msgs/          # Messages from brain
+│       │       ├── workspace/     # Brain's memory files
+│       │       └── prompts/
+│       └── workspace/             # Shared mesh workspace
+└── logs/
+    ├── debug.jsonl                # System debug logs
+    ├── error.jsonl                # Error logs
+    └── evidence.jsonl             # Agent observations (brain reads this!)
 ```
 
-### Information
+### Message Files
+
+Messages use frontmatter for routing:
+
 ```bash
-tx status             # Show mesh/queue status
-tx prompt <mesh> [agent]  # Display prompt
+cat .ai/tx/mesh/core/agents/core/msgs/task-spawn-brain-001.md
 ```
 
-### Tools
-```bash
-tx tool search "query"    # Search web
-```
+**Example:**
 
+```markdown
+---
+to: brain/brain
+from: core/core
+type: task
+status: start
+msg-id: spawn-brain-001
+headline: Analyze codebase structure
+timestamp: 2025-10-30T10:00:00Z
 ---
 
-## Troubleshooting
-
-### Sessions Not Starting
-
-**Problem:** `tmux` command not found
-```bash
-# Install tmux
-brew install tmux        # macOS
-apt-get install tmux     # Ubuntu
+Please analyze the codebase structure and provide:
+- Entry points
+- Key components
+- Architecture patterns
 ```
 
-**Problem:** "Failed to create session"
-```bash
-# Clean up old sessions
-tmux kill-server
-tx stop
-```
+**Key concepts:**
+- **Stay-in-place:** Messages never move from where they're created
+- **@filepath injection:** TX injects file references to destination agents
+- **No copying:** Routing system delivers references, not contents
 
-### Messages Not Processing
+### Logs
 
-**Problem:** Queue stuck
+Check system logs:
+
 ```bash
-# Check logs
+# Debug logs
 tail -f .ai/tx/logs/debug.jsonl
 
-# Check mesh state
-cat .ai/tx/mesh/[mesh-name]/state.json
+# Error logs
+tail -f .ai/tx/logs/error.jsonl
 
-# Verify files exist
-ls -la .ai/tx/mesh/[mesh-name]/msgs/
-```
-
-### SearXNG Not Available
-
-**Problem:** Search fails with "SearXNG unavailable"
-```bash
-# Check if running
-curl http://localhost:12321/status
-
-# Install SearXNG if needed
-docker run -d -p 12321:8888 searxng/searxng
+# Evidence logs (brain reads these for insights!)
+tail -f .ai/tx/logs/evidence.jsonl
 ```
 
 ---
 
-## Common Workflows
+## Next Steps
 
-### Search and Report
+Now that TX is running, explore these workflows:
+
+### 1. Try Other Meshes
+
+```
+# Code review
+spawn code-review mesh for the authentication module
+
+# Research with HITL
+spawn deep-research mesh about transformer architecture improvements
+
+# TDD cycle
+spawn tdd-cycle mesh to implement user authentication
+
+# GTM strategy
+spawn gtm-strategy mesh for my SaaS product
+```
+
+### 2. Use File Watching
+
 ```bash
-# Create mesh with searcher → reporter
-tx spawn search-report searcher --init "Search: AI trends"
-# Agent searches, then creates report
+# Watch errors and auto-fix
+tx watch .ai/tx/logs/error.jsonl --mesh error-fixer -d
 ```
 
-### Parallel Analysis
-Use map-reduce in mesh config:
-```json
-{
-  "type": "map-reduce",
-  "entry_point": "coordinator",
-  "completion_agent": "synthesizer"
-}
+### 3. Search Capabilities
+
+Inside a mesh:
+
+```
+tx tool search 'latest transformer architecture papers' -s arxiv
 ```
 
-### Iterative Refinement
-Use iterative workflow:
-```json
-{
-  "type": "iterative",
-  "entry_point": "generator",
-  "completion_agent": "finalizer"
-}
-```
+### 4. Create Custom Mesh
+
+See: [docs/examples/custom-mesh/](../examples/custom-mesh/)
+
+### 5. Read Documentation
+
+- **[Commands Reference](./commands.md)** - All CLI commands
+- **[Message System](./messages.md)** - Agent communication
+- **[Available Meshes](./meshes.md)** - Full mesh catalog
+- **[Architecture](./architecture.md)** - System design
+- **[Troubleshooting](./troubleshooting.md)** - Common issues
 
 ---
 
-## Advanced: Creating Custom Meshes
+## Common First-Run Issues
 
-### 1. Create Config
-`meshes/mesh-configs/my-mesh.json`:
-```json
-{
-  "mesh": "my-mesh",
-  "type": "ephemeral",
-  "description": "My custom mesh",
-  "agents": ["my-mesh/agent-1", "my-mesh/agent-2"],
-  "type": "sequential",
-  "entry_point": "agent-1",
-  "completion_agent": "agent-2"
-}
-```
+### Issue: "tmux: command not found"
 
-### 2. Create Agent Prompts
+**Solution:** Install tmux (see [Prerequisites](#prerequisites))
+
+### Issue: "claude: command not found"
+
+**Solution:** Install Claude Code:
 ```bash
-mkdir -p meshes/agents/my-mesh/agent-1
-mkdir -p meshes/agents/my-mesh/agent-2
-
-# Write prompts
-echo "# Agent 1 Prompt" > meshes/agents/my-mesh/agent-1/prompt.md
-echo "# Agent 2 Prompt" > meshes/agents/my-mesh/agent-2/prompt.md
+npm install -g @anthropic-ai/claude-code
 ```
 
-### 3. Create Configs (Optional)
+### Issue: "Permission denied"
+
+**Solution:** Accept dangerous permissions:
 ```bash
-echo '{
-  "name": "agent-1",
-  "description": "First agent",
-  "capabilities": ["search"]
-}' > meshes/agents/my-mesh/agent-1/config.json
+claude --dangerously-skip-permissions
 ```
 
-### 4. Spawn and Test
+### Issue: "No such mesh: X"
+
+**Solution:** Check available meshes:
 ```bash
-tx spawn my-mesh agent-1 --init "Test task"
-tx status
+tx list
 ```
 
----
+### Issue: "Session already exists"
 
-## Integration with Claude Code
-
-### @ File Attachment
-The orchestration system uses Claude Code's @ file attachment:
-```
-@<file-path>
-```
-
-The prompt is saved to `.ai/tx/mesh/[mesh]/agents/[agent]/prompts/[timestamp]-prompt.md` and injected via @ attachment.
-
-### Claude Code Commands
-Agents can use these within Claude Code:
-```
-/tx-done              # Mark task complete
-/search "query"       # Search (if capability added)
-/ask agent-name "Q"   # Ask another agent
-```
-
----
-
-## Performance Tips
-
-1. **Archive old tasks**: The system auto-archives tasks older than 30 days
-2. **Monitor logs**: Check `debug.jsonl` for slow operations
-3. **Use mock-mode for testing**: Set `MOCK_MODE=true` to skip tmux
-4. **Keep prompts concise**: Smaller prompts = faster injection
-
----
-
-## Environment Variables
-
+**Solution:** Stop existing sessions:
 ```bash
-# SearXNG URL
-SEARXNG_URL=http://localhost:12321
-
-# Enable debug logging
-TX_DEBUG_MODE=true
-
-# Test mode (no tmux)
-MOCK_MODE=true
+tx stop
+# Or manually:
+tmux kill-session -t core
 ```
 
 ---
 
 ## Need Help?
 
-### Show Help
-```bash
-tx --help
-tx <command> --help
-```
-
-### View Logs
-```bash
-tail -f .ai/tx/logs/debug.jsonl
-tail -f .ai/tx/logs/error.jsonl
-```
-
-### Check Status
-```bash
-tx status
-tmux list-sessions
-```
-
-### Reset System
-```bash
-tx stop
-rm -rf .ai/tx
-npm test
-```
+- **[Troubleshooting Guide](./troubleshooting.md)** - Common issues
+- **[GitHub Issues](https://github.com/your-repo/tx-cli/issues)** - Report bugs
+- **[Discussions](https://github.com/your-repo/tx-cli/discussions)** - Ask questions
 
 ---
 
-## What's Next?
-
-1. ✅ Try basic single-agent workflow
-2. ✅ Test multi-agent workflow
-3. ✅ Create custom mesh
-4. ✅ Integrate with SearXNG
-5. ✅ Build advanced capabilities
-
-Happy meshing! 🚀
+**Next:** [Commands Reference →](./commands.md)

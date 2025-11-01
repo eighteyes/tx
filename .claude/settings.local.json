@@ -19,10 +19,13 @@
       "Read(//Users/god/projects/ai-jank/tmux-riffic/meshes/agents/brain/**)",
       "Bash(chmod:*)",
       "Bash(codex --help:*)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(fd:*)",
+      "Bash(tx tool know:*)",
+      "Bash(~/projects/know-cli/know/know:*)"
     ],
     "deny": [],
     "ask": []
   },
-  "outputStyle": "blank"
+  "outputStyle": "default"
 }

@@ -1,9 +1,10 @@
 {
   "name": "disprover",
   "description": "Critically reviews theories and identifies counterarguments, gaps, and weaknesses",
-  "capabilities": ["search"],
+  "capabilities": [
+    "search"
+  ],
   "options": {
-    "model": "sonnet",
-    "output": "blank"
+    "model": "sonnet"
   }
 }

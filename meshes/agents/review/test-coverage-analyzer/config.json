@@ -1,0 +1,8 @@
+{
+  "name": "test-coverage-analyzer",
+  "description": "Analyzes test coverage, test quality, and identifies untested critical paths",
+  "capabilities": [],
+  "options": {
+    "model": "sonnet"
+  }
+}

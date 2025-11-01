@@ -1,0 +1,11 @@
+{
+  "mesh": "gtm-strategy",
+  "description": "Go-to-market strategy and growth hacking mesh for software products - generates progressive founder-friendly tasks from zero to first users",
+  "agents": [
+    "gtm/strategist",
+    "gtm/task-planner",
+    "gtm/coordinator"
+  ],
+  "entry_point": "strategist",
+  "completion_agent": "coordinator"
+}

@@ -1,0 +1,43 @@
+{
+  "mesh": "tdd-cycle",
+  "description": "Iterative TDD cycle: Red → Green → Refactor → repeat",
+  "agents": [
+    "development/red-phase",
+    "development/green-phase",
+    "development/refactor-phase"
+  ],
+  "entry_point": "red-phase",
+  "completion_agent": "refactor-phase",
+  "routing": {
+    "red-phase": {
+      "complete": {
+        "green-phase": "Failing test is written and documented"
+      },
+      "blocked": {
+        "core": "Cannot write test - missing requirements or unclear specification"
+      }
+    },
+    "green-phase": {
+      "complete": {
+        "refactor-phase": "All tests pass and implementation is sufficient"
+      },
+      "failed": {
+        "red-phase": "Tests fail or implementation approach is incorrect - test needs revision"
+      },
+      "blocked": {
+        "core": "Cannot implement - architectural constraints or missing dependencies"
+      }
+    },
+    "refactor-phase": {
+      "complete": {
+        "core": "Code is refactored, all tests pass, feature is production-ready"
+      },
+      "ready-for-next-iteration": {
+        "red-phase": "Feature needs more work, edge cases, or additional iterations"
+      },
+      "blocked": {
+        "core": "Cannot refactor further - architectural constraints require human decision"
+      }
+    }
+  }
+}

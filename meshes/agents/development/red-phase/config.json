@@ -1,0 +1,14 @@
+{
+  "name": "red-phase",
+  "category": "development",
+  "role": "Test Writer",
+  "description": "Writes failing tests based on feature descriptions",
+  "options": {
+    "model": "haiku"
+  },
+  "capabilities": [
+    "test-generation",
+    "tdd-red"
+  ],
+  "iteration_role": "start"
+}

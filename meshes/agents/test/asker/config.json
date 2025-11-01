@@ -3,7 +3,6 @@
   "description": "Test agent that sends an ask to answerer",
   "capabilities": [],
   "options": {
-    "model": "haiku",
-    "output": "blank"
+    "model": "haiku"
   }
 }

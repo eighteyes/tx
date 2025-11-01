@@ -1,0 +1,15 @@
+{
+  "name": "refactor-phase",
+  "category": "development",
+  "role": "Code Refactorer",
+  "description": "Refactors code and decides whether to loop back or complete",
+  "options": {
+    "model": "haiku"
+  },
+  "capabilities": [
+    "refactoring",
+    "tdd-refactor",
+    "iteration-control"
+  ],
+  "iteration_role": "end"
+}

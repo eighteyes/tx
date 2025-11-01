@@ -16,6 +16,7 @@ Agent A: "Thanks! Continuing my work..."
 
 Write a file to your **msgs folder** with this structure:
 
+<ask-template>
 ```markdown
 ---
 from: {your-mesh}/{your-agent}
@@ -31,30 +32,35 @@ timestamp: 2025-10-20T12:00:00Z
 What I need to know: [your specific question]
 
 Context: [why you need this]
-```
 
-**Location**: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+---
 
-## Answering an Ask
+<ask-response-template>
+## How to Respond
 
-When you receive an ask (in your msgs folder), read it and write a response:
+Reply by writing a file to your msgs/ directory with:
 
 ```markdown
 ---
 from: {your-mesh}/{your-agent}
-to: {target-mesh}/{target-agent}
+to: {original-sender}
 type: ask-response
 msg-id: q-something-meaningful
 status: completed
-timestamp: 2025-10-20T12:00:00Z
+timestamp: {current-time}
 ---
 
 # Response
 
-Here's what you asked: [your answer]
+[Your answer here]
 ```
 
-**Important**: Use the SAME `msg-id` from the original ask so it routes correctly.
+**Important**: Use the SAME `msg-id` from the ask message above.
+</ask-response-template>
+```
+</ask-template>
+
+**Location**: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
 
 ## Message Types
 
