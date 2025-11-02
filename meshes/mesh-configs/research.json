@@ -1,28 +1,37 @@
 {
   "mesh": "research",
-  "description": "Web research mesh: search → analyze → write informal article with inline references",
+  "description": "Web research mesh: interviewer gathers requirements → sourcer finds sources → analyst analyzes → writer creates informal article",
   "agents": [
-    "research/searcher",
-    "research/analyzer",
+    "research/interviewer",
+    "research/sourcer",
+    "research/analyst",
     "research/writer"
   ],
-  "entry_point": "searcher",
+  "entry_point": "interviewer",
   "completion_agent": "writer",
   "routing": {
-    "searcher": {
+    "interviewer": {
       "complete": {
-        "analyzer": "Search results collected and ready for analysis"
+        "sourcer": "Requirements gathered, ready to source information"
       },
       "blocked": {
-        "core": "Cannot search - technical issues or unclear topic"
+        "core": "Cannot proceed - unclear research requirements"
       }
     },
-    "analyzer": {
+    "sourcer": {
       "complete": {
-        "writer": "Analysis complete - themes, patterns, and contradictions identified"
+        "analyst": "Sources collected and ready for analysis"
+      },
+      "blocked": {
+        "core": "Cannot source - technical issues or unclear topic"
+      }
+    },
+    "analyst": {
+      "complete": {
+        "writer": "Analysis complete - themes, patterns, and insights identified"
       },
       "needs-more-data": {
-        "searcher": "Insufficient information - need additional sources"
+        "sourcer": "Insufficient information - need additional sources"
       },
       "blocked": {
         "core": "Cannot analyze - conflicting or unclear data"
@@ -33,7 +42,7 @@
         "core": "Article written and saved to research/"
       },
       "needs-clarification": {
-        "analyzer": "Need more context or clearer analysis for article"
+        "analyst": "Need more context or clearer analysis for article"
       },
       "blocked": {
         "core": "Cannot write - insufficient material or unclear direction"
