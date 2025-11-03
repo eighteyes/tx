@@ -1,13 +1,13 @@
 # TX Message System
 
-Understanding how agents communicate through file-based messages with stay-in-place architecture.
+Understanding how agents communicate through file-based messages with centralized event log architecture.
 
 ---
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Stay-in-Place Architecture](#stay-in-place-architecture)
+2. [Centralized Event Log Architecture](#centralized-event-log-architecture)
 3. [Message Format](#message-format)
 4. [Message Types](#message-types)
 5. [Routing Rules](#routing-rules)
@@ -19,56 +19,82 @@ Understanding how agents communicate through file-based messages with stay-in-pl
 
 ## Overview
 
-TX uses **file-based messaging** where agents communicate by writing markdown files with frontmatter. This approach provides:
+TX uses **file-based messaging** where agents communicate by writing markdown files with frontmatter to a centralized event log. This approach provides:
 
 - ✅ **Observable workflows** - Messages are human-readable files
-- ✅ **Audit trails** - Every interaction is logged
+- ✅ **Audit trails** - Every interaction is chronologically logged
 - ✅ **Debuggable** - Inspect messages at any time
 - ✅ **Resumable** - System survives crashes
 - ✅ **No network** - Purely filesystem-based
+- ✅ **Queryable** - All messages in one place for easy analysis
 
 ---
 
-## Stay-in-Place Architecture
+## Centralized Event Log Architecture
 
 ### Core Principle
 
-**Messages NEVER move from their creation location.**
+**All messages written to a single centralized directory: `.ai/tx/msgs/`**
 
 ```
-Traditional messaging:          Stay-in-place messaging:
-┌─────────┐                     ┌─────────┐
-│ Agent A │                     │ Agent A │
-│  writes │──(move)──>  inbox   │  writes │ (file stays here)
-└─────────┘                     └─────────┘
-                                      │
-┌─────────┐                           │
-│ Agent B │                           ├──> @filepath reference
-│  reads  │  <────┘                   │
-└─────────┘                     ┌─────────┐
-                                │ Agent B │
-                                │  reads  │ (gets reference, not copy)
+Centralized Event Log:
+┌─────────┐
+│ Agent A │ ──writes──> .ai/tx/msgs/
+└─────────┘              ├─ 1102083000-task-core>brain-abc123.md
+                         ├─ 1102084512-ask-brain>core-req1.md
+┌─────────┐              └─ 1102091530-task-complete-brain>core-abc123.md
+│ Agent B │ ──writes──>         ↑
+└─────────┘                     │
+                          @filepath references
+                                │
+┌─────────┐                     │
+│ System  │ ──injects───────────┘
+│ Router  │  (delivers references to target agents)
+└─────────┘
                                 └─────────┘
 ```
 
-### Why Stay-in-Place?
+### Why Centralized Event Log?
 
-1. **No file operations** - Reduces I/O and race conditions
-2. **Single source of truth** - Message exists in one location only
-3. **Audit trails** - Clear ownership and history
-4. **Debugging** - Easy to trace message flow
-5. **Resumability** - No "lost" messages during transfers
+1. **Chronological ordering** - All messages timestamped and sorted
+2. **Single source of truth** - One directory for all system messages
+3. **Easy querying** - Query messages by type, agent, time
+4. **Audit trails** - Complete system history in one place
+5. **No complexity** - No per-agent directories to manage
+6. **Immutable log** - Messages are append-only events
+
+### Filename Format
+
+Messages use a compact, self-describing filename format:
+
+```
+{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md
+```
+
+**Examples:**
+```
+1102083000-task-core>brain-abc123.md
+1102084512-ask-brain>core-req1.md
+1102091530-task-complete-brain>core-abc123.md
+```
+
+**Components:**
+- `mmddhhmmss`: Timestamp (Month Day Hour Minute Second)
+- `type`: Message type (task, ask, task-complete, etc.)
+- `from>to`: Routing with `>` showing direction
+- `msg-id`: Unique message identifier
 
 ### How It Works
 
-1. **Agent A writes message** to `.ai/tx/mesh/mesh-a/agents/agent-a/msgs/msg-001.md`
+1. **Agent A writes message** to `.ai/tx/msgs/1102083000-task-core>brain-abc123.md`
 2. **Routing system detects** new file via file watcher
-3. **System injects reference** to Agent B: `@/path/to/msg-001.md`
-4. **Agent B reads** the file via reference
-5. **Agent B responds** by writing to `.ai/tx/mesh/mesh-b/agents/agent-b/msgs/response-001.md`
-6. **System injects reference** back to Agent A
+3. **System parses filename** to determine routing (`>brain` = send to brain agent)
+4. **System injects reference** to Agent B: `@.ai/tx/msgs/1102083000-task-core>brain-abc123.md`
+5. **Agent B reads** the file via reference
+6. **Agent B responds** by writing to `.ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md`
+7. **System injects reference** back to Agent A
 
-**Result:** No files moved, no copies created, perfect audit trail.
+**Result:** All messages in one place, chronologically ordered, perfect audit trail.
 
 ---
 
@@ -80,7 +106,7 @@ Messages use **Markdown with YAML frontmatter**:
 ---
 to: [target-mesh]/[target-agent]
 from: [source-mesh]/[source-agent]
-type: ask | ask-response | task | task-complete | update
+type: ask | ask-response | task | task-complete | update | prompt
 status: start | in-progress | rejected | approved | complete
 requester: [original-requester]
 msg-id: [unique-id]
@@ -307,6 +333,36 @@ I've updated the spec graph with new entities:
 - Validated 48 total entities
 
 **Status:** ✅ Validation passed
+```
+
+---
+
+### `prompt`
+
+**Purpose:** Initial agent prompt injection from system.
+
+**Behavior:**
+- Written by spawn command during agent initialization
+- Contains full agent prompt (preamble + agent prompt + capabilities + workflow)
+- Auto-injected via watcher based on `to:` field
+- Foundation for self-modifying prompts
+
+**Example:**
+```markdown
+---
+to: research-abc123/interviewer
+from: system
+type: prompt
+status: start
+msg-id: prompt-1730628000
+timestamp: 2025-11-03T08:00:00Z
+---
+
+# Research Interviewer Agent
+
+You are the interviewer agent in a research mesh...
+
+[full prompt content including preamble, capabilities, workflow, etc.]
 ```
 
 ---

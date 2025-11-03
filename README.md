@@ -1,5 +1,15 @@
 # TX
+agenT eXpression
 
+## Objective
+Describe and execute distributed, observable agentic workflows using plain language, tooling and workspaces, using a conversational interface. 
+
+## What it is not
+Not supporting automation in favor of providing a surface area for augmentated thinking. 
+
+## Use Cases
+- Read an Agentic Paper, implement the pattern ( MAP planner = planner )
+- Multi-step Work Processes ( code-review, tdd, gtm-strategy, etc. ) with project knowledge support 
 Claude Orchestration for Augmented Workflows
 
 ## Fundamentals
@@ -8,6 +18,7 @@ Claude Orchestration for Augmented Workflows
 > quality beats productivity as review is the bottleneck
 
 ## Prerequisites
+AI Company Subscription / API Keys 
 `tmux` - manages all the sessions and message injections
 
 ## Optional

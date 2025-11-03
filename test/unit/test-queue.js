@@ -11,12 +11,14 @@ async function runTests() {
   // Setup test mesh
   const testMesh = 'test-queue';
   const testAgent = 'worker';
+  const centralMsgsDir = `.ai/tx/msgs`;
+
+  // Initialize centralized message directory
+  fs.ensureDirSync(centralMsgsDir);
+
+  // Create mesh state (for mesh management, not messages)
   const meshDir = `.ai/tx/mesh/${testMesh}`;
-  const agentMsgsDir = `${meshDir}/agents/${testAgent}/msgs`;
-
-  // Initialize mesh structure (new architecture: single msgs/ directory)
-  fs.ensureDirSync(agentMsgsDir);
-
+  fs.ensureDirSync(meshDir);
   fs.writeJsonSync(`${meshDir}/state.json`, {
     mesh: testMesh,
     status: 'active',
@@ -26,12 +28,23 @@ async function runTests() {
   // Initialize queue system
   Queue.initialize();
 
-  // Test 1: Message Creation in New Architecture
-  console.log('Test 1: Message File Creation');
-  console.log('Creating message in single msgs/ directory (no outbox/inbox subdirectories)\n');
+  // Test 1: Message Creation in Centralized Directory
+  console.log('Test 1: Message File Creation in Centralized Directory');
+  console.log('Creating message in centralized .ai/tx/msgs/ directory\n');
   try {
-    // Create a test message directly in the agent's msgs/ directory
-    const testMessagePath = path.join(agentMsgsDir, 'test-message-001.md');
+    // Create a test message in centralized directory with new filename format
+    // Format: {mmddhhmmss}-{type}-{from}>{to}-{msgId}.md
+    const now = new Date();
+    const MM = String(now.getMonth() + 1).padStart(2, '0');
+    const DD = String(now.getDate()).padStart(2, '0');
+    const HH = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const SS = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${MM}${DD}${HH}${mm}${SS}`;
+
+    const testFilename = `${timestamp}-task-user>${testAgent}-test001.md`;
+    const testMessagePath = path.join(centralMsgsDir, testFilename);
+
     fs.writeFileSync(testMessagePath, `---
 from: user
 to: ${testMesh}/${testAgent}
@@ -43,22 +56,18 @@ timestamp: ${new Date().toISOString()}
 
 # Test Task
 
-This is a test message in the new single msgs/ directory architecture.
+This is a test message in the centralized event log architecture.
 `);
 
     if (fs.existsSync(testMessagePath)) {
-      console.log('✓ Message created in single msgs/ directory');
+      console.log('✓ Message created in centralized directory');
+      console.log(`  Filename: ${testFilename}`);
 
-      // Verify no subdirectories exist
-      const hasSubdirs = fs.readdirSync(agentMsgsDir).some(item => {
-        const itemPath = path.join(agentMsgsDir, item);
-        return fs.statSync(itemPath).isDirectory();
-      });
-
-      if (!hasSubdirs) {
-        console.log('✓ No outbox/inbox subdirectories (correct architecture)');
+      // Verify filename format
+      if (testFilename.match(/^\d{10}-task-\w+>\w+-\w+\.md$/)) {
+        console.log('✓ Filename matches format: mmddhhmmss-type-from>to-msgId.md');
       } else {
-        console.log('⚠️  Warning: Subdirectories found in msgs/ folder');
+        console.log('✗ Filename does not match expected format');
       }
     } else {
       console.log('✗ Message file not found');
@@ -67,30 +76,39 @@ This is a test message in the new single msgs/ directory architecture.
     console.log(`✗ Failed: ${error.message}`);
   }
 
-  // Test 2: Queue Status Check
-  console.log('\nTest 2: Queue Status');
-  console.log('Checking queue status for mesh and agent\n');
+  // Test 2: Message Count in Centralized Directory
+  console.log('\nTest 2: Message Count in Centralized Directory');
+  console.log('Checking messages in centralized directory\n');
   try {
-    const status = Queue.getQueueStatus(testMesh, testAgent);
+    const messages = Message.getMessages(testAgent);
 
-    console.log('✓ Queue status retrieved:');
-    console.log(`  Total messages: ${status.total}`);
-    console.log(`  Messages directory: ${agentMsgsDir}`);
+    console.log('✓ Messages retrieved from centralized directory:');
+    console.log(`  Total messages for ${testAgent}: ${messages.length}`);
+    console.log(`  Centralized directory: ${centralMsgsDir}`);
 
-    if (status.total > 0) {
-      console.log('✓ Messages detected in queue');
+    if (messages.length > 0) {
+      console.log('✓ Messages detected in centralized directory');
+      console.log(`  Sample: ${messages[0]}`);
     }
   } catch (error) {
     console.log(`✗ Failed: ${error.message}`);
   }
 
   // Test 3: Message Completion (marking as done)
-  console.log('\nTest 3: Message Completion');
+  console.log('\nTest 3: Message Completion in Centralized Directory');
   console.log('Testing message completion (rename to *-done.md)\n');
   try {
-    // Create a message to complete
-    const messageToComplete = 'test-message-002.md';
-    const messagePath = path.join(agentMsgsDir, messageToComplete);
+    // Create a message to complete in centralized directory
+    const now = new Date();
+    const MM = String(now.getMonth() + 1).padStart(2, '0');
+    const DD = String(now.getDate()).padStart(2, '0');
+    const HH = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const SS = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${MM}${DD}${HH}${mm}${SS}`;
+
+    const messageToComplete = `${timestamp}-task-complete-${testAgent}>core-test002.md`;
+    const messagePath = path.join(centralMsgsDir, messageToComplete);
 
     fs.writeFileSync(messagePath, `---
 from: ${testMesh}/${testAgent}
@@ -108,12 +126,12 @@ Task has been completed.
 
     console.log(`  Created: ${messageToComplete}`);
 
-    // Mark message as complete
-    Queue.completeMessage(testMesh, testAgent, messageToComplete);
+    // Mark message as complete using Message API
+    Message.moveMessage(messageToComplete);
 
     // Check if file was renamed to *-done.md
     const doneFilename = messageToComplete.replace('.md', '-done.md');
-    const donePath = path.join(agentMsgsDir, doneFilename);
+    const donePath = path.join(centralMsgsDir, doneFilename);
 
     if (fs.existsSync(donePath)) {
       console.log(`✓ Message marked as done: ${doneFilename}`);
@@ -156,9 +174,9 @@ Task has been completed.
     console.log(`✗ Failed: ${error.message}`);
   }
 
-  // Test 5: Event-Driven Processing
+  // Test 5: Event-Driven Processing with Centralized Directory
   console.log('\nTest 5: Event-Driven Message Processing');
-  console.log('Testing file:msgs:new event handling\n');
+  console.log('Testing file:msgs:new event handling with centralized directory\n');
   try {
     let eventReceived = false;
 
@@ -168,8 +186,18 @@ Task has been completed.
       console.log('✓ Message routing event received');
     });
 
-    // Simulate new message event (this is what the watcher would emit)
-    const newMessagePath = path.join(agentMsgsDir, 'test-message-003.md');
+    // Create new message in centralized directory
+    const now = new Date();
+    const MM = String(now.getMonth() + 1).padStart(2, '0');
+    const DD = String(now.getDate()).padStart(2, '0');
+    const HH = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const SS = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `${MM}${DD}${HH}${mm}${SS}`;
+
+    const newMessageFilename = `${timestamp}-task-user>core-test003.md`;
+    const newMessagePath = path.join(centralMsgsDir, newMessageFilename);
+
     fs.writeFileSync(newMessagePath, `---
 from: user
 to: core/core
@@ -181,14 +209,14 @@ timestamp: ${new Date().toISOString()}
 
 # Event Test
 
-Testing event-driven message processing.
+Testing event-driven message processing in centralized directory.
 `);
 
     // Manually trigger the event (in real system, watcher does this)
     EventBus.emit('file:msgs:new', {
       mesh: testMesh,
       agent: testAgent,
-      file: 'test-message-003.md',
+      file: newMessageFilename,
       filepath: newMessagePath
     });
 
@@ -209,6 +237,7 @@ Testing event-driven message processing.
   setTimeout(() => {
     console.log('\n=== Cleaning up ===');
     fs.removeSync(`.ai/tx/mesh/${testMesh}`);
+    fs.removeSync(centralMsgsDir);
     Queue.shutdown();
     console.log('✓ Cleanup complete\n');
     console.log('=== Test Suite Complete ===');

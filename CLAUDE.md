@@ -1,6 +1,8 @@
 - use `tx prompt <mesh> <agent>` to render fonts for testing
 - Read .ai/tx/logs/evidence.jsonl for agentic insights.
-- **Stay-in-place messaging**: Messages NEVER move from their creation location
-- Messages stay in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/` where they were created
+- **Centralized event log**: All messages in `.ai/tx/msgs/`
+- Filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
+- Example: `1102083000-task-core>interviewer-abc123.md`
+- Use ONLY agent names in filenames (not full mesh/instance paths)
 - System injects file references via `@filepath` to destination agents
-- ❌ NO copying, NO moving - references only
+- ❌ NO copying, NO moving - write to `.ai/tx/msgs/` only

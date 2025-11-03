@@ -15,10 +15,10 @@ All agent prompts follow this structure:
 You are... [what you do]
 
 ## Communication Rules
-- Messages arrive in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
-- Messages are injected via @filepath
-- Write responses to `msgs/`
+- Messages arrive via @filepath injection from centralized `.ai/tx/msgs/`
+- Write responses to `.ai/tx/msgs/` with format: `{mmddhhmmss}-{type}-{from}>{to}-{msgId}.md`
 - Use frontmatter for metadata
+- Filename routing: use `>` to show message direction (from>to)
 
 ## Workflow
 1. [Step 1]
@@ -52,8 +52,9 @@ Simple agent that echoes back input.
 You echo back input with metadata. Test agent for verifying communication.
 
 ## Communication Rules
-- Read task from `.ai/tx/mesh/test-echo/agents/echo/msgs/`
-- Write response to `.ai/tx/mesh/test-echo/agents/echo/msgs/`
+- Read task from centralized `.ai/tx/msgs/` (injected via @filepath)
+- Write response to `.ai/tx/msgs/` using format: `{mmddhhmmss}-{type}-{from}>{to}-{msgId}.md`
+- Example: `1102083000-task-complete-echo>core-abc123.md`
 
 ## Workflow
 1. Read the incoming message from active folder
@@ -62,12 +63,13 @@ You echo back input with metadata. Test agent for verifying communication.
 4. Save response with frontmatter
 
 ## Output Format
-Create file in msgs/:
+Create file in `.ai/tx/msgs/` with filename: `{mmddhhmmss}-task-complete-echo>core-{msgId}.md`
 ---
 from: test-echo/echo
 to: core
 type: task-complete
 status: complete
+msg-id: {msgId}
 timestamp: {ISO timestamp now}
 ---
 

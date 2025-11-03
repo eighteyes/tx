@@ -25,7 +25,9 @@
       "Bash(~/projects/know-cli/know/know:*)",
       "Bash(node test-dual-write.js:*)",
       "Bash(npm test:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "Read(//tmp/**)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []

@@ -11,6 +11,7 @@ const { logs } = require('../lib/commands/logs');
 const { list } = require('../lib/commands/list');
 const { clear } = require('../lib/commands/clear');
 const { watch } = require('../lib/commands/watch');
+const { dashboard, stopDashboard } = require('../lib/commands/dashboard');
 const { Logger } = require('../lib/logger');
 
 // Initialize logger
@@ -63,6 +64,16 @@ program
   .description('Attach to active tmux session')
   .action(() => {
     attach();
+  });
+
+// tx dashboard
+program
+  .command('dashboard')
+  .option('--no-attach', 'Don\'t auto-attach to dashboard after creation')
+  .option('--no-watch', 'Disable auto-refresh watcher')
+  .description('Create live dashboard showing all active agents (core on left, others tiled)')
+  .action((options) => {
+    dashboard(options);
   });
 
 // tx status

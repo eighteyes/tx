@@ -11,7 +11,7 @@ It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 
   CRITICAL: Centralized messaging rules:
   - ✅ Write ONLY to: `.ai/tx/msgs/`
-  - ✅ Use centralized filename format: `{MMDDHHMMSS}-{from-mesh}-{from-agent}-{to-mesh}-{to-agent}-{type}-{msg-id}.md`
+  - ✅ Use centralized filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
   - ❌ NEVER write to other agents' directories
   - ❌ NEVER move or copy message files
   - ✅ Messages stay in centralized log - system injects file references (@filepath)
@@ -21,9 +21,12 @@ It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 
 To send a message:
 1. Create file in `.ai/tx/msgs/` with centralized filename format
-2. Use MMDDHHMMSS timestamp: Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
-3. Replace slashes with hyphens: `core/core` → `core-core`
-4. System injects @filepath reference to destination agent
+2. Use mmddhhmmss timestamp: Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
+3. Use ONLY agent names (not full mesh paths): `mesh/agent` → `agent`
+4. Use `>` to show routing direction: `from>to`
+5. System injects @filepath reference to destination agent
+
+**Example filename**: `1102083000-task-core>interviewer-abc123.md`
 
 # Frontmatter Template
 <msg-fm-template>
