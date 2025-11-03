@@ -112,9 +112,9 @@ async function runE2ETest() {
   try {
     // Step 1: Start tx in detached mode
     console.log('📍 Step 1: Starting tx system in detached mode\n');
-    console.log('   Running: tx start -d\n');
+    console.log('   Running: node bin/tx.js start -d\n');
 
-    txProcess = spawn('tx', ['start', '-d'], {
+    txProcess = spawn('node', ['bin/tx.js', 'start', '-d'], {
       cwd: process.cwd(),
       stdio: 'pipe'
     });

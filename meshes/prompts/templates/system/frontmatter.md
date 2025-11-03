@@ -9,19 +9,21 @@ It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 
 # Message Rules
 
-  CRITICAL: Stay-in-place messaging rules:
-  - ✅ Write ONLY to: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+  CRITICAL: Centralized messaging rules:
+  - ✅ Write ONLY to: `.ai/tx/msgs/`
+  - ✅ Use centralized filename format: `{MMDDHHMMSS}-{from-mesh}-{from-agent}-{to-mesh}-{to-agent}-{type}-{msg-id}.md`
   - ❌ NEVER write to other agents' directories
   - ❌ NEVER move or copy message files
-  - ✅ Messages stay at origin - system injects file references (@filepath)
+  - ✅ Messages stay in centralized log - system injects file references (@filepath)
   - ✅ Routing system delivers references, NOT file contents
 
 ### Sending Messages
 
 To send a message:
-1. Create file in YOUR msgs folder with frontmatter below
-2. File stays in YOUR folder (never moves)
-3. System injects @filepath reference to destination agent
+1. Create file in `.ai/tx/msgs/` with centralized filename format
+2. Use MMDDHHMMSS timestamp: Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
+3. Replace slashes with hyphens: `core/core` → `core-core`
+4. System injects @filepath reference to destination agent
 
 # Frontmatter Template
 <msg-fm-template>

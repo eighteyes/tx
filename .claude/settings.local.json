@@ -22,7 +22,10 @@
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(fd:*)",
       "Bash(tx tool know:*)",
-      "Bash(~/projects/know-cli/know/know:*)"
+      "Bash(~/projects/know-cli/know/know:*)",
+      "Bash(node test-dual-write.js:*)",
+      "Bash(npm test:*)",
+      "Bash(node -e:*)"
     ],
     "deny": [],
     "ask": []

@@ -14,7 +14,7 @@ Agent A: "Thanks! Continuing my work..."
 
 ## Creating an Ask
 
-Write a file to your **msgs folder** with this structure:
+Write a file to the **centralized event log** with this structure:
 
 <ask-template>
 ```markdown
@@ -38,7 +38,7 @@ Context: [why you need this]
 <ask-response-template>
 ## How to Respond
 
-Reply by writing a file to your msgs/ directory with:
+Reply by writing a file to the centralized event log with:
 
 ```markdown
 ---
@@ -60,7 +60,10 @@ timestamp: {current-time}
 ```
 </ask-template>
 
-**Location**: `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
+**Location**: `.ai/tx/msgs/`
+**Filename format**: `{MMDDHHMMSS}-{from-mesh}-{from-agent}-{to-mesh}-{to-agent}-{type}-{msg-id}.md`
+**Example**: `1102083000-research-interviewer-core-core-ask-q-data-format.md`
+**Timestamp**: MMDDHHMMSS = Month Day Hour Minute Second (e.g., `1102083000` = Nov 2, 08:30:00)
 
 ## Message Types
 
