@@ -4,5 +4,6 @@
 - Filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
 - Example: `1102083000-task-core>interviewer-abc123.md`
 - Use ONLY agent names in filenames (not full mesh/instance paths)
-- System injects file references via `@filepath` to destination agents
+- Watcher injects file references via `@filepath` to destination agents
+- - Only file injection should happen via watcher
 - ❌ NO copying, NO moving - write to `.ai/tx/msgs/` only

@@ -27,7 +27,11 @@
       "Bash(npm test:*)",
       "Bash(node -e:*)",
       "Read(//tmp/**)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(pkill:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__grep__searchGitHub",
+      "mcp__context7__get-library-docs"
     ],
     "deny": [],
     "ask": []

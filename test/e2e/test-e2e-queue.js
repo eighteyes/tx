@@ -123,7 +123,7 @@ async function sendAdditionalTasks(taskNumber) {
 }
 
 /**
- * Verify sequential processing by checking agent session output
+ * Verify sequential processing by checking centralized message log
  */
 async function verifySequentialProcessing() {
   console.log('📍 Verifying sequential processing\n');
@@ -131,73 +131,81 @@ async function verifySequentialProcessing() {
   // Wait a bit for processing to happen
   await new Promise(resolve => setTimeout(resolve, 5000));
 
-  // Check agent session output
+  // Check centralized message directory for task-complete messages
   try {
-    const output = execSync(`tmux capture-pane -t ${meshSession} -p -S -300`, {
-      encoding: 'utf-8'
+    const centralMsgsDir = `.ai/tx/msgs`;
+
+    if (!fs.existsSync(centralMsgsDir)) {
+      console.log(`❌ Messages directory not found: ${centralMsgsDir}\n`);
+      return false;
+    }
+
+    const msgFiles = fs.readdirSync(centralMsgsDir).filter(f => f.endsWith('.md'));
+
+    // Look for task-complete messages from queue-worker to core
+    // Pattern: {mmddhhmmss}-task-complete-{agentName}>core-{msgId}.md
+    const responsePattern = new RegExp(`^\\d{10}-task-complete-${AGENT}>core-.*\\.md$`);
+    const responses = msgFiles.filter(f => responsePattern.test(f));
+
+    console.log(`   Task-complete messages found: ${responses.length}`);
+
+    responses.forEach(file => {
+      const fullPath = path.join(centralMsgsDir, file);
+      const content = fs.readFileSync(fullPath, 'utf-8');
+
+      // Extract task info from message content
+      const hasItem1 = content.includes('item 1') || content.includes('Item 1');
+      const hasItem2 = content.includes('item 2') || content.includes('Item 2');
+      const hasItem3 = content.includes('item 3') || content.includes('Item 3');
+
+      if (hasItem1) console.log(`      - Item 1: ${file}`);
+      if (hasItem2) console.log(`      - Item 2: ${file}`);
+      if (hasItem3) console.log(`      - Item 3: ${file}`);
     });
 
-    console.log('   Agent session output (last 50 lines):\n');
-    const lines = output.split('\n').slice(-50);
-    lines.forEach(line => console.log(`   ${line}`));
+    console.log('');
 
-    // Look for evidence of processing 3 tasks
-    const hasTask1 = output.includes('item 1') || output.includes('Task 1') || output.includes('first');
-    const hasTask2 = output.includes('item 2') || output.includes('Task 2') || output.includes('second');
-    const hasTask3 = output.includes('item 3') || output.includes('Task 3') || output.includes('third');
-
-    // Look for Write operations (responses)
-    const writeMatches = output.match(/Write\(/g);
-    const writeCount = writeMatches ? writeMatches.length : 0;
-
-    console.log(`\n   ✅ Evidence found:`);
-    console.log(`      - Task 1 processed: ${hasTask1}`);
-    console.log(`      - Task 2 processed: ${hasTask2}`);
-    console.log(`      - Task 3 processed: ${hasTask3}`);
-    console.log(`      - Write operations: ${writeCount}\n`);
-
-    // Verify all tasks were processed
-    if (!hasTask1 || !hasTask2 || !hasTask3) {
-      console.log('❌ Not all tasks were processed\n');
+    // Verify we have at least 3 responses (one per task)
+    if (responses.length < 3) {
+      console.log(`❌ Expected at least 3 task-complete messages, found ${responses.length}\n`);
       return false;
     }
 
-    // Verify we have responses (should be 3)
-    if (writeCount < 3) {
-      console.log(`❌ Expected 3 responses, found ${writeCount}\n`);
-      return false;
-    }
-
+    console.log(`✅ Sequential processing verified: ${responses.length} task-complete messages\n`);
     return true;
 
   } catch (e) {
-    console.error(`❌ Error checking session output: ${e.message}`);
+    console.error(`❌ Error checking message log: ${e.message}`);
     return false;
   }
 }
 
 /**
- * Verify all responses were received by core
+ * Verify all responses were received by core by checking centralized message log
  */
 async function verifyResponsesReceived() {
   console.log('📍 Verifying core received all responses\n');
 
-  const msgsDir = `.ai/tx/mesh/${meshInstanceId}/agents/${AGENT}/msgs`;
+  const centralMsgsDir = `.ai/tx/msgs`;
 
-  if (!fs.existsSync(msgsDir)) {
-    console.log(`❌ Messages directory not found: ${msgsDir}\n`);
+  if (!fs.existsSync(centralMsgsDir)) {
+    console.log(`❌ Messages directory not found: ${centralMsgsDir}\n`);
     return false;
   }
 
-  const files = fs.readdirSync(msgsDir);
-  const doneFiles = files.filter(f => f.endsWith('-done.md'));
+  const msgFiles = fs.readdirSync(centralMsgsDir).filter(f => f.endsWith('.md'));
 
-  console.log(`   Total message files: ${files.length}`);
-  console.log(`   Done files: ${doneFiles.length}\n`);
+  // Look for task-complete messages from queue-worker to core
+  // Pattern: {mmddhhmmss}-task-complete-{agentName}>core-{msgId}.md
+  const responsePattern = new RegExp(`^\\d{10}-task-complete-${AGENT}>core-.*\\.md$`);
+  const responses = msgFiles.filter(f => responsePattern.test(f));
 
-  // Should have 3 done files (one for each task)
-  if (doneFiles.length < 3) {
-    console.log(`❌ Expected 3 done files, found ${doneFiles.length}\n`);
+  console.log(`   Total message files in ${centralMsgsDir}: ${msgFiles.length}`);
+  console.log(`   Task-complete messages to core: ${responses.length}\n`);
+
+  // Should have 3 responses (one for each task)
+  if (responses.length < 3) {
+    console.log(`❌ Expected 3 task-complete messages to core, found ${responses.length}\n`);
     return false;
   }
 

@@ -2,15 +2,32 @@
 agenT eXpression
 
 ## Objective
-Describe and execute distributed, observable agentic workflows using plain language, tooling and workspaces, using a conversational interface. 
+Describe and execute distributed, observable agentic workflows using plain language, tooling and workspaces, primarily using a conversational interface. 
 
 ## What it is not
-Not supporting automation in favor of providing a surface area for augmentated thinking. 
+Not explicitly supporting automation in favor of providing a surface area for augmentated thinking. 
+
+## Overview
+`tx` is a CLI tool which orchestrates `claude-code`, `codex`, `gemini-cli`, `opencode`, etc. to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
+- can utilize subscriptions vs API keys with LangGraph, CrewAI, etc. 
+- no need to reinvent the base agent
+- easy to incorporate into existing setup / claude code tooling
+- can generalize across AI vendors
+
+Disadvantage:
+- harder to automate
+- likely less performant then highly tuned systems
+
+`tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Use Cases
 - Read an Agentic Paper, implement the pattern ( MAP planner = planner )
 - Multi-step Work Processes ( code-review, tdd, gtm-strategy, etc. ) with project knowledge support 
-Claude Orchestration for Augmented Workflows
+- Generate comprehensive plans which outperform stock Plan Mode
+- Work from an external queue of work items
+- Multimodal Communication ( future state )
+- Human In The Loop agentic interactions
+- automatically fix errors based of watching error logs
 
 ## Fundamentals
 > specialized agents with domain context outperform generalists
@@ -23,12 +40,12 @@ AI Company Subscription / API Keys
 
 ## Optional
 `searxng` for search
-see `.env.example` for more API key options that are supported, but honestly they haven't been tire-kicked yet. 
+see `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
 
 ## Terms
 `mesh` - a list of agents, with input / output targets to provide an agentic AI workflow
-`agent` - a LLM session within a mesh, with prompts and capabilities
-`capability` - a prompt, optionally enhanced / enforced by tools ( like Claude Skills )
+`agent` - a LLM session within a mesh, with prompts, tools and messaging instructions
+`capability` - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
 `workspace` - a shared space for AIs to collaborate
 
 ## Included Meshes / Agents
@@ -41,7 +58,6 @@ see `.env.example` for more API key options that are supported, but honestly the
 These are tools available to agents at runtime.
 `search` - WebSearch is great, but it provides summaries, search finds & retrives URLs
 `watch` - When a file changes, inject the delta into the target agent for action.
-`ask` - Retrieve information from another agent, block operation until complete
 `spawn` - Start a mesh / agent
 
 ## Structure
@@ -73,36 +89,14 @@ tx logs - see the internals
 tx prompt - see an agent prompt 
 ```
 
-## Context and Intent
-`tx` is not indended to be an 'automation' tool. The intent is to 'augment' your abilities beyond stock tooling via:
-- workflow visibility and control
-- context management
-- task dedicated agents
-- inter-agent communication
-- Human In The Loop interfaces
-
 ## Why not Skills / Agents / Commands?
 Use them! They are powerful. `tx` differs in that that it is explicitly invoked, observable, composable and dedicated to context isolation. Certain patterns, like swarms of Haiku Agents running Explore are better off using native tooling. Haiku doesn't like being told it's not Claude. :D
 
 ## WHY?
 I was not happy with how much manual work it took to nudge `claude-code` agents through a process. I don't like implicit tooling, where the agent selects from a list of options, adherence to steering goes down the more tools you add, and it clutters context. I'd far prefer tight context with explicit tooling via specialists with a generalist interface managing it all. 
-It started with red-green-refactor and went into a better Deep Research, at least for my purposes. ChatGPT Deep Research only asks surface level questions at the beginning of the study, where as this approach prioritizes HITL whenever it is needed to refine an approach. 
-Finally, LLM Benchmarks can be gamed, I wanted a true competition of intelligence between agents, and this requires private memory accessed by programmatic tooling. 
-It's about fucking LEVERAGE and SURFACE AREA. If I want to run a code review and a deep research project, why do I have to leave my prompt. 
+`tx` aims to provide LEVERAGE and an efficient SURFACE AREA. If I want to run a code review and a deep research project, why do I have to leave my prompt. 
 I also see the papers coming out with successful agentic topologies for approaching problems. Their codebases are a nightmare to try to reproduce. Giving these papers to TX to replicate as a mesh is a very fast way to trial out their approaches. 
 
-## Overview
-`tx` is a CLI tool which orchestrates `claude-code`, `codex`, `gemini-cli`, `opencode`, etc. to provide the fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
-- can utilize subscriptions vs API keys with LangGraph, CrewAI, etc. 
-- no need to reinvent the base agent
-- easy to incorporate into existing setup / claude code tooling
-
-Disadvantage:
-- harder to automate
-- likely less performant then highly tuned prompts and agents
-
-
-Look at `tx` as a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Getting Started
 Install to your local system
@@ -116,11 +110,6 @@ tx repo-install
 ```
 
 > Importantly, tx runs with `claude --dangerously-skip-permissions`, you will need to run that command in advance to accept responsibility for the actions of the agents. You are strongly advised to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude). 
-
-
-## Fucking cool workflows
-Make a plan with brain, pass it off to planner for refinement
-Watch and auto-fix errors
 
 
 ## Once Inside

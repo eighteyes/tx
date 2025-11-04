@@ -23,9 +23,10 @@ function captureSessionOutput(sessionName, numLines = 20) {
  * E2E Test: test-ping-pong mesh
  *
  * Tests the ping-pong workflow where two agents exchange messages:
- * - pinger sends 2 ping messages to ponger
- * - ponger responds with 2 pong messages
- * - test validates both agents spawn and exchange messages
+ * - core sends initial task to ping
+ * - ping sends to pong (3 rounds)
+ * - pong responds to ping (3 rounds each)
+ * - test validates both agents spawn and exchange messages successfully
  */
 
 console.log('=== E2E Test: test-ping-pong mesh (ping-pong exchange) ===\n');
@@ -33,7 +34,7 @@ console.log('=== E2E Test: test-ping-pong mesh (ping-pong exchange) ===\n');
 const TEST_TIMEOUT = 180000; // 3 minutes to allow for cleanup
 const CORE_SESSION = 'core';
 const MESH = 'test-ping-pong';
-const ENTRY_AGENT = 'pinger';
+const ENTRY_AGENT = 'ping';
 
 let txProcess = null;
 let testPassed = false;
@@ -165,7 +166,7 @@ async function runE2ETest() {
 
     console.log('\n📍 Step 3: Testing ping-pong workflow\n');
 
-    const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn a ${MESH} mesh and have pinger and ponger exchange 2 ping-pong messages`);
+    const workflow = new E2EWorkflow(MESH, ENTRY_AGENT, `spawn a ${MESH} mesh and have ping and pong exchange 3 rounds of messages`);
     const workflowPassed = await workflow.test();
 
     if (workflowPassed) {
