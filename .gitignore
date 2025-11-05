@@ -28,5 +28,5 @@ build/
 # Logs
 logs/
 *.log
-.ai
+.ai/
 .ai/tx/.tx-start.pid
