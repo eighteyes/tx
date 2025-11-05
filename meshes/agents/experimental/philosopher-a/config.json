@@ -1,0 +1,7 @@
+{
+  "name": "philosopher-a",
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

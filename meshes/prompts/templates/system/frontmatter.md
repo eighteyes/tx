@@ -1,34 +1,24 @@
 
-Tasks and asks are types of messages that agents send to eachother via files.
 
-Frontmatter is used to route messages to meshes / agents and advance the queue system.
-
-It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
-
-{{ nextAgentInstructions }}
-
-# Message Rules
-
-  CRITICAL: Centralized messaging rules:
-  - ✅ Write ONLY to: `.ai/tx/msgs/`
-  - ✅ Use centralized filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
-  - ❌ NEVER write to other agents' directories
-  - ❌ NEVER move or copy message files
-  - ✅ Messages stay in centralized log - system injects file references (@filepath)
-  - ✅ Routing system delivers references, NOT file contents
+{{ routingInstructions }}
 
 ### Sending Messages
 
-To send a message:
+### Message Filename
 1. Create file in `.ai/tx/msgs/` with centralized filename format
 2. Use mmddhhmmss timestamp: Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
 3. Use ONLY agent names (not full mesh paths): `mesh/agent` → `agent`
 4. Use `>` to show routing direction: `from>to`
-5. System injects @filepath reference to destination agent
+5. Use a relevant short phrase with no whitespace for the uuid. 
 
-**Example filename**: `1102083000-task-core>interviewer-abc123.md`
+**Example filename**: `1102083000-task-core>interviewer-doatask.md`
 
-# Frontmatter Template
+### Frontmatter Template
+Frontmatter is used to route messages to meshes / agents and advance the queue system.
+It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
+
+1. Select an appropriate type for the message. 
+
 <msg-fm-template>
 ---
 to: [target-mesh-instance]/[target-agent] or core
@@ -48,8 +38,9 @@ timestamp: [timestamp]
 - Find active mesh instances in the "TX Status" section above
 
 ## Types
-`ask` - stop after asking, other agent will reply
+`ask` - request information, stop after asking, other agent will reply
+`ask-human` - send to core, block until human responds
 `ask-response` - sent in response to an ask
-`task` - workflow item
+`task` - referring to a workflow item
 `task-complete` - when item is complete
 `update` - one way communication, no expectation of return

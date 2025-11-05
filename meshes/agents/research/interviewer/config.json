@@ -1,9 +1,7 @@
 {
   "name": "interviewer",
   "description": "Gathers research requirements through dynamic Q&A until sufficient for grade-A research",
-  "capabilities": [
-    "ask"
-  ],
+  "capabilities": [],
   "options": {
     "model": "sonnet"
   }

@@ -12,8 +12,7 @@
    - Use `>` to show routing direction from→to
 
 **CRITICAL CONSTRAINTS**:
-- ❌ NEVER move or copy message files between agents
+- ❌ NEVER move or copy message files
 - ✅ Write to centralized log: `.ai/tx/msgs/`
-- ✅ Use proper filename format for message routing
 - ✅ Messages routed automatically by centralized event log system
 - ✅ You are reactive - wait for @filepath injections, don't ask for tasks

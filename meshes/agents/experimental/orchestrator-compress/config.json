@@ -1,0 +1,7 @@
+{
+  "name": "orchestrator-compress",
+  "options": {
+    "model": "haiku",
+    "output": "clean"
+  }
+}

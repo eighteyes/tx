@@ -1,9 +1,7 @@
 {
   "name": "self-improver",
   "description": "Agent that sends messages to itself to iteratively improve its own prompt",
-  "capabilities": [
-    "ask"
-  ],
+  "capabilities": [],
   "options": {
     "model": "haiku"
   }

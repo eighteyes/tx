@@ -2,7 +2,6 @@
   "name": "analyzer",
   "description": "Analyzes experiment results and provides data-driven recommendations with confidence levels",
   "capabilities": [
-    "ask",
     "search"
   ],
   "options": {

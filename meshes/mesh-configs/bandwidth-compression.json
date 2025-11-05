@@ -1,0 +1,12 @@
+{
+  "mesh": "bandwidth-compression",
+  "description": "Two philosophers debate 'what makes a life well lived' using maximally token-efficient communication patterns. Efficiency over human readability.",
+  "agents": [
+    "experimental/orchestrator-compress",
+    "experimental/philosopher-a",
+    "experimental/philosopher-b"
+  ],
+  "entry_point": "orchestrator-compress",
+  "completion_agent": "orchestrator-compress",
+  "tags": ["experimental", "token-efficiency", "philosophy", "compression"]
+}

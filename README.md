@@ -62,7 +62,9 @@ These are tools available to agents at runtime.
 
 ## Structure
 ```
-.ai/tx/mesh - runtime mesh information, messages
+.ai/tx/msgs - centralized event log (all agent messages)
+.ai/tx/session - captured session output
+.ai/tx/mesh - runtime mesh information
 .ai/tx/logs - system messages / errors
 lib - codebase
 meshes - AI Instructions / Configurations
@@ -72,21 +74,83 @@ meshes/prompts/capabilities - Capability instructions
 meshes/prompts/templates- system templates for prompts
 ```
 
-## CLI Tool
+## Event Log Architecture
+
+TX uses a centralized event log for all agent-to-agent messages:
+
+- **Single source of truth**: All messages written to `.ai/tx/msgs/`
+- **Chronological ordering**: Timestamped filenames (`MMDDHHMMSS-type-from>to-msgid.md`)
+- **Immutable**: Append-only log, never delete or modify
+- **Queryable**: Built-in CLI tools for filtering and analysis
+- **Automatic session capture**: Full tmux history saved to `.ai/tx/session/` on shutdown
+
+### Why Event Log?
+
+- **Debugging**: See complete message history across all agents
+- **Replay**: Reconstruct system state at any point in time
+- **Analysis**: Query patterns, performance, and agent interactions
+- **Monitoring**: Live tail messages with `tx msg --follow`
+
+### Message Format
+
+Messages are markdown files with YAML frontmatter:
+
+```markdown
+---
+to: research-807055/interviewer
+from: core/core
+type: task
+msg-id: abc123
+timestamp: 2025-11-03T14:30:00.000Z
+headline: Analyze user research findings
+status: start
+---
+
+Please analyze the user research findings and provide...
 ```
-# user land
-tx start - entry point, drops you into a core session
-tx attach - view what a mesh is doing
-tx status - high level overview of whats active
-tx stop - end every session
 
-# agent land
-tx tool <toolname> - adopt programmatic utility
-tx spawn - start a new mesh / agent
+Filename: `1103143000-task-core>interviewer-abc123.md`
 
-# dev land
-tx logs - see the internals
-tx prompt - see an agent prompt 
+## CLI Tool
+
+### User Commands
+```bash
+tx start          # Entry point, drops you into a core session
+tx attach         # View what a mesh is doing
+tx status         # High level overview of what's active
+tx stop           # End every session (with automatic session capture)
+tx dashboard      # Live dashboard showing all active agents
+```
+
+### Agent Commands
+```bash
+tx spawn <mesh> [agent]   # Start a new mesh / agent
+tx tool <toolname>        # Adopt programmatic utility
+tx watch <file>           # Watch file and process changes through mesh
+```
+
+### Event Log & Monitoring
+```bash
+tx msg                    # View recent messages from event log
+tx msg --follow           # Live tail of messages
+tx msg --type task        # Filter by message type
+tx msg --agent core       # Filter by agent
+
+tx session <mesh> <agent> # View captured session output
+tx session list           # List all captured sessions
+
+tx stats                  # System statistics
+tx stats --mesh research  # Stats for specific mesh
+
+tx health                 # System health check
+tx health --watch         # Live health monitoring
+```
+
+### Developer Commands
+```bash
+tx logs            # See the internals (system logs)
+tx prompt          # See an agent prompt
+tx clear           # Clear all TX data
 ```
 
 ## Why not Skills / Agents / Commands?

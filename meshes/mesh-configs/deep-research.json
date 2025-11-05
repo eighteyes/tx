@@ -5,6 +5,66 @@
   "agents": ["research/interviewer", "research/sourcer", "research/analyst", "research/researcher", "research/disprover", "research/writer"],
   "entry_point": "interviewer",
   "completion_agent": "writer",
-  "capabilities": ["search", "ask"],
-  "workflow_topology": "hitl-then-sequential-with-feedback"
+  "routing": {
+    "interviewer": {
+      "complete": {
+        "sourcer": "Requirements gathered, ready to source information"
+      },
+      "blocked": {
+        "core": "Cannot proceed - unclear research requirements"
+      }
+    },
+    "sourcer": {
+      "complete": {
+        "analyst": "Sources collected and ready for analysis"
+      },
+      "blocked": {
+        "core": "Cannot source - technical issues or unclear topic"
+      }
+    },
+    "analyst": {
+      "complete": {
+        "researcher": "Analysis complete - hypotheses formulated and ready for theory synthesis"
+      },
+      "needs-more-data": {
+        "sourcer": "Insufficient information - need additional sources"
+      },
+      "blocked": {
+        "core": "Cannot analyze - conflicting or unclear data"
+      }
+    },
+    "researcher": {
+      "complete": {
+        "disprover": "Theory synthesized - ready for critical review"
+      },
+      "low-confidence": {
+        "disprover": "Confidence below 95% - needs critical review before completion"
+      },
+      "blocked": {
+        "core": "Cannot synthesize - insufficient analysis or conflicting evidence"
+      }
+    },
+    "disprover": {
+      "complete": {
+        "analyst": "Critical review complete - counterpoints and gaps identified for refinement"
+      },
+      "high-confidence": {
+        "writer": "Theory validated - confidence threshold met, ready for final synthesis"
+      },
+      "blocked": {
+        "core": "Cannot critique - insufficient evidence or unclear theory"
+      }
+    },
+    "writer": {
+      "complete": {
+        "core": "Article written and saved to research/"
+      },
+      "needs-clarification": {
+        "analyst": "Need more context or clearer analysis for article"
+      },
+      "blocked": {
+        "core": "Cannot write - insufficient material or unclear direction"
+      }
+    }
+  }
 }

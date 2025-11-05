@@ -12,6 +12,11 @@ const { list } = require('../lib/commands/list');
 const { clear } = require('../lib/commands/clear');
 const { watch } = require('../lib/commands/watch');
 const { dashboard, stopDashboard } = require('../lib/commands/dashboard');
+const { msg } = require('../lib/commands/msg');
+const { session } = require('../lib/commands/session');
+const { stats } = require('../lib/commands/stats');
+const { health } = require('../lib/commands/health');
+const { reset } = require('../lib/commands/reset');
 const { Logger } = require('../lib/logger');
 
 // Initialize logger
@@ -70,7 +75,7 @@ program
 program
   .command('dashboard')
   .option('--no-attach', 'Don\'t auto-attach to dashboard after creation')
-  .option('--no-watch', 'Disable auto-refresh watcher')
+  .option('-w, --watch', 'Enable auto-refresh watcher (experimental)')
   .description('Create live dashboard showing all active agents (core on left, others tiled)')
   .action((options) => {
     dashboard(options);
@@ -114,6 +119,66 @@ program
     logs(options);
   });
 
+// tx msg
+program
+  .command('msg')
+  .option('--limit <n>', 'Number of messages to display (default: 50)')
+  .option('--follow', 'Start with follow mode enabled in interactive viewer')
+  .option('--type <type>', 'Filter by message type (task, ask, delta, etc.)')
+  .option('--agent <agent>', 'Filter by agent (matches from or to)')
+  .option('--mesh <mesh>', 'Filter by mesh')
+  .option('--errors', 'Show only error messages')
+  .option('--since <time>', 'Messages since time (e.g., "1h", "30m", "2025-11-03")')
+  .option('--before <time>', 'Messages before time')
+  .option('--json', 'Output as JSON')
+  .option('--no-interactive', 'Disable interactive mode (simple list)')
+  .option('-v, --verbose', 'Show message content preview (non-interactive mode only)')
+  .description('Interactive event log viewer (↑↓ navigate, Enter view, a attach to agent, f toggle follow, q quit)')
+  .action((options) => {
+    msg(options);
+  });
+
+// tx session
+program
+  .command('session [mesh] [agent]')
+  .option('--list', 'List all sessions')
+  .option('--latest', 'Show latest session (default: true)', true)
+  .option('--mesh <mesh>', 'Filter by mesh')
+  .option('--agent <agent>', 'Filter by agent')
+  .option('--today', 'Show only today\'s sessions')
+  .option('--since <date>', 'Sessions since date')
+  .description('View captured session output')
+  .action((mesh, agent, options) => {
+    const args = mesh ? (agent ? [mesh, agent] : [mesh]) : [];
+    if (options.list) {
+      args.splice(0, 0, 'list');
+    }
+    session(args, options);
+  });
+
+// tx stats
+program
+  .command('stats')
+  .option('--mesh <mesh>', 'Filter by mesh')
+  .option('--agent <agent>', 'Filter by agent')
+  .option('--since <date>', 'Stats since date')
+  .option('--json', 'Output as JSON')
+  .description('Display event log statistics')
+  .action((options) => {
+    stats(options);
+  });
+
+// tx health
+program
+  .command('health')
+  .option('--watch', 'Watch mode (refresh periodically)')
+  .option('--interval <seconds>', 'Refresh interval for watch mode (default: 5)')
+  .option('--json', 'Output as JSON')
+  .description('Display system health status')
+  .action((options) => {
+    health(options);
+  });
+
 // tx list <type>
 program
   .command('list <type>')
@@ -130,6 +195,14 @@ program
   .description('Clear all TX orchestration data (.ai/tx/ directory)')
   .action(async (options) => {
     await clear({ force: options.force });
+  });
+
+// tx reset <mesh> [agent]
+program
+  .command('reset <mesh> [agent]')
+  .description('Clear agent session and re-inject original prompt')
+  .action(async (mesh, agent) => {
+    await reset(mesh, agent);
   });
 
 // tx tool <name> [args...]

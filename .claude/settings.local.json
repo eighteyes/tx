@@ -31,10 +31,16 @@
       "Bash(pkill:*)",
       "mcp__context7__resolve-library-id",
       "mcp__grep__searchGitHub",
-      "mcp__context7__get-library-docs"
+      "mcp__context7__get-library-docs",
+      "Bash(awk:*)",
+      "Bash(timeout 3 node:*)",
+      "Bash(timeout 2 node:*)",
+      "Bash(/bin/ls:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []
   },
-  "outputStyle": "default"
+  "outputStyle": "default",
+  "spinnerTipsEnabled": false
 }

@@ -1,0 +1,36 @@
+{
+  "lenses": {
+    "security-audit": {
+      "role": "Assume adversarial input and identify vulnerabilities. Think like an attacker trying to break the system.",
+      "tags": ["security", "threat-modeling", "validation", "owasp"]
+    },
+    "edge-cases": {
+      "role": "Focus on boundary conditions, edge cases, and failure modes. What breaks? What's the weirdest input?",
+      "tags": ["testing", "robustness", "qa", "validation"]
+    },
+    "performance": {
+      "role": "Optimize for speed, memory usage, and resource efficiency. Profile, measure, improve.",
+      "tags": ["performance", "optimization", "profiling", "benchmarking"]
+    },
+    "maintainability": {
+      "role": "Apply SOLID principles, improve code quality, reduce technical debt. Think long-term sustainability.",
+      "tags": ["clean-code", "solid", "refactoring", "architecture"]
+    },
+    "user-experience": {
+      "role": "Prioritize clarity, usability, and user delight. Put yourself in the user's shoes.",
+      "tags": ["ux", "usability", "design", "accessibility"]
+    },
+    "critical-analysis": {
+      "role": "Question assumptions, find contradictions, identify gaps in logic. Be skeptical.",
+      "tags": ["analysis", "critique", "logic", "reasoning"]
+    },
+    "creative-exploration": {
+      "role": "Think divergently, explore unconventional solutions, challenge constraints. What if?",
+      "tags": ["creativity", "innovation", "brainstorming", "exploration"]
+    },
+    "cost-optimization": {
+      "role": "Minimize resource usage, reduce complexity, find the simplest solution that works.",
+      "tags": ["simplicity", "efficiency", "minimalism", "pragmatism"]
+    }
+  }
+}

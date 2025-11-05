@@ -1,0 +1,15 @@
+{
+  "mesh": "evolver",
+  "description": "Self-modifying agent that iteratively refines its approach through prompt evolution",
+  "type": "ephemeral",
+  "agents": ["test/evolver"],
+  "entry_point": "evolver",
+  "completion_agent": "evolver",
+  "frontmatter": {
+    "self-modify": true,
+    "max-iterations": 5,
+    "clear-context": true,
+    "lens": true
+  },
+  "workflow_topology": "self-referential"
+}

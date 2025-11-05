@@ -1,15 +1,34 @@
 # Know Tool Reference
 
-The **know tool** manages the project's specification graph (`.ai/spec-graph.json`) - a structured knowledge graph of the codebase.
+The **know tool** manages the project's knowledge graphs - structured representations of both product architecture and code implementation.
+
+## Knowledge Graphs
+
+TX CLI uses **two complementary knowledge graphs**:
+
+1. **Product Graph** (`.ai/spec-graph.json`) - Product/feature architecture
+2. **Code Graph** (`.ai/code-graph.json`) - Code implementation architecture
+
+Both graphs use the same know tool and are cross-linked via references.
 
 ## What Know Covers
 
 **Know handles structured technical architecture:**
+
+**Product Graph:**
 - Component hierarchies (users → objectives → features → actions → components)
-- Dependencies between entities
+- Product dependencies and feature relationships
 - Implementation order (topological sorting)
 - Architecture validation (cycles, completeness)
 - Technical requirements and acceptance criteria
+
+**Code Graph:**
+- Module dependencies (imports/requires)
+- Layered architecture (primitives → infrastructure → services → commands)
+- Package organization
+- External dependencies (npm packages)
+- Behavioral logic (execution traces, call graphs, control flow, side effects)
+- Cross-references to product components
 
 **Know does NOT handle experiential knowledge** - that's in your artifacts:
 - Patterns that worked/failed (patterns.json)
@@ -20,12 +39,17 @@ The **know tool** manages the project's specification graph (`.ai/spec-graph.jso
 ## Access
 
 ```bash
+# Use default graph (.ai/spec-graph.json)
 tx tool know <command> [args]
+
+# Specify graph explicitly with -g flag
+know -g .ai/code-graph.json <command> [args]
+know -g .ai/spec-graph.json <command> [args]
 ```
 
 ## Core Concepts
 
-### Spec Graph Structure
+### Product Graph Structure (spec-graph.json)
 
 The spec graph is a hierarchical knowledge representation:
 
@@ -74,6 +98,48 @@ users → objectives → features → actions → components → presentation/be
     }
   }
 }
+```
+
+### Code Graph Structure (code-graph.json)
+
+The code graph represents implementation architecture:
+
+```
+layers → packages → modules → external-deps
+```
+
+**Entity Types:**
+- `module` - Individual source files (e.g., `module:logger`, `module:spawn-command`)
+- `package` - Code organization units (e.g., `package:commands`, `package:core`)
+- `layer` - Architectural layers (primitives, infrastructure, services, commands, tools)
+
+**Reference Types (Implementation Details):**
+- `source-file` - File path and implementation details
+- `external-dep` - npm package dependencies (e.g., `external-dep:fs-extra`)
+- `product-component` - Cross-reference to product graph components
+- `execution-trace` - Step-by-step execution flow through functions
+- `call-graph` - Function call relationships (what calls what)
+- `control-flow` - Conditional logic, branches, loops
+- `data-flow` - Data transformations through the system
+- `side-effect` - File I/O, state mutations, process spawning
+- `error-path` - Exception handling and recovery strategies
+
+**Example Code Graph Query:**
+```bash
+# List all modules
+know -g .ai/code-graph.json list-type module
+
+# Show module dependencies
+know -g .ai/code-graph.json dependents module:spawn-command
+
+# View behavioral references
+know -g .ai/code-graph.json ref-usage
+
+# Query execution trace
+jq '.references["execution-trace"]["spawn-command"]' .ai/code-graph.json
+
+# Query side effects
+jq '.references["side-effect"]' .ai/code-graph.json
 ```
 
 ## Commands
@@ -214,11 +280,73 @@ When checking consistency:
 3. Find orphans: `tx tool know ref-orphans`
 4. Review completeness: `tx tool know completeness feature:each`
 
+## Using Both Graphs Together
+
+The product and code graphs are **cross-linked** for traceability:
+
+**From Product → Code:**
+```bash
+# Product components link to code modules via code-module references
+jq '.references["code-module"]["spawn-command"]' .ai/spec-graph.json
+# Returns: {"module": "module:spawn-command", "graph_path": ".ai/code-graph.json", ...}
+```
+
+**From Code → Product:**
+```bash
+# Code modules link to product components via product-component references
+know -g .ai/code-graph.json dependents module:spawn-command | grep "product-component"
+# Shows: product-component:spawn-command
+```
+
+**Workflow for Initial Project Assessment:**
+
+1. **Analyze Product Graph:**
+   ```bash
+   know -g .ai/spec-graph.json health
+   know -g .ai/spec-graph.json stats
+   know -g .ai/spec-graph.json list-type features
+   ```
+
+2. **Analyze Code Graph:**
+   ```bash
+   know -g .ai/code-graph.json health
+   know -g .ai/code-graph.json stats
+   know -g .ai/code-graph.json list-type module
+   know -g .ai/code-graph.json ref-usage
+   ```
+
+3. **Cross-Reference Analysis:**
+   ```bash
+   # Check product-to-code mappings
+   jq '.references["code-module"]' .ai/spec-graph.json
+
+   # Verify behavioral documentation
+   jq '.references["execution-trace"]' .ai/code-graph.json
+   jq '.references["side-effect"]' .ai/code-graph.json
+   ```
+
+4. **Dependency Analysis:**
+   ```bash
+   # Module dependencies
+   know -g .ai/code-graph.json dependents module:logger
+
+   # External dependencies
+   know -g .ai/code-graph.json ref-usage | grep external-dep
+   ```
+
 ## Best Practices
 
+**Product Graph:**
 - **Start from top** - Begin with features, break down to components
 - **Consistent naming** - Use `kebab-case` for keys, Title Case for names
 - **Validate frequently** - Run health checks regularly
 - **Follow hierarchy** - Respect entity type dependencies
 - **Avoid cycles** - Use cycles command to detect issues
 - **Use build-order** - Let topological sort guide implementation
+
+**Code Graph:**
+- **Analyze layers** - Understand architectural layers (primitives → infrastructure → services → commands)
+- **Track dependencies** - Use `dependents` to see what each module depends on
+- **Document behavior** - Add execution-trace, side-effect, and error-path references for critical modules
+- **Cross-link to product** - Use product-component references to trace code back to features
+- **Monitor external deps** - Check ref-usage for external-dep to understand npm dependencies

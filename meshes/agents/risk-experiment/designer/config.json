@@ -2,7 +2,6 @@
   "name": "designer",
   "description": "Analyzes project plans to identify risky assumptions and designs minimal time-boxed experiments to validate them",
   "capabilities": [
-    "ask",
     "search"
   ],
   "options": {

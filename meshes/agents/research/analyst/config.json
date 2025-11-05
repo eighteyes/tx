@@ -2,7 +2,6 @@
   "name": "analyst",
   "description": "Analyzes sources and proposes research hypotheses with evidence",
   "capabilities": [
-    "ask",
     "search"
   ],
   "options": {

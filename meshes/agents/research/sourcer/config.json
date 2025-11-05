@@ -2,8 +2,7 @@
   "name": "sourcer",
   "description": "Gathers research sources, summaries, and key facts using search tool. Responds to targeted research requests from analyst, researcher, and disprover",
   "capabilities": [
-    "search",
-    "ask"
+    "search"
   ],
   "options": {
     "model": "haiku"
