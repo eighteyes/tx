@@ -48,6 +48,7 @@ see `.env.example` for more search API key options that are supported, but hones
 Until we publish to npm. 
 ```
 git clone https://github.com/eighteyes/tx.git
+cd tx
 npm link
 ```
 
