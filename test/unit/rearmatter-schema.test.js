@@ -362,4 +362,169 @@ unknown_field: "something"
       assert.ok(result.errors.some(e => e.includes('between 0.0 and 1.0')));
     });
   });
+
+  describe('validateSpawn() - spawn field validation', () => {
+    it('should accept valid spawn with required fields', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Fix timeout bug"
+  context: "OAuth timeout causing failures"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.errors.length, 0);
+      assert.strictEqual(result.data.spawn.mesh, 'dev');
+      assert.strictEqual(result.data.spawn.reason, 'Fix timeout bug');
+      assert.strictEqual(result.data.spawn.context, 'OAuth timeout causing failures');
+    });
+
+    it('should accept spawn with optional lens array', () => {
+      const yaml = `spawn:
+  mesh: dev
+  lens:
+    - security-audit
+    - edge-cases
+  reason: "Fix security issue"
+  context: "Found vulnerability in auth"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, true);
+      assert.ok(Array.isArray(result.data.spawn.lens));
+      assert.strictEqual(result.data.spawn.lens.length, 2);
+      assert.strictEqual(result.data.spawn.lens[0], 'security-audit');
+      assert.strictEqual(result.data.spawn.lens[1], 'edge-cases');
+    });
+
+    it('should accept spawn with priority field', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Critical bug"
+  context: "Production down"
+  priority: high
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.data.spawn.priority, 'high');
+    });
+
+    it('should accept spawn with entity_refs array', () => {
+      const yaml = `spawn:
+  mesh: research
+  reason: "Research alternatives"
+  context: "Current approach may not scale"
+  entity_refs:
+    - entity-123
+    - entity-456
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, true);
+      assert.ok(Array.isArray(result.data.spawn.entity_refs));
+      assert.strictEqual(result.data.spawn.entity_refs.length, 2);
+    });
+
+    it('should reject spawn missing required mesh field', () => {
+      const yaml = `spawn:
+  reason: "Fix bug"
+  context: "Bug found"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.mesh is required')));
+    });
+
+    it('should reject spawn missing required reason field', () => {
+      const yaml = `spawn:
+  mesh: dev
+  context: "Bug found"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.reason is required')));
+    });
+
+    it('should reject spawn missing required context field', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Fix bug"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.context is required')));
+    });
+
+    it('should reject spawn with invalid priority value', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Fix bug"
+  context: "Bug found"
+  priority: urgent
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.priority must be one of')));
+    });
+
+    it('should reject spawn with non-array lens', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Fix bug"
+  context: "Bug found"
+  lens: "security-audit"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.lens must be an array')));
+    });
+
+    it('should reject spawn with non-string lens items', () => {
+      const yaml = `spawn:
+  mesh: dev
+  reason: "Fix bug"
+  context: "Bug found"
+  lens:
+    - 123
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('spawn.lens[0] must be a string')));
+    });
+
+    it('should accept complete spawn with all optional fields', () => {
+      const yaml = `confidence: 0.75
+grade: B
+spawn:
+  mesh: dev
+  lens:
+    - security-audit
+    - edge-cases
+  reason: "Fix timeout bug with security review"
+  context: "30s timeout in OAuth flow, needs 45s for token refresh"
+  priority: high
+  entity_refs:
+    - auth-service-123
+    - oauth-config-456
+speculation:
+  42: "timeout root cause unclear"
+`;
+      const result = RearmatterSchema.parse(yaml);
+
+      assert.strictEqual(result.valid, true);
+      assert.strictEqual(result.errors.length, 0);
+      assert.ok(result.data.spawn);
+      assert.strictEqual(result.data.spawn.mesh, 'dev');
+      assert.strictEqual(result.data.spawn.priority, 'high');
+      assert.ok(Array.isArray(result.data.spawn.lens));
+      assert.ok(Array.isArray(result.data.spawn.entity_refs));
+    });
+  });
 });
