@@ -213,7 +213,7 @@ program
   .option('-js', 'Enable JavaScript rendering (for get-www tool)')
   .option('-a, --archive', 'Use archive services only (archive.is, archive.org, etc.)')
   .allowUnknownOption()
-  .description('Run a capability/tool (search, get-www, know)')
+  .description('Run a capability/tool (search, get-www, know, notify)')
   .action((name, args, options) => {
     handleTool(name, args, options);
   });
@@ -301,6 +301,11 @@ async function handleTool(name, args, options = {}) {
       case 'know':
         const { tool } = require('../lib/commands/tool');
         await tool('know', args);
+        break;
+
+      case 'notify':
+        const { tool: toolCmd } = require('../lib/commands/tool');
+        await toolCmd('notify', args);
         break;
 
       default:

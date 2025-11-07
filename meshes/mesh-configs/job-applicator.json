@@ -1,0 +1,8 @@
+{
+  "mesh": "job-applicator",
+  "agents": ["career/job-applicator"],
+  "entry_point": "job-applicator",
+  "completion_agent": "job-applicator",
+  "description": "Analyzes job descriptions and creates tailored resumes and cover letters",
+  "clear-before": true
+}

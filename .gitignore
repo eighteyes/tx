@@ -11,6 +11,9 @@ yarn.lock
 .env.*.local
 .claude/settings.local.json
 gs
+
+# Local configuration
+config.json
 # IDE
 .vscode/
 .idea/

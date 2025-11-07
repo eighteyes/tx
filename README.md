@@ -14,10 +14,10 @@ Provide a laboratory for novel uses of LLM with the aim of providing a surface a
 - Web Interface - terminal only
 - Monetization - too experimental to pay for
 
-## Fundamentals
+## Fundamental Ideas
 > specialized agents with domain context outperform generalists
-
-> quality beats productivity as review is the bottleneck
+> deterministic behavior needs logical guiderails to be consistent
+> quality beats productivity as human review is the bottleneck
 
 > [!IMPORTANT]
 > Our mind carries the common thread of thought, and we *wield* AI to extend this thread with the superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
@@ -32,6 +32,7 @@ Provide a laboratory for novel uses of LLM with the aim of providing a surface a
 Disadvantage:
 - harder to automate, automation is against TOS anyway
 - likely less performant then highly tuned systems
+- doesn't replace cli agents for quick fixes
 
 `tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
@@ -40,7 +41,6 @@ Disadvantage:
 - Reproducible Multi-step Work Processes ( code-review, tdd, research, gtm-strategy, etc. ) with project knowledge support and queues
 - Generate plans informed by prior work, which outperform stock Plan Mode
 - Human In The Loop multi-agent interactions
-
 
 ## Prerequisites
 
@@ -52,6 +52,8 @@ Disadvantage:
 ### Optional Dependencies
 
 - `searxng` for local search provider
+- uses a custom search configuration, `config/searxng/settings.yml` 
+- in Docker, this lives in `/etc/searxng/` 
 - See `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
 
 > [!WARNING]
@@ -104,6 +106,11 @@ spawn a research mesh and send it a task to look up the impact of sonar on whale
 
 - **`core`** - the central coordinator mesh/agent, this is the primary interaction interface for users
 - **`brain`** - dedicated to understanding your codebase, consult with this first when planning features
+- **`research`** - lightweight internet searcher to source information
+- **`deep-research`** - internet search and iterating hypothesizer / disprover for more complicated queries
+- **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information in `meshes/agents/career/job-applicator/refs/{resume,history}`
+
+## Features
 
 ## Project Structure
 ```
@@ -170,7 +177,8 @@ tx dashboard      # Live dashboard showing all active agents
 ### Agent Commands
 ```bash
 tx spawn <mesh> [agent]   # Start a new mesh / agent
-tx tool <toolname>        # Adopt programmatic utility
+tx tool <toolname>        # Adopt programmatic utility (search, get-www, know, notify)
+tx tool notify <title> <message> [priority]  # Send system notification
 tx watch <file>           # Watch file and process changes through mesh
 ```
 
