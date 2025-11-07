@@ -1,7 +1,7 @@
 {
   "mesh": "deep-research",
   "description": "Multi-agent deep research workflow with HITL requirements gathering: interviewer gathers requirements, sourcer gathers sources, analyst proposes hypotheses, researcher builds theories, disprover critiques in iterative loop until 95% confidence, writer synthesizes final report",
-  "type": "iterative",
+  "type": "ephemeral",
   "agents": ["research/interviewer", "research/sourcer", "research/analyst", "research/researcher", "research/disprover", "research/writer"],
   "entry_point": "interviewer",
   "completion_agent": "writer",

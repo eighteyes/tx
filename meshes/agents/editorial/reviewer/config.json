@@ -1,7 +1,6 @@
 {
   "name": "reviewer",
   "options": {
-    "model": "sonnet",
-    "output": "clean"
+    "model": "sonnet"
   }
 }

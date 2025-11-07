@@ -1,46 +1,54 @@
 # TX
-agenT eXpression
+Thinking, eXponentially
 
 ## Objective
-Describe and execute distributed, observable agentic workflows using plain language, tooling and workspaces, primarily using a conversational interface. 
+Describe and execute distributed, observable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
 
 ## What it is not
 Not explicitly supporting automation in favor of providing a surface area for augmentated thinking. 
 
+## Fundamentals
+> specialized agents with domain context outperform generalists
+> quality beats productivity as review is the bottleneck
+
 ## Overview
-`tx` is a CLI tool which orchestrates `claude-code`, `codex`, `gemini-cli`, `opencode`, etc. to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
-- can utilize subscriptions vs API keys with LangGraph, CrewAI, etc. 
-- no need to reinvent the base agent
-- easy to incorporate into existing setup / claude code tooling
-- can generalize across AI vendors
+`tx` is a CLI tool which orchestrates `claude-code` instances to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
+- Utilize subscriptions vs API keys with LangGraph, CrewAI, etc. 
+- No need to reinvent the base agent
+- Easy to incorporate into existing setup / extend with claude code tooling
+- Can generalize across AI vendors ( future )
 
 Disadvantage:
-- harder to automate
+- harder to automate, automation is against TOS anyway
 - likely less performant then highly tuned systems
 
 `tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Use Cases
 - Read an Agentic Paper, implement the pattern ( MAP planner = planner )
-- Multi-step Work Processes ( code-review, tdd, gtm-strategy, etc. ) with project knowledge support 
+- Reproducible Multi-step Work Processes ( code-review, tdd, research, gtm-strategy, etc. ) with project knowledge support and queues
 - Generate comprehensive plans which outperform stock Plan Mode
-- Work from an external queue of work items
-- Multimodal Communication ( future state )
-- Human In The Loop agentic interactions
-- automatically fix errors based of watching error logs
-
-## Fundamentals
-> specialized agents with domain context outperform generalists
-
-> quality beats productivity as review is the bottleneck
+- Human In The Loop multi-agent interactions
 
 ## Prerequisites
-AI Company Subscription / API Keys 
+`claude-code` - with Anthropic Subscription / API Keys 
 `tmux` - manages all the sessions and message injections
+`node` - JavaScript
 
 ## Optional
-`searxng` for search
+`searxng` for local search provider
 see `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
+
+## WARNING
+
+> `tx` runs with `claude --dangerously-skip-permissions`, you will need to run that command in advance to accept responsibility for the actions of the agents. You are strongly advised to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude). 
+
+## Install
+Until we publish to npm. 
+```
+git clone https://github.com/eighteyes/tx.git
+npm link
+```
 
 ## Terms
 `mesh` - a list of agents, with input / output targets to provide an agentic AI workflow
@@ -53,12 +61,6 @@ see `.env.example` for more search API key options that are supported, but hones
 `brain` - dedicated to understanding your codebase, consult with this first when planning features
 `planning` - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
 `deep-research` - search, analyze, hypothesize and disprove with a HITL loop and a writer
-
-## Capabilities
-These are tools available to agents at runtime.
-`search` - WebSearch is great, but it provides summaries, search finds & retrives URLs
-`watch` - When a file changes, inject the delta into the target agent for action.
-`spawn` - Start a mesh / agent
 
 ## Structure
 ```
@@ -172,8 +174,6 @@ Install to your repository, adds necessary commands and skills.
 ```
 tx repo-install
 ```
-
-> Importantly, tx runs with `claude --dangerously-skip-permissions`, you will need to run that command in advance to accept responsibility for the actions of the agents. You are strongly advised to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude). 
 
 
 ## Once Inside

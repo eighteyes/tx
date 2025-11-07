@@ -7,6 +7,5 @@
     "experimental/philosopher-b"
   ],
   "entry_point": "orchestrator-compress",
-  "completion_agent": "orchestrator-compress",
-  "tags": ["experimental", "token-efficiency", "philosophy", "compression"]
+  "completion_agent": "orchestrator-compress"
 }

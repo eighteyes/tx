@@ -6,7 +6,6 @@
     "product-arch/product-definer",
     "product-arch/architect"
   ],
-  "workflow_topology": "iterative",
   "entry_point": "coordinator",
   "completion_agent": "coordinator",
   "routing": {

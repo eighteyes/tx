@@ -5,6 +5,5 @@
   "agents": ["test/self-improver"],
   "entry_point": "self-improver",
   "completion_agent": "self-improver",
-  "capabilities": ["ask"],
-  "workflow_topology": "self-referential"
+  "capabilities": ["ask"]
 }

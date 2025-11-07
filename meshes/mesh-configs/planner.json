@@ -1,7 +1,7 @@
 {
   "mesh": "planner",
   "description": "Brain-inspired modular planning system (MAP architecture) - decomposes tasks, predicts outcomes, evaluates quality, monitors conflicts, and coordinates execution",
-  "type": "iterative",
+  "type": "ephemeral",
   "agents": [
     "planner/decomposer",
     "planner/predictor",
@@ -11,6 +11,5 @@
   ],
   "entry_point": "decomposer",
   "completion_agent": "coordinator",
-  "workflow_topology": "sequential-with-feedback",
   "capabilities": ["ask"]
 }

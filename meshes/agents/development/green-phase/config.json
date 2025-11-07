@@ -1,7 +1,5 @@
 {
   "name": "green-phase",
-  "category": "development",
-  "role": "Implementation Engineer",
   "description": "Implements minimal code to make failing tests pass",
   "options": {
     "model": "haiku"
@@ -9,6 +7,5 @@
   "capabilities": [
     "implementation",
     "tdd-green"
-  ],
-  "iteration_role": "middle"
+  ]
 }

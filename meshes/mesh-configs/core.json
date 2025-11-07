@@ -1,5 +1,6 @@
 {
   "mesh": "core",
   "description": "Core/brain mesh - entry point for TX Watch",
-  "agents": ["core"]
+  "agents": ["core"],
+  "entry_point": "core"
 }

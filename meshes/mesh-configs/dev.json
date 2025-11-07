@@ -3,7 +3,6 @@
   "type": "ephemeral",
   "description": "Simple development mesh for implementing code tasks",
   "agents": ["development/dev"],
-  "workflow_topology": "sequential",
   "entry_point": "dev",
   "completion_agent": "dev",
   "routing": {

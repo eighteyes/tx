@@ -5,6 +5,5 @@
   "agents": ["test/pinger", "test/ponger"],
   "entry_point": "pinger",
   "completion_agent": "pinger",
-  "capabilities": ["ask"],
-  "workflow_topology": "bidirectional"
+  "capabilities": ["ask"]
 }

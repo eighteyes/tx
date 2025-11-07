@@ -3,7 +3,6 @@
   "type": "ephemeral",
   "description": "Simple test mesh for echo agent",
   "agents": ["test/echo"],
-  "workflow_topology": "sequential",
   "entry_point": "echo",
   "completion_agent": "echo"
 }

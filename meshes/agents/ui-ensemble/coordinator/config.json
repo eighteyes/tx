@@ -1,5 +1,5 @@
 {
-  "name": "ui-ensemble-coordinator",
+  "name": "coordinator",
   "description": "Manages UI exploration phase and variant evaluation (placeholder for Document 3)",
   "capabilities": ["know"],
   "options": {

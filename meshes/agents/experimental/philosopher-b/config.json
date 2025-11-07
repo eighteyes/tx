@@ -1,7 +1,6 @@
 {
   "name": "philosopher-b",
   "options": {
-    "model": "haiku",
-    "output": "clean"
+    "model": "haiku"
   }
 }

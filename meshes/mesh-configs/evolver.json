@@ -7,9 +7,6 @@
   "completion_agent": "evolver",
   "frontmatter": {
     "self-modify": true,
-    "max-iterations": 5,
-    "clear-context": true,
-    "lens": true
-  },
-  "workflow_topology": "self-referential"
+    "max-iterations": 5
+  }
 }

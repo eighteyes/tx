@@ -1,7 +1,7 @@
 {
   "mesh": "code-review",
   "description": "Parallel code review workflow: coordinator distributes review tasks to SOLID checker, doc/config consistency checker, test coverage analyzer, and maintainability analyzer. All analyzers work in parallel and report findings back to coordinator, which saves comprehensive report to .ai/reports",
-  "type": "parallel",
+  "type": "ephemeral",
   "agents": [
     "review/coordinator",
     "review/solid-checker",
@@ -12,7 +12,6 @@
   "entry_point": "coordinator",
   "completion_agent": "coordinator",
   "capabilities": [],
-  "workflow_topology": "fan-out",
   "routing": {
     "coordinator": {
       "complete": {

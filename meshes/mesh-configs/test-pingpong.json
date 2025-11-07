@@ -1,5 +1,6 @@
 {
   "mesh": "test-pingpong",
   "description": "Test sequential messaging - ping sends to pong, pong sends back, then reports to core",
-  "agents": ["test/ping", "test/pong"]
+  "agents": ["test/ping", "test/pong"],
+  "entry_point": "ping"
 }

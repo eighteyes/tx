@@ -3,7 +3,6 @@
   "type": "ephemeral",
   "description": "Test mesh for queue sequential processing",
   "agents": ["test/queue-worker"],
-  "workflow_topology": "sequential",
   "entry_point": "queue-worker",
   "completion_agent": "queue-worker"
 }

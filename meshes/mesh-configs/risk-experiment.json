@@ -10,6 +10,5 @@
   ],
   "entry_point": "coordinator",
   "completion_agent": "coordinator",
-  "workflow_topology": "iterative",
   "description": "Designs and executes proactive risk-reduction experiments to validate assumptions before committing to major implementation work"
 }

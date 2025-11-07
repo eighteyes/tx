@@ -4,7 +4,6 @@
   "agents": [
     "ui-ensemble/coordinator"
   ],
-  "workflow_topology": "hitl-iterative",
   "entry_point": "coordinator",
   "completion_agent": "coordinator",
   "brain": true,

@@ -1,7 +1,7 @@
 {
   "mesh": "riddle-game",
   "description": "Competitive riddle game between two agents with mediator scorekeeper",
-  "type": "iterative",
+  "type": "ephemeral",
   "agents": ["game/player1", "game/player2", "game/mediator"],
   "entry_point": "mediator",
   "capabilities": ["riddle"]
