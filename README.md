@@ -9,6 +9,7 @@ Not explicitly supporting automation in favor of providing a surface area for au
 
 ## Fundamentals
 > specialized agents with domain context outperform generalists
+
 > quality beats productivity as review is the bottleneck
 
 ## Overview
