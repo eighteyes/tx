@@ -32,38 +32,45 @@ Disadvantage:
 - Human In The Loop multi-agent interactions
 
 ## Prerequisites
-- `claude-code` - with Anthropic Subscription / API Keys 
+
+**Required:**
+- `claude-code` - with Anthropic Subscription / API Keys
 - `tmux` - manages all the sessions and message injections
 - `node` - JavaScript
 
-## Optional
-`searxng` for local search provider
-see `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
+### Optional Dependencies
 
-## WARNING
+- `searxng` for local search provider
+- See `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
 
-> `tx` runs with `claude --dangerously-skip-permissions`, you will need to run that command in advance to accept responsibility for the actions of the agents. You are strongly advised to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude). 
+> [!WARNING]
+> **Security Notice**: `tx` runs with `claude --dangerously-skip-permissions`. You will need to run that command in advance to accept responsibility for the actions of the agents. You are **strongly advised** to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude).
 
-## Install
-Until we publish to npm. 
-```
+## Installation
+
+Until we publish to npm:
+
+```bash
 git clone https://github.com/eighteyes/tx.git
+cd tx
 npm link
 ```
 
-## Terms
-- `mesh` - a list of agents, with input / output targets to provide an agentic AI workflow
-- `agent` - a LLM session within a mesh, with prompts, tools and messaging instructions
-- `capability` - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
-- `workspace` - a shared space for AIs to collaborate
+## Key Concepts
 
-## Included Meshes / Agents
-- `core` - the central coordinator mesh/agent, this is the primary interaction interface for users
-- `brain` - dedicated to understanding your codebase, consult with this first when planning features
-- `planning` - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
-- `deep-research` - search, analyze, hypothesize and disprove with a HITL loop and a writer
+- **`mesh`** - a list of agents, with input / output targets to provide an agentic AI workflow
+- **`agent`** - a LLM session within a mesh, with prompts, tools and messaging instructions
+- **`capability`** - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
+- **`workspace`** - a shared space for AIs to collaborate
 
-## Structure
+## Included Meshes and Agents
+
+- **`core`** - the central coordinator mesh/agent, this is the primary interaction interface for users
+- **`brain`** - dedicated to understanding your codebase, consult with this first when planning features
+- **`planning`** - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
+- **`deep-research`** - search, analyze, hypothesize and disprove with a HITL loop and a writer
+
+## Project Structure
 ```
 .ai/tx/msgs - centralized event log (all agent messages)
 .ai/tx/session - captured session output
@@ -114,7 +121,7 @@ Please analyze the user research findings and provide...
 
 Filename: `1103143000-task-core>interviewer-abc123.md`
 
-## CLI Tool
+## CLI Reference
 
 ### User Commands
 ```bash
@@ -156,28 +163,59 @@ tx prompt          # See an agent prompt
 tx clear           # Clear all TX data
 ```
 
-## Why not Skills / Agents / Commands?
-Use them! They are powerful. `tx` differs in that that it is explicitly invoked, observable, composable and dedicated to context isolation. Certain patterns, like swarms of Haiku Agents running Explore are better off using native tooling. Haiku doesn't like being told it's not Claude. :D
+## FAQ
 
-## WHY?
-I was not happy with how much manual work it took to nudge `claude-code` agents through a process. I don't like implicit tooling, where the agent selects from a list of options, adherence to steering goes down the more tools you add, and it clutters context. I'd far prefer tight context with explicit tooling via specialists with a generalist interface managing it all. 
-`tx` aims to provide LEVERAGE and an efficient SURFACE AREA. If I want to run a code review and a deep research project, why do I have to leave my prompt. 
-I also see the papers coming out with successful agentic topologies for approaching problems. Their codebases are a nightmare to try to reproduce. Giving these papers to TX to replicate as a mesh is a very fast way to trial out their approaches. 
+### Why not just use Claude Code Skills / Agents / Commands?
+
+Use them! They are powerful. `tx` differs in that it is:
+- **Explicitly invoked** - You control when and how agents interact
+- **Observable** - Full event log and monitoring of agent communications
+- **Composable** - Mix and match agents for different workflows
+- **Context isolated** - Dedicated specialists rather than one agent with many tools
+
+Certain patterns, like swarms of Haiku Agents running Explore are better off using native tooling. Haiku doesn't like being told it's not Claude. :D
+
+### Why TX?
+
+**The Problem:**
+- Too much manual work nudging `claude-code` agents through multi-step processes
+- Implicit tooling where agents select from lists reduces steering adherence
+- More tools = cluttered context and reduced effectiveness
+
+**The Solution:**
+`tx` aims to provide **LEVERAGE** and an efficient **SURFACE AREA**:
+- Tight context with explicit tooling via specialists
+- Generalist interface managing specialist agents
+- No need to leave your prompt to run code review AND deep research simultaneously
+
+**Rapid Prototyping of Research:**
+Academic papers describe successful agentic topologies, but their codebases are nightmares to reproduce. TX makes it fast to replicate these approaches as meshes and trial new patterns. 
 
 
 ## Getting Started
-Install to your local system
-```
+
+### Install to your local system
+
+```bash
 npm install -g tx-cli
 ```
 
-Install to your repository, adds necessary commands and skills.
-```
+### Install to your repository
+
+Adds optional commands and skills:
+
+```bash
 tx repo-install
 ```
 
+### Start using TX
 
-## Once Inside
+```bash
+tx start
+```
+
+Once inside the core session, try:
+
 ```
 spawn a deep research mesh, i am presenting on how penguins adapt to climate change and need the latest information
-``` 
+```
