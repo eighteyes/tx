@@ -32,9 +32,9 @@ Disadvantage:
 - Human In The Loop multi-agent interactions
 
 ## Prerequisites
-`claude-code` - with Anthropic Subscription / API Keys 
-`tmux` - manages all the sessions and message injections
-`node` - JavaScript
+- `claude-code` - with Anthropic Subscription / API Keys 
+- `tmux` - manages all the sessions and message injections
+- `node` - JavaScript
 
 ## Optional
 `searxng` for local search provider
@@ -52,16 +52,16 @@ npm link
 ```
 
 ## Terms
-`mesh` - a list of agents, with input / output targets to provide an agentic AI workflow
-`agent` - a LLM session within a mesh, with prompts, tools and messaging instructions
-`capability` - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
-`workspace` - a shared space for AIs to collaborate
+- `mesh` - a list of agents, with input / output targets to provide an agentic AI workflow
+- `agent` - a LLM session within a mesh, with prompts, tools and messaging instructions
+- `capability` - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
+- `workspace` - a shared space for AIs to collaborate
 
 ## Included Meshes / Agents
-`core` - the central coordinator mesh/agent, this is the primary interaction interface for users
-`brain` - dedicated to understanding your codebase, consult with this first when planning features
-`planning` - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
-`deep-research` - search, analyze, hypothesize and disprove with a HITL loop and a writer
+- `core` - the central coordinator mesh/agent, this is the primary interaction interface for users
+- `brain` - dedicated to understanding your codebase, consult with this first when planning features
+- `planning` - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
+- `deep-research` - search, analyze, hypothesize and disprove with a HITL loop and a writer
 
 ## Structure
 ```
