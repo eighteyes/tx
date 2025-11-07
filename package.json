@@ -7,16 +7,18 @@
   },
   "main": "lib/index.js",
   "scripts": {
-    "test": "node --test test/unit",
-    "test:e2e": "node --test test/e2e"
+    "test": "NODE_ENV=test node --test test/unit",
+    "test:e2e": "NODE_ENV=test node --test test/e2e",
+    "notify": "bash scripts/watch-notifications.sh .ai/tx/notifications.log"
   },
   "dependencies": {
-    "know-cli": "^0.0.1",
     "axios": "^1.12.2",
     "cheerio": "^1.1.2",
     "chokidar": "^4.0.3",
     "commander": "^11.0.0",
     "fs-extra": "^11.0.0",
+    "know-cli": "^0.0.1",
+    "node-notifier": "^10.0.1",
     "puppeteer": "^22.0.0"
   },
   "keywords": [

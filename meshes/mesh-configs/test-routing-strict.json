@@ -1,0 +1,22 @@
+{
+  "mesh": "test-routing-strict",
+  "type": "ephemeral",
+  "description": "Test mesh with strict routing rules for validation tests",
+  "agents": ["worker"],
+  "entry_point": "worker",
+  "completion_agent": "worker",
+  "routing": {
+    "worker": {
+      "complete": {
+        "core": "Task complete - all work finished",
+        "reviewer": "Task complete - needs review"
+      },
+      "blocked": {
+        "core": "Cannot proceed - need help"
+      },
+      "help": {
+        "core": "Need human guidance"
+      }
+    }
+  }
+}

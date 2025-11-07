@@ -32,6 +32,7 @@ All mesh configurations follow this JSON schema:
 - `workflow_topology` (string) - `"sequential"`, `"parallel"`, `"iterative"`
 - `routing` (object) - Status-based routing rules per agent
 - `capabilities` (array) - Shared capabilities for all agents
+- `clear-before` (boolean) - Automatically reset agent session before each task (default: false)
 - `frontmatter` (object) - Additional prompt configuration
   - `self-modify` (boolean) - Enable self-modification loops (automatically clears context)
   - `lens` (boolean|string|array) - Enable lens system
@@ -71,6 +72,23 @@ Each agent can define status-based routing:
   "completion_agent": "agent"
 }
 ```
+
+### Stateless Task Processing
+
+```json
+{
+  "mesh": "job-applicator",
+  "description": "Analyzes job descriptions and creates tailored resumes and cover letters",
+  "agents": [
+    "career/job-applicator"
+  ],
+  "entry_point": "job-applicator",
+  "completion_agent": "job-applicator",
+  "clear-before": true
+}
+```
+
+The `clear-before: true` option resets the agent session before each task, ensuring clean context. Useful for tasks that benefit from fresh state (code reviews, job applications, risk experiments).
 
 ### Multi-Agent Sequential
 
