@@ -1,16 +1,26 @@
 # TX
 Thinking, eXponentially
+> a single pane of glass to conduct an agentic orchestra
 
 ## Objective
-Describe and execute distributed, observable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
+Create and execute distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
 
-## What it is not
-Not explicitly supporting automation in favor of providing a surface area for augmentated thinking. 
+Provide a laboratory for novel uses of LLM with the aim of providing a surface area for Augmented Thinking. 
+
+`tx` is a prototypical middle ground between leveraging the power of specialization within the ease of a generalist workflow. 
+
+## Out Of Scope
+- Automation - Augmentation not Automation
+- Web Interface - terminal only
+- Monetization - too experimental to pay for
 
 ## Fundamentals
 > specialized agents with domain context outperform generalists
 
 > quality beats productivity as review is the bottleneck
+
+> [!IMPORTANT]
+> Our mind carries the common thread of thought, and we *wield* AI to extend this thread with the superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
 
 ## Overview
 `tx` is a CLI tool which orchestrates `claude-code` instances to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
@@ -26,10 +36,11 @@ Disadvantage:
 `tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Use Cases
-- Read an Agentic Paper, implement the pattern ( MAP planner = planner )
+- Read an Agentic Research Paper, implement the pattern ( MAP planner = planner )
 - Reproducible Multi-step Work Processes ( code-review, tdd, research, gtm-strategy, etc. ) with project knowledge support and queues
-- Generate comprehensive plans which outperform stock Plan Mode
+- Generate plans informed by prior work, which outperform stock Plan Mode
 - Human In The Loop multi-agent interactions
+
 
 ## Prerequisites
 
@@ -45,30 +56,54 @@ Disadvantage:
 
 > [!WARNING]
 > **Security Notice**: `tx` runs with `claude --dangerously-skip-permissions`. You will need to run that command in advance to accept responsibility for the actions of the agents. You are **strongly advised** to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude).
+>
+> [!NOTE]
+> For API Key users, I have hit a peak velocity of 3 million tokens per minute using this system, averaged over 30 seconds. It may not be inexpensive.
 
-## Installation
-
-Until we publish to npm:
+## Quick Start
 
 ```bash
+# npm soon
 git clone https://github.com/eighteyes/tx.git
 cd tx
 npm link
+cd <project-folder>
 ```
+
+### With safe-claude
+```
+safe-claude
+# once inside docker
+claude
+# login, accept risks
+```
+
+### No Safe-claude
+```
+claude --dangerously-skip-permissions
+# login and accept risks
+```
+
+### Once Inside
+You will see some commands run, these load the `core` agent prompt. When ready type:
+```
+spawn a research mesh and send it a task to look up the impact of sonar on whale migration. save the final paper and sources to research/whales/
+```
+
+1) `core` will spawn a `research` mesh which will ask questions, search the internet, and deliver your paper.
+2) after a minute, you should get the first wave of questions delivered
 
 ## Key Concepts
 
-- **`mesh`** - a list of agents, with input / output targets to provide an agentic AI workflow
+- **`mesh`** - a list of agents, with flexible input / output targets to provide an agentic AI workflow
 - **`agent`** - a LLM session within a mesh, with prompts, tools and messaging instructions
 - **`capability`** - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
 - **`workspace`** - a shared space for AIs to collaborate
 
-## Included Meshes and Agents
+## Essential Meshes and Agents
 
 - **`core`** - the central coordinator mesh/agent, this is the primary interaction interface for users
 - **`brain`** - dedicated to understanding your codebase, consult with this first when planning features
-- **`planning`** - derived from 'Map Planning', evaluates possible approaches and selects via a rubric
-- **`deep-research`** - search, analyze, hypothesize and disprove with a HITL loop and a writer
 
 ## Project Structure
 ```

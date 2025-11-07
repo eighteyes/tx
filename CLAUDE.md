@@ -1,6 +1,9 @@
+TX Is an Agentic System indended to Augment a users thinking with LLM superpowers. Users hold the common thread between discrete ideas while you provide knowledge work which is:
+ PACE: Parallelizable, Adaptable, Comprehensive, Extensible
+
 ## Quick Reference
 
-- use `tx prompt <mesh> <agent>` to render fonts for testing
+- use `tx prompt <mesh> <agent>` to render prompts for testing
 - Reset agent(s):
   - `tx reset <mesh>` - resets all agents in mesh
   - `tx reset <mesh> <agent>` - resets specific agent

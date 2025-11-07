@@ -51,8 +51,14 @@ TX orchestrates AI CLI tools (Claude Code, Codex, etc.) using tmux sessions for 
 - `list.js` - Mesh catalog
 - `watch.js` - File monitoring
 - `tool.js` - Search, web fetch capabilities
+- `msg.js` - Event log viewer
 
-### 3. Prompt Builder (`lib/prompt-builder.js`)
+### 3. Message System
+- `message-writer.js` - Writes to centralized event log (`.ai/tx/msgs/`)
+- `event-log-consumer.js` - Watches event log, delivers messages to agents
+- `message.js` - Message parsing and utilities
+
+### 4. Prompt Builder (`lib/prompt-builder.js`)
 - Assembles agent prompts from:
   - Agent-specific prompt.md
   - Mesh configuration
@@ -60,12 +66,13 @@ TX orchestrates AI CLI tools (Claude Code, Codex, etc.) using tmux sessions for 
   - Routing rules
   - System templates
 
-### 4. Validator (`lib/validator.js`)
+### 5. Validator (`lib/validator.js`)
 - Message frontmatter validation
 - Mesh configuration validation
 - Routing rules validation
+- Rearmatter schema validation
 
-### 5. File Watcher (`lib/file-watcher-manager.js`)
+### 6. File Watcher (`lib/file-watcher-manager.js`)
 - Uses Chokidar v4
 - Delta tracking (only new content)
 - Debouncing (1s default)
@@ -73,23 +80,33 @@ TX orchestrates AI CLI tools (Claude Code, Codex, etc.) using tmux sessions for 
 
 ---
 
-## Stay-in-Place Messaging
+## Centralized Event Log Architecture
 
-### Traditional Approach (File Moving)
+### Traditional Approach (Per-Agent Directories)
 ```
-Agent A writes → inbox/ → Agent B reads → archive/
+Agent A writes → .ai/tx/mesh/meshA/agents/agentA/msgs/
+Agent B writes → .ai/tx/mesh/meshB/agents/agentB/msgs/
 ```
-**Problems:** I/O overhead, race conditions, lost messages
+**Problems:** Scattered messages, hard to query, complex routing
 
-### TX Approach (File References)
+### TX Approach (Centralized Event Log)
 ```
-Agent A writes → stays in place
+Agent A writes → .ai/tx/msgs/1102083000-task-core>brain-abc123.md
+Agent B writes → .ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md
                      ↓
-              @filepath injected to Agent B
+              EventLogConsumer watches centralized log
                      ↓
-              Agent B reads via reference
+              Filters messages for each agent
+                     ↓
+              @filepath injected to target agent
 ```
-**Benefits:** Single source of truth, audit trails, resumability
+**Benefits:**
+- Single source of truth for all messages
+- Chronological ordering with timestamps
+- Easy querying by type, agent, time
+- Perfect audit trail
+- Offset tracking prevents duplicate delivery
+- Immutable log (messages never move or change)
 
 ---
 
@@ -139,45 +156,56 @@ Agent is now listening for messages via file watcher.
 ## Message Flow
 
 ### 1. Message Creation
-Core writes:
+Agent writes to centralized event log:
 ```markdown
-.ai/tx/mesh/core/agents/core/msgs/task-001.md
+.ai/tx/msgs/1102083000-task-core>brain-abc123.md
 ```
 
-### 2. Watcher Detection
+### 2. EventLogConsumer Detection
 ```javascript
-chokidar.watch('.ai/tx/mesh/**/msgs/*.md')
-  .on('add', (filepath) => {
-    // Parse frontmatter
-    const msg = parseMessage(filepath);
+// Each agent has an EventLogConsumer watching centralized log
+class EventLogConsumer {
+  constructor(agentId) {
+    this.agentId = agentId; // e.g., "core/core" or "brain/brain"
+    this.watcher = chokidar.watch('.ai/tx/msgs/*.md');
+  }
 
-    // Validate
-    if (!validateMessage(msg)) return;
+  async processMessage(msg) {
+    // Filter messages for this agent
+    if (msg.to !== this.agentId) return;
 
-    // Route
-    routeMessage(msg);
-  });
+    // Check offset to prevent duplicate delivery
+    if (this.isProcessed(msg.timestamp)) return;
+
+    // Inject to agent's tmux session
+    injectFile(sessionName, msg.filepath);
+
+    // Update offset
+    await this.saveOffset(msg.timestamp);
+  }
+}
 ```
 
 ### 3. Routing Logic
 ```javascript
-function routeMessage(msg) {
-  const target = msg.to; // e.g., "brain/brain"
-  const [mesh, agent] = target.split('/');
+// Routing determined by filename pattern
+// Format: {timestamp}-{type}-{from}>{to}-{msgid}.md
+// Example: 1102083000-task-core>brain-abc123.md
+//          └─────┬────┘      └──┬──┘└─┬─┘
+//           timestamp        from  to
 
-  // Inject reference to target session
-  tmux.sendKeys(mesh, `@${msg.filepath}`);
-}
+// EventLogConsumer parses filename to determine routing
+const { from, to } = parseFilename(msg.filename);
 ```
 
 ### 4. Agent Processing
-Agent reads file, processes, writes response:
+Agent reads file via @filepath reference, processes, writes response to centralized log:
 ```markdown
-.ai/tx/mesh/brain/agents/brain/msgs/response-001.md
+.ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md
 ```
 
 ### 5. Response Routing
-Watcher detects response, routes back to originator.
+EventLogConsumer for core agent detects response, routes back to originator.
 
 ---
 
@@ -384,10 +412,11 @@ tx-cli/
 │       ├── capabilities/        # Capability prompts
 │       └── templates/           # System templates
 └── .ai/tx/                      # Runtime directory
+    ├── msgs/                    # Centralized event log (ALL messages)
+    │   └── {timestamp}-{type}-{from}>{to}-{msgid}.md
     ├── mesh/                    # Mesh workspaces
     │   └── {mesh}/
     │       ├── agents/{agent}/
-    │       │   ├── msgs/        # Agent messages (stay here!)
     │       │   ├── workspace/   # Agent workspace
     │       │   └── prompts/     # Generated prompts
     │       └── workspace/       # Shared mesh workspace
@@ -396,6 +425,7 @@ tx-cli/
     │   ├── error.jsonl          # Error logs
     │   └── evidence.jsonl       # Agent observations
     └── state/
+        ├── offsets/             # EventLogConsumer offset tracking
         ├── queues/              # Message queues
         └── watchers/            # Watcher state
 ```

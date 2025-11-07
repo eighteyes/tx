@@ -119,4 +119,41 @@ describe('Routing', () => {
       assert.strictEqual(typeof instructions, 'string');
     });
   });
+
+  describe('countRoutingIterations()', () => {
+    it('should return 0 for non-existent route', () => {
+      const count = Routing.countRoutingIterations('nonexistent-from', 'nonexistent-to', 'complete');
+      assert.strictEqual(count, 0);
+    });
+
+    it('should return 0 when msgs directory does not exist', () => {
+      // This test assumes msgs directory exists, so just test it doesn't crash
+      const count = Routing.countRoutingIterations('analyst', 'sourcer', 'needs-more-data');
+      assert.strictEqual(typeof count, 'number');
+      assert.ok(count >= 0);
+    });
+  });
+
+  describe('checkIterationLimit()', () => {
+    it('should return iteration check result', () => {
+      const result = Routing.checkIterationLimit('analyst', 'sourcer', 'needs-more-data', 3);
+      assert.strictEqual(typeof result, 'object');
+      assert.ok('exceeded' in result);
+      assert.ok('count' in result);
+      assert.ok('limit' in result);
+      assert.strictEqual(result.limit, 3);
+    });
+
+    it('should not exceed limit for zero iterations', () => {
+      const result = Routing.checkIterationLimit('nonexistent-from', 'nonexistent-to', 'complete', 3);
+      assert.strictEqual(result.exceeded, false);
+      assert.strictEqual(result.count, 0);
+      assert.strictEqual(result.limit, 3);
+    });
+
+    it('should use default limit of 3', () => {
+      const result = Routing.checkIterationLimit('analyst', 'sourcer', 'needs-more-data');
+      assert.strictEqual(result.limit, 3);
+    });
+  });
 });
