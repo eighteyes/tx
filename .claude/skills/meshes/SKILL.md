@@ -7,16 +7,24 @@ description: Comprehensive guide for building, testing, and debugging meshes in 
 
 This skill provides comprehensive guidance for creating, testing, and debugging meshes and agent configurations in the tx system.
 
-## ⚠️ CRITICAL: Stay-In-Place Messaging
+## ⚠️ CRITICAL: Centralized Event Log Architecture
 
-**The tx system uses stay-in-place messaging:**
-- ❌ Messages NEVER move or get copied between agents
-- ❌ There are NO inbox/outbox/active subdirectories (old pattern)
-- ✅ Messages stay in creator's `msgs/` folder permanently
-- ✅ System injects `@filepath` references to recipients
-- ✅ Recipients read from original location
+**The tx system uses a centralized event log:**
+- ✅ ALL messages written to `.ai/tx/msgs/` (centralized event log)
+- ✅ Filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
+- ✅ Messages are immutable, chronological events
+- ✅ EventLogConsumer watches this directory with offset tracking
+- ✅ System injects `@filepath` references to target agents
+- ❌ Messages NEVER move or get copied
 
-**If you see references to inbox/outbox/active in this skill, IGNORE them - they're from the old system.**
+**Key Benefits:**
+- Single source of truth for all system messages
+- Chronological ordering with timestamps
+- Easy querying by type, agent, or time
+- Perfect audit trail
+- No per-agent directory management
+
+**If you see references to `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`, those are from the OLD architecture.**
 
 ## Core Concepts
 
@@ -61,17 +69,26 @@ See: [mesh-config-reference.md](references/mesh-config-reference.md) and [agent-
 
 ### Core Principles
 
-#### 1. Message-Based Communication
-- Agents communicate **only** via message files in `.ai/tx/mesh/{mesh}/agents/{agent}/msgs/`
-- Messages are **moved** (not copied) between agents based on frontmatter routing
-- System injects messages via `@filepath` attachment to Claude
+#### 1. Message-Based Communication via Centralized Event Log
+- Agents write messages to **centralized event log**: `.ai/tx/msgs/`
+- Filename encodes routing: `{timestamp}-{type}-{from}>{to}-{msgid}.md`
+- EventLogConsumer watches log and filters messages for each agent
+- System injects messages via `@filepath` reference to target agents
+- Messages stay in place permanently (immutable log)
 
-#### 2. Reactive Agents
+#### 2. EventLogConsumer & Offset Tracking
+- Each agent has an EventLogConsumer watching `.ai/tx/msgs/`
+- Consumer tracks last processed timestamp in `.ai/tx/state/offsets/{agent}.json`
+- Prevents duplicate message delivery
+- Allows agent restart without reprocessing old messages
+- Ensures chronological ordering
+
+#### 3. Reactive Agents
 - No "START NOW" in prompts - agents wait for messages
 - Process when message is injected via `@filepath`
-- Write response to `msgs/` with proper frontmatter
+- Write response to `.ai/tx/msgs/` with proper frontmatter and filename format
 
-#### 3. Frontmatter Routing
+#### 4. Frontmatter Routing
 ```markdown
 ---
 from: mesh/agent
@@ -82,7 +99,7 @@ timestamp: 2025-10-20T00:00:00Z
 ---
 ```
 
-#### 4. Template Variables
+#### 5. Template Variables
 - `{{ mesh }}` - The mesh instance ID (e.g., `test-echo-abc123`)
 - `{{ agent }}` - The agent name
 
@@ -131,10 +148,10 @@ See: [prompt-templates.md](references/prompt-templates.md)
 ```javascript
 // Check session first
 const sessionOutput = execSync(`tmux capture-pane -t ${session} -p -S -100`);
-const wroteMessages = sessionOutput.includes('Write(') && sessionOutput.includes('/msgs/');
+const wroteMessages = sessionOutput.includes('Write(') && sessionOutput.includes('.ai/tx/msgs/');
 
-// Then verify files
-const actualFiles = fs.readdirSync(msgsDir).filter(f => f.endsWith('.md'));
+// Then verify files in centralized event log
+const actualFiles = fs.readdirSync('.ai/tx/msgs/').filter(f => f.endsWith('.md'));
 ```
 
 ### ⚠️ CRITICAL: Injection Rule
@@ -227,11 +244,19 @@ Format: `yymmdd-hhmm`
 # View session output
 tmux capture-pane -t session-name -p -S -100
 
-# Monitor messages
-watch -n 1 'find .ai/tx/mesh -name "*.md" | sort'
+# View centralized event log
+tx msg
+tx msg --follow
 
-# Check agent messages
-ls -la .ai/tx/mesh/{mesh}/agents/{agent}/msgs/
+# Monitor messages
+watch -n 1 'ls -lt .ai/tx/msgs/ | head -20'
+
+# Filter messages for specific agent
+ls -la .ai/tx/msgs/ | grep "core>"
+ls -la .ai/tx/msgs/ | grep ">brain"
+
+# Check offset tracking state
+cat .ai/tx/state/offsets/core-core.json
 ```
 
 ### Common Issues

@@ -87,14 +87,16 @@ Messages use a compact, self-describing filename format:
 ### How It Works
 
 1. **Agent A writes message** to `.ai/tx/msgs/1102083000-task-core>brain-abc123.md`
-2. **Routing system detects** new file via file watcher
-3. **System parses filename** to determine routing (`>brain` = send to brain agent)
-4. **System injects reference** to Agent B: `@.ai/tx/msgs/1102083000-task-core>brain-abc123.md`
-5. **Agent B reads** the file via reference
-6. **Agent B responds** by writing to `.ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md`
-7. **System injects reference** back to Agent A
+2. **EventLogConsumer (for brain) detects** new file via chokidar watcher
+3. **Consumer parses filename** to determine routing (`>brain` = for brain agent)
+4. **Consumer checks offset** - has this message been processed? (prevents duplicates)
+5. **Consumer injects reference** to Agent B's tmux session: `@.ai/tx/msgs/1102083000-task-core>brain-abc123.md`
+6. **Consumer updates offset** - saves timestamp to `.ai/tx/state/offsets/brain-brain.json`
+7. **Agent B reads** the file via @filepath reference
+8. **Agent B responds** by writing to `.ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md`
+9. **EventLogConsumer (for core) detects** response and injects back to Agent A
 
-**Result:** All messages in one place, chronologically ordered, perfect audit trail.
+**Result:** All messages in one place, chronologically ordered, perfect audit trail, no duplicate delivery.
 
 ---
 
@@ -427,61 +429,78 @@ from: core/core
 
 ### 1. Creation
 
-Agent writes message file:
+Agent writes message to centralized event log:
 
 ```bash
-.ai/tx/mesh/core/agents/core/msgs/task-spawn-brain-001.md
+.ai/tx/msgs/1102083000-task-core>brain-abc123.md
 ```
 
 ### 2. Detection
 
-File watcher detects new file (via Chokidar):
+EventLogConsumer (for brain agent) detects new file via Chokidar:
 
 ```
-[Watcher] New file: task-spawn-brain-001.md
-[Validator] Validating frontmatter...
-[Validator] ✅ Valid message
+[EventLogConsumer:brain/brain] New file detected: 1102083000-task-core>brain-abc123.md
+[EventLogConsumer:brain/brain] Parsing filename...
+[EventLogConsumer:brain/brain] To: brain, From: core, Type: task
 ```
 
-### 3. Routing
+### 3. Offset Check
 
-Routing system determines destination:
+Consumer checks if message already processed:
 
+```javascript
+// Load offset from .ai/tx/state/offsets/brain-brain.json
+const lastProcessed = await this.loadOffset(); // e.g., 2025-11-02T08:29:00Z
+
+// Compare message timestamp
+if (msg.timestamp <= lastProcessed) {
+  return; // Already processed, skip
+}
 ```
-[Router] to: brain/brain
-[Router] Injecting reference to brain session
-```
 
-### 4. Injection
+### 4. Routing & Injection
 
-System injects `@filepath` reference to target agent:
+EventLogConsumer injects `@filepath` reference to target agent's tmux session:
 
 ```bash
 # In tmux session "brain"
-tmux send-keys -t brain "@/workspace/.ai/tx/mesh/core/agents/core/msgs/task-spawn-brain-001.md" Enter
+tmux send-keys -t brain "@/workspace/.ai/tx/msgs/1102083000-task-core>brain-abc123.md" Enter
 ```
 
-### 5. Processing
+### 5. Offset Update
 
-Target agent reads and processes:
+Consumer saves new offset to prevent duplicate delivery:
+
+```json
+{
+  "agentId": "brain/brain",
+  "lastProcessedTimestamp": "2025-11-02T08:30:00.000Z",
+  "updatedAt": "2025-11-02T08:30:01.000Z"
+}
+```
+
+### 6. Processing
+
+Target agent reads and processes via @filepath reference:
 
 ```
-[brain/brain] Reading message: task-spawn-brain-001.md
+[brain/brain] Reading message: 1102083000-task-core>brain-abc123.md
 [brain/brain] Type: task
 [brain/brain] Processing request...
 ```
 
-### 6. Response
+### 7. Response
 
-Agent writes response message:
+Agent writes response to centralized event log:
 
 ```bash
-.ai/tx/mesh/brain/agents/brain/msgs/task-complete-spawn-brain-001.md
+.ai/tx/msgs/1102084512-task-complete-brain>core-abc123.md
 ```
 
-### 7. Completion
+### 8. Completion
 
-Cycle repeats, injecting response back to originator.
+Cycle repeats - EventLogConsumer for core detects response and injects back to originator.
 
 ---
 
@@ -615,30 +634,54 @@ Make messages readable with headers, lists, code blocks.
 ### View Recent Messages
 
 ```bash
-# Core messages
-ls -lt .ai/tx/mesh/core/agents/core/msgs/ | head
+# All recent messages (centralized log)
+ls -lt .ai/tx/msgs/ | head -20
 
-# Brain messages
-ls -lt .ai/tx/mesh/brain/agents/brain/msgs/ | head
+# Interactive event log viewer
+tx msg
+tx msg --follow
+
+# Filter by agent (messages TO core)
+ls -lt .ai/tx/msgs/ | grep ">core"
+
+# Filter by agent (messages FROM brain)
+ls -lt .ai/tx/msgs/ | grep "brain>"
+
+# Filter by type
+ls -lt .ai/tx/msgs/ | grep "task-complete"
 ```
 
 ### Read Message Content
 
 ```bash
-cat .ai/tx/mesh/core/agents/core/msgs/task-001.md
+cat .ai/tx/msgs/1102083000-task-core>brain-abc123.md
+```
+
+### Check Offset State
+
+```bash
+# View consumer offset for agent
+cat .ai/tx/state/offsets/core-core.json
+cat .ai/tx/state/offsets/brain-brain.json
+
+# List all offsets
+ls -la .ai/tx/state/offsets/
 ```
 
 ### Trace Message Flow
 
 ```bash
 # Find all messages related to msg-id
-grep -r "ask-001" .ai/tx/mesh/
+grep -r "abc123" .ai/tx/msgs/
+
+# Find messages in conversation thread
+grep -r "in-reply-to: abc123" .ai/tx/msgs/
 ```
 
 ### Check Routing Logs
 
 ```bash
-tail -f .ai/tx/logs/debug.jsonl | grep routing
+tail -f .ai/tx/logs/debug.jsonl | grep "event-log-consumer\|routing"
 ```
 
 ---
