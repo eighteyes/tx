@@ -1,352 +1,341 @@
-# Know Tool Reference
+# Know Tool - Brain's Guide
 
-The **know tool** manages the project's knowledge graphs - structured representations of both product architecture and code implementation.
+**Note**: The know capability is injected into your prompt. This reference covers Brain-specific usage patterns and workflows.
 
-## Knowledge Graphs
+## Brain as Knowledge Layer
 
-TX CLI uses **two complementary knowledge graphs**:
+**Important**: You serve as the **knowledge layer** for other meshes that need product/architecture information.
 
-1. **Product Graph** (`.ai/spec-graph.json`) - Product/feature architecture
-2. **Code Graph** (`.ai/code-graph.json`) - Code implementation architecture
+**Meshes with `brain: true` config:**
+- These meshes query YOU instead of directly accessing graphs
+- They send `type: ask` messages requesting product/architecture data
+- You run `tx tool know` commands and send back `type: ask-response` with results
 
-Both graphs use the same know tool and are cross-linked via references.
+**Example**: UI-ensemble coordinator asks:
+```markdown
+---
+to: brain/brain
+from: ui-ensemble/coordinator
+type: ask
+---
 
-## What Know Covers
-
-**Know handles structured technical architecture:**
-
-**Product Graph:**
-- Component hierarchies (users → objectives → features → actions → components)
-- Product dependencies and feature relationships
-- Implementation order (topological sorting)
-- Architecture validation (cycles, completeness)
-- Technical requirements and acceptance criteria
-
-**Code Graph:**
-- Module dependencies (imports/requires)
-- Layered architecture (primitives → infrastructure → services → commands)
-- Package organization
-- External dependencies (npm packages)
-- Behavioral logic (execution traces, call graphs, control flow, side effects)
-- Cross-references to product components
-
-**Know does NOT handle experiential knowledge** - that's in your artifacts:
-- Patterns that worked/failed (patterns.json)
-- Project goals and state (overview.md)
-- Success history (history.md)
-- Incomplete work (not-done.md)
-
-## Access
-
-```bash
-# Use default graph (.ai/spec-graph.json)
-tx tool know <command> [args]
-
-# Specify graph explicitly with -g flag
-know -g .ai/code-graph.json <command> [args]
-know -g .ai/spec-graph.json <command> [args]
+Please query spec-graph for all features and their priorities.
 ```
 
-## Core Concepts
+**You respond:**
+```markdown
+---
+to: ui-ensemble/coordinator
+from: brain/brain
+type: ask-response
+---
 
-### Product Graph Structure (spec-graph.json)
-
-The spec graph is a hierarchical knowledge representation:
-
-```
-users → objectives → features → actions → components → presentation/behavior/data_models
-```
-
-**Entity Types:**
-- `users` - System personas (admin, customer, etc.)
-- `objectives` - User goals and objectives
-- `features` - High-level product features
-- `actions` - Specific user actions within features
-- `components` - UI/functional components
-- `presentation` - Visual elements
-- `behavior` - Interaction logic
-- `data_models` - Data structures
-
-**References (Terminal Nodes):**
-- `acceptance_criteria` - Feature acceptance criteria
-- `business_logic` - Business rules
-- `technical_requirements` - Technical specs
-- `implementation_notes` - Implementation details
-
-### Graph File Format
-
-```json
-{
-  "meta": {
-    "project": {"name": "...", "description": "..."},
-    "phases": []
-  },
-  "entities": {
-    "features": {
-      "feature-id": {"name": "...", "description": "..."}
-    },
-    "actions": {},
-    "components": {}
-  },
-  "references": {
-    "acceptance_criteria": {},
-    "business_logic": {}
-  },
-  "graph": {
-    "feature:feature-id": {
-      "depends_on": ["action:id", "component:id"]
-    }
-  }
-}
+Found 5 features:
+- feature:auth (P0) - User authentication
+- feature:dashboard (P0) - Main dashboard
+- feature:reports (P1) - Reporting system
+...
 ```
 
-### Code Graph Structure (code-graph.json)
+**Why this pattern?**
+- Centralizes graph access through brain
+- Brain can enrich data with context from artifacts
+- Other meshes don't need know capability injection
+- Cleaner separation of concerns
 
-The code graph represents implementation architecture:
+## Your Relationship with Know
 
+**Know handles structured technical architecture** (the graphs):
+- Product features, components, dependencies (spec-graph)
+- Code modules, layers, implementation details (code-graph)
+
+**Your artifacts handle experiential knowledge** (the learnings):
+- `patterns.json` - What worked/failed and why
+- `overview.md` - Project goals, state, progress
+- `history.md` - Success patterns and approaches
+- `not-done.md` - Incomplete work tracking
+
+**Boundary**: Know tells you WHAT exists and HOW it's structured. You tell agents WHY decisions were made and WHAT patterns to apply.
+
+## Hierarchical Relationships
+
+Understanding the flow helps you formulate better plans:
+
+**Product Graph (Spec)**:
+```
+users → objectives → features → actions → components
+```
+
+**Code Graph**:
 ```
 layers → packages → modules → external-deps
 ```
 
-**Entity Types:**
-- `module` - Individual source files (e.g., `module:logger`, `module:spawn-command`)
-- `package` - Code organization units (e.g., `package:commands`, `package:core`)
-- `layer` - Architectural layers (primitives, infrastructure, services, commands, tools)
+When planning, respect these hierarchies - features depend on components, modules depend on other modules.
 
-**Reference Types (Implementation Details):**
-- `source-file` - File path and implementation details
-- `external-dep` - npm package dependencies (e.g., `external-dep:fs-extra`)
-- `product-component` - Cross-reference to product graph components
-- `execution-trace` - Step-by-step execution flow through functions
-- `call-graph` - Function call relationships (what calls what)
-- `control-flow` - Conditional logic, branches, loops
-- `data-flow` - Data transformations through the system
-- `side-effect` - File I/O, state mutations, process spawning
-- `error-path` - Exception handling and recovery strategies
+## Brain-Specific Workflows
 
-**Example Code Graph Query:**
-```bash
-# List all modules
-know -g .ai/code-graph.json list-type module
+### 1. Initial Project Assessment
 
-# Show module dependencies
-know -g .ai/code-graph.json dependents module:spawn-command
-
-# View behavioral references
-know -g .ai/code-graph.json ref-usage
-
-# Query execution trace
-jq '.references["execution-trace"]["spawn-command"]' .ai/code-graph.json
-
-# Query side effects
-jq '.references["side-effect"]' .ai/code-graph.json
-```
-
-## Commands
-
-### Inspection
+When you first analyze a codebase or need to understand current state:
 
 ```bash
-# List all entities
-tx tool know list
-
-# List by type
-tx tool know list-type features
-tx tool know list-type actions
-tx tool know list-type components
-
-# Get entity details
-tx tool know get feature:auth
-
-# Show statistics
-tx tool know stats
-```
-
-### Dependencies
-
-```bash
-# Show what entity depends on
-tx tool know deps feature:analytics
-
-# Show what depends on entity (reverse)
-tx tool know dependents component:button
-
-# Show implementation order (topological sort)
-tx tool know build-order
-
-# Suggest valid connections
-tx tool know suggest feature:new-feature
-```
-
-### Validation
-
-```bash
-# Comprehensive health check
+# Product architecture health
 tx tool know health
+tx tool know stats
+tx tool know list-type features
 
-# Detect circular dependencies
+# Code architecture health
+tx tool know -g .ai/code-graph.json health
+tx tool know -g .ai/code-graph.json stats
+tx tool know -g .ai/code-graph.json list-type module
+
+# Cross-references validation
+jq '.references["code-module"]' .ai/spec-graph.json
+jq '.references["product-component"]' .ai/code-graph.json
+```
+
+**Record findings** in `overview.md` and `not-done.md`.
+
+### 2. Formulating Development Plans
+
+When agents ask you to create implementation plans:
+
+**Step 1**: Query existing architecture
+```bash
+# What exists?
+tx tool know list-type features
+tx tool know get feature:target-feature
+
+# What are the dependencies?
+tx tool know deps feature:target-feature
+tx tool know dependents component:shared-component
+```
+
+**Step 2**: Check implementation order
+```bash
+# Get topological sort
+tx tool know build-order
+```
+
+**Step 3**: Analyze code structure
+```bash
+# What modules exist?
+tx tool know -g .ai/code-graph.json list-type module
+
+# What depends on what?
+tx tool know -g .ai/code-graph.json deps module:target
+tx tool know -g .ai/code-graph.json dependents module:shared
+```
+
+**Step 4**: Combine with your experiential knowledge
+- Check `patterns.json` for proven approaches
+- Reference `history.md` for similar past work
+- Consult `not-done.md` for known gaps
+
+**Step 5**: Formulate granular plan
+- Sequence using dependency order from `build-order`
+- Apply patterns from your artifacts
+- Include rationale based on past learnings
+
+### 3. Providing Context to Agents
+
+When agents request context about a feature or module:
+
+```bash
+# Product view
+tx tool know get feature:target
+tx tool know deps feature:target
+
+# Code view
+tx tool know -g .ai/code-graph.json get module:target
+
+# Behavioral details (direct jq for references)
+jq '.references["execution-trace"]["module:target"]' .ai/code-graph.json
+jq '.references["side-effect"]["module:target"]' .ai/code-graph.json
+jq '.references["error-path"]["module:target"]' .ai/code-graph.json
+```
+
+**Synthesize**:
+- Architectural facts from know
+- Patterns and learnings from your artifacts
+- Warnings from past failures
+
+### 4. Validating Architecture Changes
+
+After agents report completed work or propose changes:
+
+```bash
+# Validate consistency
+tx tool know health
 tx tool know cycles
 
-# Check entity completeness score
-tx tool know completeness feature:target
+# Check completeness
+tx tool know completeness feature:changed
+
+# Verify cross-graph links
+jq '.references["code-module"]["component:new"] | has("module")' .ai/spec-graph.json
 ```
 
-### Building
+**Update artifacts** based on outcomes - record patterns, update not-done.md, add to history.md.
+
+### 5. Tracking Implementation Progress
+
+Monitor project health and progress:
 
 ```bash
-# Add entity
-tx tool know add feature user-auth '{"name":"User Auth","description":"Login system"}'
+# Query status (via jq, since metadata not in know commands yet)
+jq '.entities.features | to_entries | map(select(.value.status == "in-progress"))' .ai/spec-graph.json
 
-# Add dependency
-tx tool know add-dep feature:user-auth action:login
+# Check dependencies for blocked work
+tx tool know deps feature:blocked
 
-# Remove dependency
-tx tool know remove-dep feature:old action:deprecated
+# Identify bottlenecks
+tx tool know dependents component:critical
 ```
 
-### Generation
+## Advanced Patterns
+
+### Cross-Graph Traceability
+
+When you need to understand product → code mappings:
 
 ```bash
-# Generate entity specification
-tx tool know spec feature:analytics
+# Find implementing module for component
+jq '.references["code-module"]["component:login-form"]' .ai/spec-graph.json
+# Returns: {"module":"module:login-form","graph_path":".ai/code-graph.json"}
 
-# Generate detailed feature spec
-tx tool know feature-spec feature:target
-
-# Generate project sitemap
-tx tool know sitemap
+# Find product component for module
+jq '.references["product-component"]["module:login-form"]' .ai/code-graph.json
+# Returns: {"component":"component:login-form","graph_path":".ai/spec-graph.json"}
 ```
 
-### References
+Use this when:
+- Agents ask "what implements this feature?"
+- Formulating plans that need code-level details
+- Validating that components have implementations
+
+### Behavioral Analysis
+
+For critical modules, examine execution flow and side effects:
 
 ```bash
-# Find orphaned references
-tx tool know ref-orphans
+# How does it execute?
+jq '.references["execution-trace"]["module:spawn-command"]' .ai/code-graph.json
 
-# Suggest connections for orphans
-tx tool know ref-suggest
+# What side effects?
+jq '.references["side-effect"]["module:spawn-command"]' .ai/code-graph.json
 
-# Show reference usage statistics
-tx tool know ref-usage
-
-# Clean up unused references
-tx tool know ref-clean
+# How does it handle errors?
+jq '.references["error-path"]["module:spawn-command"]' .ai/code-graph.json
 ```
 
-## Usage Patterns
+Use this when:
+- Formulating plans for complex features
+- Providing context about risky operations
+- Identifying technical constraints
 
-### Building Graph from Analysis
+### Dependency Analysis for Planning
 
-When analyzing codebase:
+When planning feature implementations:
 
-1. Identify key entities (features, components)
-2. Build incrementally:
-   ```bash
-   tx tool know add feature analytics '{"name":"Analytics","description":"Usage tracking"}'
-   tx tool know add action track-event '{"name":"Track Event","description":"Record events"}'
-   tx tool know add-dep feature:analytics action:track-event
-   ```
-3. Validate as you go:
-   ```bash
-   tx tool know health
-   tx tool know cycles
-   ```
-
-### Querying for Plans
-
-When formulating development plans:
-
-1. Check what exists:
-   ```bash
-   tx tool know list-type features
-   tx tool know get feature:target
-   ```
-2. Analyze dependencies:
-   ```bash
-   tx tool know deps feature:target
-   tx tool know build-order
-   ```
-3. Generate specs:
-   ```bash
-   tx tool know feature-spec feature:target
-   ```
-
-### Validating Architecture
-
-When checking consistency:
-
-1. Run health check: `tx tool know health`
-2. Check for cycles: `tx tool know cycles`
-3. Find orphans: `tx tool know ref-orphans`
-4. Review completeness: `tx tool know completeness feature:each`
-
-## Using Both Graphs Together
-
-The product and code graphs are **cross-linked** for traceability:
-
-**From Product → Code:**
 ```bash
-# Product components link to code modules via code-module references
-jq '.references["code-module"]["spawn-command"]' .ai/spec-graph.json
-# Returns: {"module": "module:spawn-command", "graph_path": ".ai/code-graph.json", ...}
+# What must be built first?
+tx tool know build-order
+
+# What depends on this? (reverse lookup)
+tx tool know dependents component:base-component
+
+# Check for circular dependencies
+tx tool know cycles
 ```
 
-**From Code → Product:**
+**Integrate with patterns.json**: If history shows "building dependencies first reduces bugs by 60%", prioritize that in your plan.
+
+## Best Practices for Brain
+
+### When Building Graphs
+
+1. **Incremental** - Add entities as you discover them through codebase analysis
+2. **Validate often** - Run `health` after adding entities/dependencies
+3. **Cross-link thoroughly** - Every component should link to its module
+4. **Document behavior** - Add execution-trace, side-effect, error-path for critical modules
+
+### When Querying Graphs
+
+1. **Start broad** - Use `list-type` and `stats` to understand scope
+2. **Drill down** - Use `get` and `deps` for specific entities
+3. **Validate assumptions** - Use `health` and `cycles` to check consistency
+4. **Cross-reference** - Check both graphs for complete picture
+
+### When Providing Guidance
+
+1. **Ground in architecture** - Reference specific entities (`feature:auth`, `module:logger`)
+2. **Show dependencies** - Use `deps` and `dependents` to explain order
+3. **Apply patterns** - Combine know facts with patterns.json learnings
+4. **Include rationale** - Explain WHY based on history.md
+
+### When Formulating Plans
+
+1. **Assess first** - Query know to understand current state
+2. **Check order** - Use `build-order` for implementation sequence
+3. **Apply learnings** - Reference patterns.json for proven approaches
+4. **Be granular** - Each step should be concrete and actionable
+5. **Validate plan** - Ensure sequence respects dependencies
+
+## Integration with Your Artifacts
+
+**Know gives you structure**, your artifacts give you wisdom:
+
+| Knowledge Type | Source | Example |
+|----------------|--------|---------|
+| What exists | Know (graphs) | "feature:auth has 3 components" |
+| What depends on what | Know (graphs) | "login-form depends on auth-service" |
+| What worked before | Your artifacts (history.md) | "OAuth2 approach succeeded in 2 days" |
+| What to avoid | Your artifacts (patterns.json) | "Don't store credentials in localStorage" |
+| What's incomplete | Your artifacts (not-done.md) | "Password reset UI missing backend" |
+| Why decisions made | Your artifacts (overview.md) | "Using JWT for scalability" |
+
+**Synthesis**: When agents ask for guidance, combine:
+- Facts from know (structure, dependencies)
+- Patterns from your artifacts (what works)
+- Context from your memory (why, when, lessons learned)
+
+## Common Queries Reference
+
 ```bash
-# Code modules link to product components via product-component references
-know -g .ai/code-graph.json dependents module:spawn-command | grep "product-component"
-# Shows: product-component:spawn-command
+# Health checks
+tx tool know health
+tx tool know -g .ai/code-graph.json health
+
+# Statistics
+tx tool know stats
+tx tool know -g .ai/code-graph.json stats
+
+# List entities
+tx tool know list-type features
+tx tool know -g .ai/code-graph.json list-type module
+
+# Dependencies
+tx tool know deps feature:target
+tx tool know dependents component:shared
+
+# Build order
+tx tool know build-order
+
+# Cycles detection
+tx tool know cycles
+
+# Cross-graph links
+jq '.references["code-module"]' .ai/spec-graph.json
+jq '.references["product-component"]' .ai/code-graph.json
+
+# Behavioral references
+jq '.references["execution-trace"]' .ai/code-graph.json
+jq '.references["side-effect"]' .ai/code-graph.json
+jq '.references["error-path"]' .ai/code-graph.json
 ```
 
-**Workflow for Initial Project Assessment:**
+---
 
-1. **Analyze Product Graph:**
-   ```bash
-   know -g .ai/spec-graph.json health
-   know -g .ai/spec-graph.json stats
-   know -g .ai/spec-graph.json list-type features
-   ```
-
-2. **Analyze Code Graph:**
-   ```bash
-   know -g .ai/code-graph.json health
-   know -g .ai/code-graph.json stats
-   know -g .ai/code-graph.json list-type module
-   know -g .ai/code-graph.json ref-usage
-   ```
-
-3. **Cross-Reference Analysis:**
-   ```bash
-   # Check product-to-code mappings
-   jq '.references["code-module"]' .ai/spec-graph.json
-
-   # Verify behavioral documentation
-   jq '.references["execution-trace"]' .ai/code-graph.json
-   jq '.references["side-effect"]' .ai/code-graph.json
-   ```
-
-4. **Dependency Analysis:**
-   ```bash
-   # Module dependencies
-   know -g .ai/code-graph.json dependents module:logger
-
-   # External dependencies
-   know -g .ai/code-graph.json ref-usage | grep external-dep
-   ```
-
-## Best Practices
-
-**Product Graph:**
-- **Start from top** - Begin with features, break down to components
-- **Consistent naming** - Use `kebab-case` for keys, Title Case for names
-- **Validate frequently** - Run health checks regularly
-- **Follow hierarchy** - Respect entity type dependencies
-- **Avoid cycles** - Use cycles command to detect issues
-- **Use build-order** - Let topological sort guide implementation
-
-**Code Graph:**
-- **Analyze layers** - Understand architectural layers (primitives → infrastructure → services → commands)
-- **Track dependencies** - Use `dependents` to see what each module depends on
-- **Document behavior** - Add execution-trace, side-effect, and error-path references for critical modules
-- **Cross-link to product** - Use product-component references to trace code back to features
-- **Monitor external deps** - Check ref-usage for external-dep to understand npm dependencies
+**Remember**: Know provides the architectural skeleton. Your artifacts provide the experiential muscle. Together, they make you an effective strategic advisor.

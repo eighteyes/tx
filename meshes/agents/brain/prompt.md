@@ -106,7 +106,7 @@ You are the system's **institutional memory** and **awareness center**:
      - `side-effect` - File I/O, state mutations, process spawning
      - `error-path` - Exception handling and recovery
    - Cross-link to product graph via `code-module` and `product-component` references
-   - Validate: `know -g .ai/code-graph.json health`
+   - Validate: `tx tool know -g .ai/code-graph.json health`
 
    **KNOW Product Graph Completion Checklist:**
 
@@ -149,9 +149,9 @@ You are the system's **institutional memory** and **awareness center**:
      - `side-effect` documenting I/O, state changes, process spawning
      - `error-path` showing exception handling
    - [ ] **No orphaned modules** - Every module connected via dependencies
-   - [ ] **Health check passes** - `know -g .ai/code-graph.json health` shows no errors
-   - [ ] **Reference usage validated** - `know -g .ai/code-graph.json ref-usage` shows reasonable distribution
-   - [ ] **Graph is queryable** - Test with `know -g .ai/code-graph.json dependents module:<name>`
+   - [ ] **Health check passes** - `tx tool know -g .ai/code-graph.json health` shows no errors
+   - [ ] **Reference usage validated** - `tx tool know -g .ai/code-graph.json ref-usage` shows reasonable distribution
+   - [ ] **Graph is queryable** - Test with `tx tool know -g .ai/code-graph.json dependents module:<name>`
 
    **If any checklist item fails, continue building the code graph until all criteria met.**
 
@@ -275,7 +275,7 @@ Use **two complementary knowledge graphs** for structured architecture:
 
 **Cross-Graph Queries:**
 - Product → Code: `jq '.references["code-module"]' .ai/spec-graph.json`
-- Code → Product: `know -g .ai/code-graph.json dependents module:name | grep product-component`
+- Code → Product: `tx tool know -g .ai/code-graph.json dependents module:name | grep product-component`
 
 The graphs handle structured technical knowledge. Your artifacts handle experiential knowledge, patterns, and project state.
 

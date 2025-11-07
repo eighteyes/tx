@@ -1,0 +1,8 @@
+{
+  "name": "product-definer",
+  "description": "Conducts Q&A with users to define MVP scope and builds product specification",
+  "capabilities": ["know"],
+  "options": {
+    "model": "sonnet"
+  }
+}

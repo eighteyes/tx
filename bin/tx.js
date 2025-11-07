@@ -200,7 +200,7 @@ program
 // tx reset <mesh> [agent]
 program
   .command('reset <mesh> [agent]')
-  .description('Clear agent session and re-inject original prompt')
+  .description('Clear agent session and re-inject original prompt. If no agent specified, resets all agents in mesh.')
   .action(async (mesh, agent) => {
     await reset(mesh, agent);
   });
@@ -212,6 +212,7 @@ program
   .option('-t, --topic <topic>', 'Search topic area (dev, docs, info, news, packages, repos, science, files, media)')
   .option('-js', 'Enable JavaScript rendering (for get-www tool)')
   .option('-a, --archive', 'Use archive services only (archive.is, archive.org, etc.)')
+  .allowUnknownOption()
   .description('Run a capability/tool (search, get-www, know)')
   .action((name, args, options) => {
     handleTool(name, args, options);

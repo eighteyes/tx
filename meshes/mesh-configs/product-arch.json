@@ -1,0 +1,47 @@
+{
+  "mesh": "product-arch",
+  "description": "Product and architecture planning mesh: product-definer and architect collaborate iteratively to define features and design component architecture",
+  "agents": [
+    "product-arch/coordinator",
+    "product-arch/product-definer",
+    "product-arch/architect"
+  ],
+  "workflow_topology": "iterative",
+  "entry_point": "coordinator",
+  "completion_agent": "coordinator",
+  "routing": {
+    "coordinator": {
+      "complete": {
+        "core": "Product and architecture planning complete"
+      },
+      "blocked": {
+        "core": "Cannot proceed - need clarification or guidance"
+      }
+    },
+    "product-definer": {
+      "ask": {
+        "architect": "Clarification about architecture implications",
+        "core": "User decisions needed"
+      },
+      "complete": {
+        "coordinator": "Product definition complete"
+      },
+      "blocked": {
+        "coordinator": "Cannot proceed - need guidance"
+      }
+    },
+    "architect": {
+      "ask": {
+        "product-definer": "Clarification about features or requirements",
+        "brain/brain": "Strategic architectural guidance",
+        "core": "User decisions needed"
+      },
+      "complete": {
+        "coordinator": "Architecture complete"
+      },
+      "blocked": {
+        "coordinator": "Cannot proceed - need guidance"
+      }
+    }
+  }
+}

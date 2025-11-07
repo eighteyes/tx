@@ -4,14 +4,26 @@
 
 ### Sending Messages
 
-### Message Filename
-1. Create file in `.ai/tx/msgs/` with centralized filename format
-2. Use mmddhhmmss timestamp: Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
-3. Use ONLY agent names (not full mesh paths): `mesh/agent` → `agent`
-4. Use `>` to show routing direction: `from>to`
-5. Use a relevant short phrase with no whitespace for the uuid. 
+**CRITICAL**: ALL messages MUST be written to `.ai/tx/msgs/` using the FULL PATH.
 
-**Example filename**: `1102083000-task-core>interviewer-doatask.md`
+### Message Filename Format
+
+**Full path format**: `.ai/tx/msgs/{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
+
+**Components**:
+1. **Directory**: ALWAYS `.ai/tx/msgs/` (NEVER write to current directory)
+2. **Timestamp**: mmddhhmmss = Month Day Hour Minute Second (e.g., `1102083000` for Nov 2, 08:30:00)
+3. **Type**: Message type (task, ask, ask-response, task-complete, update)
+4. **From agent**: ONLY agent name (not full mesh/agent path)
+5. **To agent**: ONLY agent name (not full mesh/agent path)
+6. **Message ID**: Short unique identifier
+
+**Example FULL PATH**: `.ai/tx/msgs/1102083000-task-core>interviewer-doatask.md`
+
+**WRONG** ❌: `1102083000-task-core>interviewer-doatask.md` (missing directory)
+**WRONG** ❌: `coordinator-blocked.md` (missing directory and wrong format)
+**WRONG** ❌: `./coordinator-blocked.md` (wrong directory)
+**RIGHT** ✅: `.ai/tx/msgs/1102083000-task-core>interviewer-doatask.md`
 
 ### Frontmatter Template
 Frontmatter is used to route messages to meshes / agents and advance the queue system.

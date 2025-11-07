@@ -1,0 +1,8 @@
+{
+  "name": "architect",
+  "description": "Designs technical architecture and breaks features into implementable components",
+  "capabilities": ["know"],
+  "options": {
+    "model": "sonnet"
+  }
+}

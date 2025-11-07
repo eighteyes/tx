@@ -1,0 +1,7 @@
+{
+  "mesh": "prompt-editor",
+  "agents": ["editorial/reviewer"],
+  "entry_point": "reviewer",
+  "completion_agent": "reviewer",
+  "description": "Reviews prompt language for conciseness, effectiveness, clarity, and redundancy"
+}

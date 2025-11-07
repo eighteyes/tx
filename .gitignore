@@ -9,7 +9,8 @@ yarn.lock
 .env
 .env.local
 .env.*.local
-
+.claude/settings.local.json
+gs
 # IDE
 .vscode/
 .idea/
@@ -28,5 +29,7 @@ build/
 # Logs
 logs/
 *.log
+
+# TMP
 .ai/
-.ai/tx/.tx-start.pid
+research/

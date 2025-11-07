@@ -1,0 +1,8 @@
+{
+  "name": "coordinator",
+  "description": "Orchestrates MVP workflow phases and manages transitions between product-dev agents",
+  "capabilities": ["know"],
+  "options": {
+    "model": "sonnet"
+  }
+}

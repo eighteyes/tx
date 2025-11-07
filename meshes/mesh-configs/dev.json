@@ -1,0 +1,22 @@
+{
+  "mesh": "dev",
+  "type": "ephemeral",
+  "description": "Simple development mesh for implementing code tasks",
+  "agents": ["development/dev"],
+  "workflow_topology": "sequential",
+  "entry_point": "dev",
+  "completion_agent": "dev",
+  "routing": {
+    "dev": {
+      "complete": {
+        "core": "Task implementation complete - code written, tests pass"
+      },
+      "blocked": {
+        "core": "Cannot proceed - need clarification or external dependencies"
+      },
+      "help": {
+        "core": "Need human guidance or decision"
+      }
+    }
+  }
+}

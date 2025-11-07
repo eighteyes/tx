@@ -1,7 +1,10 @@
 ## Quick Reference
 
 - use `tx prompt <mesh> <agent>` to render fonts for testing
-- Reset agent: `tx reset <mesh> [agent]` - clears session and re-injects original prompt
+- Reset agent(s):
+  - `tx reset <mesh>` - resets all agents in mesh
+  - `tx reset <mesh> <agent>` - resets specific agent
+  - Clears session and re-injects original prompt
 - Read .ai/tx/logs/evidence.jsonl for agentic insights
 - View event log: `tx msg` or `tx msg --follow`
 - View session output: `tx session <mesh> <agent>`
@@ -25,7 +28,6 @@
 - ✅ Use MessageWriter class for all message creation
 - ✅ Messages are append-only (never delete or modify)
 - ❌ NO copying, NO moving - write to `.ai/tx/msgs/` only
-- ❌ NEVER write to old locations (agents/{agent}/msgs/ is deprecated)
 
 ### Watcher Behavior
 

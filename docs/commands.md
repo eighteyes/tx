@@ -360,6 +360,369 @@ tx tool get-www 'url1' 'url2' 'url3'
 
 ---
 
+### `tx reset <mesh> [agent]`
+
+**Description:** Reset agent session by clearing it and re-injecting the original prompt.
+
+**Usage:**
+```bash
+# Reset all agents in a mesh
+tx reset <mesh-name>
+
+# Reset specific agent
+tx reset <mesh-name> <agent-name>
+```
+
+**Arguments:**
+- `<mesh-name>` - Name of mesh or mesh instance (e.g., `research-abc123`)
+- `[agent-name]` - Optional: specific agent to reset (if omitted, resets all agents)
+
+**What it does:**
+1. Finds active tmux session for agent(s)
+2. Injects `/clear` command to reset conversation
+3. Finds most recent prompt message from `.ai/tx/msgs/`
+4. Re-injects original prompt to restart agent
+5. For mesh-wide reset: processes all agents sequentially
+
+**Examples:**
+```bash
+# Reset all agents in research mesh
+tx reset research-abc123
+
+# Reset specific agent
+tx reset research-abc123 interviewer
+
+# Reset brain agent
+tx reset brain brain
+```
+
+**Use cases:**
+- Agent stuck or unresponsive
+- Agent produced incorrect output and needs fresh start
+- Testing prompt changes
+- Clearing agent context after error
+
+**Output:**
+```
+🔄 Resetting all agents in mesh: research-abc123...
+   Found 4 agent(s) in mesh config
+
+--- Resetting research-abc123/interviewer ---
+   1. Clearing session...
+   2. Finding last prompt message...
+   3. Re-injecting prompt: 1106051538-prompt-system>interviewer-abc123.md
+   ✅ Agent reset complete
+
+--- Resetting research-abc123/sourcer ---
+   ...
+
+==================================================
+✅ Reset complete!
+   Success: 4/4
+==================================================
+```
+
+---
+
+### `tx msg [options]`
+
+**Description:** Interactive event log viewer for browsing message history.
+
+**Usage:**
+```bash
+# Interactive mode (default)
+tx msg
+
+# Start with follow mode
+tx msg --follow
+
+# Simple list mode
+tx msg --no-interactive -v
+```
+
+**Options:**
+- `--limit <n>` - Number of messages to display (default: 50)
+- `--follow` - Start with follow mode enabled (auto-refresh)
+- `--type <type>` - Filter by message type (task, ask, delta, etc.)
+- `--agent <agent>` - Filter by agent (matches from or to)
+- `--mesh <mesh>` - Filter by mesh
+- `--errors` - Show only error messages
+- `--since <time>` - Messages since time (e.g., "1h", "30m", "2025-11-03")
+- `--before <time>` - Messages before time
+- `--json` - Output as JSON
+- `--no-interactive` - Disable interactive mode (simple list)
+- `-v, --verbose` - Show message content preview (non-interactive only)
+
+**Interactive controls:**
+- `↑↓` or `j/k` - Navigate messages
+- `Enter` or `→` - View message detail
+- `←` or `Esc` - Back to list
+- `a` - Attach to target agent (from message's "to" field)
+- `f` - Toggle follow mode
+- `q` - Quit
+
+**Examples:**
+```bash
+# Browse all messages interactively
+tx msg
+
+# Filter by type
+tx msg --type task
+
+# Filter by agent
+tx msg --agent brain
+
+# Last hour with follow mode
+tx msg --since 1h --follow
+
+# JSON output for scripting
+tx msg --json --limit 100
+```
+
+**Message format:**
+```
+1106051700-task-coordinator>product-definer-start01.md
+  11/06 05:17:00  task  coordinator → product-definer
+  Starting MVP workflow - greenfield project
+```
+
+---
+
+### `tx session [mesh] [agent]`
+
+**Description:** View captured session output (tmux pane history).
+
+**Usage:**
+```bash
+# List all sessions
+tx session list
+
+# View latest session for mesh/agent
+tx session <mesh> <agent>
+
+# Filter options
+tx session list --today
+tx session list --mesh research
+```
+
+**Arguments:**
+- `[mesh]` - Mesh name or instance
+- `[agent]` - Agent name
+
+**Options:**
+- `list` - List all captured sessions
+- `--today` - Show only today's sessions
+- `--mesh <mesh>` - Filter by mesh
+- `--limit <n>` - Limit number of sessions shown
+
+**What it shows:**
+- Full tmux pane history at time of capture
+- Agent's conversation with Claude
+- Commands executed
+- Errors and output
+
+**Session format:**
+Filename: `.ai/tx/session/{MMDDHHMMSS}-{mesh}-{agent}-{seq}.md`
+
+**Examples:**
+```bash
+# View latest brain session
+tx session brain brain
+
+# List all sessions from today
+tx session list --today
+
+# List all research sessions
+tx session list --mesh research
+```
+
+**Use cases:**
+- Debugging agent behavior
+- Reviewing conversation history
+- Understanding why agent failed
+- Post-mortem analysis
+
+---
+
+### `tx stats [options]`
+
+**Description:** Display event log statistics and message analytics.
+
+**Usage:**
+```bash
+# Overall stats
+tx stats
+
+# Filter by mesh
+tx stats --mesh research
+
+# Filter by agent
+tx stats --agent brain
+
+# JSON output
+tx stats --json
+```
+
+**Options:**
+- `--mesh <mesh>` - Filter by mesh
+- `--agent <agent>` - Filter by agent
+- `--since <time>` - Messages since time
+- `--json` - Output as JSON
+
+**Output example:**
+```
+Event Log Statistics
+=====================
+
+Total Messages: 1,234
+
+By Type:
+  task           456 (37%)
+  ask            234 (19%)
+  ask-response   234 (19%)
+  task-complete  210 (17%)
+  update          80 (6%)
+  delta           20 (2%)
+
+By Agent:
+  core           345 (28%)
+  brain          234 (19%)
+  interviewer    123 (10%)
+  ...
+
+Time Range: 2025-11-01 to 2025-11-06 (5 days)
+```
+
+---
+
+### `tx health [options]`
+
+**Description:** Display system health status and diagnostics.
+
+**Usage:**
+```bash
+# Check health
+tx health
+
+# Watch mode (auto-refresh)
+tx health --watch
+
+# JSON output
+tx health --json
+```
+
+**Options:**
+- `--watch` - Auto-refresh every 5 seconds
+- `--json` - Output as JSON
+
+**Health checks:**
+- ✅ Tmux server running
+- ✅ Message directory exists
+- ✅ Active meshes count
+- ✅ Event log size
+- ⚠️ Stuck agents (no activity > 1 hour)
+- ❌ Failed sessions
+
+**Output example:**
+```
+TX System Health
+================
+
+✅ Tmux Server: Running
+✅ Message Directory: .ai/tx/msgs/ (2.1 MB)
+✅ Active Meshes: 3
+✅ Event Log: 1,234 messages
+
+⚠️  Warnings:
+  - research-abc123/sourcer: No activity for 2 hours
+
+Recent Errors (last 24h): 0
+```
+
+---
+
+### `tx dashboard [options]`
+
+**Description:** Create live dashboard showing all active agents.
+
+**Usage:**
+```bash
+# Launch dashboard
+tx dashboard
+
+# Refresh rate
+tx dashboard --refresh 10
+```
+
+**Options:**
+- `--refresh <seconds>` - Auto-refresh interval (default: 5)
+
+**Layout:**
+```
+┌─────────────┬─────────────┬─────────────┐
+│             │             │             │
+│    core     │   brain     │  research   │
+│             │             │  (tiled)    │
+│             │             │             │
+├─────────────┼─────────────┼─────────────┤
+│   stats     │    logs     │   health    │
+└─────────────┴─────────────┴─────────────┘
+```
+
+**Features:**
+- Core mesh on left (largest pane)
+- Other meshes tiled on right
+- Live updates
+- Quick navigation between panes
+
+**Navigation:**
+- `Ctrl+B` then arrow keys - Switch panes
+- `Ctrl+B` then `z` - Zoom current pane
+- `Ctrl+B` then `d` - Detach
+
+---
+
+### `tx clear [options]`
+
+**Description:** Clear all TX orchestration data.
+
+**Usage:**
+```bash
+# Interactive confirmation
+tx clear
+
+# Force clear without confirmation
+tx clear --force
+```
+
+**Options:**
+- `-f, --force` - Skip confirmation prompt
+
+**What it deletes:**
+- `.ai/tx/` directory (all meshes, messages, state)
+- Active tmux sessions
+- Watcher state
+- Log files
+
+**⚠️ Warning:** This is destructive and cannot be undone!
+
+**Example:**
+```bash
+# With confirmation
+$ tx clear
+⚠️  This will delete ALL TX data in .ai/tx/
+   Including:
+   - 3 active meshes
+   - 1,234 messages
+   - Session history
+   - State files
+
+Are you sure? (y/N): y
+✅ TX data cleared
+```
+
+---
+
 ### `tx watch <file> --mesh <mesh>`
 
 **Description:** Monitor file changes and send deltas to a mesh for processing.

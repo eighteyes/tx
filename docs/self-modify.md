@@ -8,9 +8,11 @@ An agent in self-modify mode can:
 1. Process a task
 2. Evaluate if another iteration would be beneficial
 3. Write a message to itself with a refined prompt
-4. Start fresh with `/clear` (optional)
+4. Start fresh with `/clear` (automatically done)
 5. Apply a cognitive lens (optional)
 6. Repeat until the task is complete
+
+**Note:** Context is automatically cleared before each iteration to ensure fresh perspective.
 
 ## Configuration
 
@@ -28,8 +30,7 @@ Add `frontmatter` section to your mesh config:
   "completion_agent": "evolver",
   "frontmatter": {
     "self-modify": true,
-    "max-iterations": 5,
-    "clear-context": true
+    "max-iterations": 5
   },
   "workflow_topology": "self-referential"
 }
@@ -37,9 +38,8 @@ Add `frontmatter` section to your mesh config:
 
 ### Frontmatter Options
 
-- `self-modify: true` - Enable self-modification mode
+- `self-modify: true` - Enable self-modification mode (automatically clears context before each iteration)
 - `max-iterations: <number>` - Maximum iterations before forced stop
-- `clear-context: true` - Clear context with `/clear` before each iteration
 
 ## Message Format
 
@@ -52,7 +52,6 @@ from: user
 type: task
 self-modify: true
 max-iterations: 5
-clear-context: true
 ---
 
 Analyze the security of our authentication system
@@ -66,7 +65,6 @@ to: evolver/processor
 from: evolver/processor
 type: task
 iteration: 2
-clear-context: true
 lens: security-audit
 confidence: 0.7
 ---
@@ -137,6 +135,7 @@ The lens list is **automatically injected** into the agent's prompt based on you
 ### 1. Agent Receives Task with `self-modify: true`
 
 The EventLogConsumer detects the `self-modify: true` frontmatter and:
+- Automatically clears context with `/clear` for a fresh start
 - Loads the mesh config to get settings
 - Injects self-modification instructions from template
 - Provides guidance on how to iterate
@@ -163,7 +162,6 @@ await MessageWriter.write(
   'Focus on edge cases...', // content
   {
     iteration: 2,
-    'clear-context': true,
     lens: 'edge-cases',
     confidence: 0.7
   }
@@ -173,7 +171,7 @@ await MessageWriter.write(
 ### 4. System Processes Self-Modification
 
 The EventLogConsumer:
-- Clears context if `clear-context: true`
+- Automatically clears context with `/clear` for fresh perspective
 - Applies lens if specified
 - Injects the new prompt
 - Agent starts fresh iteration

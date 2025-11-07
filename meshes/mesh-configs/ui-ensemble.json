@@ -1,0 +1,24 @@
+{
+  "mesh": "ui-ensemble",
+  "description": "UI exploration mesh: generates and evaluates UI variants through HITL collaboration, selecting the best design for the MVP",
+  "agents": [
+    "ui-ensemble/coordinator"
+  ],
+  "workflow_topology": "hitl-iterative",
+  "entry_point": "coordinator",
+  "completion_agent": "coordinator",
+  "brain": true,
+  "routing": {
+    "coordinator": {
+      "ask": {
+        "core": "User decisions needed for UI variant selection"
+      },
+      "complete": {
+        "core": "UI exploration complete, best design selected"
+      },
+      "blocked": {
+        "core": "Cannot proceed - need implementation completion or guidance"
+      }
+    }
+  }
+}

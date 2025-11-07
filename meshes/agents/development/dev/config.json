@@ -1,0 +1,8 @@
+{
+  "name": "dev",
+  "runtime": "claude",
+  "options": {
+    "model": "sonnet",
+    "output": "clean"
+  }
+}
