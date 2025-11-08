@@ -242,6 +242,10 @@ tx prompt          # See an agent prompt
 tx clear           # Clear all TX data
 ```
 
+## Related Projects
+[safe-claude](https://github.com/eighteyes/safe-claude) - isolated docker container with shared volume mount for safer agentic coding
+[know-cli](https://github.com/eighteyes/know-cli) - opinionated project / code knowledge graph for `brain` to use
+
 ## FAQ
 
 ### Why not just use Claude Code Skills / Agents / Commands?
