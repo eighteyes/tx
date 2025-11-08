@@ -15,32 +15,32 @@ Provide a laboratory for novel uses of LLM with the aim of providing a surface a
 - Monetization - too experimental to pay for
 
 ## Fundamental Ideas
-> specialized agents with domain context outperform generalists
-> deterministic behavior needs logical guiderails to be consistent
-> quality beats productivity as human review is the bottleneck
+> Specialized agents with domain context outperform generalists
+> Deterministic behavior needs logical guiderails to be consistent
+> Quality beats productivity as human review is the bottleneck
 
 > [!IMPORTANT]
-> Our mind carries the common thread of thought, and we *wield* AI with it's superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
+> Our mind carries the common thread of thought, and we *wield* AI with its superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
 
 ## Overview
 `tx` is a CLI tool which orchestrates `claude-code` instances to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
 - Utilize subscriptions vs API keys only with LangGraph, CrewAI, etc. 
 - No need to reinvent the base agent
-- Easy to incorporate into existing setup / extend with claude code tooling
+- Easy to incorporate into existing setup / extend with Claude Code tooling
 - Can generalize across AI vendors ( future )
 
-Disadvantage:
-- harder to automate
-- less performant then highly tuned systems
-- doesn't replace cli agents for quick fixes
+Disadvantages:
+- Harder to automate
+- Less performant than highly tuned systems
+- Doesn't replace CLI agents for quick fixes
 
 `tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Use Cases
-- Read an Agentic Research Paper, implement the pattern
-- Reproducible Multi-step Work Processes with project knowledge support and queues
-- Generate plans informed by prior work which consistently outperform stock Plans
-- Human In The Loop multi-agent interactions
+- Read an agentic research paper, implement the pattern
+- Reproducible multi-step work processes with project knowledge support and queues
+- Generate plans informed by prior work that consistently outperform stock plans
+- Human-in-the-loop multi-agent interactions
 
 ## Prerequisites
 
@@ -51,14 +51,14 @@ Disadvantage:
 
 ### Optional Dependencies
 
-- `searxng` for local search provider
-- uses a custom search configuration, `config/searxng/settings.yml` 
-- in Docker, this lives in `/etc/searxng/` 
+- `SearXNG` for local search provider
+- Uses a custom search configuration, `config/searxng/settings.yml`
+- In Docker, this lives in `/etc/searxng/` 
 - See `.env.example` for more search API key options that are supported, but they haven't all been tire-kicked. Enter and copy to `.env` to use. 
 
 > [!WARNING]
 > **Security Notice**: `tx` runs with `claude --dangerously-skip-permissions`. You will need to run that command in advance to accept responsibility for the actions of the agents. You are **strongly advised** to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude).
->
+
 > [!NOTE]
 > For API Key users, I have hit a peak velocity of 3 million tokens per minute using this system, averaged over 30 seconds. It may not be inexpensive.
 
@@ -67,35 +67,35 @@ Disadvantage:
 ```bash
 npm install -g tx-ai
 cd <project-folder>
-claude --dangerously-skip-permissions # run, login/accept danger and exit out
-# or use safe-claude
+claude --dangerously-skip-permissions # Run, login/accept danger and exit
+# Or use safe-claude
 tx start
-# wait for initialization, these are successful language patterns
-> start a research mesh, give it a task to research successful patterns for distributed agentic AI systems
-> spawn a brain mesh, ask it to report back what it knows about this project
-> i want to add a feature flag system to this project, for features x,y,z, consult with brain and make a plan, save to .ai/plans/feature-flag.md and hand it off to the tdd-cycle agent for implementation
+# Wait for initialization, here are example language patterns:
+> Start a research mesh, give it a task to research successful patterns for distributed agentic AI systems
+> Spawn a brain mesh, ask it to report back what it knows about this project
+> I want to add a feature flag system to this project, for features x,y,z, consult with brain and make a plan, save to .ai/plans/feature-flag.md and hand it off to the tdd-cycle agent for implementation
 ```
 
 ## Key Concepts
 
-- **`mesh`** - a list of agents, with flexible input / output targets to provide an agentic AI workflow
-- **`agent`** - a LLM session within a mesh, with prompts, tools and messaging instructions
-- **`capability`** - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
-- **`workspace`** - a shared space for AIs in a mesh to collaborate
+- **`mesh`** - A list of agents, with flexible input / output targets to provide an agentic AI workflow
+- **`agent`** - A LLM session within a mesh, with prompts, tools and messaging instructions
+- **`capability`** - A prompt to provide a behavior, optionally enhanced / enforced by tools (like Claude Skills)
+- **`workspace`** - A shared space for AIs in a mesh to collaborate
 
 ## Essential Meshes and Agents
-These are `persistant` in that they are designed to not operate in parallel, and keep saved workspace files past restart.
-- **`core`** - the central coordinator mesh/agent, this is the primary interaction interface for users
-- **`brain`** - dedicated to understanding your codebase, consult with this first when planning features
+These are `persistent` in that they are designed to not operate in parallel, and keep saved workspace files past restart.
+- **`core`** - The central coordinator mesh/agent, this is the primary interaction interface for users
+- **`brain`** - Dedicated to understanding your codebase, consult with this first when planning features
 
-These are `ephermal`, each instance is isolated and workspace information does not persist. 
-- **`research`** - lightweight internet searcher to source information
-- **`deep-research`** - internet search and iterating hypothesizer / disprover for more complicated queries
-- **`planner`** - implementation of [Modular Agentic Planner](https://www.nature.com/articles/s41467-025-63804-5)
-- **`gtm-strategy`** - researches approaches in your vertical and breaks your product launch into bite sized actions
-- **`tdd-cycle`** - ( beta ) red-green-refactor agent cycles for development
-- **`product-arch`** - ( alpha ) product-informed software development architecture
-- **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information set in `meshes/agents/career/job-applicator/refs/{resume,history}`
+These are `ephemeral`, each instance is isolated and workspace information does not persist.
+- **`research`** - Lightweight internet searcher to source information
+- **`deep-research`** - Internet search and iterating hypothesizer / disprover for more complicated queries
+- **`planner`** - Implementation of [Modular Agentic Planner](https://www.nature.com/articles/s41467-025-63804-5)
+- **`gtm-strategy`** - Researches approaches in your vertical and breaks your product launch into bite-sized actions
+- **`tdd-cycle`** - (beta) Red-green-refactor agent cycles for development
+- **`product-arch`** - (alpha) Product-informed software development architecture
+- **`job-applicator`** - Queue some JDs / URLs, it'll churn out some resumes / cover letters. Needs your information set in `meshes/agents/career/job-applicator/refs/{resume,history}`
 
 ### Job Applicator Mesh Example
 [![asciicast](https://asciinema.org/a/754529.svg)](https://asciinema.org/a/754529)
@@ -191,7 +191,7 @@ meshes - AI Instructions / Configurations
 meshes/agents - Agent configurations
 meshes/mesh-configs - Mesh configurations ( some options apply to all agents )
 meshes/prompts/capabilities - Capability instructions
-meshes/prompts/templates- system templates for prompts
+meshes/prompts/templates - system templates for prompts
 ```
 
 ## CLI Reference
@@ -263,6 +263,6 @@ Certain patterns, like swarms of Haiku Agents running Explore are better off usi
 Academic papers describe successful agentic topologies, but their codebases are nightmares to reproduce. TX makes it fast to replicate these approaches as meshes and trial new patterns. 
 
 ### How to test this beast?
-```
+```bash
 npm run test:e2e
 ```
