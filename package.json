@@ -8,7 +8,9 @@
   "main": "lib/index.js",
   "scripts": {
     "test": "NODE_ENV=test node --test test/unit",
-    "test:e2e": "NODE_ENV=test node --test test/e2e",
+    "test:e2e": "NODE_ENV=test node test/e2e/run-all.js",
+    "test:integration": "NODE_ENV=test node --test test/integration",
+    "test:all": "npm run test && npm run test:integration && npm run test:e2e",
     "notify": "bash scripts/watch-notifications.sh .ai/tx/notifications.log"
   },
   "dependencies": {

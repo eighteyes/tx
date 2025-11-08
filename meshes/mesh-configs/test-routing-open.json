@@ -1,8 +1,0 @@
-{
-  "mesh": "test-routing-open",
-  "type": "ephemeral",
-  "description": "Test mesh with no routing rules for validation tests",
-  "agents": ["coordinator"],
-  "entry_point": "coordinator",
-  "completion_agent": "coordinator"
-}
