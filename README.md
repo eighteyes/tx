@@ -110,6 +110,9 @@ spawn a research mesh and send it a task to look up the impact of sonar on whale
 - **`deep-research`** - internet search and iterating hypothesizer / disprover for more complicated queries
 - **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information in `meshes/agents/career/job-applicator/refs/{resume,history}`
 
+### Job Applicator Mesh Example
+[![asciicast](https://asciinema.org/a/754529.svg)](https://asciinema.org/a/754529)
+
 ## Features
 See `docs/features`
 
