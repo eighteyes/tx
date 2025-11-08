@@ -111,20 +111,7 @@ spawn a research mesh and send it a task to look up the impact of sonar on whale
 - **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information in `meshes/agents/career/job-applicator/refs/{resume,history}`
 
 ## Features
-
-## Project Structure
-```
-.ai/tx/msgs - centralized event log (all agent messages)
-.ai/tx/session - captured session output
-.ai/tx/mesh - runtime mesh information
-.ai/tx/logs - system messages / errors
-lib - codebase
-meshes - AI Instructions / Configurations
-meshes/agents - Agent configurations
-meshes/mesh-configs - Mesh configurations ( some options apply to all agents )
-meshes/prompts/capabilities - Capability instructions
-meshes/prompts/templates- system templates for prompts
-```
+See `docs/features`
 
 ## Event Log Architecture
 
@@ -133,15 +120,50 @@ TX uses a centralized event log for all agent-to-agent messages:
 - **Single source of truth**: All messages written to `.ai/tx/msgs/`
 - **Chronological ordering**: Timestamped filenames (`MMDDHHMMSS-type-from>to-msgid.md`)
 - **Immutable**: Append-only log, never delete or modify
-- **Queryable**: Built-in CLI tools for filtering and analysis
-- **Automatic session capture**: Full tmux history saved to `.ai/tx/session/` on shutdown
 
-### Why Event Log?
+## Workflow
 
-- **Debugging**: See complete message history across all agents
-- **Replay**: Reconstruct system state at any point in time
-- **Analysis**: Query patterns, performance, and agent interactions
-- **Monitoring**: Live tail messages with `tx msg --follow`
+Step-by-step sequence diagram showing a typical workflow from user request to task completion.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Core as Core Agent
+    participant EventLog as Event Log
+    participant Consumer as Event Consumer
+    participant Tmux as Tmux Session
+    participant Agent as Research Agent
+
+    User->>Core: "Research topic X"
+    Note over Core: Analyzes request<br/>Decides to delegate
+
+    Core->>EventLog: Write task message<br/>to: research-abc123/searcher<br/>type: task
+    Note over EventLog: Message stays in<br/>.ai/tx/msgs/
+
+    Consumer->>EventLog: Watching for messages
+    EventLog-->>Consumer: New message detected
+    Note over Consumer: Filters: Is this for me?
+    Consumer->>Tmux: Inject @filepath
+    Note over Tmux: File reference injected<br/>to agent's session
+
+    Tmux->>Agent: Delivers message
+    Note over Agent: Reads message<br/>Processes task
+
+    Agent->>Agent: Executes web search
+    Agent->>Agent: Analyzes results
+
+    Agent->>EventLog: Write task-complete message<br/>to: core<br/>status: complete
+    Note over EventLog: Response added to log
+
+
+    Core->>EventLog: Watching for responses
+    EventLog-->>Core: New task-complete detected
+    Core->>Core: Process completion
+
+    Core->>User: "Here are the results..."
+    Note over User: Task complete!
+```
+
 
 ### Message Format
 
@@ -163,6 +185,27 @@ Please analyze the user research findings and provide...
 
 Filename: `1103143000-task-core>interviewer-abc123.md`
 
+
+## Project Structure
+
+### Runtime information
+```
+.ai/tx/msgs - centralized event log (all agent messages)
+.ai/tx/session - captured session output
+.ai/tx/mesh - runtime mesh information
+.ai/tx/logs - system messages / errors
+```
+
+### Code & Configuration
+```
+lib - codebase
+meshes - AI Instructions / Configurations
+meshes/agents - Agent configurations
+meshes/mesh-configs - Mesh configurations ( some options apply to all agents )
+meshes/prompts/capabilities - Capability instructions
+meshes/prompts/templates- system templates for prompts
+```
+
 ## CLI Reference
 
 ### User Commands
@@ -172,14 +215,7 @@ tx attach         # View what a mesh is doing
 tx status         # High level overview of what's active
 tx stop           # End every session (with automatic session capture)
 tx dashboard      # Live dashboard showing all active agents
-```
-
-### Agent Commands
-```bash
-tx spawn <mesh> [agent]   # Start a new mesh / agent
-tx tool <toolname>        # Adopt programmatic utility (search, get-www, know, notify)
-tx tool notify <title> <message> [priority]  # Send system notification
-tx watch <file>           # Watch file and process changes through mesh
+tx reset <mesh> <agent> # Send /clear + prompt to agent
 ```
 
 ### Event Log & Monitoring
@@ -229,36 +265,12 @@ Certain patterns, like swarms of Haiku Agents running Explore are better off usi
 `tx` aims to provide **LEVERAGE** and an efficient **SURFACE AREA**:
 - Tight context with explicit tooling via specialists
 - Generalist interface managing specialist agents
-- No need to leave your prompt to run code review AND deep research simultaneously
+- No need to juggle sessions to run code review AND deep research simultaneously
 
 **Rapid Prototyping of Research:**
 Academic papers describe successful agentic topologies, but their codebases are nightmares to reproduce. TX makes it fast to replicate these approaches as meshes and trial new patterns. 
 
-
-## Getting Started
-
-### Install to your local system
-
-```bash
-npm install -g tx-cli
+### How to test this beast?
 ```
-
-### Install to your repository
-
-Adds optional commands and skills:
-
-```bash
-tx repo-install
-```
-
-### Start using TX
-
-```bash
-tx start
-```
-
-Once inside the core session, try:
-
-```
-spawn a deep research mesh, i am presenting on how penguins adapt to climate change and need the latest information
+npm run test:e2e
 ```

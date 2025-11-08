@@ -76,9 +76,9 @@ program
   .command('dashboard')
   .option('--no-attach', 'Don\'t auto-attach to dashboard after creation')
   .option('-w, --watch', 'Enable auto-refresh watcher (experimental)')
-  .description('Create live dashboard showing all active agents (core on left, others tiled)')
-  .action((options) => {
-    dashboard(options);
+  .description('Interactive mesh selector - view agents from a specific mesh (excludes core)')
+  .action(async (options) => {
+    await dashboard(options);
   });
 
 // tx status

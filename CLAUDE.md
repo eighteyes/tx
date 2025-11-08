@@ -32,6 +32,10 @@ TX Is an Agentic System indended to Augment a users thinking with LLM superpower
 - ✅ Messages are append-only (never delete or modify)
 - ❌ NO copying, NO moving - write to `.ai/tx/msgs/` only
 
+### Documentation Rules
+- Never put `tx spawn` in user-facing documentation. Use prompt language indented for core mesh instead. 
+- Documentation should reflect the agent/prompt experience, not system internals
+
 ### Watcher Behavior
 
 - Watcher injects file references via `@filepath` to destination agents

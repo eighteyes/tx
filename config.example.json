@@ -1,5 +1,8 @@
 {
   "beta": {
-    "retry_queue": true
+    "retry_queue": true,
+    "rearmatter_spawning": true,
+    "routing_validation": true,
+    "delivery_tracking": true
   }
 }

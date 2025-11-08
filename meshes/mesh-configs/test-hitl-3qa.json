@@ -1,8 +1,8 @@
 {
-  "mesh": "hitl-3qa",
+  "mesh": "test-hitl-3qa",
   "type": "ephemeral",
   "description": "Human-in-the-loop interview mesh - interviewer conducts 3 Q&A sessions with core before completing task",
-  "agents": ["hitl-3qa/interviewer"],
+  "agents": ["test/hitl-3qa/interviewer"],
   "entry_point": "interviewer",
   "completion_agent": "interviewer"
 }
