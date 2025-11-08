@@ -47,14 +47,14 @@ Disadvantage:
 **Required:**
 - `claude-code` - with Anthropic Subscription / API Keys
 - `tmux` - manages all the sessions and message injections
-- `node` - JavaScript
+- `npm/node` - JavaScript
 
 ### Optional Dependencies
 
 - `searxng` for local search provider
 - uses a custom search configuration, `config/searxng/settings.yml` 
 - in Docker, this lives in `/etc/searxng/` 
-- See `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked. Enter and copy to `.env` to use. 
+- See `.env.example` for more search API key options that are supported, but they haven't all been tire-kicked. Enter and copy to `.env` to use. 
 
 > [!WARNING]
 > **Security Notice**: `tx` runs with `claude --dangerously-skip-permissions`. You will need to run that command in advance to accept responsibility for the actions of the agents. You are **strongly advised** to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude).
@@ -67,18 +67,15 @@ Disadvantage:
 ```bash
 npm install -g tx-ai
 cd <project-folder>
+claude --dangerously-skip-permissions # run, login/accept danger and exit out
+
 tx start
 # wait for initialization
-> start a research mesh about successful patterns for distributed agentic AI systems
+> start a research mesh, i want to know about successful patterns for distributed agentic AI systems
+> spawn a brain mesh and let it initialize on this system, then have it tell me what it knows
+> i want to add a feature flag system to this project, for features x,y,z, consult with brain and make a plan
 ```
 
-### With safe-claude
-```
-safe-claude
-# once inside docker
-claude
-# login, accept risks
-```
 
 ### No Safe-claude
 ```
@@ -103,19 +100,23 @@ spawn a research mesh and send it a task to look up the impact of sonar on whale
 - **`workspace`** - a shared space for AIs to collaborate
 
 ## Essential Meshes and Agents
-
+These are `persistant` in that they are designed to not operate in parallel, and keep saved workspace files past restart.
 - **`core`** - the central coordinator mesh/agent, this is the primary interaction interface for users
 - **`brain`** - dedicated to understanding your codebase, consult with this first when planning features
+
+These are `ephermal`, each instance is isolated and workspace information does not persist. 
 - **`research`** - lightweight internet searcher to source information
 - **`deep-research`** - internet search and iterating hypothesizer / disprover for more complicated queries
-- **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information in `meshes/agents/career/job-applicator/refs/{resume,history}`
+- **`planner`** - implementation of [Modular Agentic Planner](https://www.nature.com/articles/s41467-025-63804-5)
+- **`gtm-strategy`** - researches approaches in your vertical and breaks your product launch into bite sized actions
+- **`tdd-cycle`** - ( beta ) red-green-refactor agent cycles for development
+- **`product-arch`** - ( alpha ) product-informed software development architecture
+- **`job-applicator`** - queue some JDs / URLs, it'll churn out some resumes / coverletters. needs your information set in `meshes/agents/career/job-applicator/refs/{resume,history}`
 
 ### Job Applicator Mesh Example
 [![asciicast](https://asciinema.org/a/754529.svg)](https://asciinema.org/a/754529)
 
-## Features
-See `docs/features`
-
+# System Details
 ## Event Log Architecture
 
 TX uses a centralized event log for all agent-to-agent messages:
@@ -245,11 +246,11 @@ tx prompt          # See an agent prompt
 tx clear           # Clear all TX data
 ```
 
-## Related Projects
+# Related Projects
 [safe-claude](https://github.com/eighteyes/safe-claude) - isolated docker container with shared volume mount for safer agentic coding
 [know-cli](https://github.com/eighteyes/know-cli) - opinionated project / code knowledge graph for `brain` to use
 
-## FAQ
+# FAQ
 
 ### Why not just use Claude Code Skills / Agents / Commands?
 
