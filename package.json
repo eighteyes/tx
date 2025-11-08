@@ -1,6 +1,6 @@
 {
   "name": "tx-ai",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "TX - Thinking, eXponentially with an agentic AI orchestra",
   "bin": {
     "tx": "./bin/tx.js"
