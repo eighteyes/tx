@@ -2,7 +2,7 @@
 Thinking, eXponentially
 > a single pane of glass to conduct an agentic orchestra
 
-## Objective
+## Objectives
 Create and execute distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
 
 Provide a laboratory for novel uses of LLM with the aim of providing a surface area for Augmented Thinking. 
@@ -20,26 +20,26 @@ Provide a laboratory for novel uses of LLM with the aim of providing a surface a
 > quality beats productivity as human review is the bottleneck
 
 > [!IMPORTANT]
-> Our mind carries the common thread of thought, and we *wield* AI to extend this thread with the superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
+> Our mind carries the common thread of thought, and we *wield* AI with it's superpowers of PACE: Parallelizable, Adaptable, Comprehensive, Extensible
 
 ## Overview
 `tx` is a CLI tool which orchestrates `claude-code` instances to provide a message based fundamental backing for agentic AI workflows. Leveraging the existing tooling available brings several advantages:
-- Utilize subscriptions vs API keys with LangGraph, CrewAI, etc. 
+- Utilize subscriptions vs API keys only with LangGraph, CrewAI, etc. 
 - No need to reinvent the base agent
 - Easy to incorporate into existing setup / extend with claude code tooling
 - Can generalize across AI vendors ( future )
 
 Disadvantage:
-- harder to automate, automation is against TOS anyway
-- likely less performant then highly tuned systems
+- harder to automate
+- less performant then highly tuned systems
 - doesn't replace cli agents for quick fixes
 
 `tx` is a prototypical middle ground between generalists and specialists, leveraging the power of specialization within the ease of a generalist workflow. 
 
 ## Use Cases
-- Read an Agentic Research Paper, implement the pattern ( MAP planner = planner )
-- Reproducible Multi-step Work Processes ( code-review, tdd, research, gtm-strategy, etc. ) with project knowledge support and queues
-- Generate plans informed by prior work, which outperform stock Plan Mode
+- Read an Agentic Research Paper, implement the pattern
+- Reproducible Multi-step Work Processes with project knowledge support and queues
+- Generate plans informed by prior work which consistently outperform stock Plans
 - Human In The Loop multi-agent interactions
 
 ## Prerequisites
@@ -68,36 +68,20 @@ Disadvantage:
 npm install -g tx-ai
 cd <project-folder>
 claude --dangerously-skip-permissions # run, login/accept danger and exit out
-
+# or use safe-claude
 tx start
-# wait for initialization
-> start a research mesh, i want to know about successful patterns for distributed agentic AI systems
-> spawn a brain mesh and let it initialize on this system, then have it tell me what it knows
-> i want to add a feature flag system to this project, for features x,y,z, consult with brain and make a plan
+# wait for initialization, these are successful language patterns
+> start a research mesh, give it a task to research successful patterns for distributed agentic AI systems
+> spawn a brain mesh, ask it to report back what it knows about this project
+> i want to add a feature flag system to this project, for features x,y,z, consult with brain and make a plan, save to .ai/plans/feature-flag.md and hand it off to the tdd-cycle agent for implementation
 ```
-
-
-### No Safe-claude
-```
-claude --dangerously-skip-permissions
-# login and accept risks
-```
-
-### Once Inside
-You will see some commands run, these load the `core` agent prompt. When ready type:
-```
-spawn a research mesh and send it a task to look up the impact of sonar on whale migration. save the final paper and sources to research/whales/
-```
-
-1) `core` will spawn a `research` mesh which will ask questions, search the internet, and deliver your paper.
-2) after a minute, you should get the first wave of questions delivered
 
 ## Key Concepts
 
 - **`mesh`** - a list of agents, with flexible input / output targets to provide an agentic AI workflow
 - **`agent`** - a LLM session within a mesh, with prompts, tools and messaging instructions
 - **`capability`** - a prompt to provide a behavior, optionally enhanced / enforced by tools ( like Claude Skills )
-- **`workspace`** - a shared space for AIs to collaborate
+- **`workspace`** - a shared space for AIs in a mesh to collaborate
 
 ## Essential Meshes and Agents
 These are `persistant` in that they are designed to not operate in parallel, and keep saved workspace files past restart.
@@ -267,7 +251,7 @@ Certain patterns, like swarms of Haiku Agents running Explore are better off usi
 **The Problem:**
 - Too much manual work nudging `claude-code` agents through multi-step processes
 - Implicit tooling where agents select from lists reduces steering adherence
-- More tools = cluttered context and reduced effectiveness
+- More tools, skills, MCP, agents = cluttered context and reduced effectiveness
 
 **The Solution:**
 `tx` aims to provide **LEVERAGE** and an efficient **SURFACE AREA**:
