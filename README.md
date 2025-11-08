@@ -65,11 +65,11 @@ Disadvantage:
 ## Quick Start
 
 ```bash
-# npm soon
-git clone https://github.com/eighteyes/tx.git
-cd tx
-npm link
+npm install -g tx-ai
 cd <project-folder>
+tx start
+# wait for initialization
+> start a research mesh about successful patterns for distributed agentic AI systems
 ```
 
 ### With safe-claude

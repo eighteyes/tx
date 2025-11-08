@@ -35,4 +35,5 @@ logs/
 
 # TMP
 .ai/
+research/node_modules
 research/
