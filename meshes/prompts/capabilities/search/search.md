@@ -19,7 +19,7 @@ The search tool uses a sequential fallback approach:
 3. `tx tool search -t <topic> '[search]'` - Search topic area (uses SearXNG categories)
 4. Returns list of URLs / titles with source information
 5. Use `tx tool get-www url [..url]` to read results
-6. Use `tx tool get-www -js url` if you encounter a site that needs JavaScript
+6. Use `tx tool get-www --js url` if you encounter a site that needs JavaScript
 7. Use `tx tool get-www -a` to try an archived copy if 403 or other issues
 
 ## Topics

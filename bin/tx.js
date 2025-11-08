@@ -210,7 +210,7 @@ program
   .command('tool <name> [args...]')
   .option('-s, --source <source>', 'Search specific source(s) (can be used multiple times)')
   .option('-t, --topic <topic>', 'Search topic area (dev, docs, info, news, packages, repos, science, files, media)')
-  .option('-js', 'Enable JavaScript rendering (for get-www tool)')
+  .option('--js', 'Enable JavaScript rendering (for get-www tool)')
   .option('-a, --archive', 'Use archive services only (archive.is, archive.org, etc.)')
   .allowUnknownOption()
   .description('Run a capability/tool (search, get-www, know, notify)')

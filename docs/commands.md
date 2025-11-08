@@ -331,7 +331,7 @@ tx tool get-www <url> [options]
 - `<url>` - URL to fetch
 
 **Options:**
-- `-js, --javascript` - Enable JavaScript rendering (uses Puppeteer)
+- `--js` - Enable JavaScript rendering (uses Puppeteer)
 - `-a, --archive` - Try archived copy if URL fails
 - `--raw` - Return raw HTML instead of markdown
 
@@ -341,7 +341,7 @@ tx tool get-www <url> [options]
 tx tool get-www 'https://example.com/article'
 
 # JavaScript-heavy site
-tx tool get-www 'https://spa-site.com' -js
+tx tool get-www 'https://spa-site.com' --js
 
 # Try archive if blocked
 tx tool get-www 'https://paywalled-site.com' -a
