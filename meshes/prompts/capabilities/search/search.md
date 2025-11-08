@@ -4,9 +4,13 @@
 
 Use the `tx search` command to find current, detailed, or reference information from multiple sources.
 
-## Search Strategy
+Account for "Today's Date". If user wants current or recent information, use 2025+, not 2024.
 
-The search tool uses a sequential fallback approach:
+## Search Strategy
+Broad query? Use the built in 'Web Search' tool.
+Need details? Use `tx search`
+
+Use a sequential fallback approach:
 1. **SearXNG First** - Attempts search via SearXNG (local instance at port 12321) with optional topic/category filtering
 2. **Individual API Fallbacks** - If SearXNG fails, tries individual sources sequentially until results are found:
    - DuckDuckGo → Stack Overflow → Reddit → GitHub → Hacker News → arXiv

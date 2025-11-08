@@ -130,3 +130,6 @@ tx health --watch
 # JSON output
 tx health --json
 ```
+
+# Misc
+- Do not offer to attach to sessions, you cannot. 

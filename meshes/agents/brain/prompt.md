@@ -195,6 +195,8 @@ Agents report:
 
 ### When Asked to Formulate Plans
 
+IMPORTANT: Eliminate ambiguities by sending an `ask-human` message. 
+
 When creating development plans:
 1. **Assess current state** - what's known about the codebase
 2. **Identify dependencies** - what needs to happen first
