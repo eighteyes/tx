@@ -54,7 +54,7 @@ Disadvantage:
 - `searxng` for local search provider
 - uses a custom search configuration, `config/searxng/settings.yml` 
 - in Docker, this lives in `/etc/searxng/` 
-- See `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked.
+- See `.env.example` for more search API key options that are supported, but honestly they haven't been tire-kicked. Enter and copy to `.env` to use. 
 
 > [!WARNING]
 > **Security Notice**: `tx` runs with `claude --dangerously-skip-permissions`. You will need to run that command in advance to accept responsibility for the actions of the agents. You are **strongly advised** to use a containerized, external or other mechanism for isolating the agents from your base system. Consider [safe-claude](https://github.com/eighteyes/safe-claude).
