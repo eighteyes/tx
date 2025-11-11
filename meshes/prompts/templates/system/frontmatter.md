@@ -36,7 +36,7 @@ It is IMPORTANT that agents NEVER attempt to interfere with the queue system.
 to: [target-mesh-instance]/[target-agent] or core
 from: {{ mesh }}/{{ agent }}
 type: ask, ask-response, task, task-complete, update
-status: start, in-progress, rejected, approved, complete
+status: start, in-progress, rejected, approved, complete, blocked
 requester: [mesh]/[agent] - self if sending to a mesh, otherwise use original msg requester
 msg-id: [short uuid for ask / task]
 headline: [summary]

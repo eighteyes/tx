@@ -16,7 +16,12 @@ const { msg } = require('../lib/commands/msg');
 const { session } = require('../lib/commands/session');
 const { stats } = require('../lib/commands/stats');
 const { health } = require('../lib/commands/health');
+const { events } = require('../lib/commands/events');
 const { reset } = require('../lib/commands/reset');
+const { initState } = require('../lib/commands/init-state');
+const { state: stateCmd } = require('../lib/commands/state');
+const { tasks: tasksCmd } = require('../lib/commands/tasks');
+const { pattern } = require('../lib/commands/pattern');
 const { Logger } = require('../lib/logger');
 
 // Initialize logger
@@ -85,17 +90,38 @@ program
 program
   .command('status')
   .option('-p, --prompt', 'Generate prompt-ready status summary')
-  .description('Show orchestration system status and queue info')
-  .action((options) => {
-    status({ prompt: options.prompt });
+  .option('-w, --watch', 'Watch mode with auto-refresh')
+  .option('--interval <ms>', 'Refresh interval for watch mode in milliseconds (default: 2000)')
+  .description('Show running agents and tmux sessions')
+  .action(async (options) => {
+    await status(options);
+  });
+
+// tx state
+program
+  .command('state')
+  .description('Show current tasks for all agents')
+  .option('-w, --watch', 'Watch mode - auto-refresh every 2s')
+  .option('-d, --distracted', 'Show only distracted agents')
+  .action(async (options) => {
+    await stateCmd([], options);
+  });
+
+// tx init-state
+program
+  .command('init-state')
+  .description('Initialize state tracking for existing running agents')
+  .action(async () => {
+    await initState();
   });
 
 // tx stop [mesh] [agent]
 program
   .command('stop [mesh] [agent]')
   .description('Stop orchestration system, mesh, or specific agent')
-  .action(async (mesh, agent) => {
-    await stop(mesh, agent);
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (mesh, agent, options) => {
+    await stop(mesh, agent, options);
   });
 
 // tx prompt <mesh> [agent]
@@ -179,6 +205,21 @@ program
     health(options);
   });
 
+// tx events
+program
+  .command('events [subcommand]')
+  .option('--agent <agent>', 'Filter by agent')
+  .option('--type <type>', 'Filter by event type (nudge, reminder, error, status)')
+  .option('--since <time>', 'Show events since time (e.g., "1h", "30m", ISO timestamp)')
+  .option('--limit <n>', 'Number of events to display (default: 50)')
+  .option('-v, --verbose', 'Show event content preview')
+  .option('--confirm', 'Confirm clear operation')
+  .description('View event log (subcommands: stats, send, clear)')
+  .action(async (subcommand, options) => {
+    const argv = ['node', 'tx.js', 'events', subcommand, ...process.argv.slice(4)].filter(Boolean);
+    await events(argv);
+  });
+
 // tx list <type>
 program
   .command('list <type>')
@@ -216,6 +257,15 @@ program
   .description('Run a capability/tool (search, get-www, know, notify)')
   .action((name, args, options) => {
     handleTool(name, args, options);
+  });
+
+// tx pattern [command] [args...]
+program
+  .command('pattern [command] [args...]')
+  .description('Browse and view code patterns (commands: list, search, category)')
+  .action(async (command, args) => {
+    const allArgs = command ? [command, ...args] : [];
+    await pattern(allArgs);
   });
 
 // Parse arguments

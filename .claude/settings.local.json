@@ -36,7 +36,11 @@
       "Bash(timeout 3 node:*)",
       "Bash(timeout 2 node:*)",
       "Bash(/bin/ls:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(rg:*)",
+      "Bash(tx status:*)",
+      "Bash(done)",
+      "Bash(kill:*)"
     ],
     "deny": [],
     "ask": []

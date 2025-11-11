@@ -98,6 +98,7 @@ These are `ephemeral`, each instance is isolated and workspace information does 
 - **`job-applicator`** - Queue some JDs / URLs, it'll churn out some resumes / cover letters. Needs your information set in `meshes/agents/career/job-applicator/refs/{resume,history}`
 
 ### Job Applicator Mesh Example
+Each job application is processed in a clean context. No details will 'spill' between jobs.
 [![asciicast](https://asciinema.org/a/754529.svg)](https://asciinema.org/a/754529)
 
 # System Details
@@ -221,6 +222,74 @@ tx stats --mesh research  # Stats for specific mesh
 
 tx health                 # System health check
 tx health --watch         # Live health monitoring
+```
+
+### Agent Tools
+Agent-invocable utilities for common operations. These commands are designed to be called by mesh agents but can also be used directly.
+
+#### Git Worktree Management
+```bash
+# Create a new worktree for a feature branch
+tx tool worktree add "feat/new-feature"
+
+# Create worktree from specific base branch
+tx tool worktree add "feat/new" --base=develop
+
+# List all worktrees
+tx tool worktree list
+
+# Remove a worktree
+tx tool worktree remove "feat/old"
+
+# Clean up stale worktrees
+tx tool worktree prune
+
+# Log operations to event log (for agent use)
+tx tool worktree add "feat/thing" --log --from=core --to=user
+```
+
+#### Git Merge Operations
+```bash
+# Start a merge
+tx tool merge start feat/branch-to-merge
+
+# Check merge status
+tx tool merge status
+
+# List conflicts
+tx tool merge conflicts
+
+# Resolve conflict using strategy (ours, theirs, or ai)
+tx tool merge resolve file.js --strategy=ours
+tx tool merge resolve file.js --strategy=theirs
+tx tool merge resolve file.js --strategy=ai  # Returns AI-friendly analysis
+
+# Abort merge
+tx tool merge abort
+
+# Log operations to event log (for agent use)
+tx tool merge start feat/thing --log --from=core
+```
+
+**AI-Assisted Conflict Resolution:**
+When using `--strategy=ai`, the tool returns structured conflict analysis with:
+- Context lines before and after each conflict
+- Both versions (ours vs theirs) clearly labeled
+- File type-specific suggestions
+- Formatted prompt for AI processing
+
+Example agent workflow:
+```bash
+# Agent detects conflicts
+tx tool merge start feat/new --log
+# {"status": "conflicts", "conflicts": [...]}
+
+# Get AI-ready conflict analysis
+tx tool merge resolve conflict.js --strategy=ai
+# Returns structured analysis with resolution prompt
+
+# After AI resolves, agent applies the resolution
+# (uses ConflictResolver.applyResolution() programmatically)
 ```
 
 ### Developer Commands

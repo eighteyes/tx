@@ -1,0 +1,477 @@
+{
+  "generated": "2025-11-10T10:17:54.490Z",
+  "totalPatterns": 15,
+  "patterns": {
+    "advanced/rearmatter": {
+      "id": "advanced/rearmatter",
+      "title": "Use Rearmatter for Agent Metadata",
+      "category": "advanced",
+      "complexity": "intermediate",
+      "tags": [
+        "advanced",
+        "rearmatter",
+        "metadata",
+        "agent-state"
+      ],
+      "when": "Need to track custom agent metadata or state across messages",
+      "related": [
+        "messaging/write-tool",
+        "advanced/self-modify"
+      ],
+      "file": "meshes/patterns/advanced/rearmatter.md"
+    },
+    "advanced/self-modify": {
+      "id": "advanced/self-modify",
+      "title": "Self-Modify Agent Prompt",
+      "category": "advanced",
+      "complexity": "advanced",
+      "tags": [
+        "advanced",
+        "self-modify",
+        "prompt-engineering",
+        "adaptation"
+      ],
+      "when": "Agent needs to evolve its own behavior or add new capabilities",
+      "related": [
+        "advanced/rearmatter",
+        "advanced/spawn-mesh"
+      ],
+      "file": "meshes/patterns/advanced/self-modify.md"
+    },
+    "advanced/spawn-mesh": {
+      "id": "advanced/spawn-mesh",
+      "title": "Spawn New Mesh or Agent",
+      "category": "advanced",
+      "complexity": "advanced",
+      "tags": [
+        "advanced",
+        "spawn",
+        "mesh",
+        "orchestration",
+        "dynamic"
+      ],
+      "when": "Need to dynamically create new mesh or agent for specialized work",
+      "related": [
+        "tasks/send-task",
+        "workflows/multi-step-task"
+      ],
+      "file": "meshes/patterns/advanced/spawn-mesh.md"
+    },
+    "deliverables/code-documentation": {
+      "id": "deliverables/code-documentation",
+      "title": "Document Code and APIs",
+      "category": "deliverables",
+      "complexity": "intermediate",
+      "tags": [
+        "deliverables",
+        "documentation",
+        "code",
+        "apis",
+        "jsdoc"
+      ],
+      "when": "Need to document code structure, APIs, or implementation details",
+      "related": [
+        "deliverables/markdown-report",
+        "workflows/git-commit-push"
+      ],
+      "file": "meshes/patterns/deliverables/code-documentation.md"
+    },
+    "deliverables/markdown-report": {
+      "id": "deliverables/markdown-report",
+      "title": "Create Markdown Report",
+      "category": "deliverables",
+      "complexity": "basic",
+      "tags": [
+        "deliverables",
+        "markdown",
+        "documentation",
+        "reports"
+      ],
+      "when": "Need to produce structured documentation or analysis report",
+      "related": [
+        "workflows/research-and-report",
+        "deliverables/code-documentation"
+      ],
+      "file": "meshes/patterns/deliverables/markdown-report.md"
+    },
+    "deliverables/test-results": {
+      "id": "deliverables/test-results",
+      "title": "Generate Test Results Report",
+      "category": "deliverables",
+      "complexity": "basic",
+      "tags": [
+        "deliverables",
+        "testing",
+        "test-results",
+        "quality-assurance"
+      ],
+      "when": "Need to document test execution results and coverage",
+      "related": [
+        "deliverables/markdown-report",
+        "workflows/multi-step-task"
+      ],
+      "file": "meshes/patterns/deliverables/test-results.md"
+    },
+    "messaging/ask-human": {
+      "id": "messaging/ask-human",
+      "title": "Ask Human for Input",
+      "category": "messaging",
+      "complexity": "basic",
+      "tags": [
+        "messaging",
+        "ask-human",
+        "blocked",
+        "human-in-loop"
+      ],
+      "when": "Agent needs human input or clarification to proceed",
+      "related": [
+        "messaging/write-tool",
+        "messaging/messagewriter-sync",
+        "workflows/multi-step-task"
+      ],
+      "file": "meshes/patterns/messaging/ask-human.md"
+    },
+    "messaging/messagewriter-sync": {
+      "id": "messaging/messagewriter-sync",
+      "title": "Send Message with MessageWriter (Synchronous)",
+      "category": "messaging",
+      "complexity": "intermediate",
+      "tags": [
+        "messaging",
+        "messagewriter",
+        "sync",
+        "state-tracking",
+        "validation"
+      ],
+      "when": "Need immediate state tracking, validation, or orchestrating multiple agents with guarantees",
+      "related": [
+        "messaging/write-tool",
+        "messaging/ask-human",
+        "tasks/send-task"
+      ],
+      "file": "meshes/patterns/messaging/messagewriter-sync.md"
+    },
+    "messaging/write-tool": {
+      "id": "messaging/write-tool",
+      "title": "Send Message with Write Tool",
+      "category": "messaging",
+      "complexity": "basic",
+      "tags": [
+        "messaging",
+        "write",
+        "basic",
+        "inter-agent"
+      ],
+      "when": "Standard inter-agent communication without immediate state tracking needs",
+      "related": [
+        "messaging/messagewriter-sync",
+        "messaging/ask-human",
+        "tasks/send-task"
+      ],
+      "file": "meshes/patterns/messaging/write-tool.md"
+    },
+    "tasks/parallel-tasks": {
+      "id": "tasks/parallel-tasks",
+      "title": "Execute Parallel Tasks",
+      "category": "tasks",
+      "complexity": "advanced",
+      "tags": [
+        "tasks",
+        "parallelization",
+        "coordination",
+        "multiple-agents"
+      ],
+      "when": "Need to execute multiple independent tasks concurrently across agents",
+      "related": [
+        "tasks/send-task",
+        "tasks/wait-for-completion",
+        "workflows/multi-step-task"
+      ],
+      "file": "meshes/patterns/tasks/parallel-tasks.md"
+    },
+    "tasks/send-task": {
+      "id": "tasks/send-task",
+      "title": "Send Task to Agent",
+      "category": "tasks",
+      "complexity": "basic",
+      "tags": [
+        "tasks",
+        "delegation",
+        "task-assignment",
+        "messaging"
+      ],
+      "when": "Delegating work to another agent in the mesh",
+      "related": [
+        "messaging/write-tool",
+        "tasks/wait-for-completion",
+        "tasks/parallel-tasks"
+      ],
+      "file": "meshes/patterns/tasks/send-task.md"
+    },
+    "tasks/wait-for-completion": {
+      "id": "tasks/wait-for-completion",
+      "title": "Wait for Task Completion",
+      "category": "tasks",
+      "complexity": "intermediate",
+      "tags": [
+        "tasks",
+        "synchronization",
+        "task-complete",
+        "event-log"
+      ],
+      "when": "Agent needs to wait for delegated task to complete before proceeding",
+      "related": [
+        "tasks/send-task",
+        "tasks/parallel-tasks",
+        "workflows/multi-step-task"
+      ],
+      "file": "meshes/patterns/tasks/wait-for-completion.md"
+    },
+    "workflows/git-commit-push": {
+      "id": "workflows/git-commit-push",
+      "title": "Git Commit and Push Changes",
+      "category": "workflows",
+      "complexity": "basic",
+      "tags": [
+        "workflows",
+        "git",
+        "commit",
+        "push",
+        "version-control"
+      ],
+      "when": "Need to commit and push code changes to repository",
+      "related": [
+        "workflows/multi-step-task",
+        "deliverables/code-documentation"
+      ],
+      "file": "meshes/patterns/workflows/git-commit-push.md"
+    },
+    "workflows/multi-step-task": {
+      "id": "workflows/multi-step-task",
+      "title": "Multi-Step Task Workflow",
+      "category": "workflows",
+      "complexity": "intermediate",
+      "tags": [
+        "workflows",
+        "coordination",
+        "orchestration",
+        "task-breakdown"
+      ],
+      "when": "Complex task requires multiple steps with dependencies",
+      "related": [
+        "tasks/send-task",
+        "tasks/wait-for-completion",
+        "tasks/parallel-tasks"
+      ],
+      "file": "meshes/patterns/workflows/multi-step-task.md"
+    },
+    "workflows/research-and-report": {
+      "id": "workflows/research-and-report",
+      "title": "Research and Report Workflow",
+      "category": "workflows",
+      "complexity": "intermediate",
+      "tags": [
+        "workflows",
+        "research",
+        "documentation",
+        "deliverables"
+      ],
+      "when": "Need to gather information, analyze, and produce a comprehensive report",
+      "related": [
+        "deliverables/markdown-report",
+        "workflows/multi-step-task",
+        "tasks/send-task"
+      ],
+      "file": "meshes/patterns/workflows/research-and-report.md"
+    }
+  },
+  "categories": {
+    "advanced": [
+      "advanced/rearmatter",
+      "advanced/self-modify",
+      "advanced/spawn-mesh"
+    ],
+    "deliverables": [
+      "deliverables/code-documentation",
+      "deliverables/markdown-report",
+      "deliverables/test-results"
+    ],
+    "messaging": [
+      "messaging/ask-human",
+      "messaging/messagewriter-sync",
+      "messaging/write-tool"
+    ],
+    "tasks": [
+      "tasks/parallel-tasks",
+      "tasks/send-task",
+      "tasks/wait-for-completion"
+    ],
+    "workflows": [
+      "workflows/git-commit-push",
+      "workflows/multi-step-task",
+      "workflows/research-and-report"
+    ]
+  },
+  "tags": {
+    "advanced": [
+      "advanced/rearmatter",
+      "advanced/self-modify",
+      "advanced/spawn-mesh"
+    ],
+    "rearmatter": [
+      "advanced/rearmatter"
+    ],
+    "metadata": [
+      "advanced/rearmatter"
+    ],
+    "agent-state": [
+      "advanced/rearmatter"
+    ],
+    "self-modify": [
+      "advanced/self-modify"
+    ],
+    "prompt-engineering": [
+      "advanced/self-modify"
+    ],
+    "adaptation": [
+      "advanced/self-modify"
+    ],
+    "spawn": [
+      "advanced/spawn-mesh"
+    ],
+    "mesh": [
+      "advanced/spawn-mesh"
+    ],
+    "orchestration": [
+      "advanced/spawn-mesh",
+      "workflows/multi-step-task"
+    ],
+    "dynamic": [
+      "advanced/spawn-mesh"
+    ],
+    "deliverables": [
+      "deliverables/code-documentation",
+      "deliverables/markdown-report",
+      "deliverables/test-results",
+      "workflows/research-and-report"
+    ],
+    "documentation": [
+      "deliverables/code-documentation",
+      "deliverables/markdown-report",
+      "workflows/research-and-report"
+    ],
+    "code": [
+      "deliverables/code-documentation"
+    ],
+    "apis": [
+      "deliverables/code-documentation"
+    ],
+    "jsdoc": [
+      "deliverables/code-documentation"
+    ],
+    "markdown": [
+      "deliverables/markdown-report"
+    ],
+    "reports": [
+      "deliverables/markdown-report"
+    ],
+    "testing": [
+      "deliverables/test-results"
+    ],
+    "test-results": [
+      "deliverables/test-results"
+    ],
+    "quality-assurance": [
+      "deliverables/test-results"
+    ],
+    "messaging": [
+      "messaging/ask-human",
+      "messaging/messagewriter-sync",
+      "messaging/write-tool",
+      "tasks/send-task"
+    ],
+    "ask-human": [
+      "messaging/ask-human"
+    ],
+    "blocked": [
+      "messaging/ask-human"
+    ],
+    "human-in-loop": [
+      "messaging/ask-human"
+    ],
+    "messagewriter": [
+      "messaging/messagewriter-sync"
+    ],
+    "sync": [
+      "messaging/messagewriter-sync"
+    ],
+    "state-tracking": [
+      "messaging/messagewriter-sync"
+    ],
+    "validation": [
+      "messaging/messagewriter-sync"
+    ],
+    "write": [
+      "messaging/write-tool"
+    ],
+    "basic": [
+      "messaging/write-tool"
+    ],
+    "inter-agent": [
+      "messaging/write-tool"
+    ],
+    "tasks": [
+      "tasks/parallel-tasks",
+      "tasks/send-task",
+      "tasks/wait-for-completion"
+    ],
+    "parallelization": [
+      "tasks/parallel-tasks"
+    ],
+    "coordination": [
+      "tasks/parallel-tasks",
+      "workflows/multi-step-task"
+    ],
+    "multiple-agents": [
+      "tasks/parallel-tasks"
+    ],
+    "delegation": [
+      "tasks/send-task"
+    ],
+    "task-assignment": [
+      "tasks/send-task"
+    ],
+    "synchronization": [
+      "tasks/wait-for-completion"
+    ],
+    "task-complete": [
+      "tasks/wait-for-completion"
+    ],
+    "event-log": [
+      "tasks/wait-for-completion"
+    ],
+    "workflows": [
+      "workflows/git-commit-push",
+      "workflows/multi-step-task",
+      "workflows/research-and-report"
+    ],
+    "git": [
+      "workflows/git-commit-push"
+    ],
+    "commit": [
+      "workflows/git-commit-push"
+    ],
+    "push": [
+      "workflows/git-commit-push"
+    ],
+    "version-control": [
+      "workflows/git-commit-push"
+    ],
+    "task-breakdown": [
+      "workflows/multi-step-task"
+    ],
+    "research": [
+      "workflows/research-and-report"
+    ]
+  }
+}
