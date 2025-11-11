@@ -195,6 +195,7 @@ async function runTest() {
     console.error(error.stack);
     testPassed = false;
   } finally {
+    clearTimeout(overallTimeout);
     const testDuration = Date.now() - testStart;
     console.log(`📊 Test duration: ${testDuration}ms\n`);
 

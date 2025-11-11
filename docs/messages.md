@@ -109,7 +109,7 @@ Messages use **Markdown with YAML frontmatter**:
 to: [target-mesh]/[target-agent]
 from: [source-mesh]/[source-agent]
 type: ask | ask-response | task | task-complete | update | prompt
-status: start | in-progress | rejected | approved | complete
+status: start | in-progress | rejected | approved | complete | blocked
 requester: [original-requester]
 msg-id: [unique-id]
 in-reply-to: [parent-msg-id]  # Optional
@@ -133,7 +133,7 @@ More content here...
 | `to` | Target mesh/agent | `brain/brain` |
 | `from` | Source mesh/agent | `core/core` |
 | `type` | Message type | `ask`, `task`, `update` |
-| `status` | Current status | `start`, `complete` |
+| `status` | Current status | `start`, `complete`, `blocked` |
 | `requester` | Original requester | `core/core` |
 | `msg-id` | Unique identifier | `readme-val-001` |
 | `headline` | Short summary | `Validate README completeness` |

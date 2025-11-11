@@ -322,6 +322,7 @@ async function runE2ETest() {
     console.error(error.stack);
     testPassed = false;
   } finally {
+    clearTimeout(overallTimeout);
     const testDuration = Date.now() - testStartTime;
     console.log(`📊 Test duration: ${testDuration}ms\n`);
 
