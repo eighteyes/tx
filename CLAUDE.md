@@ -2,7 +2,6 @@ TX Is an Agentic System indended to Augment a users thinking with LLM superpower
  PACE: Parallelizable, Adaptable, Comprehensive, Extensible
 
 ## Quick Reference
-
 - use `tx prompt <mesh> <agent>` to render prompts for testing
 - Reset agent(s):
   - `tx reset <mesh>` - resets all agents in mesh
@@ -13,15 +12,17 @@ TX Is an Agentic System indended to Augment a users thinking with LLM superpower
 - System stats: `tx stats`
 - Health check: `tx health`
 - E2E Test Logs: `.ai/tx/logs/e2e-test.log`
+- Logs: `.ai/tx/logs/{debug, error}.jsonl`
 - save plans to `.ai/plan`, when a plan is finished, append a `-done` to the name
 - save ideas to `.ai/ideas`
+- QUIRK: active tx sessions only occur in pwd `/workspace/`, volume mounts share all files
 
 ## Event Log Architecture
 
 **Centralized event log**: All messages in `.ai/tx/msgs/`
 
-- Filename format: `{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
-- Example: `1102083000-task-core>interviewer-abc123.md`
+- Filename format: `{mmddhhmmss}-{type}-{from-agent}--{to-agent}-{msg-id}.md`
+- Example: `1102083000-task-core--interviewer-abc123.md`
 - Use ONLY agent names in filenames (not full mesh/instance paths)
 - Messages are immutable events in chronological log
 - System delivers messages via EventLogConsumer

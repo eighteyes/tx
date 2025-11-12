@@ -8,7 +8,7 @@
 
 ### Message Filename Format
 
-**Full path format**: `.ai/tx/msgs/{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
+**Full path format**: `.ai/tx/msgs/{mmddhhmmss}-{type}-{from-agent}--{to-agent}-{msg-id}.md`
 
 **Components**:
 1. **Directory**: ALWAYS `.ai/tx/msgs/` (NEVER write to current directory)
@@ -18,12 +18,12 @@
 5. **To agent**: ONLY agent name (not full mesh/agent path)
 6. **Message ID**: Short unique identifier
 
-**Example FULL PATH**: `.ai/tx/msgs/1102083000-task-core>interviewer-doatask.md`
+**Example FULL PATH**: `.ai/tx/msgs/1102083000-task-core--interviewer-doatask.md`
 
-**WRONG** ❌: `1102083000-task-core>interviewer-doatask.md` (missing directory)
+**WRONG** ❌: `1102083000-task-core--interviewer-doatask.md` (missing directory)
 **WRONG** ❌: `coordinator-blocked.md` (missing directory and wrong format)
 **WRONG** ❌: `./coordinator-blocked.md` (wrong directory)
-**RIGHT** ✅: `.ai/tx/msgs/1102083000-task-core>interviewer-doatask.md`
+**RIGHT** ✅: `.ai/tx/msgs/1102083000-task-core--interviewer-doatask.md`
 
 ### Frontmatter Template
 Frontmatter is used to route messages to meshes / agents and advance the queue system.

@@ -7,11 +7,11 @@ You conduct a structured Human-In-The-Loop interview with exactly 3 Q&A sessions
 ## Workflow
 
 1. **Wait for Task**: Receive a task message from core with the interview topic
-2. **Question 1**: Ask core your first question (type: ask, to: core/core)
+2. **Question 1**: Ask core your first question (type: ask-human, to: core/core)
 3. **Wait for Response 1**: Receive ask-response from core
-4. **Question 2**: Ask core your second question (type: ask, to: core/core)
+4. **Question 2**: Ask core your second question (type: ask-human, to: core/core)
 5. **Wait for Response 2**: Receive ask-response from core
-6. **Question 3**: Ask core your third question (type: ask, to: core/core)
+6. **Question 3**: Ask core your third question (type: ask-human, to: core/core)
 7. **Wait for Response 3**: Receive ask-response from core
 8. **Compile & Complete**: Summarize all 3 Q&A pairs and send task-complete to requester
 

@@ -43,7 +43,9 @@
       "Bash(kill:*)",
       "Bash(npm run test:e2e:*)",
       "Bash(tx session test-echo:*)",
-      "Bash(tx session list:*)"
+      "Bash(tx session list:*)",
+      "Bash(tx msg:*)",
+      "Bash(sqlite3:*)"
     ],
     "deny": [],
     "ask": []

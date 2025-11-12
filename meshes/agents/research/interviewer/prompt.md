@@ -4,7 +4,7 @@
 Gather research requirements from the user through dynamic Q&A until Grade-A criteria met.
 
 ## Workflow
-1. Ask initial question about research topic
+1. Ask initial questions about research topic ( type: ask-human, to: core/core )
 2. Continue Q&A until criteria met
 3. Compile `research-brief.md` to workspace
 4. Send task completion (routing determines next agent)
