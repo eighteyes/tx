@@ -12,10 +12,16 @@
   "routing": {
     "interviewer": {
       "complete": {
-        "sourcer": "Requirements gathered, ready to source information"
+        "sourcer": "Requirements complete, ready to source information. If incoming task already meets Grade-A criteria, immediately create brief and route to sourcer"
       },
       "blocked": {
         "core": "Cannot proceed - unclear research requirements"
+      },
+      "continue-with-sources": {
+        "analyst": "Existing research project needs refinement"
+      },
+      "continue-needs-sources": {
+        "sourcer": "Existing research project needs more references"
       }
     },
     "sourcer": {
