@@ -61,8 +61,8 @@ timestamp: {current-time}
 </ask-template>
 
 **Location**: `.ai/tx/msgs/`
-**Full path format**: `.ai/tx/msgs/{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md`
-**Example**: `.ai/tx/msgs/1102083000-ask-interviewer>core-q-data-format.md`
+**Full path format**: `.ai/tx/msgs/{mmddhhmmss}-{type}-{from-agent}--{to-agent}-{msg-id}.md`
+**Example**: `.ai/tx/msgs/1102083000-ask-interviewer--core-q-data-format.md`
 **Timestamp**: MMDDHHMMSS = Month Day Hour Minute Second (e.g., `1102083000` = Nov 2, 08:30:00)
 
 **CRITICAL**: Write the FULL PATH including `.ai/tx/msgs/` directory prefix.

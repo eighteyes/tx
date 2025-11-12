@@ -68,14 +68,14 @@ Centralized Event Log:
 Messages use a compact, self-describing filename format:
 
 ```
-{mmddhhmmss}-{type}-{from-agent}>{to-agent}-{msg-id}.md
+{mmddhhmmss}-{type}-{from-agent}--{to-agent}-{msg-id}.md
 ```
 
 **Examples:**
 ```
-1102083000-task-core>brain-abc123.md
-1102084512-ask-brain>core-req1.md
-1102091530-task-complete-brain>core-abc123.md
+1102083000-task-core--brain-abc123.md
+1102084512-ask-brain--core-req1.md
+1102091530-task-complete-brain--core-abc123.md
 ```
 
 **Components:**
