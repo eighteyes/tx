@@ -8,11 +8,13 @@ TX Is an Agentic System indended to Augment a users thinking with LLM superpower
   - `tx reset <mesh>` - resets all agents in mesh
   - `tx reset <mesh> <agent>` - resets specific agent
   - Clears session and re-injects original prompt
-- Read .ai/tx/logs/evidence.jsonl for agentic insights
 - View event log: `tx msg` or `tx msg --follow`
 - View session output: `tx session <mesh> <agent>`
 - System stats: `tx stats`
 - Health check: `tx health`
+- E2E Test Logs: `.ai/tx/logs/e2e-test.log`
+- save plans to `.ai/plan`, when a plan is finished, append a `-done` to the name
+- save ideas to `.ai/ideas`
 
 ## Event Log Architecture
 
@@ -133,3 +135,4 @@ tx health --json
 
 # Misc
 - Do not offer to attach to sessions, you cannot. 
+- Save random detrius files and scripts to .ai/tmp

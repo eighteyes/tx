@@ -3,6 +3,6 @@
   "description": "Reviews work from worker, provides feedback on first submission, approves on revision",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }

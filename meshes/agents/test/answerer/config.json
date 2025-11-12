@@ -3,6 +3,6 @@
   "description": "Test agent that answers questions from asker",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }

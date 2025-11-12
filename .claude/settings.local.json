@@ -40,7 +40,10 @@
       "Bash(rg:*)",
       "Bash(tx status:*)",
       "Bash(done)",
-      "Bash(kill:*)"
+      "Bash(kill:*)",
+      "Bash(npm run test:e2e:*)",
+      "Bash(tx session test-echo:*)",
+      "Bash(tx session list:*)"
     ],
     "deny": [],
     "ask": []

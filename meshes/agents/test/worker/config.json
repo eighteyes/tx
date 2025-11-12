@@ -3,6 +3,6 @@
   "description": "Creates content, receives feedback from reviewer, and refines until approved",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }
