@@ -1,6 +1,7 @@
 const { execSync, spawn } = require('child_process');
 const { TmuxInjector } = require('../../lib/tmux-injector');
 const { E2EWorkflow } = require('../../lib/e2e-workflow');
+const { E2ELogger } = require('../../lib/e2e-logger');
 const fs = require('fs-extra');
 const path = require('path');
 
@@ -23,6 +24,7 @@ const AGENT = 'queue-worker';
 
 let txProcess = null;
 let testPassed = false;
+let testLogger = null;
 let meshSession = null;
 let meshInstanceId = null;
 
@@ -215,6 +217,7 @@ async function verifyResponsesReceived() {
 
 async function runE2ETest() {
   const testStartTime = Date.now();
+  testLogger = new E2ELogger('.ai/tx/logs/e2e-test.log');
 
   try {
     console.log('📍 Step 1: Starting tx system in detached mode\n');
@@ -319,11 +322,13 @@ async function runE2ETest() {
 
   } catch (error) {
     console.error('\n❌ TEST FAILED:', error.message);
+    if (testLogger) testLogger.error('TEST FAILED: Exception caught', { message: error.message, stack: error.stack });
     console.error(error.stack);
     testPassed = false;
   } finally {
     clearTimeout(overallTimeout);
     const testDuration = Date.now() - testStartTime;
+    if (testLogger) testLogger.endSession(testPassed, testDuration);
     console.log(`📊 Test duration: ${testDuration}ms\n`);
 
     await cleanup();
@@ -336,6 +341,10 @@ async function runE2ETest() {
 
 const overallTimeout = setTimeout(() => {
   console.error('\n❌ TEST TIMEOUT: Test took longer than 180 seconds');
+  if (testLogger) {
+    testLogger.error('TEST TIMEOUT: Test took longer than allowed');
+    testLogger.endSession(false, TEST_TIMEOUT);
+  }
   testPassed = false;
   cleanup().then(() => process.exit(1));
 }, TEST_TIMEOUT);

@@ -3,6 +3,6 @@
   "description": "Self-modifying agent that evolves its own prompt through iterations",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }

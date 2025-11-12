@@ -3,6 +3,6 @@
   "description": "Test agent that processes queued messages sequentially",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }

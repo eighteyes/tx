@@ -3,6 +3,6 @@
   "description": "Test agent that sends ping to pong",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }

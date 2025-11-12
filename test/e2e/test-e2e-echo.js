@@ -1,6 +1,7 @@
 const { execSync, spawn } = require('child_process');
 const { TmuxInjector } = require('../../lib/tmux-injector');
 const { E2EWorkflow } = require('../../lib/e2e-workflow');
+const { E2ELogger } = require('../../lib/e2e-logger');
 
 /**
  * E2E Test: test-echo mesh
@@ -24,6 +25,7 @@ const AGENT = 'echo';
 // Tracking
 let txProcess = null;
 let testPassed = false;
+let testLogger = null;
 
 /**
  * Wait for tmux session to exist with retries
@@ -108,11 +110,13 @@ async function cleanup() {
  */
 async function runE2ETest() {
   const testStartTime = Date.now();
+  testLogger = new E2ELogger('.ai/tx/logs/e2e-test.log');
 
   try {
     // Step 1: Start tx in detached mode
     console.log('📍 Step 1: Starting tx system in detached mode\n');
     console.log('   Running: node bin/tx.js start -d\n');
+    testLogger.step(1, 'Starting tx system in detached mode');
 
     txProcess = spawn('node', ['bin/tx.js', 'start', '-d'], {
       cwd: process.cwd(),
@@ -120,11 +124,15 @@ async function runE2ETest() {
     });
 
     txProcess.stdout.on('data', (data) => {
-      console.log(`   [tx stdout] ${data}`);
+      const output = data.toString().trim();
+      console.log(`   [tx stdout] ${output}`);
+      testLogger.debug('tx stdout', { output });
     });
 
     txProcess.stderr.on('data', (data) => {
-      console.log(`   [tx stderr] ${data}`);
+      const output = data.toString().trim();
+      console.log(`   [tx stderr] ${output}`);
+      testLogger.warn('tx stderr', { output });
     });
 
     // Give tx a moment to start
@@ -132,17 +140,22 @@ async function runE2ETest() {
 
     // Step 2: Wait for core session to be created
     console.log('\n📍 Step 2: Waiting for system readiness\n');
+    testLogger.step(2, 'Waiting for system readiness');
 
     const coreReady = await waitForSession(CORE_SESSION, 20000);
     if (!coreReady) {
+      testLogger.error('Core session not created within timeout');
       throw new Error('Core session not created within timeout');
     }
+    testLogger.success('Core session created');
 
     // Wait for Claude to be ready in core
     const claudeReady = await waitForClaudeReady(CORE_SESSION, 30000);
     if (!claudeReady) {
+      testLogger.error('Claude not ready in core session');
       throw new Error('Claude not ready in core session');
     }
+    testLogger.success('Claude ready in core session');
 
     // Wait for session to be idle (1 second of no output changes)
     console.log('⏳ Waiting for session to be idle (1 second)...\n');
@@ -155,26 +168,34 @@ async function runE2ETest() {
 
     // Step 3: Use E2EWorkflow to test the complete workflow
     console.log('\n📍 Step 3: Testing mesh workflow\n');
+    testLogger.step(3, 'Testing mesh workflow');
 
     const workflow = new E2EWorkflow(MESH, AGENT, `spawn a ${MESH} mesh and send it a simple echo task`);
     const workflowPassed = await workflow.test();
 
     if (workflowPassed) {
       console.log('✅ TEST PASSED: Workflow successful!\n');
+      testLogger.success('TEST PASSED: Workflow successful');
       testPassed = true;
     } else {
       console.log('❌ TEST FAILED: Workflow incomplete\n');
+      testLogger.error('TEST FAILED: Workflow incomplete');
       testPassed = false;
     }
 
   } catch (error) {
     console.error('\n❌ TEST FAILED:', error.message);
     console.error(error.stack);
+    testLogger.error('TEST FAILED: Exception caught', { message: error.message, stack: error.stack });
     testPassed = false;
   } finally {
     clearTimeout(overallTimeout);
     const testDuration = Date.now() - testStartTime;
     console.log(`📊 Test duration: ${testDuration}ms\n`);
+
+    if (testLogger) {
+      testLogger.endSession(testPassed, testDuration);
+    }
 
     await cleanup();
 
@@ -188,6 +209,10 @@ async function runE2ETest() {
 // Set overall timeout
 const overallTimeout = setTimeout(() => {
   console.error('\n❌ TEST TIMEOUT: Test took longer than 120 seconds');
+  if (testLogger) {
+    testLogger.error('TEST TIMEOUT: Test took longer than 120 seconds');
+    testLogger.endSession(false, TEST_TIMEOUT);
+  }
   testPassed = false;
   cleanup().then(() => process.exit(1));
 }, TEST_TIMEOUT);

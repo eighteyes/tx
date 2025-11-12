@@ -3,6 +3,6 @@
   "description": "Test agent that responds to ping",
   "capabilities": [],
   "options": {
-    "model": "haiku"
+    "model": "sonnet"
   }
 }
