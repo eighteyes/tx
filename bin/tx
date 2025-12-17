@@ -1,0 +1,12 @@
+#!/bin/sh
+# Get the real location of this script (resolving symlinks)
+REAL_PATH="$(readlink -f "$0")"
+SCRIPT_DIR="$(dirname "$REAL_PATH")"
+TX_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Preserve user's working directory and tx install location
+export TX_CWD="$(pwd)"
+export TX_ROOT="$TX_ROOT"
+
+# Run from TX_ROOT so node_modules are found, but pass original cwd via TX_CWD
+cd "$TX_ROOT" && exec node --import tsx "$TX_ROOT/src/cli/index.ts" "$@"

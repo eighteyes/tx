@@ -1,0 +1,12 @@
+{
+  "mesh": "test",
+  "description": "Simple test mesh for validating HITL flow",
+  "agents": [
+    {
+      "name": "worker",
+      "model": "haiku",
+      "prompt": "prompt.md"
+    }
+  ],
+  "entry_point": "worker"
+}

@@ -1,0 +1,164 @@
+{
+  "name": "know-tool",
+  "displayName": "Know Tool - Product-Code Alignment for LLMs",
+  "version": "1.0.0",
+  "author": {
+    "name": "god",
+    "url": "https://github.com/god/know-cli"
+  },
+  "description": "Master the know CLI tool for bridging product requirements and code. Use when working with spec-graph.json to map user objectives to software components, eliminate spec brittleness, and provide LLMs with consistent product-code understanding.",
+  "longDescription": "An LLM-first approach to product-driven software development that replaces brittle spec.md files with a single source of truth. Maps user objectives directly to software components, eliminating hallucination and inconsistency. The graph structure connects WHAT users want with HOW the system implements it, giving LLMs token-efficient access to complete product-code understanding without repetitive manual analysis.",
+  "category": "development-tools",
+  "tags": [
+    "product-code-alignment",
+    "llm-first",
+    "specification",
+    "requirements-mapping",
+    "single-source-of-truth",
+    "anti-hallucination",
+    "cli-tool",
+    "user-objectives",
+    "component-mapping",
+    "spec-graph"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/god/know-cli"
+  },
+  "skillType": "managed",
+  "requirements": {
+    "tools": [
+      "know CLI tool"
+    ],
+    "files": [
+      ".ai/spec-graph.json"
+    ],
+    "platform": "any"
+  },
+  "features": [
+    "Map user objectives to software components in a single source of truth",
+    "Eliminate spec.md brittleness and LLM hallucination",
+    "Query product-code relationships efficiently without token waste",
+    "Track what users want (WHAT) and how systems deliver it (HOW)",
+    "Validate product completeness with gap analysis",
+    "Maintain consistency as requirements evolve",
+    "Access detailed guides for product-driven development patterns"
+  ],
+  "useCases": [
+    "Replacing brittle spec.md files with single source of truth",
+    "Mapping user objectives to software components for LLMs",
+    "Eliminating hallucination by providing consistent product-code context",
+    "Querying what users want and how the system delivers it",
+    "Validating that all features trace back to user objectives",
+    "Maintaining product-code alignment as requirements evolve",
+    "Planning implementations with full user-intent traceability"
+  ],
+  "commands": {
+    "discovery": [
+      "know list",
+      "know list-type [type]",
+      "know get [type:key]",
+      "know uses [type:key] (or: down)",
+      "know used-by [type:key] (or: up)",
+      "know trace [entity] -c [code-graph] -s [spec-graph]"
+    ],
+    "modification": [
+      "know add [type] [key] [json]",
+      "know link [type:key] [type:key]",
+      "know unlink [type:key] [type:key]"
+    ],
+    "validation": [
+      "know validate",
+      "know health",
+      "know cycles"
+    ],
+    "analysis": [
+      "know gap-analysis [type:key]",
+      "know gap-summary",
+      "know ref-orphans",
+      "know build-order"
+    ],
+    "rules": [
+      "know rules describe [type]",
+      "know rules before [type]",
+      "know rules after [type]",
+      "know rules graph"
+    ]
+  },
+  "mentalModels": {
+    "productCodeAlignment": {
+      "problem": "spec.md files are brittle, prone to hallucination, resistant to change, and inconsistent",
+      "solution": "Single source of truth mapping user intent to implementation",
+      "benefit": "LLMs get token-efficient, consistent product-code understanding without repetitive analysis"
+    },
+    "dualGraphSystem": {
+      "specGraph": "Maps user intent: user → objective → feature → component (WHAT users want)",
+      "codeGraph": "Maps implementation: module → package → external-dep (HOW it's built)",
+      "integration": "product-component references link code modules to spec components",
+      "discovery": "Use 'know -g <graph-path> rules graph' to see valid relationships for each graph type"
+    },
+    "twoChains": {
+      "what": "project → user → objective → action (what users want to accomplish)",
+      "how": "project → requirement → interface → feature → action → component → operation (how system delivers it)",
+      "bridge": "Actions connect user intent with system implementation"
+    },
+    "structure": {
+      "entities": "Product and code concepts that form the dependency map",
+      "references": "Detailed specs (business logic, data models, UI patterns, etc.)",
+      "meta": "Project context (phases, assumptions, decisions, Q&A sessions)"
+    }
+  },
+  "criticalRules": [
+    "Use 'know -g <graph-path> rules graph' to see valid entity relationships for each graph type",
+    "Different graphs have different rules: spec-graph (user→objective→feature→component) vs code-graph (module→package→external-dep)",
+    "Use 'know trace' to traverse the product-code boundary and see full upstream/downstream chains",
+    "Always validate after modifications - ensures product-code consistency",
+    "Map user objectives to actual components - close the intent-to-implementation gap",
+    "Run 'know -g <graph> rules describe <entity-type>' to understand what an entity type can depend on",
+    "Run gap-analysis regularly - catches incomplete product specifications",
+    "Keep relationships explicit in graph section - no implied dependencies",
+    "Reference detailed specs without duplication - single source of truth principle",
+    "Validate completeness with 'know gap-analysis' - ensure features trace to user needs"
+  ],
+  "referenceGuides": [
+    {
+      "file": "references/entity-types.md",
+      "description": "Deep dive on all entity types and their roles"
+    },
+    {
+      "file": "references/references-guide.md",
+      "description": "Understanding reference categories and when to use them"
+    },
+    {
+      "file": "references/meta-sections.md",
+      "description": "Meta section structures and schemas"
+    },
+    {
+      "file": "references/commands-reference.md",
+      "description": "Complete command listing with examples"
+    },
+    {
+      "file": "references/workflows.md",
+      "description": "Common patterns: adding features, connecting actions, validation"
+    },
+    {
+      "file": "references/troubleshooting.md",
+      "description": "Debugging and fixing graph issues"
+    }
+  ],
+  "quickStart": {
+    "workflow": [
+      "Understand how to map your concept: know rules describe feature",
+      "Add the product requirement: know add feature new-feature '{\"name\":\"...\", \"description\":\"...\"}'",
+      "Check what implementation pieces it needs: know rules after feature",
+      "Connect to user objectives and components: know link feature:new-feature action:user-action",
+      "Validate product-code alignment: know validate && know gap-analysis feature:new-feature"
+    ],
+    "philosophy": "Start with user objectives, map to features, connect to components. The graph enforces traceability."
+  },
+  "installation": {
+    "command": "know",
+    "note": "Requires know CLI to be installed globally. Install with: npm install -g know-cli"
+  }
+}

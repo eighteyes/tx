@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(fd:*)",
+      "Bash(if [ -n $TX_ROOT ])",
+      "Bash(then find $TX_ROOT/meshes -name *.json -type f)",
+      "Bash(else echo \"TX_ROOT not set\")",
+      "Bash(fi)"
+    ]
+  },
+  "spinnerTipsEnabled": false
+}
