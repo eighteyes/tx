@@ -10,11 +10,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { LifecycleHooks, type HookContext } from '../hooks.ts';
 import { WorktreeManager } from '../../core/worktree.ts';
+import { MessageQueue } from '../../queue/index.ts';
 
 describe('Worktree Integration', () => {
   const testDir = path.join(process.cwd(), '.test-worktree-integration');
   let hooks: LifecycleHooks;
   let worktreeManager: WorktreeManager;
+  let queue: MessageQueue;
 
   beforeEach(() => {
     // Create test directory
@@ -33,11 +35,18 @@ describe('Worktree Integration', () => {
     execSync('git add .', { cwd: testDir, stdio: 'pipe' });
     execSync('git commit -m "Initial commit"', { cwd: testDir, stdio: 'pipe' });
 
-    hooks = new LifecycleHooks(testDir);
+    // Create test queue
+    const dbPath = path.join(testDir, 'test-queue.db');
+    queue = new MessageQueue(dbPath);
+
+    hooks = new LifecycleHooks(testDir, queue);
     worktreeManager = hooks.getWorktreeManager();
   });
 
   afterEach(() => {
+    // Close queue
+    queue.close();
+
     // Cleanup worktrees
     if (fs.existsSync(testDir)) {
       try {

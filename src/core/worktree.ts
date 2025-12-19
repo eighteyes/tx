@@ -61,6 +61,20 @@ export class WorktreeManager {
         stdio: 'pipe',
       });
 
+      // Check if HEAD exists (repo has commits)
+      try {
+        execSync('git rev-parse HEAD', {
+          cwd: this.workDir,
+          stdio: 'pipe',
+        });
+      } catch {
+        log.error('worktree', `Cannot create worktree: repository has no commits`, {
+          meshInstance,
+          hint: 'Make an initial commit before using worktrees',
+        });
+        throw new Error('Cannot create worktree: repository has no commits');
+      }
+
       // Create worktree with new branch
       execSync(`git worktree add "${worktreePath}" -b ${branchName}`, {
         cwd: this.workDir,

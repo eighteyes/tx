@@ -8,10 +8,12 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LifecycleHooks, type HookContext } from '../hooks.ts';
+import { MessageQueue } from '../../queue/index.ts';
 
 describe('LifecycleHooks', () => {
   const testDir = path.join(process.cwd(), '.test-lifecycle-hooks');
   let hooks: LifecycleHooks;
+  let queue: MessageQueue;
 
   beforeEach(() => {
     // Create test directory
@@ -30,10 +32,17 @@ describe('LifecycleHooks', () => {
     execSync('git add .', { cwd: testDir, stdio: 'pipe' });
     execSync('git commit -m "Initial commit"', { cwd: testDir, stdio: 'pipe' });
 
-    hooks = new LifecycleHooks(testDir);
+    // Create test queue
+    const dbPath = path.join(testDir, 'test-queue.db');
+    queue = new MessageQueue(dbPath);
+
+    hooks = new LifecycleHooks(testDir, queue);
   });
 
   afterEach(() => {
+    // Close queue
+    queue.close();
+
     // Cleanup worktrees
     if (fs.existsSync(testDir)) {
       try {

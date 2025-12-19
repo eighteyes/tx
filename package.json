@@ -16,7 +16,10 @@
     "@anthropic-ai/claude-code": "^2.0.62",
     "@anthropic-ai/sdk": "^0.71.2",
     "better-sqlite3": "^11.0.0",
-    "chokidar": "^4.0.0"
+    "chokidar": "^4.0.0",
+    "dotenv": "^17.2.3",
+    "yaml": "^2.8.2",
+    "youtube-transcript-plus": "^1.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",

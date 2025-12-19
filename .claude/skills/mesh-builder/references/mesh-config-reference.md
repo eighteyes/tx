@@ -2,84 +2,85 @@
 
 Complete specification for mesh config files.
 
-**Location**: `meshes/mesh-configs/{mesh-name}.json`
+**Location**: `meshes/{mesh-name}/config.yaml`
+
+**Format**: YAML (preferred) or JSON (legacy)
 
 ## Required Fields
 
 ### `mesh`
 String - Mesh identifier (lowercase, alphanumeric, hyphens)
 
-```json
-{
-  "mesh": "test-ask"
-}
+```yaml
+mesh: test-ask
 ```
 
 **Rules**:
 - Must be unique
 - Used in session names: `{mesh}-{agent}`
-- Must match directory/file naming
+- Must match directory naming
 
 ### `agents`
-Array of strings - Which agents participate
+Array of agent objects - Which agents participate
 
-```json
-{
-  "agents": [
-    "test/asker",
-    "test/answerer",
-    "category/agent-name"
-  ]
-}
+```yaml
+agents:
+  - name: asker
+    model: sonnet
+    prompt: asker/prompt.md
+  - name: answerer
+    model: haiku
+    prompt: answerer/prompt.md
 ```
 
-**Format**: `{category}/{agent-name}`
-- `category` - Grouping (e.g., `test`, `production`)
-- `agent-name` - Agent identifier
+**Agent fields**:
+- `name` (required): Agent identifier
+- `model` (required): `opus`, `sonnet`, or `haiku`
+- `prompt` (required): Path to prompt file (relative to mesh directory)
+- `workspace` (optional): Agent-level workspace config
 
 **Rules**:
 - Must have at least 1 agent
-- Must correspond to directories in `meshes/agents/`
-- Order doesn't matter (all agents available to each other)
+- Prompt paths are relative to the mesh directory
+- Order matters only for default entry_point (first agent)
 
 ## Optional Fields
 
 ### `description`
 String - Human-readable description
 
-```json
-{
-  "description": "Multi-agent Q&A workflow: asker sends questions to answerer"
-}
+```yaml
+description: "Multi-agent Q&A workflow: asker sends questions to answerer"
 ```
 
 **Best practice**: Clear, concise explanation of mesh purpose.
 
-### `capabilities`
-Array of strings - Capabilities this mesh exposes
+### `intents`
+Object - Intent-based routing for auto-selecting meshes
 
-```json
-{
-  "capabilities": ["ask", "search"]
-}
+```yaml
+intents:
+  patterns:
+    - research
+    - investigate
+    - "find out"
+    - "what's the state of"
+  commands:
+    research: "/know:research"
+    "add feature": "/know:add"
 ```
 
-**Common capabilities**:
-- `ask` - Can ask other agents questions
-- `search` - Can search information
-- `spawn` - Can spawn other meshes (usually core only)
+**Fields**:
+- `patterns`: Keywords that trigger this mesh
+- `commands`: Map patterns to slash commands
 
-**Rules**:
-- List only what this mesh does, not agent capabilities
-- Used for mesh discovery
+**Use case**: Core agent uses intents to automatically route tasks to appropriate meshes.
 
 ### `entry_point`
 String - Which agent receives initial task
 
-```json
-{
-  "entry_point": "asker"
-}
+```yaml
+entry_point: asker
 ```
 
 **Default**: First agent in array
@@ -87,15 +88,12 @@ String - Which agent receives initial task
 **Rules**:
 - Must be an agent name (not full path)
 - Typically the agent that coordinates work
-- Only used for documentation/planning
 
 ### `completion_agent`
 String - Which agent signals when mesh is done
 
-```json
-{
-  "completion_agent": "asker"
-}
+```yaml
+completion_agent: writer
 ```
 
 **Default**: Same as entry_point
@@ -108,10 +106,8 @@ String - Which agent signals when mesh is done
 ### `type`
 String - Mesh lifecycle type
 
-```json
-{
-  "type": "ephemeral"
-}
+```yaml
+type: ephemeral
 ```
 
 **Options**:
@@ -121,11 +117,9 @@ String - Mesh lifecycle type
 ### `idle_timeout_minutes`
 Number or false - Override system idle timeout for this mesh (ephemeral only)
 
-```json
-{
-  "type": "ephemeral",
-  "idle_timeout_minutes": false
-}
+```yaml
+type: ephemeral
+idle_timeout_minutes: false
 ```
 
 **Options**:
@@ -138,25 +132,11 @@ Number or false - Override system idle timeout for this mesh (ephemeral only)
 - Use custom number (e.g., `30`) for long-running tasks
 - Only applies to `ephemeral` meshes (persistent meshes never timeout regardless)
 
-**Example - Iterative research mesh**:
-```json
-{
-  "mesh": "deep-research",
-  "type": "ephemeral",
-  "idle_timeout_minutes": false,
-  "completion_agent": "writer"
-}
-```
-
-Agents in researcher ⟷ disprover loop won't timeout during iterations. Mesh still auto-cleans when writer completes.
-
 ### `workflow_topology`
 String - How agents communicate (documentation)
 
-```json
-{
-  "workflow_topology": "sequential"
-}
+```yaml
+workflow_topology: sequential
 ```
 
 **Options**:
@@ -165,19 +145,65 @@ String - How agents communicate (documentation)
 - `fan-out-in` - One agent broadcasts, multiple respond
 - `bidirectional` - Agents exchange multiple messages
 
+### `workspace`
+Object or String - Workspace output configuration
+
+```yaml
+# Object format (preferred)
+workspace:
+  path: ".ai/research/{topic}/"
+  create_on_init: true
+  cleanup_on_complete: false
+
+# Legacy string format (still supported)
+workspace: ".ai/research/{topic}/"
+```
+
+**Object fields**:
+- `path`: Path template (can include `{task-id}`, `{topic}`, etc.)
+- `create_on_init`: Create directory on initialization (default: true)
+- `cleanup_on_complete`: Clean up on task completion (default: false)
+- `output`: Map of filename → description for expected outputs
+
+### `rearmatter`
+Object - Transparency metadata configuration
+
+```yaml
+rearmatter:
+  enabled: true
+  fields:
+    - grade
+    - confidence
+    - status
+    - iteration
+    - gaps
+  thresholds:
+    confidence: 0.95
+    grade: "B"
+```
+
+**Valid fields**:
+- `grade` - Letter grade (A-F) for quality assessment
+- `confidence` - Numeric confidence score (0.0-1.0)
+- `speculation` - Degree of speculation in the response
+- `gaps` - Known information gaps
+- `assumptions` - Key assumptions made
+- `status` - Current status (e.g., 'in-progress', 'complete')
+- `iteration` - Iteration number for iterative workflows
+
 ### `routing`
 Object - Defines valid status types and routing destinations for agents
 
-```json
-{
-  "routing": {
-    "agent-name": {
-      "status-type": {
-        "destination-agent": "Human-readable description of when to use this route"
-      }
-    }
-  }
-}
+```yaml
+routing:
+  asker:
+    ask:
+      answerer: "Question ready to send to answerer"
+    complete:
+      core: "Answer received and task complete"
+  answerer:
+    complete:
+      asker: "Answer ready to send back"
 ```
 
 **IMPORTANT**: Multi-agent meshes SHOULD have routing tables. Single-agent meshes do NOT need routing.
@@ -193,104 +219,43 @@ Object - Defines valid status types and routing destinations for agents
 - **Common patterns**: `complete`, `blocked`, `ask`, `needs-clarification`, `low-confidence`, etc.
 - **Completion agents** - Should always route `complete` status to `core`
 
-**Example - Sequential workflow**:
-```json
-{
-  "mesh": "test-ask",
-  "agents": ["test/asker", "test/answerer"],
-  "routing": {
-    "asker": {
-      "ask": {
-        "answerer": "Question ready to send to answerer"
-      },
-      "complete": {
-        "core": "Answer received and task complete"
-      }
-    },
-    "answerer": {
-      "complete": {
-        "asker": "Answer ready to send back"
-      }
-    }
-  }
-}
-```
-
 **Example - Branching decisions**:
-```json
-{
-  "routing": {
-    "researcher": {
-      "complete": {
-        "disprover": "Theory synthesized - ready for critical review"
-      },
-      "low-confidence": {
-        "disprover": "Confidence below 95% - needs critical review"
-      },
-      "blocked": {
-        "core": "Cannot synthesize - insufficient analysis"
-      }
-    }
-  }
-}
+```yaml
+routing:
+  researcher:
+    complete:
+      writer: "Theory validated - confidence threshold met"
+    low-confidence:
+      disprover: "Confidence below 95% - needs critical review"
+    blocked:
+      core: "Cannot synthesize - insufficient analysis"
 ```
 
-**Example - Multiple destinations** (choose one):
-```json
-{
-  "routing": {
-    "coordinator": {
-      "distribute": {
-        "worker1": "Distribute task to worker 1",
-        "worker2": "Distribute task to worker 2",
-        "worker3": "Distribute task to worker 3"
-      },
-      "complete": {
-        "core": "All work complete"
-      }
-    }
-  }
-}
-```
+**How Routing Is Injected**:
 
-**How it works**:
-1. System generates routing instructions from table
-2. Instructions injected into agent prompt as "## Routing Rules" section
-3. Agent chooses appropriate status based on work outcome
-4. Agent sets `type:` field in message frontmatter to chosen status
-5. If mesh has `topology: "static"`, routing is validated against table
+When an agent has routing configured, the SDK runner injects routing instructions into the task prompt. For example, the `interviewer` agent in the research mesh receives:
 
-**What agents see in prompts**:
 ```markdown
-## Routing Rules
+## Routing Instructions
 
-Choose the appropriate status based on your work outcome:
+When complete, route based on outcome:
 
-### Status: `complete`
+**complete** → research/sourcer
+Write task message to: research/sourcer
+Reason: Requirements complete, ready to source information
 
-**When:** Theory synthesized - ready for critical review
-**Routes to:** `disprover`
-
-### Status: `blocked`
-
-**When:** Cannot synthesize - insufficient analysis
-**Routes to:** `core`
+**blocked** → core/core
+Write task message to: core/core
+Reason: Cannot proceed - unclear research requirements
 ```
 
-**Best Practices**:
-- Define status types that match agent's actual work outcomes
-- Provide clear "when" descriptions for each route
-- Always route completion agent's `complete` status to `core`
-- Use descriptive status names (not just `status1`, `status2`)
-- Consider edge cases: blocked, error, needs-help
+Agents without routing config receive the default instruction: "When done, write a task-complete message to core/core."
 
 ### `topology`
 String - Routing enforcement mode
 
-```json
-{
-  "topology": "static"
-}
+```yaml
+topology: static
 ```
 
 **Options**:
@@ -302,46 +267,140 @@ String - Routing enforcement mode
 - Workflow has strict sequencing requirements
 - Security or safety requires controlled message flow
 
+### `system`
+Boolean - Mark as a system mesh
+
+```yaml
+system: true
+```
+
+System meshes are internal meshes used by TX itself (e.g., commit-agent).
+
+### `worktree`
+Boolean - Enable git worktree isolation
+
+```yaml
+worktree: true
+```
+
+When enabled, the mesh runs in an isolated git worktree with automatic commit and cleanup.
+
+### `lifecycle`
+Object - Pre/post hooks for mesh lifecycle
+
+```yaml
+lifecycle:
+  pre:
+    - "worktree:create"
+  post:
+    - "commit:auto"
+    - "worktree:cleanup"
+```
+
+**Available hooks**:
+- `worktree:create` - Create isolated git worktree
+- `commit:auto` - Auto-commit changes
+- `worktree:cleanup` - Remove worktree after completion
+
+### `config`
+Object - Custom mesh-specific configuration
+
+```yaml
+config:
+  confidence_threshold: 0.95
+  max_iterations: 3
+```
+
+Used for mesh-specific settings that agents can reference.
+
 ## Full Example
 
-```json
-{
-  "mesh": "test-ask",
-  "description": "Test ask/answer workflow - asker sends ask to answerer, then reports to core",
-  "type": "ephemeral",
-  "agents": ["test/asker", "test/answerer"],
-  "entry_point": "asker",
-  "completion_agent": "asker",
-  "capabilities": ["ask"],
-  "workflow_topology": "sequential"
-}
+```yaml
+mesh: research
+description: "Web research mesh with iterative confidence loop"
+type: ephemeral
+idle_timeout_minutes: false
+
+intents:
+  patterns:
+    - research
+    - investigate
+    - "find out"
+
+agents:
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer/prompt.md
+  - name: sourcer
+    model: sonnet
+    prompt: sourcer/prompt.md
+  - name: analyst
+    model: sonnet
+    prompt: analyst/prompt.md
+  - name: writer
+    model: sonnet
+    prompt: writer/prompt.md
+
+entry_point: interviewer
+completion_agent: writer
+
+routing:
+  interviewer:
+    complete:
+      sourcer: "Requirements complete, ready to source"
+    blocked:
+      core: "Cannot proceed - unclear requirements"
+  sourcer:
+    complete:
+      analyst: "Sources collected and ready for analysis"
+  analyst:
+    complete:
+      writer: "Analysis complete"
+    needs-more-data:
+      sourcer: "Need additional sources"
+  writer:
+    complete:
+      core: "Research complete"
+
+workspace:
+  path: ".ai/research/{topic}/"
+
+rearmatter:
+  enabled: true
+  fields:
+    - grade
+    - confidence
+    - status
+    - gaps
 ```
 
 ## Core Mesh (Special)
 
-The `core` mesh is special:
+The `core` mesh is special and created by `tx start`:
 
-```json
-{
-  "mesh": "core",
-  "description": "Core/brain mesh - entry point for TX Watch",
-  "agents": ["core"]
-}
+```yaml
+mesh: core
+description: "Core/brain mesh - entry point for TX"
+agents:
+  - name: core
+    model: opus
+    prompt: core/prompt.md
 ```
 
 **Rules**:
 - Always exists
 - Single `core` agent
 - Orchestrator for all other meshes
-- Created by `tx start`
 
 ## Minimal Example
 
-```json
-{
-  "mesh": "simple",
-  "agents": ["category/agent"]
-}
+```yaml
+mesh: simple
+agents:
+  - name: worker
+    model: haiku
+    prompt: prompt.md
+entry_point: worker
 ```
 
 This is valid. Everything else is optional.
@@ -349,47 +408,62 @@ This is valid. Everything else is optional.
 ## Naming Conventions
 
 - **Mesh names**: lowercase, hyphens (e.g., `test-ask`, `my-workflow`)
-- **Categories**: lowercase (e.g., `test`, `production`, `demo`)
 - **Agent names**: lowercase (e.g., `asker`, `echo`, `worker`)
-- **Full paths**: `category/agent-name` (e.g., `test/asker`)
+- **Agent IDs**: `{mesh}/{agent}` (e.g., `research/interviewer`)
 
 ## Common Patterns
 
 ### Single-Agent Mesh
-```json
-{
-  "mesh": "echo",
-  "agents": ["test/echo"],
-  "entry_point": "echo",
-  "completion_agent": "echo"
-}
+```yaml
+mesh: echo
+agents:
+  - name: worker
+    model: haiku
+    prompt: prompt.md
+entry_point: worker
 ```
 
 ### Multi-Agent Sequential
-```json
-{
-  "mesh": "pipeline",
-  "agents": ["stage/extractor", "stage/processor", "stage/validator"],
-  "entry_point": "extractor",
-  "completion_agent": "validator"
-}
+```yaml
+mesh: pipeline
+agents:
+  - name: extractor
+    model: sonnet
+    prompt: extractor/prompt.md
+  - name: processor
+    model: sonnet
+    prompt: processor/prompt.md
+  - name: validator
+    model: haiku
+    prompt: validator/prompt.md
+entry_point: extractor
+completion_agent: validator
+routing:
+  extractor:
+    complete:
+      processor: "Data extracted"
+  processor:
+    complete:
+      validator: "Processing complete"
+  validator:
+    complete:
+      core: "Pipeline finished"
 ```
 
-### Multi-Agent Parallel
-```json
-{
-  "mesh": "analysis",
-  "agents": ["analysis/sentiment", "analysis/entities", "analysis/keywords"],
-  "workflow_topology": "parallel"
-}
-```
-
-### Multi-Category
-```json
-{
-  "mesh": "production",
-  "agents": ["core/dispatcher", "workers/worker1", "workers/worker2", "output/formatter"],
-  "entry_point": "dispatcher",
-  "completion_agent": "formatter"
-}
+### Multi-Agent with HITL
+```yaml
+mesh: dev
+agents:
+  - name: worker
+    model: opus
+    prompt: prompt.md
+entry_point: worker
+routing:
+  worker:
+    complete:
+      core: "Task complete"
+    blocked:
+      core: "Need human input"
+    ask:
+      brain: "Need project knowledge"
 ```

@@ -6,7 +6,24 @@
       "Bash(if [ -n $TX_ROOT ])",
       "Bash(then find $TX_ROOT/meshes -name *.json -type f)",
       "Bash(else echo \"TX_ROOT not set\")",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Skill(know-tool)",
+      "Bash(know list-type:*)",
+      "Bash(know rules after feature)",
+      "Bash(know add:*)",
+      "Bash(know link feature:www-interface action:view-worker-status)",
+      "Bash(__NEW_LINE__ know link feature:www-interface action:stream-logs)",
+      "Bash(__NEW_LINE__ know link feature:www-interface action:send-agent-message)",
+      "Bash(__NEW_LINE__ know link feature:www-interface action:view-queue-status)",
+      "Bash(know validate:*)",
+      "Bash(sqlite3:*)",
+      "Bash(node -e:*)",
+      "Bash(env)",
+      "Bash(xargs cat:*)",
+      "Bash(know get:*)",
+      "Bash(know uses feature:www-interface)",
+      "Bash(know down feature:www-interface)",
+      "Bash(know feature-spec feature:www-interface)"
     ]
   },
   "spinnerTipsEnabled": false

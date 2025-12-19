@@ -10,7 +10,20 @@ import path from 'node:path';
 import { log } from '../shared/logger.ts';
 
 export interface WorkspaceConfig {
+  path?: string;  // Path template for workspace (can include {topic}, {task-id}, etc.)
   output?: Record<string, string>;  // filename -> description
+  create_on_init?: boolean;  // Create directory on initialization (default: true)
+  cleanup_on_complete?: boolean;  // Clean up on task completion (default: false)
+}
+
+/**
+ * Normalize workspace config from legacy string format to object format
+ */
+export function normalizeWorkspaceConfig(config: string | WorkspaceConfig): WorkspaceConfig {
+  if (typeof config === 'string') {
+    return { path: config };
+  }
+  return config;
 }
 
 export interface WorkspaceInfo {
@@ -32,18 +45,32 @@ export class WorkspaceManager {
   /**
    * Create a workspace for a task
    */
-  createWorkspace(taskId: string, config: WorkspaceConfig): WorkspaceInfo {
-    const workspaceDir = path.join(this.outputBaseDir, taskId);
+  createWorkspace(taskId: string, config: WorkspaceConfig | string): WorkspaceInfo {
+    // Normalize string format to object format
+    const normalizedConfig = normalizeWorkspaceConfig(config);
 
-    // Create directory
-    if (!fs.existsSync(workspaceDir)) {
+    // Determine workspace directory
+    let workspaceDir: string;
+    if (normalizedConfig.path) {
+      // Use custom path (substitute {task-id} and other variables)
+      const pathTemplate = normalizedConfig.path.replace('{task-id}', taskId);
+      workspaceDir = path.isAbsolute(pathTemplate)
+        ? pathTemplate
+        : path.join(this.workDir, pathTemplate);
+    } else {
+      // Default: .ai/tx/output/{task-id}/
+      workspaceDir = path.join(this.outputBaseDir, taskId);
+    }
+
+    // Create directory (unless explicitly disabled)
+    if (normalizedConfig.create_on_init !== false && !fs.existsSync(workspaceDir)) {
       fs.mkdirSync(workspaceDir, { recursive: true });
     }
 
     // Build output file map
     const outputFiles = new Map<string, string>();
-    if (config.output) {
-      for (const [filename, description] of Object.entries(config.output)) {
+    if (normalizedConfig.output) {
+      for (const [filename, description] of Object.entries(normalizedConfig.output)) {
         outputFiles.set(filename, description);
       }
     }

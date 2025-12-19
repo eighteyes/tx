@@ -12,6 +12,17 @@ Minimal rewrite of tx-cli with flat structure and SDK-based workers.
 
 ## Key Learnings
 
+### Logging
+
+**CRITICAL**: Capture all errors and logs with the logging class (`log` from `src/shared/logger.ts`). Never use `console.error` or `console.log` for error handling or system logging.
+
+- Use `log.error()` for errors
+- Use `log.warn()` for warnings
+- Use `log.info()` for informational messages
+- Use `log.debug()` for debug output
+
+Logs are written to `.ai/tx/logs/v4.jsonl` and can be viewed with `tx logs`.
+
 ### execSync blocks the event loop
 
 **CRITICAL**: Using `execSync('tmux attach ...')` blocks the entire Node.js event loop. While attached to tmux:

@@ -5,6 +5,7 @@
 import { watch, type FSWatcher } from 'chokidar';
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 
@@ -30,10 +31,81 @@ export class MessageConsumer {
   private queue: MessageQueue;
   private watcher: FSWatcher | null = null;
   private running = false;
+  private meshesDir: string;
+  private meshEntryPoints: Map<string, string> = new Map();
 
-  constructor(watchDir: string, queue: MessageQueue) {
+  constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     this.watchDir = watchDir;
     this.queue = queue;
+    // Default to TX_ROOT/meshes if not provided
+    this.meshesDir = meshesDir || (process.env.TX_ROOT
+      ? path.join(process.env.TX_ROOT, 'meshes')
+      : path.join(process.cwd(), 'meshes'));
+    this.loadMeshEntryPoints();
+  }
+
+  /**
+   * Load entry_point mappings from mesh configs
+   * Enables routing: to: dev → to: dev/worker
+   */
+  private loadMeshEntryPoints(): void {
+    if (!fs.existsSync(this.meshesDir)) return;
+
+    const scanDir = (dir: string, depth: number = 0) => {
+      if (depth > 2) return;
+      if (!fs.existsSync(dir)) return;
+
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      // Check for config files in priority order: YAML > JSON
+      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
+      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
+
+      if (yamlConfig) {
+        try {
+          const content = fs.readFileSync(path.join(dir, yamlConfig.name), 'utf-8');
+          const config = YAML.parse(content);
+          const entryPoint = config.entry_point || 'worker';
+          this.meshEntryPoints.set(config.mesh, entryPoint);
+        } catch {
+          // Skip invalid configs
+        }
+      } else if (jsonConfig) {
+        try {
+          const content = fs.readFileSync(path.join(dir, 'config.json'), 'utf-8');
+          const config = JSON.parse(content);
+          const entryPoint = config.entry_point || 'worker';
+          this.meshEntryPoints.set(config.mesh, entryPoint);
+        } catch {
+          // Skip invalid configs
+        }
+      }
+
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) {
+          scanDir(path.join(dir, entry.name), depth + 1);
+        }
+      }
+    };
+
+    scanDir(this.meshesDir);
+  }
+
+  /**
+   * Resolve mesh routing: to: dev → to: dev/worker
+   * If 'to' contains slash, use as-is
+   * If 'to' is just a mesh name, append entry_point
+   */
+  private resolveToAgent(to: string): string {
+    if (to.includes('/')) return to;
+
+    const entryPoint = this.meshEntryPoints.get(to);
+    if (entryPoint) {
+      return `${to}/${entryPoint}`;
+    }
+
+    // Default to 'worker' if mesh not found
+    return `${to}/worker`;
   }
 
   async start(): Promise<void> {
@@ -89,9 +161,12 @@ export class MessageConsumer {
         return;
       }
 
+      // Resolve mesh routing: to: dev → to: dev/worker
+      const toAgent = this.resolveToAgent(parsed.frontmatter.to);
+
       const id = this.queue.insert({
         from_agent: parsed.frontmatter.from,
-        to_agent: parsed.frontmatter.to,
+        to_agent: toAgent,
         type: parsed.frontmatter.type,
         payload: {
           'msg-id': parsed.frontmatter['msg-id'],
@@ -107,7 +182,8 @@ export class MessageConsumer {
       log.info('consumer', `Queued message`, {
         id,
         from: parsed.frontmatter.from,
-        to: parsed.frontmatter.to,
+        to: toAgent,
+        originalTo: parsed.frontmatter.to !== toAgent ? parsed.frontmatter.to : undefined,
         type: parsed.frontmatter.type,
         headline: parsed.frontmatter.headline,
         file: filename

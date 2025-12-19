@@ -163,79 +163,160 @@ The worker receives this and executes the slash command.
 ```
 v4/
 ├── meshes/
-│   ├── configs/              # Mesh configuration YAML
-│   │   ├── brain.yaml
-│   │   ├── dev.yaml
-│   │   └── test.yaml
-│   └── agents/               # Agent prompts
-│       ├── brain/
-│       │   └── prompt.md
-│       ├── dev/
-│       │   └── prompt.md
-│       └── test/
+│   ├── brain/                 # Brain mesh
+│   │   ├── config.yaml        # Mesh configuration
+│   │   └── prompt.md          # Agent prompt
+│   ├── dev/                   # Dev mesh
+│   │   ├── config.yaml
+│   │   └── prompt.md
+│   ├── research/              # Multi-agent mesh
+│   │   ├── config.yaml
+│   │   ├── interviewer/
+│   │   │   └── prompt.md
+│   │   ├── sourcer/
+│   │   │   └── prompt.md
+│   │   └── writer/
+│   │       └── prompt.md
+│   └── system/                # System meshes
+│       └── commit-agent/
+│           ├── config.yaml
 │           └── prompt.md
 └── .ai/tx/
-    ├── msgs/                 # Message event log
-    └── logs/                 # System logs
+    ├── msgs/                  # Message event log
+    └── logs/                  # System logs
 ```
 
 ### Mesh Configuration (YAML)
 
+**Location**: `meshes/{mesh-name}/config.yaml`
+
 ```yaml
-# meshes/configs/dev.yaml
-mesh:
-  name: dev
-  description: "Development mesh for coding tasks"
+# meshes/dev/config.yaml
+mesh: dev
+description: "Development mesh for coding tasks"
+
+# Intent-based routing (optional)
+intents:
+  patterns:
+    - build
+    - implement
+    - "code up"
+  commands:
+    build: "/know:build"
 
 agents:
   - name: worker
-    model: sonnet
-    prompt: meshes/agents/dev/prompt.md
+    model: opus
+    prompt: prompt.md  # Relative to mesh directory
 
 entry_point: worker
 completion_agent: worker
 
-# Optional: routing for multi-agent meshes
+# IMPORTANT: Multi-agent meshes SHOULD have routing!
+# Routing enables automatic agent-to-agent flow without core intervention
 routing:
   worker:
     complete:
       core: "Task finished"
     blocked:
       core: "Need human input"
+    ask:
+      brain: "Need project knowledge"
+
+# Optional: workspace for output files
+workspace:
+  path: ".ai/output/{task-id}/"
+
+# Optional: rearmatter (transparency metadata)
+rearmatter:
+  enabled: true
+  fields:
+    - grade
+    - confidence
+    - status
+    - gaps
+```
+
+### Config Field Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `mesh` | string | Yes | Unique mesh identifier |
+| `description` | string | No | Human-readable description |
+| `agents` | array | Yes | List of agents in mesh |
+| `entry_point` | string | No | Agent that receives initial tasks |
+| `completion_agent` | string | No | Agent that signals completion |
+| `type` | string | No | `ephemeral` or `persistent` |
+| `routing` | object | No* | Message routing rules (*required for multi-agent meshes) |
+| `intents` | object | No | Intent patterns for auto-routing |
+| `workspace` | object | No | Workspace output configuration |
+| `rearmatter` | object | No | Transparency metadata config |
+| `system` | boolean | No | Mark as system mesh |
+| `worktree` | boolean | No | Enable git worktree isolation |
+| `lifecycle` | object | No | Pre/post hooks |
+
+### intents Field
+
+Auto-routes tasks to meshes based on user intent:
+
+```yaml
+intents:
+  patterns:
+    - research
+    - investigate
+    - "find out"
+  commands:
+    research: "/know:research"
+```
+
+- `patterns`: Keywords that trigger this mesh
+- `commands`: Map patterns to slash commands
+
+### workspace Field
+
+Configure output workspace:
+
+```yaml
+# Object format (preferred)
+workspace:
+  path: ".ai/research/{topic}/"
+  create_on_init: true
+  cleanup_on_complete: false
+
+# Legacy string format (still supported)
+workspace: ".ai/research/{topic}/"
+```
+
+### rearmatter Field
+
+Transparency metadata fields:
+
+```yaml
+rearmatter:
+  enabled: true
+  fields:
+    - grade       # Letter grade (A-F)
+    - confidence  # Numeric (0.0-1.0)
+    - speculation # Degree of speculation
+    - gaps        # Known information gaps
+    - assumptions # Key assumptions made
+    - status      # Current status
+    - iteration   # Iteration number
+  thresholds:
+    confidence: 0.8
+    grade: "B"
 ```
 
 ### Agent Prompt Template
+
+**CRITICAL**: Focus prompts on **core workflow only**. Message protocol, file paths, and infrastructure details are **injected dynamically** by the system prompt builder.
+
+#### What to Include (Core Workflow)
 
 ```markdown
 # {Agent Name}
 
 You are the {role} agent for TX V4.
-
-## Message Protocol
-
-Write messages to: `.ai/tx/msgs/`
-Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
-
-### Task Complete Message
-
-When done, write:
-
-```markdown
----
-to: core/core
-from: {mesh}/{agent}
-type: task-complete
-msg-id: {correlate with task msg-id}
-headline: {Brief summary}
-timestamp: {ISO timestamp}
----
-
-## Summary
-{What was accomplished}
-
-## Details
-{Detailed output}
-```
 
 ## Your Responsibilities
 
@@ -246,23 +327,45 @@ timestamp: {ISO timestamp}
 ## Workflow
 
 1. Read the incoming task message
-2. {Perform work}
-3. Write task-complete message to core/core
+2. {Step-by-step work process}
+3. {Decision logic and quality criteria}
+4. Write task-complete message when finished
+
+## Quality Standards
+
+- {Quality criteria specific to this role}
+- {When to ask for human input}
+- {Success/failure conditions}
 ```
+
+#### What NOT to Include (Injected Automatically)
+
+**Do NOT hardcode these in prompts** - they are injected by the system:
+
+- ❌ Message directory paths (`.ai/tx/msgs/`)
+- ❌ Filename formats (`{timestamp}-{type}-{from}--{to}-{msg-id}.md`)
+- ❌ Frontmatter schema examples (to/from/type/msg-id/etc)
+- ❌ Message type enums (task, task-complete, ask-human)
+- ❌ Agent addressing format (mesh/agent)
+- ❌ Workspace paths (injected from config's `workspace` field)
+
+**Why?** These are infrastructure concerns. Hardcoding them makes prompts brittle and hard to maintain. The system injects them dynamically based on mesh configuration.
 
 ### Minimal Test Agent
 
-For testing, keep prompts SUPER lightweight:
+For testing, keep prompts SUPER lightweight - core workflow ONLY:
 
 ```markdown
 # Echo Agent
 
-You echo back messages to core.
+You echo back messages.
 
 ## Workflow
 1. Read incoming task
-2. Write task-complete to `core/core` with the original content
+2. Echo the content back in a task-complete message
 ```
+
+**Note**: Message destination, format, and paths are injected by the system. Prompts focus on **what** to do, not **how** to format infrastructure.
 
 ## HITL (Human-In-The-Loop)
 
@@ -311,6 +414,32 @@ Go with Option B - MVP only for now.
 ```
 
 ## Multi-Agent Patterns
+
+### How Routing Works
+
+**IMPORTANT**: Routing enables automatic agent-to-agent flow without core intervention.
+
+When an agent has routing configured in the mesh config:
+1. The dispatcher extracts routing rules for that agent
+2. SDK runner injects routing instructions into the task prompt
+3. Agent receives clear guidance on where to route based on outcome
+
+Example - what the agent sees in its prompt:
+```markdown
+## Routing Instructions
+
+When complete, route based on outcome:
+
+**complete** → research/sourcer
+Write task message to: research/sourcer
+Reason: Requirements complete, ready to source information
+
+**blocked** → core/core
+Write task message to: core/core
+Reason: Cannot proceed - unclear research requirements
+```
+
+Agents without routing config receive: "When done, write a task-complete message to core/core."
 
 ### Sequential Pipeline
 

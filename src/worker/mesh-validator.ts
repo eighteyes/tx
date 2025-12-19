@@ -117,8 +117,15 @@ interface FieldSpec {
 
 /**
  * Valid rearmatter fields
+ * - grade: Letter grade (A-F) for quality assessment
+ * - confidence: Numeric confidence score (0.0-1.0)
+ * - speculation: Degree of speculation in the response
+ * - gaps: Known information gaps
+ * - assumptions: Key assumptions made
+ * - status: Current status (e.g., 'in-progress', 'complete')
+ * - iteration: Iteration number for iterative workflows
  */
-const VALID_REARMATTER_FIELDS = ['grade', 'confidence', 'speculation', 'gaps', 'assumptions'];
+const VALID_REARMATTER_FIELDS = ['grade', 'confidence', 'speculation', 'gaps', 'assumptions', 'status', 'iteration'];
 
 /**
  * Valid grade values
@@ -144,11 +151,25 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   topology: { type: 'string', enum: ['static', 'dynamic'] },
   routing: { type: 'object' },
   rearmatter: { type: 'object' },
-  workspace: { type: 'object' },
+  workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
   brain: { type: 'boolean' },
   capabilities: { type: 'array' },
   frontmatter: { type: 'object' },
-  'clear-before': { type: 'boolean' }
+  'clear-before': { type: 'boolean' },
+  // Intent-based routing
+  intents: { type: 'object' },  // { patterns: string[], commands?: Record<string, string> }
+  // System mesh flag
+  system: { type: 'boolean' },
+  // Custom config object for mesh-specific settings
+  config: { type: 'object' },
+  // Idle timeout (false = disabled, number = minutes)
+  idle_timeout_minutes: { type: 'number' },  // Note: false is handled specially
+  // Workflow topology (for documentation)
+  workflow_topology: { type: 'string' },
+  // Worktree shorthand
+  worktree: { type: 'boolean' },
+  // Lifecycle hooks
+  lifecycle: { type: 'object' },
 };
 
 /**
@@ -274,6 +295,19 @@ export class MeshValidator {
       if (!spec) continue; // Unknown fields handled separately
 
       const actualType = this.getType(value);
+
+      // Special case: idle_timeout_minutes can be false (boolean) or number
+      if (field === 'idle_timeout_minutes' && value === false) {
+        continue; // false is valid for disabling timeout
+      }
+
+      // Special case: workspace can be string (legacy) or object (preferred)
+      if (field === 'workspace' && actualType === 'string') {
+        // Legacy string format - accept but warn
+        warnings.push(`Field 'workspace' should be object format { path: "..." }, got string${context}. Legacy format still works but object format is preferred.`);
+        continue;
+      }
+
       if (spec.type !== actualType) {
         warnings.push(`Field '${field}' should be ${spec.type}, got ${actualType}${context}`);
         continue;

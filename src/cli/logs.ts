@@ -9,6 +9,7 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import readline from 'node:readline';
 import { colors } from '../shared/colors.ts';
 
@@ -43,6 +44,7 @@ interface LogsOptions {
   follow?: boolean;
   noInteractive?: boolean;
   noFollow?: boolean;
+  last?: boolean;
 }
 
 function getComponentColor(component: string): string {
@@ -176,9 +178,11 @@ function mergeSortLogs(debugLogs: LogEntry[], errorLogs: LogEntry[]): LogEntry[]
  */
 async function logsInteractive(options: LogsOptions = {}): Promise<void> {
   const lines = parseInt(options.lines || '50', 10);
-  const v4Log = '.ai/tx/logs/v4.jsonl';
-  const debugLog = '.ai/tx/logs/debug.jsonl';
-  const errorLog = '.ai/tx/logs/error.jsonl';
+  const logSuffix = options.last ? '.last.jsonl' : '.jsonl';
+  const workDir = process.env.TX_CWD || process.cwd();
+  const v4Log = path.join(workDir, `.ai/tx/logs/v4${logSuffix}`);
+  const debugLog = path.join(workDir, `.ai/tx/logs/debug${logSuffix}`);
+  const errorLog = path.join(workDir, `.ai/tx/logs/error${logSuffix}`);
 
   const activeFilters = new Set<string>();
   const activeSeverityFilters = new Set<string>();
@@ -263,7 +267,9 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       ? `${colors.dim}[filtered]${colors.reset}`
       : `${colors.dim}[all]${colors.reset}`;
 
-    console.log(`${colors.dim}tx logs${colors.reset}  ${filterDisplay}  |  ${severityDisplay}  |  ${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs  q quit ${mode}${colors.reset}\n`);
+    const sessionLabel = options.last ? `${colors.yellow}[prev session]${colors.reset}` : '';
+
+    console.log(`${colors.dim}tx logs${colors.reset}${sessionLabel}  ${filterDisplay}  |  ${severityDisplay}  |  ${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs  q quit ${mode}${colors.reset}\n`);
   }
 
   function displayLogs(): void {
@@ -404,11 +410,13 @@ async function logsList(options: LogsOptions): Promise<void> {
   const lines = parseInt(options.lines || '50', 10);
   const component = options.component || null;
   const level = options.level || null;
-  const follow = !options.noFollow;
+  const follow = !options.noFollow && !options.last; // Disable follow for --last
 
-  const v4Log = '.ai/tx/logs/v4.jsonl';
-  const debugLog = '.ai/tx/logs/debug.jsonl';
-  const errorLog = '.ai/tx/logs/error.jsonl';
+  const logSuffix = options.last ? '.last.jsonl' : '.jsonl';
+  const workDir = process.env.TX_CWD || process.cwd();
+  const v4Log = path.join(workDir, `.ai/tx/logs/v4${logSuffix}`);
+  const debugLog = path.join(workDir, `.ai/tx/logs/debug${logSuffix}`);
+  const errorLog = path.join(workDir, `.ai/tx/logs/error${logSuffix}`);
 
   let v4Logs = readJSONLFile(v4Log);
   let debugLogs = readJSONLFile(debugLog);

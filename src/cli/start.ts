@@ -5,6 +5,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
+import YAML from 'yaml';
 import { TmuxSession, findClaudePath, injectFile } from '../core/tmux.ts';
 import { MessageQueue } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
@@ -18,23 +19,56 @@ export interface StartOptions {
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
+  // Work directory: where .ai/tx/ lives (default: current directory)
   const cwd = workDir || process.env.TX_CWD || process.cwd();
+
+  // TX installation: where meshes/ lives (default: same as work directory)
+  const txRoot = process.env.TX_ROOT || cwd;
+
   const aiDir = path.join(cwd, '.ai', 'tx');
 
   // Debug: Show resolved paths
-  console.log(`[debug] TX_CWD: ${process.env.TX_CWD}`);
-  console.log(`[debug] TX_ROOT: ${process.env.TX_ROOT}`);
-  console.log(`[debug] cwd: ${cwd}`);
+  console.log(`[debug] cwd (work): ${cwd}`);
+  console.log(`[debug] txRoot (meshes): ${txRoot}`);
 
   // Ensure directories exist
   const msgsDir = path.join(aiDir, 'msgs');
   const dataDir = path.join(aiDir, 'data');
   const logsDir = path.join(aiDir, 'logs');
 
-  for (const dir of [msgsDir, dataDir, logsDir]) {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+  try {
+    for (const dir of [msgsDir, dataDir, logsDir]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
     }
+  } catch (err: any) {
+    if (err.code === 'EACCES') {
+      console.error(`\n❌ Permission denied: Cannot create directories in ${cwd}`);
+      console.error(`\nFix with one of:`);
+      console.error(`  sudo chown -R $(whoami) ${cwd}`);
+      console.error(`  chmod -R u+w ${cwd}`);
+      console.error(`  cd to a directory you have write access to\n`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  // Backup previous logs before starting fresh session
+  const mainLog = path.join(logsDir, 'v4.jsonl');
+  const activityLog = path.join(logsDir, 'activity.jsonl');
+  const lastMainLog = path.join(logsDir, 'v4.last.jsonl');
+  const lastActivityLog = path.join(logsDir, 'activity.last.jsonl');
+
+  if (fs.existsSync(mainLog) && fs.statSync(mainLog).size > 0) {
+    fs.copyFileSync(mainLog, lastMainLog);
+    fs.writeFileSync(mainLog, ''); // Clear for fresh session
+    console.log(`[logs] Backed up v4.jsonl → v4.last.jsonl`);
+  }
+  if (fs.existsSync(activityLog) && fs.statSync(activityLog).size > 0) {
+    fs.copyFileSync(activityLog, lastActivityLog);
+    fs.writeFileSync(activityLog, ''); // Clear for fresh session
+    console.log(`[logs] Backed up activity.jsonl → activity.last.jsonl`);
   }
 
   // Initialize logger (file-based to avoid polluting tmux session)
@@ -55,8 +89,12 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   await tmux.create(cwd);
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  // Load tmux config if it exists
-  const tmuxConf = path.join(cwd, '.tmux.conf');
+  // Load tmux config if it exists (check work dir first, then TX_ROOT)
+  let tmuxConf = path.join(cwd, '.tmux.conf');
+  if (!fs.existsSync(tmuxConf)) {
+    tmuxConf = path.join(txRoot, '.tmux.conf');
+  }
+
   if (fs.existsSync(tmuxConf)) {
     console.log(`[tmux] Loading config: ${tmuxConf}`);
     tmux.send(`tmux source-file '${tmuxConf}'`);
@@ -66,7 +104,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Write core prompt to file
   const corePromptPath = path.join(aiDir, 'core-prompt.md');
-  fs.writeFileSync(corePromptPath, getCorePrompt(msgsDir));
+  const meshesDir = path.join(txRoot, 'meshes');
+  fs.writeFileSync(corePromptPath, getCorePrompt(msgsDir, meshesDir));
 
   // Start Claude with --system-prompt
   const claudePath = findClaudePath();
@@ -78,8 +117,13 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Wait for Claude to be ready
   console.log('[tmux] Waiting for Claude to initialize...');
-  await waitForClaudeReady(tmux, 60000);
-  console.log('[tmux] Claude is ready');
+  const ready = await waitForClaudeReady(tmux, 15000); // Reduced timeout
+  if (!ready) {
+    console.log('[tmux] Claude may need interaction. Check session with: tmux attach -t tx-v4-core');
+    console.log('[tmux] Continuing anyway...');
+  } else {
+    console.log('[tmux] Claude is ready');
+  }
 
   // Initialize queue and consumer
   const dbPath = path.join(dataDir, 'queue.db');
@@ -100,7 +144,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   log.info('start', 'Cleared queue, sessions, and logs');
 
-  const consumer = new MessageConsumer(msgsDir, queue);
+  const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
 
   // Start message consumer
   await consumer.start();
@@ -111,7 +155,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,
     msgsDir,
-    meshesDir: path.join(cwd, 'meshes'),
+    meshesDir: path.join(txRoot, 'meshes'),
     pollInterval: 1000
   }, queue);
 
@@ -223,9 +267,17 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
       return false;
     }
 
-    // Look for stable output indicating ready
+    // Check for Claude prompt patterns indicating ready
+    if (output.includes('send') ||
+        output.includes('tokens') ||
+        output.includes('⏵⏵') ||
+        /bypass permissions/i.test(output)) {
+      return true;
+    }
+
+    // Look for stable output indicating ready (fallback)
     if (output.length > 100) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced from 2000
       const output2 = tmux.capture(30);
       if (output2 === output || output2.length >= output.length) {
         return true;
@@ -238,7 +290,87 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
   return false;
 }
 
-function getCorePrompt(msgsDir: string): string {
+/**
+ * Build mesh list from available mesh configs
+ * Returns formatted list with descriptions and intents
+ */
+function buildMeshList(meshesDir: string): string {
+  const meshConfigs: Array<{
+    mesh: string;
+    description?: string;
+    entry_point?: string;
+    intents?: { patterns?: string[] };
+  }> = [];
+
+  // Scan meshes directory for config files (YAML preferred, JSON legacy)
+  if (!fs.existsSync(meshesDir)) {
+    return '- No meshes available';
+  }
+
+  const scanDir = (dir: string, depth: number = 0) => {
+    if (depth > 2) return;
+    if (!fs.existsSync(dir)) return;
+
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    // Check for config files in priority order: YAML > JSON
+    const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
+    const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
+
+    if (yamlConfig) {
+      try {
+        const content = fs.readFileSync(path.join(dir, yamlConfig.name), 'utf-8');
+        const config = YAML.parse(content);
+        meshConfigs.push(config);
+      } catch {
+        // Skip invalid configs
+      }
+    } else if (jsonConfig) {
+      try {
+        const content = fs.readFileSync(path.join(dir, 'config.json'), 'utf-8');
+        const config = JSON.parse(content);
+        meshConfigs.push(config);
+      } catch {
+        // Skip invalid configs
+      }
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        scanDir(path.join(dir, entry.name), depth + 1);
+      }
+    }
+  };
+
+  scanDir(meshesDir);
+
+  if (meshConfigs.length === 0) {
+    return '- No meshes available';
+  }
+
+  // Format mesh list with descriptions and intents
+  return meshConfigs
+    .map(mesh => {
+      const entryPoint = mesh.entry_point || 'worker';
+      let line = `- \`${mesh.mesh}\` - ${mesh.description || 'No description'}`;
+
+      // Add intents if present
+      if (mesh.intents?.patterns && mesh.intents.patterns.length > 0) {
+        const intentList = mesh.intents.patterns.map(p => `"${p}"`).join(', ');
+        line += `\n  Use when user wants to: ${intentList}`;
+      }
+
+      // Add routing info
+      line += `\n  Route to: \`${mesh.mesh}/${entryPoint}\``;
+
+      return line;
+    })
+    .join('\n\n');
+}
+
+function getCorePrompt(msgsDir: string, meshesDir: string): string {
+  const meshList = buildMeshList(meshesDir);
+
   return `# TX V4 Core Agent
 
 You are the core agent for TX. You coordinate work by writing messages to meshes.
@@ -254,8 +386,25 @@ When the user asks you to do something like "run tests" or "build the feature":
 
 ## Available Meshes
 
-- \`brain\` - Knowledge gateway agent (handles /know:prepare, spec-graph queries)
-- \`test\` - Test mesh for validating HITL flow
+${meshList}
+
+## Available Tools
+
+Use tools for data gathering and research. Tools are CLI commands, not meshes.
+
+- \`tx tool search <query>\` - Search multiple sources (StackOverflow, GitHub, arXiv, Wikipedia, HackerNews)
+  Use when user wants to: "search for", "find information about", "look up", "research"
+
+- \`tx tool getwww <url>\` - Fetch and extract content from URLs with archive fallback
+  Use when user wants to: "fetch this URL", "get content from", "download page", "scrape"
+
+- \`tx tool youtube-transcript <video-id>\` - Extract YouTube video transcripts
+  Use when user wants to: "get transcript", "YouTube captions", "video text"
+
+- \`tx tool search --providers\` - List available search providers and their status
+  Use when user wants to: "what sources", "available providers", "search engines"
+
+**IMPORTANT**: Tools are for data gathering only. DO NOT write task messages to tools. Execute tools yourself when gathering information for the user.
 
 ## Message Directory: ${msgsDir}/
 

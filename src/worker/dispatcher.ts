@@ -10,14 +10,33 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import YAML from 'yaml';
 import { MessageQueue } from '../queue/index.ts';
-import { SdkRunner, type SdkRunnerConfig } from './sdk-runner.ts';
+import { SdkRunner, type SdkRunnerConfig, type AgentRouting } from './sdk-runner.ts';
 import type { SemanticModel, WorkerConfig } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
 import { LifecycleHooks, type HookContext } from './hooks.ts';
 import { MeshValidator } from './mesh-validator.ts';
+
+/**
+ * Routing destination in mesh config
+ * Format: { destination_agent: "reason string" }
+ */
+type MeshRoutingDestination = Record<string, string>;
+
+/**
+ * Agent routing in mesh config
+ * Format: { status_type: { destination_agent: "reason" } }
+ */
+type MeshAgentRouting = Record<string, MeshRoutingDestination>;
+
+/**
+ * Mesh routing config
+ * Format: { agent_name: { status_type: { destination_agent: "reason" } } }
+ */
+type MeshRouting = Record<string, MeshAgentRouting>;
 
 interface MeshConfig {
   mesh: string;
@@ -30,6 +49,7 @@ interface MeshConfig {
     pre?: string[];   // Pre-hooks executed before worker spawn
     post?: string[];  // Post-hooks executed after worker completion
   };
+  routing?: MeshRouting;  // Agent routing tables
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -91,7 +111,7 @@ export class WorkerDispatcher extends EventEmitter {
     this.stateFile = path.join(config.workDir, '.ai', 'tx', 'data', 'workers.json');
     this.workspaceManager = new WorkspaceManager(config.workDir);
     this.promptInjector = new PromptInjector();
-    this.lifecycleHooks = new LifecycleHooks(config.workDir, config.meshesDir);
+    this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
   }
 
   private writeWorkerState(): void {
@@ -377,12 +397,25 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         });
       }
 
+      // Extract routing config for this agent
+      const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
+
+      // Inject routing instructions into system prompt
+      if (routing && Object.keys(routing).length > 0) {
+        systemPrompt = this.injectRoutingInstructions(systemPrompt, routing, meshName);
+        log.info('dispatcher', `Injected routing instructions into system prompt`, {
+          agentId,
+          routes: Object.keys(routing),
+        });
+      }
+
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
         model: agent.model,
         systemPrompt,
         workDir,
         msgsDir: this.config.msgsDir,
+        routing,
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -404,8 +437,19 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
 
       // Transition on message processing
       worker.on('message:idle', async (data) => {
-        await machine.markIdle(data.message);
-        this.emit('worker:idle', data);
+        try {
+          // Only transition to idle if currently running
+          if (machine.state.status === 'running') {
+            await machine.markIdle(data.message);
+            this.emit('worker:idle', data);
+          }
+        } catch (error) {
+          log.error('dispatcher', `Failed to mark worker idle`, {
+            agentId,
+            error: (error as Error).message,
+            currentState: machine.state.status
+          });
+        }
       });
 
       // Complete transition
@@ -460,8 +504,14 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
           });
 
           await machine.retry();
-          // Recursively spawn again
-          setTimeout(() => this.spawnWorker(meshName, agent), 1000);
+          // Recursively spawn again, but check if dispatcher is still running
+          setTimeout(() => {
+            if (this.running) {
+              this.spawnWorker(meshName, agent);
+            } else {
+              log.debug('dispatcher', `Skipping retry, dispatcher stopped`, { agentId });
+            }
+          }, 1000);
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId });
           this.activeWorkers.delete(agentId);
@@ -506,77 +556,98 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
 
   /**
    * Load all mesh configs from meshes/ directory structure
-   * Supports: meshes/{mesh}/config.json and meshes/{category}/{mesh}/config.json
+   * Supports: meshes/{mesh}/config.yaml and meshes/{category}/{mesh}/config.yaml
    * Falls back to TX_ROOT/meshes/ if project doesn't have meshes
    */
   private loadMeshConfigs(): void {
-    const meshRoots: Array<{ dir: string; isGlobal: boolean }> = [];
+    try {
+      const meshRoots: Array<{ dir: string; isGlobal: boolean }> = [];
 
-    // Project meshes
-    if (fs.existsSync(this.config.meshesDir)) {
-      meshRoots.push({ dir: this.config.meshesDir, isGlobal: false });
-    }
+      // Project meshes
+      if (fs.existsSync(this.config.meshesDir)) {
+        meshRoots.push({ dir: this.config.meshesDir, isGlobal: false });
+      }
 
-    // Global TX_ROOT meshes (fallback)
-    const globalMeshDir = process.env.TX_ROOT
-      ? path.join(process.env.TX_ROOT, 'meshes')
-      : null;
-    if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
-      meshRoots.push({ dir: globalMeshDir, isGlobal: true });
-    }
+      // Global TX_ROOT meshes (fallback)
+      const globalMeshDir = process.env.TX_ROOT
+        ? path.join(process.env.TX_ROOT, 'meshes')
+        : null;
+      if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
+        meshRoots.push({ dir: globalMeshDir, isGlobal: true });
+      }
 
-    // Legacy: check for meshes/configs/ directory (old structure)
-    const legacyConfigDir = path.join(this.config.meshesDir, 'configs');
-    if (fs.existsSync(legacyConfigDir)) {
-      this.loadMeshConfigsFromLegacyDir(legacyConfigDir, false);
-    }
+      // Legacy: check for meshes/configs/ directory (old structure)
+      const legacyConfigDir = path.join(this.config.meshesDir, 'configs');
+      if (fs.existsSync(legacyConfigDir)) {
+        this.loadMeshConfigsFromLegacyDir(legacyConfigDir, false);
+      }
 
-    if (meshRoots.length === 0) {
-      log.warn('dispatcher', 'No mesh directories found', {
-        projectDir: this.config.meshesDir,
-        globalDir: globalMeshDir
+      if (meshRoots.length === 0) {
+        log.warn('dispatcher', 'No mesh directories found', {
+          projectDir: this.config.meshesDir,
+          globalDir: globalMeshDir
+        });
+        return;
+      }
+
+      // Scan meshes/*/ and meshes/*/*/ for config files
+      for (const { dir: meshRoot, isGlobal } of meshRoots) {
+        this.scanMeshDir(meshRoot, isGlobal, 0);
+      }
+    } catch (error) {
+      log.error('dispatcher', 'Failed to load mesh configs', {
+        error: (error as Error).message,
+        stack: (error as Error).stack
       });
-      return;
-    }
-
-    // Scan meshes/*/ and meshes/*/*/ for config.json
-    for (const { dir: meshRoot, isGlobal } of meshRoots) {
-      this.scanMeshDir(meshRoot, isGlobal, 0);
+      this.emit('error', { error: `Failed to load mesh configs: ${(error as Error).message}` });
     }
   }
 
   /**
-   * Recursively scan mesh directory for config.json files (max depth 2)
+   * Recursively scan mesh directory for config files (max depth 2)
+   * Supports: config.yaml, config.yml (preferred) and config.json (legacy)
    */
   private scanMeshDir(dir: string, isGlobal: boolean, depth: number): void {
     if (depth > 2) return;  // meshes/category/mesh/ is max depth
     if (!fs.existsSync(dir)) return;
 
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-    // Check for config.json in this directory
-    const configFile = entries.find(e => e.isFile() && e.name === 'config.json');
-    if (configFile) {
-      this.loadMeshConfigFromFile(path.join(dir, 'config.json'), dir, isGlobal);
-    }
+      // Check for config files in this directory (priority: YAML > JSON)
+      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
+      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
 
-    // Recurse into subdirectories
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'configs') {
-        this.scanMeshDir(path.join(dir, entry.name), isGlobal, depth + 1);
+      if (yamlConfig) {
+        this.loadMeshConfigFromFile(path.join(dir, yamlConfig.name), dir, isGlobal);
+      } else if (jsonConfig) {
+        this.loadMeshConfigFromFile(path.join(dir, 'config.json'), dir, isGlobal);
       }
+
+      // Recurse into subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'configs') {
+          this.scanMeshDir(path.join(dir, entry.name), isGlobal, depth + 1);
+        }
+      }
+    } catch (error) {
+      log.error('dispatcher', `Failed to scan mesh directory: ${dir}`, {
+        error: (error as Error).message
+      });
     }
   }
 
   /**
    * Load a single mesh config from a file
    * Uses MeshValidator for comprehensive validation
+   * Supports both YAML (.yaml, .yml) and JSON (.json) formats
    */
   private loadMeshConfigFromFile(configPath: string, basePath: string, isGlobal: boolean): void {
     const filename = path.basename(configPath);
     try {
       const content = fs.readFileSync(configPath, 'utf-8');
-      const rawConfig = JSON.parse(content);
+      const isYaml = filename.endsWith('.yaml') || filename.endsWith('.yml');
+      const rawConfig = isYaml ? YAML.parse(content) : JSON.parse(content);
 
       // Validate using MeshValidator
       const validation = MeshValidator.validate(rawConfig, filename);
@@ -674,6 +745,72 @@ ${output}
     } catch (err) {
       log.error('dispatcher', `Failed to save session output`, { agentId, error: (err as Error).message });
     }
+  }
+
+  /**
+   * Inject routing instructions into system prompt
+   * Appends routing table to end of system prompt
+   */
+  private injectRoutingInstructions(
+    systemPrompt: string,
+    routing: AgentRouting,
+    meshName: string
+  ): string {
+    const lines: string[] = [];
+    lines.push('\n\n## Message Routing\n');
+    lines.push('When you complete your work, route your response message based on the outcome:\n');
+
+    for (const [status, dest] of Object.entries(routing)) {
+      const targetAgent = dest.to === 'core' ? 'core/core' : dest.to;
+      lines.push(`\n**Status: \`${status}\`**`);
+      lines.push(`- Send message to: \`${targetAgent}\``);
+      lines.push(`- Reason: ${dest.reason}`);
+    }
+
+    lines.push('\n\nSet the `to` field in your message frontmatter based on which status applies.');
+
+    return systemPrompt + lines.join('\n');
+  }
+
+  /**
+   * Extract routing config for a specific agent from mesh config
+   * Transforms mesh format: { status: { destination: "reason" } }
+   * To runner format: { status: { to: destination, reason: "reason" } }
+   */
+  private extractAgentRouting(
+    meshName: string,
+    agentName: string,
+    meshConfig?: MeshConfig
+  ): AgentRouting | undefined {
+    if (!meshConfig?.routing) return undefined;
+
+    const agentRouting = meshConfig.routing[agentName];
+    if (!agentRouting) return undefined;
+
+    // Transform mesh config format to SdkRunner format
+    const result: AgentRouting = {};
+
+    for (const [status, destinations] of Object.entries(agentRouting)) {
+      // Each status maps to { destination_agent: "reason" }
+      // Take the first (usually only) destination
+      const entries = Object.entries(destinations);
+      if (entries.length === 0) continue;
+
+      const [destination, reason] = entries[0];
+
+      // Build full agent path if not already qualified
+      // "core" -> "core/core", "sourcer" -> "research/sourcer"
+      const to = destination.includes('/')
+        ? destination
+        : destination === 'core'
+          ? 'core/core'
+          : `${meshName}/${destination}`;
+
+      result[status] = { to, reason };
+    }
+
+    // Only return if we have any routes
+    return Object.keys(result).length > 0 ? result : undefined;
   }
 
   /**

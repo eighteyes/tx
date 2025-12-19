@@ -820,7 +820,8 @@ async function msgFollow(logDir: string, options: MsgOptions): Promise<void> {
  * Main msg command
  */
 export async function msg(options: MsgOptions = {}): Promise<void> {
-  const logDir = '.ai/tx/msgs';
+  const workDir = process.env.TX_CWD || process.cwd();
+  const logDir = path.join(workDir, '.ai/tx/msgs');
 
   if (!fs.existsSync(logDir)) {
     console.log(`${colors.yellow}⚠${colors.reset} Message directory not found: ${logDir}`);

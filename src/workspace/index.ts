@@ -2,7 +2,7 @@
  * Workspace Module - Task-scoped output workspaces
  */
 
-export { WorkspaceManager, type WorkspaceConfig, type WorkspaceInfo } from './manager.ts';
+export { WorkspaceManager, normalizeWorkspaceConfig, type WorkspaceConfig, type WorkspaceInfo } from './manager.ts';
 export { PromptInjector, type InjectionContext } from './injector.ts';
 
 // Legacy workspace context (kept for compatibility)

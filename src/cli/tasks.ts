@@ -3,6 +3,7 @@
  * View tasks derived from message queue (task + task-complete pairs)
  */
 
+import path from 'node:path';
 import readline from 'node:readline';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { chalk, colors } from '../shared/colors.ts';
@@ -92,7 +93,8 @@ function buildTaskViews(queue: MessageQueue, options: TasksOptions): TaskView[] 
 }
 
 export async function tasks(options: TasksOptions): Promise<void> {
-  const dbPath = process.env.TX_DB_PATH || '.ai/tx/data/queue.db';
+  const workDir = process.env.TX_CWD || process.cwd();
+  const dbPath = process.env.TX_DB_PATH || path.join(workDir, '.ai/tx/data/queue.db');
   const queue = new MessageQueue(dbPath);
 
   // JSON mode - no watch

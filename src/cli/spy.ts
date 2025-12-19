@@ -4,6 +4,7 @@
  */
 
 import fs from 'node:fs';
+import path from 'node:path';
 import { MessageQueue } from '../queue/index.ts';
 import { chalk } from '../shared/colors.ts';
 import { formatTimeAgo } from '../shared/time.ts';
@@ -52,8 +53,9 @@ interface ActivityEntry {
 }
 
 export async function spy(options: SpyOptions): Promise<void> {
-  const dbPath = process.env.TX_DB_PATH || '.ai/tx/data/queue.db';
-  const activityFile = '.ai/tx/logs/activity.jsonl';
+  const workDir = process.env.TX_CWD || process.cwd();
+  const dbPath = process.env.TX_DB_PATH || path.join(workDir, '.ai/tx/data/queue.db');
+  const activityFile = path.join(workDir, '.ai/tx/logs/activity.jsonl');
   const queue = new MessageQueue(dbPath);
 
   const mode = options.output ? 'output' : options.messages ? 'messages' : 'all';

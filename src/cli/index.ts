@@ -3,6 +3,7 @@
  * TX V4 CLI
  */
 
+import dotenv from 'dotenv';
 import { start, stop } from './start.ts';
 import { status, printStatus } from './status.ts';
 import { msg } from './msg.ts';
@@ -10,7 +11,40 @@ import { logs } from './logs.ts';
 import { spy } from './spy.ts';
 import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
+import { tool } from './tool.ts';
 import { log } from '../shared/logger.ts';
+
+// Load environment variables from .env file
+dotenv.config();
+
+// Initialize logger with correct work directory early (before error handlers)
+const workDir = process.env.TX_CWD || process.cwd();
+log.init(workDir, 'debug');
+
+// Global exception handlers
+process.on('uncaughtException', (error: Error) => {
+  log.error('process', 'Uncaught exception', {
+    error: error.message,
+    stack: error.stack,
+    name: error.name
+  });
+  console.error('\n[FATAL] Uncaught exception:', error.message);
+  console.error('See logs for details: .ai/tx/logs/v4.jsonl\n');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  const errorMsg = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+
+  log.error('process', 'Unhandled promise rejection', {
+    error: errorMsg,
+    stack
+  });
+  console.error('\n[FATAL] Unhandled promise rejection:', errorMsg);
+  console.error('See logs for details: .ai/tx/logs/v4.jsonl\n');
+  process.exit(1);
+});
 
 const command = process.argv[2];
 const args = process.argv.slice(3);
@@ -82,7 +116,8 @@ async function main() {
         level: flags.l as string || flags.level as string,
         follow: Boolean(flags.f || flags.follow),
         noInteractive: Boolean(flags.noInteractive),
-        noFollow: Boolean(flags.noFollow)
+        noFollow: Boolean(flags.noFollow),
+        last: Boolean(flags.last)
       });
       break;
 
@@ -119,6 +154,24 @@ async function main() {
       await stop();
       break;
 
+    case 'tool':
+      // tx tool <subcommand> [args...]
+      const subcommand = args[0];
+      const toolArgs = args.slice(1).filter(a => !a.startsWith('-'));
+      await tool({
+        subcommand,
+        args: toolArgs,
+        source: flags.s as string || flags.source as string,
+        topic: flags.t as string || flags.topic as string,
+        limit: flags.n as string || flags.limit as string,
+        archive: Boolean(flags.a || flags.archive),
+        json: Boolean(flags.json),
+        lang: flags.l as string || flags.lang as string,
+        timestamps: Boolean(flags.T || flags.timestamps),
+        providers: Boolean(flags.providers)
+      });
+      break;
+
     default:
       console.log(`
 TX V4 CLI
@@ -132,6 +185,7 @@ Usage:
   tx spy [options]      Real-time activity stream
   tx tasks [options]    View task queue
   tx prompt <mesh> <agent> [options]  Show built prompt for agent
+  tx tool <cmd>         Search and web fetching utilities
   tx stop               Stop core agent
 
 Message options:
@@ -161,6 +215,7 @@ Log options:
   -n, --lines <n>       Number of lines (default: 50)
   -c, --component <c>   Filter by component
   -l, --level <level>   Filter by level (info, warn, error, debug)
+  --last                View logs from previous session (v4.last.jsonl)
   --no-interactive      Disable interactive mode
   --no-follow           Disable follow mode
 
@@ -185,6 +240,27 @@ Task options:
 Prompt options:
   --with-task <msg-id>  Include task context from message
   --raw                 Raw output (just the prompt, no formatting)
+
+Tool commands:
+  tx tool search <query>           Search multiple sources
+  tx tool search --providers       List available search providers
+  tx tool get-www <url>            Fetch URL with archive fallback
+  tx tool youtube-transcript <id>  Fetch YouTube video transcript
+  tx tool health [provider]        Check provider health
+
+Tool search options:
+  -s, --source <source>      Specific source (stackoverflow, github, etc.)
+  -n, --limit <n>            Limit results (default: 10)
+  --json                     JSON output
+
+Tool get-www options:
+  -a, --archive              Try archive.is/archive.org first
+  --json                     JSON output
+
+Tool youtube-transcript options:
+  -l, --lang <lang>          Language code (e.g., "en", "es")
+  -T, --timestamps           Include timestamps in output
+  --json                     JSON output
 `);
   }
 }

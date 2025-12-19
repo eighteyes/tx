@@ -11,6 +11,7 @@ import path from 'node:path';
 import { log } from '../shared/logger.ts';
 import { WorktreeManager } from '../core/worktree.ts';
 import { SdkRunner, type SdkRunnerConfig } from './sdk-runner.ts';
+import type { MessageQueue } from '../queue/index.ts';
 
 export interface HookContext {
   meshInstance: string;
@@ -36,9 +37,11 @@ export class LifecycleHooks {
   private worktreeManager: WorktreeManager;
   private workDir: string;
   private meshesDir: string;
+  private queue: MessageQueue;
 
-  constructor(workDir: string, meshesDir?: string) {
+  constructor(workDir: string, queue: MessageQueue, meshesDir?: string) {
     this.workDir = workDir;
+    this.queue = queue;
     this.meshesDir = meshesDir || path.join(workDir, 'meshes');
     this.worktreeManager = new WorktreeManager(workDir);
     this.registerBuiltinHooks();
@@ -80,7 +83,7 @@ export class LifecycleHooks {
       });
 
       try {
-        this.worktreeManager.removeWorktree(context.meshInstance, false);
+        this.worktreeManager.removeWorktree(context.meshInstance, true);
         log.info('hooks', 'Worktree cleaned up', { meshInstance: context.meshInstance });
       } catch (error) {
         log.error('hooks', 'Failed to cleanup worktree', {
@@ -113,10 +116,11 @@ export class LifecycleHooks {
         model: 'haiku',
         systemPrompt,
         workDir: commitWorkDir,
+        msgsDir: path.join(this.workDir, '.ai', 'tx', 'msgs'),
       };
 
       try {
-        const runner = new SdkRunner(runnerConfig);
+        const runner = new SdkRunner(runnerConfig, this.queue);
         const result = await runner.run('Create a commit for the current changes.');
 
         // Parse result for commit info

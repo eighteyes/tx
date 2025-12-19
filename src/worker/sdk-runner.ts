@@ -15,6 +15,20 @@ const MODEL_MAP: Record<SemanticModel, string> = {
   haiku: 'haiku',
 };
 
+/**
+ * Routing destination: target agent and reason
+ */
+export interface RoutingDestination {
+  to: string;      // Target agent ID (e.g., "research/sourcer" or "core")
+  reason: string;  // Why route here (e.g., "Requirements complete, ready to source")
+}
+
+/**
+ * Agent routing config: maps status types to destinations
+ * Example: { complete: { to: "research/sourcer", reason: "Ready to source" } }
+ */
+export type AgentRouting = Record<string, RoutingDestination>;
+
 export interface SdkRunnerConfig {
   id: string;
   model: SemanticModel;
@@ -22,6 +36,7 @@ export interface SdkRunnerConfig {
   workDir: string;
   msgsDir: string;
   maxTurns?: number;
+  routing?: AgentRouting;  // Optional routing table for this agent
 }
 
 export class SdkRunner extends EventEmitter {
@@ -62,19 +77,46 @@ export class SdkRunner extends EventEmitter {
 
         const userPrompt = this.buildUserPrompt(taskMessage);
 
-        const q = query({
-          prompt: userPrompt,
-          options: {
-            cwd: this.config.workDir,
-            model: MODEL_MAP[this.config.model],
-            systemPrompt: this.config.systemPrompt,
-            permissionMode: 'bypassPermissions',
-            allowDangerouslySkipPermissions: true,
-            abortController: this.abortController,
-            maxTurns: this.config.maxTurns,
-            settingSources: ['project'],  // Load project slash commands
+        let q;
+        try {
+          q = query({
+            prompt: userPrompt,
+            options: {
+              cwd: this.config.workDir,
+              model: MODEL_MAP[this.config.model],
+              systemPrompt: this.config.systemPrompt,
+              permissionMode: 'bypassPermissions',
+              allowDangerouslySkipPermissions: true,
+              abortController: this.abortController,
+              maxTurns: this.config.maxTurns,
+              settingSources: ['project'],  // Load project slash commands
+            }
+          });
+        } catch (error) {
+          const err = error as Error;
+          // Catch SDK initialization errors (e.g., path argument type errors)
+          if (err.message.includes('path') || err.message.includes('type')) {
+            log.warn('sdk-runner', `SDK initialization warning, retrying without project settings`, {
+              workerId,
+              error: err.message
+            });
+            // Retry without project settings
+            q = query({
+              prompt: userPrompt,
+              options: {
+                cwd: this.config.workDir,
+                model: MODEL_MAP[this.config.model],
+                systemPrompt: this.config.systemPrompt,
+                permissionMode: 'bypassPermissions',
+                allowDangerouslySkipPermissions: true,
+                abortController: this.abortController,
+                maxTurns: this.config.maxTurns,
+              }
+            });
+          } else {
+            throw error;
           }
-        });
+        }
 
         let resultMessage = '';
         let isError = false;
@@ -173,7 +215,6 @@ export class SdkRunner extends EventEmitter {
 
     parts.push('\n---');
     parts.push(`\nWrite response messages to: ${this.config.msgsDir}/`);
-    parts.push('When done, write a task-complete message to core/core.');
 
     return parts.join('\n');
   }
