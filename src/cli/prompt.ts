@@ -223,7 +223,7 @@ Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
 When the user types a slash command pattern like \`/know:prepare\` or \`/know:add feature-name\`:
 
 1. **IMMEDIATELY** write a task message with the \`command\` frontmatter field
-2. Route to the appropriate mesh (brain handles /know:* commands)
+2. Send to the appropriate mesh
 3. The worker will execute the slash command directly
 
 **Pattern**: \`/namespace:action [args]\` → route via \`command\` frontmatter
@@ -259,12 +259,6 @@ timestamp: ${new Date().toISOString()}
 
 User requested: /know:add auth-system
 \`\`\`
-
-### Slash Command Routing Table
-
-| Pattern | Route to | Description |
-|---------|----------|-------------|
-| \`/know:*\` | brain/brain | Knowledge graph commands |
 
 **DO NOT** try to execute slash commands yourself. Always route them via the \`command\` frontmatter to the appropriate worker.
 

@@ -20,8 +20,13 @@ agents:
     model: opus
     prompt: disprover/prompt.md
   - name: writer
-    model: sonnet
+    model: opus
     prompt: writer/prompt.md
+
+intents:
+  patterns:
+    - hypothesis
+    - theory
 
 entry_point: interviewer
 completion_agent: writer

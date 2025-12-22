@@ -20,7 +20,7 @@ intents:
 
 agents:
   - name: brain
-    model: sonnet
+    model: opus
     prompt: prompt.md
 
 entry_point: brain

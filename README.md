@@ -1,8 +1,66 @@
 # TX V4
 
-Multi-agent orchestration system with human-in-the-loop (HITL) support.
+## Objective
+Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
+
+## Features
+- Claude Code SDK uses your current authentication to run agents in isolation.
+- Intents drive behavior, say "code this", launches developer agent.
+- Immutable message logs provide observability between core agent and downstream.
+- Configuration driven collections of agents called `meshes`
+- Mesh message routing protocols provide for agent-driven workflows and HITL.
+- Conduct many parallel agent sessions from ONE conversation.
+- Chain agent outputs with plain language "research pain points around <topic> and plan a software project based off your findings"
+- Site specific search tooling to provide precise lookups when WebSearch is too general ( or when Anthropic's crawler is blocked )
+- (https://github.com/eighteyes/know-cli)[Know] provides opinionated Product / Software tooling for project planning and execution. 
+
+## Dependencies
+- Authenticated Claude Code 
+- `tmux` 
+
+## Quick Start
+>[!IMPORTANT] 
+> `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use (https://github.com/eighteyes/safe-claude)[safe-claude]. 
+
+```bash
+git clone git@github.com:eighteyes/tx-cli
+cd tx-cli
+# installs global tx command
+npm link
+
+# cd to your project, or just run here to check it out
+cd ../<project-directory>
+
+# start the show
+tx start
+
+> "Research a report about pelicans riding bikes"
+
+# steps to quit 
+# to leave tmux ( /exit just leaves to shell )
+Cntl-B d
+```
+
+# Included Meshes
+`brain` - Manages project information and `know` system.
+`dev` - Basic developer workflow.
+`research` - 4 agent basic researcher
+`deep-research` - 6 agent research with theorizer / disprover loop, use "theory" or "hypothesis" in your prompt as intent
+
+## CLI Commands
+> These are intended to be run from your project root and will not work system wide.
+```bash
+tx start              # Start core agent (attaches to tmux)
+tx status             # Show system status
+tx msg [options]      # View messages
+tx logs [options]     # View logs
+tx spy [options]      # Real-time activity stream
+tx tasks [options]    # View task queue
+tx stop               # Stop core agent
+```
 
 ## Architecture
+> Note: As a matter of practice, I store all AI tooling information in `.ai` and hope that the vendor community will stop polluting our project roots with their hidden folders.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -43,103 +101,12 @@ Multi-agent orchestration system with human-in-the-loop (HITL) support.
 │  - Stores session ID after completion                       │
 └─────────────────────────────────────────────────────────────┘
 ```
+## Philosophy
+`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*.
 
-## Quick Start
+By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas and HITL loops ensure you can steer the meshes when they get lost. Configuration driven meshes allow you to prototype agentic topologies at run time. 
 
-```bash
-# Install dependencies
-npm install
+Conversational AI interfaces have not changed in the past 60 years, how do we get a single word to have maximum impact?
 
-# Run tests
-npm test
-
-# Start the system
-npm start
-```
-
-## Key Concepts
-
-- **Core**: Interactive Claude session in tmux for user interaction
-- **Workers**: Ephemeral SDK-based agents that process tasks and exit
-- **Messages**: Markdown files with frontmatter for inter-agent communication
-- **Resume**: Workers can resume previous conversations via stored session IDs
-- **Workspaces**: Task-scoped output directories for structured agent outputs
-
-## Directory Structure
-
-```
-v4/
-├── src/
-│   ├── cli/          # CLI commands (start, status, msg, logs, spy, tasks)
-│   ├── core/         # Core agent, tmux, consumer
-│   ├── queue/        # SQLite message queue
-│   ├── worker/       # SDK runner, dispatcher
-│   ├── workspace/    # Task-scoped output workspaces
-│   ├── providers/    # Claude provider
-│   └── shared/       # Types, colors, time utilities
-├── meshes/
-│   ├── configs/      # Mesh configurations (JSON)
-│   └── agents/       # Agent prompts (Markdown)
-├── test/
-│   └── e2e/          # End-to-end tests
-└── .ai/tx/output/    # Task workspace directories
-```
-
-## Message Protocol
-
-Messages are markdown files with YAML frontmatter:
-
-```markdown
----
-to: brain/brain
-from: core/core
-type: task
-msg-id: task-123
-headline: Run know:prepare
-timestamp: 2025-12-09T00:00:00.000Z
----
-
-Please prepare this project.
-```
-
-### Message Types
-
-- `task` - Request work from an agent
-- `task-complete` - Work finished successfully
-- `ask-human` - Worker needs user input
-- `ask-response` - User's response to ask-human
-- `update` - Status update
-
-## CLI Commands
-
-```bash
-tx start              # Start core agent (attaches to tmux)
-tx status             # Show system status
-tx msg [options]      # View messages
-tx logs [options]     # View logs
-tx spy [options]      # Real-time activity stream
-tx tasks [options]    # View task queue
-tx stop               # Stop core agent
-```
-
-### Observability
-
-| Command | Purpose |
-|---------|---------|
-| `tx status` | Agent states, PIDs, health |
-| `tx msg` | View message queue (filter by type/agent) |
-| `tx tasks` | View task queue (filter by status/agent/mesh) |
-| `tx logs [agent]` | Agent output logs (-f to follow) |
-| `tx spy [agent]` | Real-time stream of messages + output |
-
-## Documentation
-
-- [WORKSPACE_SYSTEM.md](./WORKSPACE_SYSTEM.md) - Task-scoped output workspaces
-- [STATE_MACHINE_INDEX.md](./STATE_MACHINE_INDEX.md) - State machine architecture
-- [CLAUDE.md](./CLAUDE.md) - Development guide
-
-## Dependencies
-
-- `@anthropic-ai/claude-agent-sdk` - Claude Agent SDK for workers
-- `better-sqlite3` - SQLite for message queue and sessions
-- `chokidar` - File watching for message consumer
+## Troubleshooting
+Sometimes `claude` and `tmux` stop playing together nicely. Quit and

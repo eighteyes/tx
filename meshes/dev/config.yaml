@@ -29,4 +29,4 @@ routing:
     blocked:
       core: "Need clarification or human input"
     ask:
-      brain: "Need project knowledge from spec-graph"
+      brain: "Need project knowledge"

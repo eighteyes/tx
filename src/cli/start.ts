@@ -266,14 +266,92 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // This allows chokidar and intervals to keep running while attached
   await new Promise<void>((resolve) => {
     const attach = spawn('tmux', ['attach', '-t', sessionName], {
-      stdio: 'inherit'
+      stdio: ['pipe', 'pipe', 'inherit']
     });
 
+    // OSC pattern: ESC ] <code> ; <payload> (BEL or ESC \)
+    const oscPattern = /\x1b\](\d+);([^\x07\x1b]*?)(?:\x07|\x1b\\)/g;
+
+    // Buffer for incomplete OSC sequences
+    let oscBuffer = '';
+
+    // Monitor stdout from tmux for OSC codes
+    if (attach.stdout) {
+      attach.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        const combined = oscBuffer + text;
+
+        // Check for complete OSC sequences
+        let match;
+        let lastIndex = 0;
+        oscPattern.lastIndex = 0;
+
+        while ((match = oscPattern.exec(combined)) !== null) {
+          const [, code, payload] = match;
+          log.info('osc', 'Captured OSC code', { code, payload: payload.slice(0, 100) });
+
+          // Re-emit the OSC code to stdout
+          process.stdout.write(`\x1b]${code};${payload}\x07`);
+          lastIndex = oscPattern.lastIndex;
+        }
+
+        // Keep any incomplete sequence in the buffer
+        // Check if there's an incomplete OSC start at the end
+        const remaining = combined.slice(lastIndex);
+        const oscStartIndex = remaining.lastIndexOf('\x1b]');
+        if (oscStartIndex !== -1 && !remaining.slice(oscStartIndex).includes('\x07') && !remaining.slice(oscStartIndex).includes('\x1b\\')) {
+          // Incomplete OSC sequence - buffer it
+          oscBuffer = remaining.slice(oscStartIndex);
+          // Write the part before the incomplete sequence
+          process.stdout.write(remaining.slice(0, oscStartIndex));
+        } else {
+          // No incomplete sequence, clear buffer and write all
+          oscBuffer = '';
+          process.stdout.write(remaining);
+        }
+      });
+    }
+
+    // Pipe stdin to tmux while monitoring for OSC codes
+    if (attach.stdin && process.stdin.isTTY) {
+      // Set raw mode to pass all input through
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+
+      process.stdin.on('data', (data: Buffer) => {
+        const text = data.toString();
+
+        // Check for OSC codes in input
+        let match;
+        oscPattern.lastIndex = 0;
+        while ((match = oscPattern.exec(text)) !== null) {
+          const [, code, payload] = match;
+          log.info('osc', 'Captured OSC code from stdin', { code, payload: payload.slice(0, 100) });
+
+          // Re-emit the OSC code
+          process.stdout.write(`\x1b]${code};${payload}\x07`);
+        }
+
+        // Pass all data through to tmux
+        attach.stdin?.write(data);
+      });
+    } else if (attach.stdin) {
+      // Non-TTY mode: just pipe
+      process.stdin.pipe(attach.stdin);
+    }
+
     attach.on('exit', () => {
+      // Restore stdin
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
       resolve();
     });
 
     attach.on('error', () => {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
       resolve();
     });
   });
@@ -490,7 +568,7 @@ Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
 When the user types a slash command pattern like \`/know:prepare\` or \`/know:add feature-name\`:
 
 1. **IMMEDIATELY** write a task message with the \`command\` frontmatter field
-2. Route to the appropriate mesh (brain handles /know:* commands)
+2. Send to the appropriate mesh
 3. The worker will execute the slash command directly
 
 **Pattern**: \`/namespace:action [args]\` → route via \`command\` frontmatter
@@ -526,12 +604,6 @@ timestamp: ${new Date().toISOString()}
 
 User requested: /know:add auth-system
 \`\`\`
-
-### Slash Command Routing Table
-
-| Pattern | Route to | Description |
-|---------|----------|-------------|
-| \`/know:*\` | brain/brain | Knowledge graph commands |
 
 **DO NOT** try to execute slash commands yourself. Always route them via the \`command\` frontmatter to the appropriate worker.
 

@@ -6,3 +6,5 @@ node_modules
 
 # MCP server credentials (use .mcp.env.example as template)
 .mcp.env
+.env
+.docker-build/Dockerfile
