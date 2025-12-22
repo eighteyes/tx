@@ -3,7 +3,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKResultMessage, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult } from '../shared/types.ts';
@@ -29,6 +29,13 @@ export interface RoutingDestination {
  */
 export type AgentRouting = Record<string, RoutingDestination>;
 
+/**
+ * Tool restriction policy for agents
+ * - 'unrestricted': Full SDK tools + MCP tools (default)
+ * - 'mcp-only': ONLY MCP server tools, no built-in SDK tools
+ */
+export type ToolRestriction = 'unrestricted' | 'mcp-only';
+
 export interface SdkRunnerConfig {
   id: string;
   model: SemanticModel;
@@ -37,6 +44,8 @@ export interface SdkRunnerConfig {
   msgsDir: string;
   maxTurns?: number;
   routing?: AgentRouting;  // Optional routing table for this agent
+  mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
+  toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
 }
 
 export class SdkRunner extends EventEmitter {
@@ -77,6 +86,20 @@ export class SdkRunner extends EventEmitter {
 
         const userPrompt = this.buildUserPrompt(taskMessage);
 
+        // Determine tool configuration based on restriction policy
+        // 'mcp-only': Disable all built-in tools, only MCP tools available
+        // 'unrestricted' (default): Full SDK tools + MCP tools
+        const toolsConfig = this.config.toolRestriction === 'mcp-only'
+          ? []  // Empty array disables all built-in tools
+          : undefined;  // undefined = use default (all tools)
+
+        if (this.config.toolRestriction === 'mcp-only') {
+          log.info('sdk-runner', `Tool restriction: mcp-only`, {
+            workerId,
+            mcpServers: this.config.mcpServers ? Object.keys(this.config.mcpServers) : []
+          });
+        }
+
         let q;
         try {
           q = query({
@@ -90,6 +113,8 @@ export class SdkRunner extends EventEmitter {
               abortController: this.abortController,
               maxTurns: this.config.maxTurns,
               settingSources: ['project'],  // Load project slash commands
+              mcpServers: this.config.mcpServers,  // Pass MCP server configs
+              tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
             }
           });
         } catch (error) {
@@ -111,6 +136,8 @@ export class SdkRunner extends EventEmitter {
                 allowDangerouslySkipPermissions: true,
                 abortController: this.abortController,
                 maxTurns: this.config.maxTurns,
+                mcpServers: this.config.mcpServers,  // Pass MCP server configs
+                tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               }
             });
           } else {

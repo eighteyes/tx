@@ -23,7 +23,14 @@
       "Bash(know get:*)",
       "Bash(know uses feature:www-interface)",
       "Bash(know down feature:www-interface)",
-      "Bash(know feature-spec feature:www-interface)"
+      "Bash(know feature-spec feature:www-interface)",
+      "Bash(tx prompt dev:*)",
+      "Bash(tx prompt test:*)",
+      "Bash(tx prompt:*)",
+      "Bash(xargs rg:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)"
     ]
   },
   "spinnerTipsEnabled": false

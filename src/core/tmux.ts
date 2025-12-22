@@ -6,6 +6,7 @@
 
 import { exec, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -14,6 +15,27 @@ const execAsync = promisify(exec);
 
 /** Valid tmux session name pattern: alphanumeric, underscore, hyphen */
 const VALID_SESSION_NAME = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Generate unique tmux session name for a working directory
+ * Allows multiple TX instances on one system in different directories
+ */
+export function getSessionName(workDir: string): string {
+  const resolvedPath = path.resolve(workDir);
+  const basename = path.basename(resolvedPath);
+
+  // Create short hash of full path for uniqueness
+  const hash = crypto
+    .createHash('md5')
+    .update(resolvedPath)
+    .digest('hex')
+    .slice(0, 8);
+
+  // Sanitize basename to only valid characters
+  const safeName = basename.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+  return `tx-${safeName}-${hash}`;
+}
 
 export class TmuxSession {
   readonly name: string;

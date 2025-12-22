@@ -15,7 +15,7 @@ import readline from 'node:readline';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { MessageConsumer } from './consumer.ts';
 import { TmuxSession } from './tmux.ts';
-import { WorkerRunner, type WorkerRunConfig } from '../worker/runner.ts';
+import { SdkRunner, type SdkRunnerConfig } from '../worker/sdk-runner.ts';
 import type { CoreConfig, SemanticModel } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
@@ -221,33 +221,29 @@ export class CoreAgent extends EventEmitter {
   async runWorker(agentId: string, model: SemanticModel, prompt: string): Promise<void> {
     console.log(`[core] Running worker: ${agentId}`);
 
-    const workerConfig: WorkerRunConfig = {
+    const workerConfig: SdkRunnerConfig = {
       id: agentId,
       model,
-      prompt,
+      systemPrompt: prompt,
       workDir: this.config.workDir,
       msgsDir: this.config.msgsDir,
     };
 
-    const worker = new WorkerRunner(workerConfig, this.queue);
+    const worker = new SdkRunner(workerConfig, this.queue);
 
-    worker.on('output', ({ data }) => {
+    worker.on('output', ({ data }: { id: string; data: string }) => {
       process.stdout.write(data);
     });
 
-    worker.on('complete', ({ messagesProcessed }) => {
+    worker.on('complete', ({ messagesProcessed }: { id: string; messagesProcessed: number; output: string }) => {
       console.log(`[core] Worker ${agentId} complete (${messagesProcessed} messages)`);
     });
 
-    worker.on('error', ({ error }) => {
+    worker.on('error', ({ error }: { id: string; error: string }) => {
       log.error('core', 'Worker error', { agentId, error });
     });
 
-    const result = await worker.run();
-
-    if (!result.success) {
-      log.error('core', 'Worker failed', { agentId, error: result.error });
-    }
+    await worker.run();
   }
 
   isRunning(): boolean {

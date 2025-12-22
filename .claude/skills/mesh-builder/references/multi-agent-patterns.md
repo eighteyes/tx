@@ -587,6 +587,5 @@ tx attach  # or tmux attach -t core
 ## References
 
 - **[mesh-config-reference.md](mesh-config-reference.md)** - Config field reference
-- **[agent-config-reference.md](agent-config-reference.md)** - Agent config reference
 - **[prompt-templates.md](prompt-templates.md)** - Prompt templates
 - **[workflows.md](workflows.md)** - Message format and routing

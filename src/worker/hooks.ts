@@ -120,8 +120,21 @@ export class LifecycleHooks {
       };
 
       try {
+        // Insert task message for the commit agent to process
+        const commitAgentId = `commit-agent-${context.meshInstance}`;
+        this.queue.insert({
+          from_agent: 'hooks/commit',
+          to_agent: commitAgentId,
+          type: 'task',
+          payload: {
+            'msg-id': `commit-task-${Date.now()}`,
+            headline: 'Create commit for current changes',
+            body: 'Review the current git status and create an appropriate commit for any changes.',
+          },
+        });
+
         const runner = new SdkRunner(runnerConfig, this.queue);
-        const result = await runner.run('Create a commit for the current changes.');
+        const result = await runner.run();
 
         // Parse result for commit info
         if (result.output) {

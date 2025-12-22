@@ -38,11 +38,54 @@ agents:
 - `model` (required): `opus`, `sonnet`, or `haiku`
 - `prompt` (required): Path to prompt file (relative to mesh directory)
 - `workspace` (optional): Agent-level workspace config
+- `mcpServers` (optional): MCP server configuration (see below)
 
 **Rules**:
 - Must have at least 1 agent
 - Prompt paths are relative to the mesh directory
 - Order matters only for default entry_point (first agent)
+
+### `mcpServers` (Agent-Level)
+Object - MCP servers to spawn alongside an agent
+
+```yaml
+# Example from meshes/protagents/meet/config.yaml
+agents:
+  - name: scheduler
+    model: sonnet
+    prompt: scheduler/prompt.md
+    mcpServers:
+      gcal:
+        command: npx
+        args:
+          - gcal-mcp
+```
+
+**MCP server fields**:
+- Server name (e.g., `gcal`): User-defined identifier
+  - `command` (required): Executable to run
+  - `args` (optional): Array of command arguments
+
+**Multiple MCP servers**:
+```yaml
+agents:
+  - name: assistant
+    model: sonnet
+    prompt: prompt.md
+    mcpServers:
+      gcal:
+        command: npx
+        args: [gcal-mcp]
+      slack:
+        command: npx
+        args: [slack-mcp]
+```
+
+**Use cases**:
+- Calendar access (gcal-mcp, outlook-mcp)
+- Messaging integrations (slack-mcp, teams-mcp)
+- Data sources (postgres-mcp, mongodb-mcp)
+- File system access (fs-mcp)
 
 ## Optional Fields
 
@@ -313,19 +356,14 @@ config:
 
 Used for mesh-specific settings that agents can reference.
 
-## Full Example
+## Full Example (from deep-research mesh)
 
 ```yaml
-mesh: research
-description: "Web research mesh with iterative confidence loop"
+# meshes/deep-research/config.yaml
+mesh: deep-research
+description: "Multi-agent deep research with iterative confidence loop: interviewer gathers requirements, sourcer finds sources, analyst analyzes, researcher synthesizes theories, disprover critiques until 95% confidence, writer creates final report"
 type: ephemeral
 idle_timeout_minutes: false
-
-intents:
-  patterns:
-    - research
-    - investigate
-    - "find out"
 
 agents:
   - name: interviewer
@@ -337,6 +375,12 @@ agents:
   - name: analyst
     model: sonnet
     prompt: analyst/prompt.md
+  - name: researcher
+    model: opus
+    prompt: researcher/prompt.md
+  - name: disprover
+    model: opus
+    prompt: disprover/prompt.md
   - name: writer
     model: sonnet
     prompt: writer/prompt.md
@@ -347,23 +391,49 @@ completion_agent: writer
 routing:
   interviewer:
     complete:
-      sourcer: "Requirements complete, ready to source"
+      sourcer: "Requirements gathered, ready to source information"
     blocked:
-      core: "Cannot proceed - unclear requirements"
+      core: "Cannot proceed - unclear research requirements"
   sourcer:
     complete:
       analyst: "Sources collected and ready for analysis"
+    blocked:
+      core: "Cannot source - technical issues or unclear topic"
   analyst:
     complete:
-      writer: "Analysis complete"
+      researcher: "Analysis complete - hypotheses formulated and ready for theory synthesis"
     needs-more-data:
-      sourcer: "Need additional sources"
+      sourcer: "Insufficient information - need additional sources"
+    blocked:
+      core: "Cannot analyze - conflicting or unclear data"
+  researcher:
+    complete:
+      writer: "Theory validated - confidence threshold met, ready for final synthesis"
+    low-confidence:
+      disprover: "Confidence below 95% - needs critical review"
+    blocked:
+      core: "Cannot synthesize - insufficient analysis or conflicting evidence"
+  disprover:
+    complete:
+      analyst: "Critical review complete - counterpoints identified for refinement"
+    high-confidence:
+      writer: "Theory validated - confidence threshold met, ready for final synthesis"
+    blocked:
+      core: "Cannot critique - insufficient evidence or unclear theory"
   writer:
     complete:
-      core: "Research complete"
+      core: "Research complete and saved to workspace"
+    needs-clarification:
+      analyst: "Need more context or clearer analysis"
+    blocked:
+      core: "Cannot write - insufficient material or unclear direction"
 
 workspace:
   path: ".ai/research/{topic}/"
+
+config:
+  confidence_threshold: 0.95
+  max_iterations: 3
 
 rearmatter:
   enabled: true
@@ -371,8 +441,11 @@ rearmatter:
     - grade
     - confidence
     - status
+    - iteration
     - gaps
 ```
+
+**Note the iterative confidence loop**: researcher → disprover → analyst → researcher (loops until 95% confidence achieved).
 
 ## Core Mesh (Special)
 
@@ -466,4 +539,41 @@ routing:
       core: "Need human input"
     ask:
       brain: "Need project knowledge"
+```
+
+### Agent with MCP Integration
+```yaml
+# meshes/protagents/meet/config.yaml
+mesh: meet
+description: "Meeting coordination agent using Google Calendar MCP"
+type: ephemeral
+
+agents:
+  - name: scheduler
+    model: sonnet
+    prompt: scheduler/prompt.md
+    mcpServers:
+      gcal:
+        command: npx
+        args:
+          - gcal-mcp
+
+entry_point: scheduler
+completion_agent: scheduler
+
+routing:
+  scheduler:
+    complete:
+      core: "Meeting scheduled successfully"
+    blocked:
+      core: "Need clarification or unable to schedule"
+    confused:
+      core: "Unclear request - need human input"
+
+rearmatter:
+  enabled: true
+  fields:
+    - status
+    - meeting_time
+    - attendees
 ```

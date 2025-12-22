@@ -182,21 +182,26 @@ This requires `settingSources: ['project']` in the SDK options.
 ```
 v4/
 ├── src/
-│   ├── cli/           # CLI commands (start, status, msg, spy)
-│   ├── core/          # Core agent (tmux, consumer)
+│   ├── cli/           # CLI commands (start, status, msg, spy, logs, tasks)
+│   ├── core/          # Core agent (tmux, consumer, injector)
 │   ├── queue/         # SQLite queue
 │   ├── worker/        # SDK runner, dispatcher
 │   ├── providers/     # Model resolution
-│   └── shared/        # Types, logger
+│   └── shared/        # Types, logger, colors
 ├── meshes/
-│   ├── configs/       # Mesh YAML configs
-│   └── agents/        # Agent prompts
+│   ├── brain/         # Brain mesh (know gateway)
+│   ├── dev/           # Dev mesh (coding tasks)
+│   ├── deep-research/ # Multi-agent research pipeline
+│   ├── test/          # Test mesh
+│   ├── system/        # System meshes (commit-agent)
+│   └── protagents/    # User productivity meshes (meet)
 ├── test/
 │   └── e2e/           # E2E tests
 └── .ai/tx/
-    ├── msgs/          # Message event log
-    ├── logs/          # System logs
-    └── mesh/          # Runtime workspaces
+    ├── msgs/          # Message event log (central)
+    ├── data/          # SQLite queue (queue.db)
+    ├── logs/          # System logs (v4.jsonl, debug.jsonl, error.jsonl)
+    └── sessions/      # Captured worker sessions
 ```
 
 ## Test Infrastructure

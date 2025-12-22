@@ -5,7 +5,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { MessageQueue } from '../queue/index.ts';
-import { TmuxSession } from '../core/tmux.ts';
+import { TmuxSession, getSessionName } from '../core/tmux.ts';
 
 export interface StatusResult {
   core: {
@@ -29,8 +29,9 @@ export async function status(workDir?: string): Promise<StatusResult> {
   const dbPath = path.join(cwd, '.ai', 'tx', 'data', 'queue.db');
   const workersPath = path.join(cwd, '.ai', 'tx', 'data', 'workers.json');
 
-  // Check core session
-  const tmux = new TmuxSession('tx-v4-core');
+  // Check core session (unique per directory)
+  const sessionName = getSessionName(cwd);
+  const tmux = new TmuxSession(sessionName);
   const coreRunning = await tmux.exists();
 
   // Check queue if exists
@@ -56,7 +57,7 @@ export async function status(workDir?: string): Promise<StatusResult> {
   return {
     core: {
       running: coreRunning,
-      session: 'tx-v4-core',
+      session: sessionName,
     },
     queue: stats,
     workers,

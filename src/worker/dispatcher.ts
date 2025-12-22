@@ -12,13 +12,50 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { MessageQueue } from '../queue/index.ts';
-import { SdkRunner, type SdkRunnerConfig, type AgentRouting } from './sdk-runner.ts';
+import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
 import type { SemanticModel, WorkerConfig } from '../shared/types.ts';
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
 import { LifecycleHooks, type HookContext } from './hooks.ts';
 import { MeshValidator } from './mesh-validator.ts';
+import { savePromptMessage } from '../shared/prompt-messages.ts';
+
+/**
+ * Load environment variables from .mcp.env file
+ * Returns empty object if file doesn't exist
+ */
+function loadMcpEnv(workDir: string): Record<string, string> {
+  const mcpEnvPath = path.join(workDir, '.mcp.env');
+
+  if (!fs.existsSync(mcpEnvPath)) {
+    return {};
+  }
+
+  try {
+    const content = fs.readFileSync(mcpEnvPath, 'utf-8');
+    const env: Record<string, string> = {};
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      // Skip comments and empty lines
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        env[key.trim()] = valueParts.join('=').trim();
+      }
+    }
+
+    return env;
+  } catch (error) {
+    log.warn('dispatcher', 'Failed to load .mcp.env', {
+      error: (error as Error).message
+    });
+    return {};
+  }
+}
 
 /**
  * Routing destination in mesh config
@@ -50,6 +87,7 @@ interface MeshConfig {
     post?: string[];  // Post-hooks executed after worker completion
   };
   routing?: MeshRouting;  // Agent routing tables
+  toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -83,6 +121,7 @@ interface AgentConfig {
   model: SemanticModel;
   prompt: string;  // Path to prompt file
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
+  mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
 }
 
 export interface DispatcherConfig {
@@ -178,8 +217,12 @@ export class WorkerDispatcher extends EventEmitter {
     if (!this.running) return;
 
     try {
-      // Get all agents we know about from mesh configs
-      for (const [meshName, meshConfig] of this.meshConfigs) {
+      // Reload configs at poll time to pick up changes (e.g., workspace paths)
+      for (const [meshName, _cachedConfig] of this.meshConfigs) {
+        // Re-read config from disk to enable runtime config updates
+        const meshConfig = this.reloadMeshConfig(meshName);
+        if (!meshConfig) continue;
+
         // Validate agents field
         if (!meshConfig.agents || !Array.isArray(meshConfig.agents)) {
           log.error('dispatcher', `Invalid mesh config: agents is not an array`, {
@@ -232,7 +275,7 @@ export class WorkerDispatcher extends EventEmitter {
       const nextMsg = this.queue.peekOne(agentId);
       const taskId = nextMsg ? nextMsg.id : `${agentId}-${Date.now()}`;
 
-      // Get mesh config for lifecycle hooks
+      // Get mesh config (poll() already reloaded it from disk)
       const meshConfig = this.meshConfigs.get(meshName);
 
       // Create hook context
@@ -409,6 +452,44 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         });
       }
 
+      // Save prompt as message for viewing with tx msg
+      savePromptMessage({
+        agentId,
+        prompt: systemPrompt,
+        msgsDir: this.config.msgsDir,
+        taskId,
+        model: agent.model,
+      });
+
+      // Load MCP environment variables if agent has MCP servers
+      let mcpServers = agent.mcpServers;
+      if (mcpServers && Object.keys(mcpServers).length > 0) {
+        const mcpEnv = loadMcpEnv(this.config.workDir);
+
+        if (Object.keys(mcpEnv).length > 0) {
+          log.info('dispatcher', 'Loaded MCP environment variables', {
+            agentId,
+            vars: Object.keys(mcpEnv),
+          });
+
+          // Inject env vars into each MCP server config
+          mcpServers = Object.fromEntries(
+            Object.entries(mcpServers).map(([serverName, serverConfig]) => {
+              return [
+                serverName,
+                {
+                  ...serverConfig,
+                  env: {
+                    ...mcpEnv,              // MCP env vars as base
+                    ...serverConfig.env,    // Server-specific env overrides
+                  },
+                },
+              ];
+            })
+          );
+        }
+      }
+
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
         model: agent.model,
@@ -416,6 +497,8 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         workDir,
         msgsDir: this.config.msgsDir,
         routing,
+        mcpServers,
+        toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -714,6 +797,95 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
       const configPath = path.join(configDir, file);
       // Legacy configs use workDir-relative prompt paths, so basePath is workDir
       this.loadMeshConfigFromFile(configPath, this.config.workDir, isGlobal);
+    }
+  }
+
+  /**
+   * Reload a specific mesh config from disk
+   *
+   * This enables dynamic config updates (e.g., workspace path changes)
+   * to take effect without restarting TX. The mesh config is re-read
+   * from disk and cached. Called by poll() before iterating agents.
+   *
+   * @param meshName - The mesh name to reload
+   * @returns The freshly loaded mesh config, or undefined if not found
+   */
+  private reloadMeshConfig(meshName: string): MeshConfig | undefined {
+    // Get the existing config to find its source location
+    const existingConfig = this.meshConfigs.get(meshName);
+    if (!existingConfig?._basePath) {
+      // If we don't have an existing config with basePath, return cached version
+      // This shouldn't happen in normal operation, but provides safety
+      return existingConfig;
+    }
+
+    // Re-read the config file from disk
+    const basePath = existingConfig._basePath;
+    const yamlPath = path.join(basePath, 'config.yaml');
+    const ymlPath = path.join(basePath, 'config.yml');
+    const jsonPath = path.join(basePath, 'config.json');
+
+    let configPath: string | null = null;
+    if (fs.existsSync(yamlPath)) {
+      configPath = yamlPath;
+    } else if (fs.existsSync(ymlPath)) {
+      configPath = ymlPath;
+    } else if (fs.existsSync(jsonPath)) {
+      configPath = jsonPath;
+    }
+
+    if (!configPath) {
+      log.warn('dispatcher', `Config file not found for mesh reload`, {
+        meshName,
+        basePath,
+      });
+      return existingConfig;
+    }
+
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const isYaml = configPath.endsWith('.yaml') || configPath.endsWith('.yml');
+      const rawConfig = isYaml ? YAML.parse(content) : JSON.parse(content);
+
+      // Validate using MeshValidator
+      const validation = MeshValidator.validate(rawConfig, path.basename(configPath));
+
+      if (!validation.valid) {
+        log.error('dispatcher', `Invalid mesh config on reload`, {
+          meshName,
+          configPath,
+          errors: validation.errors,
+        });
+        // Return cached version on validation failure
+        return existingConfig;
+      }
+
+      if (validation.warnings.length > 0) {
+        log.warn('dispatcher', `Mesh config warnings on reload: ${meshName}`, {
+          warnings: validation.warnings,
+        });
+      }
+
+      const config = validation.config as MeshConfig;
+      config._basePath = basePath;
+
+      // Update the cache with fresh config
+      this.meshConfigs.set(meshName, config);
+
+      log.debug('dispatcher', `Reloaded mesh config at spawn time`, {
+        meshName,
+        workspace: config.workspace,
+      });
+
+      return config;
+    } catch (error) {
+      log.error('dispatcher', `Failed to reload mesh config`, {
+        meshName,
+        configPath,
+        error: (error as Error).message,
+      });
+      // Return cached version on error
+      return existingConfig;
     }
   }
 

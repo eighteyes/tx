@@ -6,7 +6,10 @@
     "strict": true,
     "outDir": "dist",
     "rootDir": ".",
-    "declaration": true
+    "declaration": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true
   },
   "include": ["src/**/*", "test/**/*"]
 }

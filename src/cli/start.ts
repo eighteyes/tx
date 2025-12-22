@@ -6,13 +6,12 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import YAML from 'yaml';
-import { TmuxSession, findClaudePath, injectFile } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, injectFile, getSessionName } from '../core/tmux.ts';
 import { MessageQueue } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
-
-const SESSION_NAME = 'tx-v4-core';
+import { savePromptMessage } from '../shared/prompt-messages.ts';
 
 export interface StartOptions {
   continue?: boolean;
@@ -77,15 +76,16 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   console.log('\n🚀 Starting TX V4...\n');
 
-  // Create tmux session
-  const tmux = new TmuxSession(SESSION_NAME);
+  // Create tmux session with unique name per directory
+  const sessionName = getSessionName(cwd);
+  const tmux = new TmuxSession(sessionName);
 
   if (await tmux.exists()) {
-    console.log(`[tmux] Killing existing session: ${SESSION_NAME}`);
+    console.log(`[tmux] Killing existing session: ${sessionName}`);
     await tmux.kill();
   }
 
-  console.log(`[tmux] Creating session: ${SESSION_NAME}`);
+  console.log(`[tmux] Creating session: ${sessionName}`);
   await tmux.create(cwd);
   await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -105,7 +105,16 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Write core prompt to file
   const corePromptPath = path.join(aiDir, 'core-prompt.md');
   const meshesDir = path.join(txRoot, 'meshes');
-  fs.writeFileSync(corePromptPath, getCorePrompt(msgsDir, meshesDir));
+  const corePrompt = getCorePrompt(msgsDir, meshesDir);
+  fs.writeFileSync(corePromptPath, corePrompt);
+
+  // Save prompt as message for viewing with tx msg
+  savePromptMessage({
+    agentId: 'core/core',
+    prompt: corePrompt,
+    msgsDir,
+    model: 'sonnet',
+  });
 
   // Start Claude with --system-prompt
   const claudePath = findClaudePath();
@@ -119,7 +128,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   console.log('[tmux] Waiting for Claude to initialize...');
   const ready = await waitForClaudeReady(tmux, 15000); // Reduced timeout
   if (!ready) {
-    console.log('[tmux] Claude may need interaction. Check session with: tmux attach -t tx-v4-core');
+    console.log(`[tmux] Claude may need interaction. Check session with: tmux attach -t ${sessionName}`);
     console.log('[tmux] Continuing anyway...');
   } else {
     console.log('[tmux] Claude is ready');
@@ -213,7 +222,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Attach to tmux session using spawn (NOT execSync - that blocks the event loop!)
   // This allows chokidar and intervals to keep running while attached
   await new Promise<void>((resolve) => {
-    const attach = spawn('tmux', ['attach', '-t', SESSION_NAME], {
+    const attach = spawn('tmux', ['attach', '-t', sessionName], {
       stdio: 'inherit'
     });
 
@@ -234,18 +243,20 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   queue.close();
 
   console.log(`[core] Consumer stopped. Claude session still running.`);
-  console.log(`[core] Re-attach: tmux attach -t ${SESSION_NAME}`);
-  console.log(`[core] Kill: tmux kill-session -t ${SESSION_NAME}`);
+  console.log(`[core] Re-attach: tmux attach -t ${sessionName}`);
+  console.log(`[core] Kill: tmux kill-session -t ${sessionName}`);
 }
 
 /**
  * Stop tx - kill tmux session and cleanup
  */
-export async function stop(): Promise<void> {
-  const tmux = new TmuxSession(SESSION_NAME);
+export async function stop(workDir?: string): Promise<void> {
+  const cwd = workDir || process.env.TX_CWD || process.cwd();
+  const sessionName = getSessionName(cwd);
+  const tmux = new TmuxSession(sessionName);
 
   if (await tmux.exists()) {
-    console.log(`Killing session: ${SESSION_NAME}`);
+    console.log(`Killing session: ${sessionName}`);
     await tmux.kill();
     console.log('✓ TX stopped');
   } else {

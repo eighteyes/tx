@@ -3,3 +3,6 @@ dist
 node_modules
 
 .ai
+
+# MCP server credentials (use .mcp.env.example as template)
+.mcp.env

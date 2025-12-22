@@ -23,7 +23,8 @@ const typeColors: Record<string, string> = {
   'ask-human': colors.yellow,
   'task-complete': colors.magenta,
   'update': colors.blue,
-  'error': colors.red
+  'error': colors.red,
+  'system-prompt': colors.dim
 };
 
 interface ParsedMessage {
@@ -189,7 +190,9 @@ async function getAllSessions(sessionsDir: string): Promise<ParsedSession[]> {
     const agentPath = path.join(sessionsDir, agentDir);
     if (!fs.statSync(agentPath).isDirectory()) continue;
 
-    const agentId = agentDir.replace('-', '/');  // brain-brain -> brain/brain
+    // Convert directory name back to agentId by replacing LAST dash with slash
+    // e.g., deep-research-analyst -> deep-research/analyst
+    const agentId = agentDir.replace(/-([^-]+)$/, '/$1');
     const files = fs.readdirSync(agentPath);
 
     for (const file of files) {
@@ -199,9 +202,10 @@ async function getAllSessions(sessionsDir: string): Promise<ParsedSession[]> {
       const content = fs.readFileSync(filepath, 'utf-8');
 
       // Parse timestamp from filename (e.g., 2025-12-10T12-34-56-789Z.md)
-      const timestampMatch = file.match(/^(\d{4}-\d{2}-\d{2}T[\d-]+Z?)\.md$/);
-      const timestamp = timestampMatch
-        ? timestampMatch[1].replace(/-/g, (m, i) => i > 9 ? ':' : m).replace('T', 'T').slice(0, -1) + 'Z'
+      // Convert: 2025-12-10T12-34-56-789Z -> 2025-12-10T12:34:56.789Z
+      const filenameWithoutExt = file.replace('.md', '');
+      const timestamp = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z?$/.test(filenameWithoutExt)
+        ? filenameWithoutExt.replace(/T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z?$/, 'T$1:$2:$3.$4Z')
         : new Date().toISOString();
 
       sessions.push({

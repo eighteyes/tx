@@ -4,10 +4,10 @@
  * Logs all state transitions for debugging and observability
  */
 
-import { Middleware } from '../core/state-machine.ts';
+import { Middleware, Context } from '../core/state-machine.ts';
 import { log } from '../../shared/logger.ts';
 
-export const createLoggingMiddleware = <S, C>(entityType: string): Middleware<S, C> => ({
+export const createLoggingMiddleware = <S, C extends Context>(entityType: string): Middleware<S, C> => ({
   pre: async (from, to, transitionName, context) => {
     log.info('fsm', `Transition starting: ${transitionName}`, {
       entityId: (context as any).id,

@@ -163,28 +163,94 @@ The worker receives this and executes the slash command.
 ```
 v4/
 ├── meshes/
-│   ├── brain/                 # Brain mesh
-│   │   ├── config.yaml        # Mesh configuration
-│   │   └── prompt.md          # Agent prompt
-│   ├── dev/                   # Dev mesh
+│   │
+│   │  # Core meshes (top-level) - main workflow meshes
+│   ├── brain/                 # Knowledge gateway, spec-graph
 │   │   ├── config.yaml
 │   │   └── prompt.md
-│   ├── research/              # Multi-agent mesh
+│   ├── dev/                   # Development, coding tasks
+│   │   ├── config.yaml
+│   │   └── prompt.md
+│   ├── deep-research/         # Multi-agent research pipeline
 │   │   ├── config.yaml
 │   │   ├── interviewer/
 │   │   │   └── prompt.md
 │   │   ├── sourcer/
 │   │   │   └── prompt.md
+│   │   ├── analyst/
+│   │   │   └── prompt.md
+│   │   ├── researcher/
+│   │   │   └── prompt.md
+│   │   ├── disprover/
+│   │   │   └── prompt.md
 │   │   └── writer/
 │   │       └── prompt.md
-│   └── system/                # System meshes
-│       └── commit-agent/
+│   ├── test/                  # Simple test mesh
+│   │   ├── config.yaml
+│   │   └── prompt.md
+│   │
+│   │  # System meshes - internal TX functionality
+│   ├── system/
+│   │   └── commit-agent/      # Auto-commit functionality
+│   │       ├── config.yaml
+│   │       └── prompt.md
+│   │
+│   │  # Protagent meshes - user-defined productivity agents
+│   └── protagents/
+│       └── meet/              # Meeting coordination with MCP
 │           ├── config.yaml
-│           └── prompt.md
+│           └── scheduler/
+│               └── prompt.md
+│
 └── .ai/tx/
     ├── msgs/                  # Message event log
-    └── logs/                  # System logs
+    ├── data/                  # SQLite queue
+    ├── logs/                  # System logs
+    └── sessions/              # Captured worker sessions
 ```
+
+### Mesh Categories
+
+| Category | Path | Purpose |
+|----------|------|---------|
+| **Core** | `meshes/{name}/` | Main workflow meshes (brain, dev, research) |
+| **System** | `meshes/system/{name}/` | Internal TX functionality (commit-agent) |
+| **Protagents** | `meshes/protagents/{name}/` | User productivity agents (meet, schedule, etc.) |
+
+**Naming convention**: Core meshes at top level, categorized meshes in subdirectories.
+
+### How Work Gets Done (Message Flow)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  User Request Flow                                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. User types in tmux session (natural language)                │
+│     └─→ "build the login feature"                                │
+│                                                                  │
+│  2. Core agent (Claude) interprets and writes task message       │
+│     └─→ Writes to .ai/tx/msgs/{timestamp}-task-core--dev.md     │
+│                                                                  │
+│  3. Consumer detects file, inserts into SQLite queue             │
+│     └─→ File watching → queue.insert()                          │
+│                                                                  │
+│  4. Dispatcher polls queue, spawns SDK worker                    │
+│     └─→ query() with agent prompt + task message                │
+│                                                                  │
+│  5. Worker completes, writes task-complete message               │
+│     └─→ .ai/tx/msgs/{timestamp}-task-complete-dev--core.md     │
+│                                                                  │
+│  6. Core receives completion, reports to user                    │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**IMPORTANT**:
+- Users do **NOT** send tasks via CLI commands
+- Users communicate with core agent via the tmux session (natural language)
+- Core agent writes task messages to workers
+- CLI tools (`tx msg`, `tx spy`, `tx logs`) are **viewers only**
 
 ### Mesh Configuration (YAML)
 
@@ -208,6 +274,17 @@ agents:
   - name: worker
     model: opus
     prompt: prompt.md  # Relative to mesh directory
+
+# MCP server integration (optional, per-agent)
+# agents:
+#   - name: scheduler
+#     model: sonnet
+#     prompt: scheduler/prompt.md
+#     mcpServers:
+#       gcal:
+#         command: npx
+#         args:
+#           - gcal-mcp
 
 entry_point: worker
 completion_agent: worker
@@ -254,6 +331,7 @@ rearmatter:
 | `system` | boolean | No | Mark as system mesh |
 | `worktree` | boolean | No | Enable git worktree isolation |
 | `lifecycle` | object | No | Pre/post hooks |
+| `toolRestriction` | string | No | Tool access policy: `unrestricted` (default) or `mcp-only` |
 
 ### intents Field
 
@@ -274,18 +352,172 @@ intents:
 
 ### workspace Field
 
-Configure output workspace:
+Configure output workspace (where workers write outputs):
 
 ```yaml
-# Object format (preferred)
+# Object format (preferred, with path template)
 workspace:
   path: ".ai/research/{topic}/"
   create_on_init: true
   cleanup_on_complete: false
 
+# Simple path format (also supported)
+workspace:
+  path: ".ai/output/{task-id}/"
+
 # Legacy string format (still supported)
 workspace: ".ai/research/{topic}/"
 ```
+
+**Path templates** from actual meshes:
+- `".ai/output/{task-id}/"` - Dev mesh (unique per task)
+- `".ai/research/{topic}/"` - Deep-research mesh (topic-based)
+- `".ai/know/"` - Brain mesh (fixed knowledge location)
+
+### mcpServers Field (Agent-Level)
+
+Configure MCP (Model Context Protocol) servers for agents that need external tool access:
+
+```yaml
+# meshes/protagents/meet/config.yaml
+mesh: meet
+description: "Meeting coordination agent using Google Calendar MCP"
+type: ephemeral
+
+agents:
+  - name: scheduler
+    model: sonnet
+    prompt: scheduler/prompt.md
+    mcpServers:
+      gcal:
+        command: npx
+        args:
+          - gcal-mcp
+
+entry_point: scheduler
+```
+
+**MCP server fields**:
+- `command`: Executable to run (e.g., `npx`, `node`, path to binary)
+- `args`: Array of command arguments
+- Server name (e.g., `gcal`) is user-defined and used for logging
+
+**Common MCP patterns**:
+```yaml
+# NPX-based MCP server
+mcpServers:
+  gcal:
+    command: npx
+    args:
+      - gcal-mcp
+
+# Node script MCP server
+mcpServers:
+  custom:
+    command: node
+    args:
+      - /path/to/mcp-server.js
+
+# Multiple MCP servers
+mcpServers:
+  gcal:
+    command: npx
+    args: [gcal-mcp]
+  slack:
+    command: npx
+    args: [slack-mcp]
+```
+
+**Note**: MCP servers run alongside the worker and provide additional tools. The agent's prompt should reference the tools the MCP server provides.
+
+### MCP Environment Variables (`.mcp.env`)
+
+MCP servers often require credentials (API keys, tokens, secrets). TX V4 centralizes these in `.mcp.env`:
+
+**Setup**:
+1. Copy `.mcp.env.example` to `.mcp.env`
+2. Fill in your credentials
+3. `.mcp.env` is gitignored - never commit actual credentials
+
+**File location**: Project root (`.mcp.env`)
+
+**Format**:
+```bash
+# .mcp.env - MCP Server Credentials
+# Comments and blank lines are ignored
+
+# Google Calendar MCP
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REFRESH_TOKEN=your-refresh-token
+
+# Slack MCP
+SLACK_BOT_TOKEN=xoxb-your-token
+```
+
+**How it works**:
+1. Dispatcher loads `.mcp.env` when spawning workers with MCP servers
+2. Environment variables are merged into each MCP server's `env` config
+3. Server-specific `env` values in config.yaml override `.mcp.env` values
+4. Variable names (not values) are logged for debugging
+
+**Mesh config with env override**:
+```yaml
+# Server-specific env overrides .mcp.env
+mcpServers:
+  gcal:
+    command: npx
+    args: [gcal-mcp]
+    env:
+      GOOGLE_CALENDAR_ID: "specific@calendar.google.com"  # Overrides .mcp.env
+```
+
+**Security best practices**:
+- Never commit `.mcp.env` (it's gitignored)
+- Use `.mcp.env.example` as a template (safe to commit)
+- Log variable names, never values
+- Consider encryption at rest for highly sensitive credentials
+
+### toolRestriction Field
+
+Control tool access for agents in a mesh. Critical for sandboxing protagent meshes.
+
+**Possible values**:
+- `unrestricted` (default) - Full SDK tools (Read, Write, Bash, etc.) + MCP tools
+- `mcp-only` - ONLY MCP server tools, no built-in SDK tools
+
+```yaml
+# meshes/protagents/meet/config.yaml
+mesh: meet
+description: "Meeting coordination with Google Calendar"
+type: ephemeral
+toolRestriction: mcp-only  # Sandboxed: only calendar MCP tools
+
+agents:
+  - name: scheduler
+    model: sonnet
+    prompt: scheduler/prompt.md
+    mcpServers:
+      google-calendar:
+        command: npx
+        args: ["@cocal/google-calendar-mcp"]
+```
+
+**When to use `mcp-only`**:
+- **Protagent meshes** - User productivity agents that interact with external services
+- **Single-purpose agents** - Agents that only need their MCP tools
+- **Security-sensitive contexts** - Agents handling external data that could contain prompt injections
+
+**Security rationale** (Principle of Least Privilege):
+- **No file system access** - Can't read/write arbitrary files
+- **No code execution** - Can't run bash commands
+- **Sandboxed** - Can't escape to broader system capabilities
+- **Prevents**: Malicious prompt injection from external data, accidental file corruption, unintended system access
+
+**When NOT to use `mcp-only`**:
+- Dev/coding meshes that need file editing
+- Brain/knowledge meshes that need codebase access
+- Any mesh that needs Read, Write, Bash, Grep, Glob, Edit tools
 
 ### rearmatter Field
 
@@ -535,22 +767,42 @@ describe('Feature Test', () => {
 ### CLI Commands
 
 ```bash
+# Start TX V4 with core agent
+tx start                # Starts core, attaches to tmux session
+tx start --continue     # Starts with previous session context
+
 # View system status
-tx status
+tx status               # Shows core, workers, queue stats
 
-# View messages
-tx msg
-tx msg --follow
+# View messages (interactive TUI)
+tx msg                  # Interactive vim-style navigation (default)
+tx msg --follow         # Follow mode for real-time updates
+tx msg --json           # JSON output mode
+tx msg --type task      # Filter by message type
+tx msg --agent brain    # Filter by agent
 
-# View logs
-tx logs [agent-id]
+# View logs (interactive TUI)
+tx logs                 # Interactive with filter toggles
+tx logs --last          # View previous session logs
+tx logs --no-interactive  # Simple list mode
 
-# Real-time spy
-tx spy [agent-id]
+# View tasks (derived from task/task-complete pairs)
+tx tasks                # Interactive watch mode (default)
+tx tasks --no-watch     # One-time snapshot
+tx tasks --json         # JSON output
 
-# View tasks
-tx tasks
+# Real-time activity spy
+tx spy                  # All activity (messages + agent output)
+tx spy --messages       # Messages only
+tx spy --output         # Agent output only
+tx spy --agent brain    # Filter by agent
+tx spy --json           # JSON output
+
+# Stop TX
+tx stop                 # Kill tmux session, cleanup
 ```
+
+**IMPORTANT**: `tx msg` and `tx logs` are **viewer commands** - they show messages/logs, they don't send them. User requests go to core via the tmux session (natural language), and core writes task messages to workers.
 
 ### Common Issues
 
@@ -571,16 +823,19 @@ tx tasks
 
 ### Prompt Design
 
-1. **Keep test agents minimal** - Role + Workflow only
-2. **Be explicit about message format** - Show exact frontmatter
-3. **Include the output path** - `.ai/tx/msgs/`
-4. **Specify completion message** - Always end with task-complete
+1. **Focus on workflow, not infrastructure** - Message format and paths are injected
+2. **Keep test agents minimal** - Role + Workflow sections only
+3. **Be specific about completion criteria** - When is the task done?
+4. **Include quality standards** - What makes good work for this role?
+
+**What to include**: Responsibilities, workflow steps, decision logic, quality criteria
+**What to skip** (auto-injected): Message paths, frontmatter format, agent addresses
 
 ### Model Selection
 
-1. **Start with haiku** for simple tasks
-2. **Use sonnet** for general development
-3. **Reserve opus** for complex reasoning (brain, architecture)
+1. **Start with haiku** for simple tasks and validation
+2. **Use sonnet** for general development and coding
+3. **Reserve opus** for complex reasoning (brain, architecture, synthesis)
 
 ### Message Design
 
@@ -589,10 +844,16 @@ tx tasks
 3. **Timestamp everything** - ISO-8601 format
 4. **Structure the body** - Use markdown sections
 
+### Routing Configuration
+
+1. **Always add routing for multi-agent meshes** - Enables automatic agent-to-agent flow
+2. **Include blocked route to core** - For when agents can't proceed
+3. **Use descriptive route reasons** - Helps with debugging
+4. **Single-agent meshes don't need routing** - They default to core/core
+
 ## References
 
 - [mesh-config-reference.md](references/mesh-config-reference.md) - Config specification
-- [agent-config-reference.md](references/agent-config-reference.md) - Agent options
 - [prompt-templates.md](references/prompt-templates.md) - Prompt examples
 - [workflows.md](references/workflows.md) - Message flow patterns
 - [multi-agent-patterns.md](references/multi-agent-patterns.md) - Advanced patterns
