@@ -1,0 +1,36 @@
+mesh: documentarian
+description: "Documentation specialist - creates and maintains technical documentation, guides, and READMEs"
+type: ephemeral
+
+intents:
+  patterns:
+    - document
+    - "write docs"
+    - readme
+    - guide
+    - "how to"
+    - explain
+    - "document this"
+    - "update docs"
+
+agents:
+  - name: writer
+    model: opus
+    prompt: writer/prompt.md
+
+entry_point: writer
+completion_agent: writer
+
+routing:
+  writer:
+    complete:
+      core: "Documentation complete"
+    blocked:
+      core: "Need clarification or missing context"
+
+rearmatter:
+  enabled: true
+  fields:
+    - status
+    - files_created
+    - files_updated

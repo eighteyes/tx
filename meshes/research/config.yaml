@@ -1,0 +1,65 @@
+mesh: research
+description: "Web research mesh: interviewer gathers requirements, sourcer finds sources, analyst analyzes, writer creates final report"
+
+intents:
+  patterns:
+    - research
+    - investigate
+    - "find out"
+    - "what's the state of"
+    - look into
+    - explore
+
+agents:
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer/prompt.md
+  - name: sourcer
+    model: sonnet
+    prompt: sourcer/prompt.md
+  - name: analyst
+    model: sonnet
+    prompt: analyst/prompt.md
+  - name: writer
+    model: sonnet
+    prompt: writer/prompt.md
+
+entry_point: interviewer
+completion_agent: writer
+
+routing:
+  interviewer:
+    complete:
+      sourcer: "Requirements complete, ready to source information"
+    blocked:
+      core: "Cannot proceed - unclear research requirements"
+  sourcer:
+    complete:
+      analyst: "Sources collected and ready for analysis"
+    blocked:
+      core: "Cannot source - technical issues or unclear topic"
+  analyst:
+    complete:
+      writer: "Analysis complete - themes and hypotheses identified"
+    needs-more-data:
+      sourcer: "Insufficient information - need additional sources"
+    blocked:
+      core: "Cannot analyze - conflicting or unclear data"
+  writer:
+    complete:
+      core: "Research complete and saved to workspace"
+    needs-clarification:
+      analyst: "Need more context or clearer analysis"
+    blocked:
+      core: "Cannot write - insufficient material or unclear direction"
+
+workspace:
+  path: ".ai/research/{topic}/"
+
+rearmatter:
+  enabled: true
+  fields:
+    - grade
+    - confidence
+    - status
+    - gaps

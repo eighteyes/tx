@@ -12,6 +12,7 @@ import { spy } from './spy.ts';
 import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
+import { init, identity } from './identity.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file
@@ -154,6 +155,17 @@ async function main() {
       await stop();
       break;
 
+    case 'init':
+      await init({
+        recover: Boolean(flags.r || flags.recover),
+        force: Boolean(flags.f || flags.force)
+      });
+      break;
+
+    case 'identity':
+      await identity();
+      break;
+
     case 'tool':
       // tx tool <subcommand> [args...]
       const subcommand = args[0];
@@ -177,6 +189,10 @@ async function main() {
 TX V4 CLI
 
 Usage:
+  tx init [-r] [-f]     Initialize new identity
+                        -r, --recover   Recover from seed phrase
+                        -f, --force     Overwrite existing identity
+  tx identity           Show current identity
   tx start [-c]         Start core agent (auto-attaches to tmux)
                         -c, --continue  Resume previous Claude session
   tx status             Show system status

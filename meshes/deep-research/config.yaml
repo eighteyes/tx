@@ -1,0 +1,83 @@
+mesh: deep-research
+description: "Multi-agent deep research with iterative confidence loop: interviewer gathers requirements, sourcer finds sources, analyst analyzes, researcher synthesizes theories, disprover critiques until 95% confidence, writer creates final report"
+type: ephemeral
+idle_timeout_minutes: false
+
+agents:
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer/prompt.md
+  - name: sourcer
+    model: sonnet
+    prompt: sourcer/prompt.md
+  - name: analyst
+    model: sonnet
+    prompt: analyst/prompt.md
+  - name: researcher
+    model: opus
+    prompt: researcher/prompt.md
+  - name: disprover
+    model: opus
+    prompt: disprover/prompt.md
+  - name: writer
+    model: sonnet
+    prompt: writer/prompt.md
+
+entry_point: interviewer
+completion_agent: writer
+
+routing:
+  interviewer:
+    complete:
+      sourcer: "Requirements gathered, ready to source information"
+    blocked:
+      core: "Cannot proceed - unclear research requirements"
+  sourcer:
+    complete:
+      analyst: "Sources collected and ready for analysis"
+    blocked:
+      core: "Cannot source - technical issues or unclear topic"
+  analyst:
+    complete:
+      researcher: "Analysis complete - hypotheses formulated and ready for theory synthesis"
+    needs-more-data:
+      sourcer: "Insufficient information - need additional sources"
+    blocked:
+      core: "Cannot analyze - conflicting or unclear data"
+  researcher:
+    complete:
+      writer: "Theory validated - confidence threshold met, ready for final synthesis"
+    low-confidence:
+      disprover: "Confidence below 95% - needs critical review"
+    blocked:
+      core: "Cannot synthesize - insufficient analysis or conflicting evidence"
+  disprover:
+    complete:
+      analyst: "Critical review complete - counterpoints identified for refinement"
+    high-confidence:
+      writer: "Theory validated - confidence threshold met, ready for final synthesis"
+    blocked:
+      core: "Cannot critique - insufficient evidence or unclear theory"
+  writer:
+    complete:
+      core: "Research complete and saved to workspace"
+    needs-clarification:
+      analyst: "Need more context or clearer analysis"
+    blocked:
+      core: "Cannot write - insufficient material or unclear direction"
+
+workspace:
+  path: ".ai/research/{topic}/"
+
+config:
+  confidence_threshold: 0.95
+  max_iterations: 3
+
+rearmatter:
+  enabled: true
+  fields:
+    - grade
+    - confidence
+    - status
+    - iteration
+    - gaps

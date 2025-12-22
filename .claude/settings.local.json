@@ -30,7 +30,8 @@
       "Bash(xargs rg:*)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   },
   "spinnerTipsEnabled": false

@@ -1,0 +1,29 @@
+mesh: brain
+description: "Knowledge gateway agent - mediates all spec-graph access"
+
+intents:
+  patterns:
+    - add feature
+    - create feature
+    - new feature
+    - bug
+    - issue
+    - problem
+    - broken
+  commands:
+    "add feature": "/know:add"
+    "create feature": "/know:add"
+    "new feature": "/know:add"
+    bug: "/know:bug"
+    issue: "/know:bug"
+    problem: "/know:bug"
+
+agents:
+  - name: brain
+    model: sonnet
+    prompt: prompt.md
+
+entry_point: brain
+
+workspace:
+  path: ".ai/tx/output/brain/"

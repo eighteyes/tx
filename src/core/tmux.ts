@@ -253,18 +253,60 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
 }
 
 /**
- * Inject a prompt into a Claude tmux session
+ * Check if Claude is idle and ready for message injection
+ *
+ * Returns true if:
+ * - Prompt is visible (ends with >)
+ * - No "esc to interrupt" message
+ * - No active typing/scrolling indicators
  */
-export function injectPrompt(tmux: TmuxSession, prompt: string): void {
+export function isClaudeIdle(tmux: TmuxSession): boolean {
+  const output = tmux.capture(10);
+
+  // Check for busy indicators
+  const busyPatterns = [
+    /esc to interrupt/i,
+    /\.\.\./,  // Processing indicator
+    /thinking/i,
+  ];
+
+  for (const pattern of busyPatterns) {
+    if (pattern.test(output)) {
+      return false;
+    }
+  }
+
+  // Check for idle prompt (line ending with >)
+  const lines = output.split('\n');
+  const lastLine = lines[lines.length - 1] || lines[lines.length - 2] || '';
+
+  // Idle prompt should end with > and have whitespace or be at end
+  return />\s*$/.test(lastLine);
+}
+
+/**
+ * Inject a prompt into a Claude tmux session
+ *
+ * Returns true if injected, false if Claude was busy (caller should retry)
+ */
+export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
+  // Check if Claude is ready before injecting
+  if (!isClaudeIdle(tmux)) {
+    return false;
+  }
+
   // Send the prompt using literal mode for accuracy
   tmux.sendLiteral(prompt);
   tmux.sendEnter();
+  return true;
 }
 
 /**
  * Inject a file path for Claude to read
+ *
+ * Returns true if injected, false if Claude was busy (caller should retry)
  */
-export function injectFile(tmux: TmuxSession, filepath: string): void {
+export function injectFile(tmux: TmuxSession, filepath: string): boolean {
   const message = `Read and follow the instructions in: ${filepath}`;
-  injectPrompt(tmux, message);
+  return injectPrompt(tmux, message);
 }
