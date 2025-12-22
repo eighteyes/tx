@@ -140,8 +140,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dbPath = path.join(dataDir, 'queue.db');
   const queue = new MessageQueue(dbPath);
 
-  // Clear old state on fresh start
-  queue.clearAllMessages();
+  // Clear old pending messages on fresh start (keep delivered for deduplication)
+  queue.clearPendingMessages();
   queue.clearAllSessions();
 
   // Clear logs and activity
