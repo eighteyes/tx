@@ -10,10 +10,7 @@ import { TmuxSession, findClaudePath, injectFile, getSessionName } from '../core
 import { MessageQueue } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
-import { ProtagentBridge } from '../core/relay-bridge.ts';
-import { loadIdentity } from '../identity/index.ts';
 import { log } from '../shared/logger.ts';
-import { savePromptMessage } from '../shared/prompt-messages.ts';
 
 export interface StartOptions {
   continue?: boolean;
@@ -110,14 +107,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const corePrompt = getCorePrompt(msgsDir, meshesDir);
   fs.writeFileSync(corePromptPath, corePrompt);
 
-  // Save prompt as message for viewing with tx msg
-  savePromptMessage({
-    agentId: 'core/core',
-    prompt: corePrompt,
-    msgsDir,
-    model: 'sonnet',
-  });
-
   // Start Claude with --system-prompt
   const claudePath = findClaudePath();
   const continueFlag = options?.continue ? ' --continue' : '';
@@ -140,8 +129,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dbPath = path.join(dataDir, 'queue.db');
   const queue = new MessageQueue(dbPath);
 
-  // Clear old state on fresh start
-  queue.clearAllMessages();
+  // Clear old pending messages on fresh start (keep delivered for deduplication)
+  queue.clearPendingMessages();
   queue.clearAllSessions();
 
   // Clear logs and activity
@@ -153,7 +142,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
   }
 
-  log.info('start', 'Cleared queue, sessions, and logs');
+  log.info('start', 'Cleared pending messages, sessions, and logs');
 
   const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
 
@@ -188,37 +177,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   await dispatcher.start();
   console.log(`[dispatcher] Watching for task messages`);
-
-  // Start relay bridge if enabled
-  let bridge: ProtagentBridge | null = null;
-  if (process.env.RELAY_ENABLED === 'true') {
-    const identity = loadIdentity();
-    if (!identity) {
-      console.log('[relay] No identity found. Run: tx init');
-      log.warn('relay-bridge', 'No identity found, skipping relay bridge');
-    } else {
-      const relayUrl = process.env.RELAY_URL || 'ws://localhost:3210';
-      bridge = new ProtagentBridge({
-        relayUrl,
-        pubkey: identity.pubkey,
-        privateKey: identity.privateKey,
-        msgsDir
-      });
-
-      try {
-        await bridge.start();
-        console.log(`[relay] Connected to ${relayUrl}`);
-        log.info('relay-bridge', 'Bridge started', {
-          url: relayUrl,
-          pubkey: identity.pubkey.slice(0, 16) + '...'
-        });
-      } catch (err) {
-        console.log(`[relay] Failed to connect: ${(err as Error).message}`);
-        log.warn('relay-bridge', 'Failed to start bridge', { error: (err as Error).message });
-        bridge = null; // Don't try to stop later
-      }
-    }
-  }
 
   // Start the message injector as a background interval
   // Injects ONE message per interval to avoid overwhelming Claude
@@ -359,10 +317,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Cleanup after detach
   console.log('\n[core] Detached from session.');
   clearInterval(injectorInterval);
-  if (bridge) {
-    await bridge.stop();
-    console.log('[relay] Bridge stopped');
-  }
   await dispatcher.stop();
   await consumer.stop();
   queue.close();

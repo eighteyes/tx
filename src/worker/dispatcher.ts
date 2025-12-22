@@ -20,7 +20,6 @@ import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/in
 import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
 import { LifecycleHooks, type HookContext } from './hooks.ts';
 import { MeshValidator } from './mesh-validator.ts';
-import { savePromptMessage } from '../shared/prompt-messages.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -451,15 +450,6 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
           routes: Object.keys(routing),
         });
       }
-
-      // Save prompt as message for viewing with tx msg
-      savePromptMessage({
-        agentId,
-        prompt: systemPrompt,
-        msgsDir: this.config.msgsDir,
-        taskId,
-        model: agent.model,
-      });
 
       // Load MCP environment variables if agent has MCP servers
       let mcpServers = agent.mcpServers;

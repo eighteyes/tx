@@ -349,4 +349,11 @@ export class MessageQueue {
   clearAllMessages(): void {
     this.db.prepare('DELETE FROM messages').run();
   }
+
+  /**
+   * Clear only pending messages (keeps delivered for deduplication)
+   */
+  clearPendingMessages(): void {
+    this.db.prepare('DELETE FROM messages WHERE status = ?').run('pending');
+  }
 }
