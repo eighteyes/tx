@@ -1,4 +1,12 @@
-# TX V4
+
+<div align="center">
+
+![alt text](tx-logo.png)
+
+</div>
+
+# TX v0.1.0
+
 
 ## Objective
 Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
