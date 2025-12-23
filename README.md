@@ -19,7 +19,7 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 - Conduct many parallel agent sessions from ONE conversation.
 - Chain agent outputs with plain language "research pain points around <topic> and plan a software project based off your findings"
 - Site specific search tooling to provide precise lookups when WebSearch is too general (or when Anthropic's crawler is blocked)
-- [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx`.
+- [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx`
 
 ## Dependencies
 - `node` 
@@ -31,7 +31,7 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 > `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use [safe-claude](https://github.com/eighteyes/safe-claude) for this.
 
 ```bash
-git clone git@github.com:eighteyes/tx-cli
+git clone git@github.com:eighteyes/tx.git
 cd tx-cli
 npm install
 # installs global tx command
