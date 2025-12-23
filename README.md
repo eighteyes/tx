@@ -17,9 +17,9 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 - Configuration driven collections of agents called `meshes`
 - Mesh message routing protocols provide for agent-driven workflows and HITL.
 - Conduct many parallel agent sessions from ONE conversation.
-- Chain agent outputs with plain language "research pain points around <topic> and plan a software project based off your findings"
+- Chain agent outputs with plain language "research pain points around (topic) and plan a software project based off your findings"
 - Site specific search tooling to provide precise lookups when WebSearch is too general (or when Anthropic's crawler is blocked)
-- [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx`
+- [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
 
 ## Dependencies
 - `node` 
@@ -57,13 +57,14 @@ Cntl-B d
 - `tx spy` - watch agent outputs and tasks
 
 ## Included Meshes
+> Meshes can be triggered by intent or by directly stating their name. 
 - `brain` - Manages project information and `know` system.
 - `dev` - Basic developer workflow.
 - `research` - 4 agent basic researcher
 - `deep-research` - 6 agent research with theorizer / disprover loop, use "theory" or "hypothesis" in your prompt as intent
 
 ## Architecture
-> Note: As a matter of practice, I store all AI tooling information in `.ai` and hope that the vendor community will stop polluting our project roots with their hidden folders.
+> As a matter of convention, I store all AI tooling information in `.ai` and hope that the vendor community will stop polluting our project roots with their hidden folders.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -106,11 +107,11 @@ Cntl-B d
 ```
 
 ## Philosophy
-`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*.
+`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
 
-By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they get lost. You don't have to context switch to change what your AI is working on.
+By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they are not clear. You don't have to context switch to change what your AI is working on.
 
-We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task. 
+We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task.
 
 Conversational AI interfaces have not changed in the past 60 years, how do we get minimum token inputs to have maximum impact?
 
