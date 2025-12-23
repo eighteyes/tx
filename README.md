@@ -10,6 +10,14 @@
 ## Objective
 Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
 
+## Terms
+`mesh` - a collection of agents with a defined workflow
+`core` - the AI you use to interact with the tx system
+`task` - a unit of work which is sent to a mesh, or between agents
+
+## Usage
+After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". `tx` will write a file with frontmatter formatting, which starts the mesh process. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to you for response.
+
 ## Features
 - Claude Code SDK uses your current authentication to run agents in isolation.
 - Intents drive behavior, say "code this", launches developer agent.
@@ -40,7 +48,7 @@ npm link
 # cd to your project, or just run here to check it out
 cd ../<project-directory>
 
-# start the show
+# start the show ( authenticate claude first ) 
 tx start
 
 > "Research a report about pelicans riding bikes"
@@ -114,6 +122,11 @@ By removing the implementation details from your core conversation, your mind is
 We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task. Mesh agents run about 1k tokens and that's it. 
 
 Conversational AI interfaces have not changed in the past 60 years, how do we get minimum token inputs to have maximum impact?
+
+## Decisions
+- We write to files because it is the most "natural" behavior for an Coding AI to send information. Other experiments with tooling proved less effective.
+- We use a centralized, immutable log to provide for observability and recovery.
+- We use tmux to provide for injections into your active Claude Code session, and for the cool 'current task' display.
 
 ## Troubleshooting
 - tx suppresses `stdout/stderr` so it doesn't interrupt the session. See error messages with `tx logs`
