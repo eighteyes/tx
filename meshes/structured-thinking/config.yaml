@@ -17,12 +17,6 @@ agents:
   - name: thinker
     model: opus
     prompt: thinker/prompt.md
-    mcpServers:
-      sequential-thinking:
-        command: npx
-        args:
-          - "-y"
-          - "@modelcontextprotocol/server-sequential-thinking"
 
 entry_point: thinker
 completion_agent: thinker
@@ -37,7 +31,6 @@ routing:
 rearmatter:
   enabled: true
   fields:
-    - recommendation
     - confidence
     - assumptions
     - gaps

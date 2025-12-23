@@ -28,5 +28,3 @@ routing:
       core: "Implementation complete"
     blocked:
       core: "Need clarification or human input"
-    ask:
-      brain: "Need project knowledge"

@@ -1,9 +1,21 @@
 mesh: test
-description: "Simple test mesh for validating HITL flow"
+description: "Test mesh for validating HITL flow and topology patterns"
 
 agents:
   - name: worker
     model: haiku
     prompt: prompt.md
+
+  - name: asker
+    model: haiku
+    prompt: asker/prompt.md
+
+  - name: looper
+    model: haiku
+    prompt: looper/prompt.md
+
+  - name: writer
+    model: haiku
+    prompt: writer/prompt.md
 
 entry_point: worker

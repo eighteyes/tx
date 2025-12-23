@@ -12,15 +12,16 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 - Conduct many parallel agent sessions from ONE conversation.
 - Chain agent outputs with plain language "research pain points around <topic> and plan a software project based off your findings"
 - Site specific search tooling to provide precise lookups when WebSearch is too general ( or when Anthropic's crawler is blocked )
-- (https://github.com/eighteyes/know-cli)[Know] provides opinionated Product / Software tooling for project planning and execution. 
+- (https://github.com/eighteyes/know-cli)[Know] provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx`.
 
 ## Dependencies
+- `node` 
 - Authenticated Claude Code 
 - `tmux` 
 
 ## Quick Start
 >[!IMPORTANT] 
-> `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use (https://github.com/eighteyes/safe-claude)[safe-claude]. 
+> `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use (https://github.com/eighteyes/safe-claude)[safe-claude] for this.
 
 ```bash
 git clone git@github.com:eighteyes/tx-cli
@@ -40,6 +41,11 @@ tx start
 # to leave tmux ( /exit just leaves to shell )
 Cntl-B d
 ```
+
+## Observability
+`tx msgs` - watch messages flowing in the system
+`tx logs` - see system level processes
+`tx spy` - watch agent outputs and tasks
 
 # Included Meshes
 `brain` - Manages project information and `know` system.
@@ -104,9 +110,13 @@ tx stop               # Stop core agent
 ## Philosophy
 `tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*.
 
-By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas and HITL loops ensure you can steer the meshes when they get lost. Configuration driven meshes allow you to prototype agentic topologies at run time. 
+By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they get lost. You don't have to context switch to change what your AI is working on.
 
-Conversational AI interfaces have not changed in the past 60 years, how do we get a single word to have maximum impact?
+We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task. 
+
+Conversational AI interfaces have not changed in the past 60 years, how do we get minimum token inputs to have maximum impact?
 
 ## Troubleshooting
-Sometimes `claude` and `tmux` stop playing together nicely. Quit and
+- tx suppresses `stdout/stderr` so it doesn't interrupt the session. See error messages with `tx logs`
+- Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Quit and run `reset`. 
+- We are barely in Beta. There are Bugs here. 

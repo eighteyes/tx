@@ -8,3 +8,4 @@ node_modules
 .mcp.env
 .env
 .docker-build/Dockerfile
+.claude/settings.local.json

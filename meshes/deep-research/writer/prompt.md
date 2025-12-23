@@ -22,6 +22,7 @@ Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
    - `03-theories.md` (if deep-research - synthesized theories)
    - `04-counterpoints.md` (if deep-research - critical review)
 3. **Create ALL deliverables specified in research-brief.md "Required Deliverables" section**
+3a. If a deliverable exceeds 500 lines, divide up the document into logical categories based on research areas. 
 4. Save all files to workspace (or specified output directory)
 5. Send completion message
 
