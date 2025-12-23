@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { log } from '../shared/logger.ts';
 
 const execAsync = promisify(exec);
 
@@ -252,36 +253,48 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
   return false;
 }
 
+// Debug counter for idle check logging
+let idleCheckLogCount = 0;
+
 /**
  * Check if Claude is idle and ready for message injection
  *
  * Returns true if:
  * - Prompt is visible (ends with >)
- * - No "esc to interrupt" message
- * - No active typing/scrolling indicators
+ * - No active processing indicators
  */
 export function isClaudeIdle(tmux: TmuxSession): boolean {
-  const output = tmux.capture(10);
+  const output = tmux.capture(5);  // Just last 5 lines
 
-  // Check for busy indicators
-  const busyPatterns = [
-    /esc to interrupt/i,
-    /\.\.\./,  // Processing indicator
-    /thinking/i,
-  ];
-
-  for (const pattern of busyPatterns) {
-    if (pattern.test(output)) {
-      return false;
-    }
+  // Log raw capture for debugging (first 5 attempts only)
+  if (idleCheckLogCount < 5) {
+    idleCheckLogCount++;
+    log.info('tmux', 'Raw capture debug', {
+      raw: JSON.stringify(output.slice(-150)),
+      bytes: output.length
+    });
   }
 
-  // Check for idle prompt (line ending with >)
-  const lines = output.split('\n');
-  const lastLine = lines[lines.length - 1] || lines[lines.length - 2] || '';
+  const lines = output.split('\n').filter(l => l.trim());
+  const lastLine = lines[lines.length - 1] || '';
 
-  // Idle prompt should end with > and have whitespace or be at end
-  return />\s*$/.test(lastLine);
+  // Check for active processing
+  if (/esc to interrupt/i.test(lastLine) || /esc to cancel/i.test(lastLine)) {
+    log.debug('tmux', 'Claude busy: esc prompt visible');
+    return false;
+  }
+
+  // Check for idle prompt - Claude Code uses ⏵⏵, also check > and ❯
+  const isIdle = /[>❯⏵]\s*$/.test(lastLine) || /bypass permissions/i.test(lastLine);
+
+  if (!isIdle && idleCheckLogCount <= 10) {
+    log.info('tmux', 'Claude not idle', {
+      lastLine: JSON.stringify(lastLine.slice(-80)),
+      lineCount: lines.length
+    });
+  }
+
+  return isIdle;
 }
 
 /**

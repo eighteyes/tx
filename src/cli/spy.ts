@@ -64,13 +64,30 @@ export async function spy(options: SpyOptions): Promise<void> {
   let lastMessageId = queue.getLatestMessageId();
   let lastActivityLine = 0;
 
-  // Count existing activity lines
+  // Count existing activity lines and show recent activity
   if (fs.existsSync(activityFile)) {
     const content = fs.readFileSync(activityFile, 'utf-8');
-    lastActivityLine = content.split('\n').filter(l => l.trim()).length;
+    const lines = content.split('\n').filter(l => l.trim());
+    lastActivityLine = lines.length;
+
+    // Show recent activity (unless messages-only mode)
+    if (!options.messages && lines.length > 0) {
+      const recentCount = Math.min(10, lines.length);
+      const recentLines = lines.slice(-recentCount);
+      console.log(chalk.dim('--- Recent SDK output ---'));
+      for (const line of recentLines) {
+        try {
+          const entry = JSON.parse(line) as ActivityEntry;
+          if (options.agent && !entry.agentId.includes(options.agent)) continue;
+          printActivity(entry, options.json);
+        } catch {
+          // Skip invalid lines
+        }
+      }
+    }
   }
 
-  // Show recent messages first (unless output-only mode)
+  // Show recent messages (unless output-only mode)
   if (!options.output) {
     const recent = queue.queryMessages({
       limit: 10,
@@ -82,9 +99,10 @@ export async function spy(options: SpyOptions): Promise<void> {
       for (const msg of recent.reverse()) {
         printMessage(msg, options.json);
       }
-      console.log(chalk.dim('--- Live stream ---\n'));
     }
   }
+
+  console.log(chalk.dim('--- Live stream ---\n'));
 
   // Poll for new messages and activity
   const poll = async () => {

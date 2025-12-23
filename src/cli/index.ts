@@ -14,8 +14,8 @@ import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { log } from '../shared/logger.ts';
 
-// Load environment variables from .env file
-dotenv.config();
+// Load environment variables from .env file (suppress dotenv promo spam)
+dotenv.config({ quiet: true });
 
 // Initialize logger with correct work directory early (before error handlers)
 const workDir = process.env.TX_CWD || process.cwd();
@@ -79,20 +79,143 @@ function toCamelCase(str: string): string {
   return str.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 }
 
+// Command help texts
+const HELP = {
+  main: `TX V4 - Multi-agent orchestration CLI
+
+Commands:
+  tx start       Start core agent (attaches to tmux)
+  tx stop        Stop core agent
+  tx status      Show system status
+  tx msg         View messages
+  tx logs        View logs
+  tx spy         Real-time activity stream
+  tx tasks       View task queue
+  tx prompt      Show built prompt for agent
+  tx tool        Search and web utilities
+
+Run 'tx <command> -h' for command-specific options.`,
+
+  start: `tx start - Start core agent
+
+Usage: tx start [options]
+
+Options:
+  -c, --continue     Resume previous Claude session
+  --model <model>    Model to use (e.g., opus, sonnet)`,
+
+  msg: `tx msg - View messages
+
+Usage: tx msg [options]
+
+Options:
+  -t, --type <type>     Filter by message type
+  -a, --agent <agent>   Filter by agent
+  -m, --mesh <mesh>     Filter by mesh
+  -n, --limit <n>       Limit messages (default: 50)
+  -f, --follow          Follow mode (real-time)
+  --since <time>        Since time (e.g., "1h", "30m")
+  --before <time>       Before time
+  -v, --verbose         Show message previews
+  -e, --errors          Show only errors
+  -p, --show-prompts    Show injected prompts
+  --json                JSON output
+  --no-interactive      Disable interactive mode
+
+Keys: Tab=switch tabs  ↑↓/jk=navigate  Enter=view  p=prompt  f=follow  q=quit`,
+
+  logs: `tx logs - View logs
+
+Usage: tx logs [options]
+
+Options:
+  -n, --lines <n>       Number of lines (default: 50)
+  -c, --component <c>   Filter by component
+  -l, --level <level>   Filter: info, warn, error, debug
+  --last                View previous session logs
+  --no-interactive      Disable interactive mode
+  --no-follow           Disable follow mode
+
+Keys: w=worker d=dispatch n=consumer u=queue o=core t=watcher
+      1=info 2=warn 3=error 4=debug  a=clear  c=clear-logs  q=quit`,
+
+  spy: `tx spy - Real-time activity stream
+
+Usage: tx spy [options]
+
+Options:
+  -a, --agent <agent>   Filter by agent
+  -m, --messages        Messages only (no SDK output)
+  -o, --output          SDK output only (no messages)
+  --json                JSON output`,
+
+  tasks: `tx tasks - View task queue
+
+Usage: tx tasks [options]
+
+Options:
+  -s, --status <s>      Filter: open, complete
+  -a, --agent <agent>   Filter by agent
+  -m, --mesh <mesh>     Filter by mesh
+  -n, --limit <n>       Limit tasks (default: 50)
+  --no-watch            Print once, no live updates
+  --json                JSON output`,
+
+  prompt: `tx prompt - Show built prompt for agent
+
+Usage: tx prompt <mesh> <agent> [options]
+
+Options:
+  --with-task <msg-id>  Include task context
+  --raw                 Raw output (no formatting)`,
+
+  tool: `tx tool - Search and web utilities
+
+Commands:
+  tx tool search <query>            Search multiple sources
+  tx tool get-www <url>             Fetch URL (archive fallback)
+  tx tool youtube-transcript <id>   Fetch YouTube transcript
+  tx tool health [provider]         Check provider health
+
+Search options:
+  -s, --source <src>    Source: stackoverflow, github, etc.
+  -n, --limit <n>       Limit results (default: 10)
+  --providers           List available providers
+  --json                JSON output
+
+get-www options:
+  -a, --archive         Try archive.is/archive.org first
+
+youtube-transcript options:
+  -l, --lang <lang>     Language code (e.g., "en")
+  -T, --timestamps      Include timestamps`,
+};
+
+function showHelp(cmd: string): void {
+  console.log(HELP[cmd as keyof typeof HELP] || HELP.main);
+}
+
 async function main() {
   const flags = parseFlags(args);
+  const wantsHelp = Boolean(flags.h || flags.help);
 
   switch (command) {
     case 'start':
-      await start(undefined, { continue: Boolean(flags.c || flags.continue) });
+      if (wantsHelp) { showHelp('start'); break; }
+      await start(undefined, {
+        continue: Boolean(flags.c || flags.continue),
+        model: flags.model as string | undefined
+      });
       break;
 
     case 'status':
+      if (wantsHelp) { console.log('tx status - Show system status'); break; }
       const result = await status();
       printStatus(result);
       break;
 
     case 'msg':
+      if (wantsHelp) { showHelp('msg'); break; }
       await msg({
         type: flags.t as string || flags.type as string,
         agent: flags.a as string || flags.agent as string,
@@ -110,6 +233,7 @@ async function main() {
       break;
 
     case 'logs':
+      if (wantsHelp) { showHelp('logs'); break; }
       await logs({
         lines: flags.n as string || flags.lines as string,
         component: flags.c as string || flags.component as string,
@@ -122,6 +246,7 @@ async function main() {
       break;
 
     case 'spy':
+      if (wantsHelp) { showHelp('spy'); break; }
       await spy({
         messages: Boolean(flags.m || flags.messages),
         output: Boolean(flags.o || flags.output),
@@ -131,6 +256,7 @@ async function main() {
       break;
 
     case 'tasks':
+      if (wantsHelp) { showHelp('tasks'); break; }
       await tasks({
         status: flags.s as string || flags.status as string,
         agent: flags.a as string || flags.agent as string,
@@ -142,6 +268,7 @@ async function main() {
       break;
 
     case 'prompt':
+      if (wantsHelp) { showHelp('prompt'); break; }
       await prompt({
         mesh: args[0],
         agent: args[1],
@@ -151,11 +278,12 @@ async function main() {
       break;
 
     case 'stop':
+      if (wantsHelp) { console.log('tx stop - Stop core agent'); break; }
       await stop();
       break;
 
     case 'tool':
-      // tx tool <subcommand> [args...]
+      if (wantsHelp || !args[0]) { showHelp('tool'); break; }
       const subcommand = args[0];
       const toolArgs = args.slice(1).filter(a => !a.startsWith('-'));
       await tool({
@@ -173,95 +301,7 @@ async function main() {
       break;
 
     default:
-      console.log(`
-TX V4 CLI
-
-Usage:
-  tx start [-c]         Start core agent (auto-attaches to tmux)
-                        -c, --continue  Resume previous Claude session
-  tx status             Show system status
-  tx msg [options]      View messages (interactive by default)
-  tx logs [options]     View logs (interactive by default)
-  tx spy [options]      Real-time activity stream
-  tx tasks [options]    View task queue
-  tx prompt <mesh> <agent> [options]  Show built prompt for agent
-  tx tool <cmd>         Search and web fetching utilities
-  tx stop               Stop core agent
-
-Message options:
-  -t, --type <type>     Filter by message type
-  -a, --agent <agent>   Filter by agent (also filters sessions)
-  -m, --mesh <mesh>     Filter by mesh
-  -n, --limit <n>       Limit number of messages (default: 50)
-  -f, --follow          Follow mode (real-time updates)
-  --since <time>        Messages since time (e.g., "1h", "30m")
-  --before <time>       Messages before time
-  --json                JSON output
-  --no-interactive      Disable interactive mode
-  -v, --verbose         Show message previews
-  -e, --errors          Show only errors
-  -p, --show-prompts    Show injected prompts for each message
-
-Interactive navigation:
-  Tab/s                 Switch between Messages and Sessions tabs
-  ↑↓/jk                 Navigate list / scroll in detail view
-  Enter/→/l             View selected item
-  p                     Show injected prompt (messages only)
-  f                     Toggle follow mode (messages only)
-  ←/h/Esc               Go back
-  q                     Quit
-
-Log options:
-  -n, --lines <n>       Number of lines (default: 50)
-  -c, --component <c>   Filter by component
-  -l, --level <level>   Filter by level (info, warn, error, debug)
-  --last                View logs from previous session (v4.last.jsonl)
-  --no-interactive      Disable interactive mode
-  --no-follow           Disable follow mode
-
-Interactive log keys:
-  w worker  d dispatch  n consumer  u queue  o core  t watcher
-  1 info    2 warn      3 error     4 debug
-  a clear-filters       c clear-logs          q quit
-
-Spy options:
-  -a, --agent <agent>   Filter by agent
-  -m, --messages        Show message traffic only (no agent output)
-  -o, --output          Show agent output only (no messages)
-  --json                JSON output
-
-Task options:
-  -s, --status <status> Filter by status (open/complete)
-  -a, --agent <agent>   Filter by agent
-  -n, --limit <n>       Limit number of tasks (default: 50)
-  --no-watch            Disable live updates (print once and exit)
-  --json                JSON output
-
-Prompt options:
-  --with-task <msg-id>  Include task context from message
-  --raw                 Raw output (just the prompt, no formatting)
-
-Tool commands:
-  tx tool search <query>           Search multiple sources
-  tx tool search --providers       List available search providers
-  tx tool get-www <url>            Fetch URL with archive fallback
-  tx tool youtube-transcript <id>  Fetch YouTube video transcript
-  tx tool health [provider]        Check provider health
-
-Tool search options:
-  -s, --source <source>      Specific source (stackoverflow, github, etc.)
-  -n, --limit <n>            Limit results (default: 10)
-  --json                     JSON output
-
-Tool get-www options:
-  -a, --archive              Try archive.is/archive.org first
-  --json                     JSON output
-
-Tool youtube-transcript options:
-  -l, --lang <lang>          Language code (e.g., "en", "es")
-  -T, --timestamps           Include timestamps in output
-  --json                     JSON output
-`);
+      showHelp('main');
   }
 }
 

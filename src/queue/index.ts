@@ -119,9 +119,21 @@ export class MessageQueue {
       );
       return result.lastInsertRowid as number;
     } catch (err) {
-      // Check for UNIQUE constraint violation
+      // Check for UNIQUE constraint violation on source_file
       if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
-        // Return -1 to signal duplicate (already processed)
+        // File was updated - delete old record and insert fresh
+        if (msg.source_file) {
+          this.db.prepare(`DELETE FROM messages WHERE source_file = ?`).run(msg.source_file);
+          const result = this.insertStmt.run(
+            msg.from_agent,
+            msg.to_agent,
+            msg.type,
+            JSON.stringify(msg.payload),
+            msg.source_file,
+            Date.now()
+          );
+          return result.lastInsertRowid as number;
+        }
         return -1;
       }
       throw err;
@@ -394,5 +406,17 @@ export class MessageQueue {
       UPDATE messages SET status = 'delivered', delivered_at = ?
       WHERE id = ?
     `).run(Date.now(), id);
+  }
+
+  /**
+   * Mark all pending messages as failed (stale from previous run)
+   * Called on startup - pending messages from crashed sessions are undeliverable
+   */
+  markPendingAsFailed(): number {
+    const result = this.db.prepare(`
+      UPDATE messages SET status = 'failed', delivered_at = ?
+      WHERE status = 'pending'
+    `).run(Date.now());
+    return result.changes;
   }
 }

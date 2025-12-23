@@ -134,6 +134,11 @@ export class MessageConsumer extends EventEmitter {
         if (filepath.endsWith('.md')) this.processFile(filepath);
       });
 
+      // Also watch for changes - handles agents overwriting existing files
+      this.watcher.on('change', (filepath: string) => {
+        if (filepath.endsWith('.md')) this.processFile(filepath);
+      });
+
       this.watcher.on('ready', () => {
         this.running = true;
         resolve();

@@ -126,7 +126,7 @@ describe('WorkerStateMachine', () => {
     await machine7.retry();
 
     assert.strictEqual(machine7.getStatus(), 'initializing');
-    assert.strictEqual(machine7.context.retryCount, 1);
+    assert.strictEqual(machine7.currentContext.retryCount, 1);
   });
 
   it('should reject retry when max retries exceeded', async () => {
@@ -135,8 +135,8 @@ describe('WorkerStateMachine', () => {
     await machine8.start(12345);
     await machine8.error('Test error');
 
-    // Manually set retry count to max
-    machine8.context.retryCount = 3;
+    // Manually set retry count to max (cast to bypass protected for test)
+    (machine8 as unknown as { context: { retryCount: number } }).context.retryCount = 3;
 
     try {
       await machine8.retry();

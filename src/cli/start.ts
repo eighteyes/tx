@@ -14,6 +14,7 @@ import { log } from '../shared/logger.ts';
 
 export interface StartOptions {
   continue?: boolean;
+  model?: string;  // claude model: opus, sonnet, haiku
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -112,7 +113,10 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dbPath = path.join(dataDir, 'queue.db');
   const queue = new MessageQueue(dbPath);
 
-  queue.clearPendingMessages();
+  const staleCount = queue.markPendingAsFailed();
+  if (staleCount > 0) {
+    log.info('start', `Marked ${staleCount} stale pending messages as failed`);
+  }
   queue.clearAllSessions();
 
   for (const file of ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl']) {
@@ -144,10 +148,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
   });
 
-  await dispatcher.start(consumer);
-
   // Event-driven message injector with backoff retry
-  const pendingRetries = new Map<number, NodeJS.Timeout>();
+  const pendingRetries = new Map<number, { timeout: NodeJS.Timeout; id: number }>();
+  const MAX_INJECT_ATTEMPTS = 10;
 
   const tryInject = (id: number, filepath: string, from: string, type: string, attempt = 1) => {
     if (!fs.existsSync(filepath)) {
@@ -157,9 +160,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
 
     const injected = injectFile(tmux, filepath);
+    log.debug('injector', 'injectFile result', { id, injected, attempt });
     if (injected) {
       log.info('injector', 'Injected message to core', { id, from, type, file: path.basename(filepath) });
       queue.markProcessed(id);
+      pendingRetries.delete(id);
+    } else if (attempt >= MAX_INJECT_ATTEMPTS) {
+      log.error('injector', 'Max retry attempts reached, marking failed', { id, from, type, attempts: attempt });
+      queue.markProcessed(id);  // Mark as processed so it doesn't stay pending
       pendingRetries.delete(id);
     } else {
       // Backoff: 2s, 4s, 8s, 16s, max 30s
@@ -167,13 +175,17 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       log.debug('injector', 'Claude busy, retry scheduled', { id, from, type, attempt, delayMs: delay });
 
       const timeout = setTimeout(() => tryInject(id, filepath, from, type, attempt + 1), delay);
-      pendingRetries.set(id, timeout);
+      pendingRetries.set(id, { timeout, id });
     }
   };
 
+  // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
+    log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
     tryInject(id, filepath, from, type);
   });
+
+  await dispatcher.start(consumer);
 
   console.log('\n✅ TX V4 services ready!');
   console.log('Attaching to session... (Ctrl+B D to detach)\n');
@@ -193,7 +205,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Now send Claude command - user sees it in attached session
   const claudePath = findClaudePath();
   const continueFlag = options?.continue ? ' --continue' : '';
-  tmux.send(`clear && ${claudePath} --dangerously-skip-permissions${continueFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+  const modelFlag = options?.model ? ` --model ${options.model}` : '';
+  tmux.send(`clear && ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
   tmux.sendEnter();
 
   // Wait for detach
@@ -201,7 +214,13 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Cleanup
   console.log('\n[core] Detached from session.');
-  for (const timeout of pendingRetries.values()) clearTimeout(timeout);
+  for (const { timeout, id } of pendingRetries.values()) {
+    clearTimeout(timeout);
+    queue.markProcessed(id);  // Mark as processed so they don't stay pending
+  }
+  if (pendingRetries.size > 0) {
+    log.info('injector', `Marked ${pendingRetries.size} pending retries as processed on shutdown`);
+  }
   pendingRetries.clear();
   await dispatcher.stop(consumer);
   await consumer.stop();
