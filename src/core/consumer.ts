@@ -1,7 +1,14 @@
 /**
  * MessageConsumer - V4 file watcher that routes messages to SQLite queue
+ *
+ * Responsibilities:
+ * - Watch msgs directory for new .md files
+ * - Parse message frontmatter and body
+ * - Insert messages into SQLite queue
+ * - Emit 'core-message' event for core/core messages (enables event-driven injection)
  */
 
+import { EventEmitter } from 'node:events';
 import { watch, type FSWatcher } from 'chokidar';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,7 +33,7 @@ interface ParsedMessage {
   rearmatter: Record<string, unknown> | null;
 }
 
-export class MessageConsumer {
+export class MessageConsumer extends EventEmitter {
   private watchDir: string;
   private queue: MessageQueue;
   private watcher: FSWatcher | null = null;
@@ -35,6 +42,7 @@ export class MessageConsumer {
   private meshEntryPoints: Map<string, string> = new Map();
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
+    super();
     this.watchDir = watchDir;
     this.queue = queue;
     // Default to TX_ROOT/meshes if not provided
@@ -148,12 +156,6 @@ export class MessageConsumer {
   private processFile(filepath: string): void {
     const filename = path.basename(filepath);
     try {
-      // Skip if already processed (prevents duplicates on restart)
-      if (this.queue.hasMessageFromFile(filepath)) {
-        log.debug('consumer', `Skipped already-processed file: ${filename}`);
-        return;
-      }
-
       const content = fs.readFileSync(filepath, 'utf-8');
       const parsed = this.parseMessage(content);
       if (!parsed) {
@@ -168,6 +170,7 @@ export class MessageConsumer {
         from_agent: parsed.frontmatter.from,
         to_agent: toAgent,
         type: parsed.frontmatter.type,
+        source_file: filepath,
         payload: {
           'msg-id': parsed.frontmatter['msg-id'],
           headline: parsed.frontmatter.headline,
@@ -179,6 +182,12 @@ export class MessageConsumer {
         }
       });
 
+      // -1 signals duplicate (constraint violation)
+      if (id === -1) {
+        log.debug('consumer', `Skipped duplicate file: ${filename}`);
+        return;
+      }
+
       log.info('consumer', `Queued message`, {
         id,
         from: parsed.frontmatter.from,
@@ -188,6 +197,23 @@ export class MessageConsumer {
         headline: parsed.frontmatter.headline,
         file: filename
       });
+
+      // Emit events for event-driven dispatch (no polling needed)
+      if (toAgent === 'core/core') {
+        this.emit('core-message', {
+          id,
+          filepath,
+          from: parsed.frontmatter.from,
+          type: parsed.frontmatter.type
+        });
+      } else {
+        this.emit('worker-message', {
+          id,
+          agentId: toAgent,
+          from: parsed.frontmatter.from,
+          type: parsed.frontmatter.type
+        });
+      }
     } catch (err) {
       log.error('consumer', `Failed to process file: ${filename}`, { error: (err as Error).message });
     }

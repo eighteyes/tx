@@ -107,61 +107,32 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const corePrompt = getCorePrompt(msgsDir, meshesDir);
   fs.writeFileSync(corePromptPath, corePrompt);
 
-  // Start Claude with --system-prompt
-  const claudePath = findClaudePath();
-  const continueFlag = options?.continue ? ' --continue' : '';
-  console.log(`[tmux] Starting Claude${options?.continue ? ' (continuing previous session)' : ''}...`);
-
-  tmux.send(`${claudePath} --dangerously-skip-permissions${continueFlag} --system-prompt "$(cat '${corePromptPath}')"`);
-  tmux.sendEnter();
-
-  // Wait for Claude to be ready
-  console.log('[tmux] Waiting for Claude to initialize...');
-  const ready = await waitForClaudeReady(tmux, 15000); // Reduced timeout
-  if (!ready) {
-    console.log(`[tmux] Claude may need interaction. Check session with: tmux attach -t ${sessionName}`);
-    console.log('[tmux] Continuing anyway...');
-  } else {
-    console.log('[tmux] Claude is ready');
-  }
-
-  // Initialize queue and consumer
+  // Start services first (they run on event loop while attached)
+  console.log('[core] Starting services...');
   const dbPath = path.join(dataDir, 'queue.db');
   const queue = new MessageQueue(dbPath);
 
-  // Clear old pending messages on fresh start (keep delivered for deduplication)
   queue.clearPendingMessages();
   queue.clearAllSessions();
 
-  // Clear logs and activity
-  const logFiles = ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl'];
-  for (const file of logFiles) {
+  for (const file of ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl']) {
     const logPath = path.join(logsDir, file);
-    if (fs.existsSync(logPath)) {
-      fs.writeFileSync(logPath, '');
-    }
+    if (fs.existsSync(logPath)) fs.writeFileSync(logPath, '');
   }
 
   log.info('start', 'Cleared pending messages, sessions, and logs');
 
   const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
-
-  // Start message consumer
   await consumer.start();
-  console.log(`[core] Watching: ${msgsDir}`);
-  console.log(`[core] Queue: ${dbPath}`);
 
-  // Start worker dispatcher
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,
     msgsDir,
-    meshesDir: path.join(txRoot, 'meshes'),
-    pollInterval: 1000
+    meshesDir: path.join(txRoot, 'meshes')
   }, queue);
 
   dispatcher.on('worker:spawn', ({ agentId, model, resume, sessionId }) => {
-    const mode = resume ? `resume:${sessionId?.slice(0, 8)}` : 'new';
-    log.info('dispatcher', `Spawning worker: ${agentId}`, { model, mode, sessionId });
+    log.info('dispatcher', `Spawning worker: ${agentId}`, { model, mode: resume ? `resume:${sessionId?.slice(0, 8)}` : 'new', sessionId });
   });
   dispatcher.on('worker:complete', ({ id, messagesProcessed, sessionId }) => {
     log.info('dispatcher', `Worker complete: ${id}`, { messagesProcessed, sessionId });
@@ -170,83 +141,75 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.error('dispatcher', `Worker error: ${id}`, { error });
   });
   dispatcher.on('worker:output', ({ id, data }) => {
-    // Log worker output (truncated)
-    const preview = data.length > 200 ? data.slice(0, 200) + '...' : data;
-    log.info('worker', preview, { id });
+    log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
   });
 
-  await dispatcher.start();
-  console.log(`[dispatcher] Watching for task messages`);
+  await dispatcher.start(consumer);
 
-  // Start the message injector as a background interval
-  // Injects ONE message per interval to avoid overwhelming Claude
-  // Only injects when Claude is idle (no interruption of user typing/scrolling)
-  const injectorInterval = setInterval(async () => {
-    try {
-      const msg = queue.pollOne('core/core');
-      if (!msg) return;
+  // Event-driven message injector with backoff retry
+  const pendingRetries = new Map<number, NodeJS.Timeout>();
 
-      // Inject the original message file directly - core agent handles frontmatter
-      const filepath = msg.payload.filepath as string | undefined;
-      if (filepath && fs.existsSync(filepath)) {
-        const injected = injectFile(tmux, filepath);
-        if (injected) {
-          log.info('injector', 'Injected message to core', {
-            from: msg.from_agent,
-            type: msg.type,
-            headline: msg.payload.headline,
-            file: filepath
-          });
-        } else {
-          // Claude is busy - put message back in queue for retry
-          queue.insert(msg);
-          log.debug('injector', 'Claude busy, queueing for retry', {
-            from: msg.from_agent,
-            type: msg.type
-          });
-        }
-      } else {
-        log.warn('injector', 'Message source file not found', {
-          from: msg.from_agent,
-          type: msg.type,
-          filepath
-        });
-      }
-    } catch (err) {
-      // Ignore errors during injection - session may have been detached
+  const tryInject = (id: number, filepath: string, from: string, type: string, attempt = 1) => {
+    if (!fs.existsSync(filepath)) {
+      log.warn('injector', 'Message source file not found', { id, from, type, filepath });
+      queue.markProcessed(id);
+      return;
     }
-  }, 1000);
 
-  console.log('\n✅ TX V4 is running!');
-  console.log('\nAttaching to session... (Ctrl+B D to detach)\n');
+    const injected = injectFile(tmux, filepath);
+    if (injected) {
+      log.info('injector', 'Injected message to core', { id, from, type, file: path.basename(filepath) });
+      queue.markProcessed(id);
+      pendingRetries.delete(id);
+    } else {
+      // Backoff: 2s, 4s, 8s, 16s, max 30s
+      const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+      log.debug('injector', 'Claude busy, retry scheduled', { id, from, type, attempt, delayMs: delay });
 
-  // Attach to tmux session using spawn (NOT execSync - that blocks the event loop!)
-  // This allows chokidar and intervals to keep running while attached
-  await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => tryInject(id, filepath, from, type, attempt + 1), delay);
+      pendingRetries.set(id, timeout);
+    }
+  };
+
+  consumer.on('core-message', ({ id, filepath, from, type }) => {
+    tryInject(id, filepath, from, type);
+  });
+
+  console.log('\n✅ TX V4 services ready!');
+  console.log('Attaching to session... (Ctrl+B D to detach)\n');
+
+  // Attach FIRST, then send Claude command (user sees it live)
+  const attachPromise = new Promise<void>((resolve) => {
     const attach = spawn('tmux', ['attach', '-t', sessionName], {
       stdio: 'inherit'
     });
-
-    attach.on('exit', () => {
-      resolve();
-    });
-
-    attach.on('error', () => {
-      resolve();
-    });
+    attach.on('exit', () => resolve());
+    attach.on('error', () => resolve());
   });
 
-  // Cleanup after detach
-  console.log('\n[core] Detached from session. Shutting down...');
-  clearInterval(injectorInterval);
-  await dispatcher.stop();
+  // Small delay to let attach take over terminal
+  await new Promise(r => setTimeout(r, 100));
+
+  // Now send Claude command - user sees it in attached session
+  const claudePath = findClaudePath();
+  const continueFlag = options?.continue ? ' --continue' : '';
+  tmux.send(`clear && ${claudePath} --dangerously-skip-permissions${continueFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+  tmux.sendEnter();
+
+  // Wait for detach
+  await attachPromise;
+
+  // Cleanup
+  console.log('\n[core] Detached from session.');
+  for (const timeout of pendingRetries.values()) clearTimeout(timeout);
+  pendingRetries.clear();
+  await dispatcher.stop(consumer);
   await consumer.stop();
   queue.close();
 
-  // Kill the tmux session
-  await tmux.kill();
-
-  console.log(`[core] TX stopped.`);
+  console.log(`[core] Consumer stopped. Claude session still running.`);
+  console.log(`[core] Re-attach: tmux attach -t ${sessionName}`);
+  console.log(`[core] Kill: tmux kill-session -t ${sessionName}`);
 }
 
 /**
@@ -264,43 +227,6 @@ export async function stop(workDir?: string): Promise<void> {
   } else {
     console.log('TX is not running');
   }
-}
-
-async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<boolean> {
-  const startTime = Date.now();
-  const pollInterval = 500;
-
-  while (Date.now() - startTime < timeout) {
-    const output = tmux.capture(30);
-
-    // Check for gate patterns (need user intervention)
-    if (/Trust.*project/i.test(output) || /initial configuration/i.test(output)) {
-      console.log('[tmux] Claude needs configuration. Attach to session and complete setup.');
-      console.log(`[tmux] Run: tmux attach -t ${tmux.name}`);
-      return false;
-    }
-
-    // Check for Claude prompt patterns indicating ready
-    if (output.includes('send') ||
-        output.includes('tokens') ||
-        output.includes('⏵⏵') ||
-        /bypass permissions/i.test(output)) {
-      return true;
-    }
-
-    // Look for stable output indicating ready (fallback)
-    if (output.length > 100) {
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Reduced from 2000
-      const output2 = tmux.capture(30);
-      if (output2 === output || output2.length >= output.length) {
-        return true;
-      }
-    }
-
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-
-  return false;
 }
 
 /**

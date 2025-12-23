@@ -83,6 +83,16 @@ export abstract class StateMachine<S, C extends Context> extends EventEmitter {
     this.middleware = [];
   }
 
+  /** Public read-only access to current state */
+  get currentState(): S {
+    return this.state;
+  }
+
+  /** Public read-only access to context */
+  get currentContext(): C {
+    return this.context;
+  }
+
   registerGuard(transitionName: string, guard: Guard<S, C>): void {
     if (!this.validators.has(transitionName)) {
       this.validators.set(transitionName, []);

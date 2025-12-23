@@ -13,6 +13,7 @@ export interface Message {
   type: string;
   status?: 'pending' | 'delivered';
   payload: Record<string, unknown>;
+  source_file?: string;
   created_at?: number;
   delivered_at?: number;
 }
@@ -51,11 +52,12 @@ export class MessageQueue {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
     this.createSchema();
+    this.migrate();
 
     // Cache prepared statements
     this.insertStmt = this.db.prepare(`
-      INSERT INTO messages (from_agent, to_agent, type, payload, created_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO messages (from_agent, to_agent, type, payload, source_file, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     this.selectPendingStmt = this.db.prepare(`
@@ -67,6 +69,7 @@ export class MessageQueue {
   }
 
   private createSchema(): void {
+    // Create tables (source_file index created in migrate() to handle existing DBs)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,6 +78,7 @@ export class MessageQueue {
         type TEXT NOT NULL,
         status TEXT DEFAULT 'pending',
         payload JSON NOT NULL,
+        source_file TEXT,
         created_at INTEGER NOT NULL,
         delivered_at INTEGER
       );
@@ -89,15 +93,39 @@ export class MessageQueue {
     `);
   }
 
+  private migrate(): void {
+    // Check if source_file column exists
+    const columns = this.db.prepare(`PRAGMA table_info(messages)`).all() as Array<{ name: string }>;
+    const hasSourceFile = columns.some(col => col.name === 'source_file');
+
+    if (!hasSourceFile) {
+      // Add source_file column to existing database
+      this.db.exec(`ALTER TABLE messages ADD COLUMN source_file TEXT`);
+    }
+
+    // Always ensure the index exists (safe for new and migrated DBs)
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_source_file ON messages(source_file) WHERE source_file IS NOT NULL`);
+  }
+
   insert(msg: Message): number {
-    const result = this.insertStmt.run(
-      msg.from_agent,
-      msg.to_agent,
-      msg.type,
-      JSON.stringify(msg.payload),
-      Date.now()
-    );
-    return result.lastInsertRowid as number;
+    try {
+      const result = this.insertStmt.run(
+        msg.from_agent,
+        msg.to_agent,
+        msg.type,
+        JSON.stringify(msg.payload),
+        msg.source_file || null,
+        Date.now()
+      );
+      return result.lastInsertRowid as number;
+    } catch (err) {
+      // Check for UNIQUE constraint violation
+      if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
+        // Return -1 to signal duplicate (already processed)
+        return -1;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -355,5 +383,16 @@ export class MessageQueue {
    */
   clearPendingMessages(): void {
     this.db.prepare('DELETE FROM messages WHERE status = ?').run('pending');
+  }
+
+  /**
+   * Mark a message as processed (delivered) by ID
+   * Used by event-driven injector after successful injection
+   */
+  markProcessed(id: number): void {
+    this.db.prepare(`
+      UPDATE messages SET status = 'delivered', delivered_at = ?
+      WHERE id = ?
+    `).run(Date.now(), id);
   }
 }

@@ -127,20 +127,19 @@ export interface DispatcherConfig {
   workDir: string;
   msgsDir: string;
   meshesDir: string;
-  pollInterval?: number;  // ms, default 1000
 }
 
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
   private running = false;
-  private pollTimer: NodeJS.Timeout | null = null;
   private activeWorkers: Map<string, { runner: SdkRunner; machine: WorkerStateMachine; startedAt: number }> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
   private stateFile: string;
   private workspaceManager: WorkspaceManager;
   private promptInjector: PromptInjector;
   private lifecycleHooks: LifecycleHooks;
+  private boundMessageHandler: ((event: { agentId: string }) => void) | null = null;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -171,9 +170,9 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
-   * Start the dispatcher - begins polling for task messages
+   * Start the dispatcher - subscribes to consumer events for worker messages
    */
-  async start(): Promise<void> {
+  async start(consumer?: EventEmitter): Promise<void> {
     if (this.running) return;
 
     // Load all mesh configs
@@ -182,21 +181,62 @@ export class WorkerDispatcher extends EventEmitter {
     this.running = true;
     this.emit('start');
 
-    // Start polling
-    this.poll();
+    // Subscribe to consumer events for event-driven dispatch
+    if (consumer) {
+      this.boundMessageHandler = (event: { agentId: string }) => {
+        this.handleWorkerMessage(event.agentId);
+      };
+      consumer.on('worker-message', this.boundMessageHandler);
+    }
+  }
+
+  /**
+   * Handle incoming worker message - spawn worker if not already running
+   */
+  private handleWorkerMessage(agentId: string): void {
+    if (!this.running) return;
+
+    // Skip if worker already running
+    if (this.activeWorkers.has(agentId)) {
+      log.debug('dispatcher', `Worker already running, message queued`, { agentId });
+      return;
+    }
+
+    // Parse mesh/agent from agentId
+    const [meshName, agentName] = agentId.split('/');
+    if (!meshName || !agentName) {
+      log.error('dispatcher', `Invalid agentId format`, { agentId });
+      return;
+    }
+
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (!meshConfig) {
+      log.error('dispatcher', `Mesh not found`, { meshName, agentId });
+      return;
+    }
+
+    const agent = meshConfig.agents.find(a => a.name === agentName);
+    if (!agent) {
+      log.error('dispatcher', `Agent not found in mesh`, { meshName, agentName, agentId });
+      return;
+    }
+
+    log.info('dispatcher', `Spawning worker for message`, { agentId });
+    this.spawnWorker(meshName, agent);
   }
 
   /**
    * Stop the dispatcher
    */
-  async stop(): Promise<void> {
+  async stop(consumer?: EventEmitter): Promise<void> {
     if (!this.running) return;
 
     this.running = false;
 
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer);
-      this.pollTimer = null;
+    // Unsubscribe from consumer events
+    if (consumer && this.boundMessageHandler) {
+      consumer.off('worker-message', this.boundMessageHandler);
+      this.boundMessageHandler = null;
     }
 
     // Kill all active workers
@@ -210,60 +250,6 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
-   * Poll queue for task messages destined for workers
-   */
-  private poll(): void {
-    if (!this.running) return;
-
-    try {
-      // Reload configs at poll time to pick up changes (e.g., workspace paths)
-      for (const [meshName, _cachedConfig] of this.meshConfigs) {
-        // Re-read config from disk to enable runtime config updates
-        const meshConfig = this.reloadMeshConfig(meshName);
-        if (!meshConfig) continue;
-
-        // Validate agents field
-        if (!meshConfig.agents || !Array.isArray(meshConfig.agents)) {
-          log.error('dispatcher', `Invalid mesh config: agents is not an array`, {
-            meshName,
-            agentsType: typeof meshConfig.agents,
-            agentsValue: meshConfig.agents
-          });
-          continue;
-        }
-
-        for (const agent of meshConfig.agents) {
-          const agentId = `${meshName}/${agent.name}`;
-
-          // Skip if worker already running
-          if (this.activeWorkers.has(agentId)) continue;
-
-          // Check for any pending message (peek, don't consume yet)
-          // The SdkRunner will pollOne when it runs
-          // Dispatch on any message type - task, ask-response, ask-human, etc.
-          const nextMsg = this.queue.peekOne(agentId);
-          if (!nextMsg) continue;
-
-          log.info('dispatcher', `Found ${nextMsg.type} for ${agentId}`, {
-            agentId,
-            type: nextMsg.type,
-            headline: nextMsg.payload.headline
-          });
-
-          // Spawn worker for this agent
-          this.spawnWorker(meshName, agent);
-        }
-      }
-    } catch (error) {
-      log.error('dispatcher', 'Poll error', { error: (error as Error).message });
-      this.emit('error', { error: (error as Error).message });
-    }
-
-    // Schedule next poll
-    this.pollTimer = setTimeout(() => this.poll(), this.config.pollInterval || 1000);
-  }
-
-  /**
    * Spawn a worker for an agent using SDK with FSM
    */
   private async spawnWorker(meshName: string, agent: AgentConfig): Promise<void> {
@@ -272,7 +258,7 @@ export class WorkerDispatcher extends EventEmitter {
     try {
       // Peek at the next message to get task ID for workspace
       const nextMsg = this.queue.peekOne(agentId);
-      const taskId = nextMsg ? nextMsg.id : `${agentId}-${Date.now()}`;
+      const taskId = nextMsg?.id != null ? String(nextMsg.id) : `${agentId}-${Date.now()}`;
 
       // Get mesh config (poll() already reloaded it from disk)
       const meshConfig = this.meshConfigs.get(meshName);
@@ -465,13 +451,14 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
           // Inject env vars into each MCP server config
           mcpServers = Object.fromEntries(
             Object.entries(mcpServers).map(([serverName, serverConfig]) => {
+              const existingEnv = (serverConfig as { env?: Record<string, string> }).env;
               return [
                 serverName,
                 {
                   ...serverConfig,
                   env: {
                     ...mcpEnv,              // MCP env vars as base
-                    ...serverConfig.env,    // Server-specific env overrides
+                    ...existingEnv,         // Server-specific env overrides
                   },
                 },
               ];
@@ -512,7 +499,7 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
       worker.on('message:idle', async (data) => {
         try {
           // Only transition to idle if currently running
-          if (machine.state.status === 'running') {
+          if (machine.currentState.status === 'running') {
             await machine.markIdle(data.message);
             this.emit('worker:idle', data);
           }
@@ -520,7 +507,7 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
           log.error('dispatcher', `Failed to mark worker idle`, {
             agentId,
             error: (error as Error).message,
-            currentState: machine.state.status
+            currentState: machine.currentState.status
           });
         }
       });
@@ -572,8 +559,8 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         if (canRetry) {
           log.info('dispatcher', `Retrying worker`, {
             agentId,
-            attempt: machine.context.retryCount + 1,
-            maxRetries: machine.context.maxRetries
+            attempt: machine.currentContext.retryCount + 1,
+            maxRetries: machine.currentContext.maxRetries
           });
 
           await machine.retry();
@@ -787,95 +774,6 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
       const configPath = path.join(configDir, file);
       // Legacy configs use workDir-relative prompt paths, so basePath is workDir
       this.loadMeshConfigFromFile(configPath, this.config.workDir, isGlobal);
-    }
-  }
-
-  /**
-   * Reload a specific mesh config from disk
-   *
-   * This enables dynamic config updates (e.g., workspace path changes)
-   * to take effect without restarting TX. The mesh config is re-read
-   * from disk and cached. Called by poll() before iterating agents.
-   *
-   * @param meshName - The mesh name to reload
-   * @returns The freshly loaded mesh config, or undefined if not found
-   */
-  private reloadMeshConfig(meshName: string): MeshConfig | undefined {
-    // Get the existing config to find its source location
-    const existingConfig = this.meshConfigs.get(meshName);
-    if (!existingConfig?._basePath) {
-      // If we don't have an existing config with basePath, return cached version
-      // This shouldn't happen in normal operation, but provides safety
-      return existingConfig;
-    }
-
-    // Re-read the config file from disk
-    const basePath = existingConfig._basePath;
-    const yamlPath = path.join(basePath, 'config.yaml');
-    const ymlPath = path.join(basePath, 'config.yml');
-    const jsonPath = path.join(basePath, 'config.json');
-
-    let configPath: string | null = null;
-    if (fs.existsSync(yamlPath)) {
-      configPath = yamlPath;
-    } else if (fs.existsSync(ymlPath)) {
-      configPath = ymlPath;
-    } else if (fs.existsSync(jsonPath)) {
-      configPath = jsonPath;
-    }
-
-    if (!configPath) {
-      log.warn('dispatcher', `Config file not found for mesh reload`, {
-        meshName,
-        basePath,
-      });
-      return existingConfig;
-    }
-
-    try {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      const isYaml = configPath.endsWith('.yaml') || configPath.endsWith('.yml');
-      const rawConfig = isYaml ? YAML.parse(content) : JSON.parse(content);
-
-      // Validate using MeshValidator
-      const validation = MeshValidator.validate(rawConfig, path.basename(configPath));
-
-      if (!validation.valid) {
-        log.error('dispatcher', `Invalid mesh config on reload`, {
-          meshName,
-          configPath,
-          errors: validation.errors,
-        });
-        // Return cached version on validation failure
-        return existingConfig;
-      }
-
-      if (validation.warnings.length > 0) {
-        log.warn('dispatcher', `Mesh config warnings on reload: ${meshName}`, {
-          warnings: validation.warnings,
-        });
-      }
-
-      const config = validation.config as MeshConfig;
-      config._basePath = basePath;
-
-      // Update the cache with fresh config
-      this.meshConfigs.set(meshName, config);
-
-      log.debug('dispatcher', `Reloaded mesh config at spawn time`, {
-        meshName,
-        workspace: config.workspace,
-      });
-
-      return config;
-    } catch (error) {
-      log.error('dispatcher', `Failed to reload mesh config`, {
-        meshName,
-        configPath,
-        error: (error as Error).message,
-      });
-      // Return cached version on error
-      return existingConfig;
     }
   }
 

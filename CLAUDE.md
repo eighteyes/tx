@@ -1,3 +1,5 @@
+Do NOT run `tx start` or you will be terminated.
+
 ## Architecture
 - `.ai/tx/` - system state
 - `src/cli/` - CLI commands (start, status, msg, spy)
@@ -5,6 +7,8 @@
 - `src/queue/` - SQLite message queue
 - `src/worker/` - SDK-based ephemeral workers
 - `meshes/` - Agent configs and prompts
+
+- System is event driven from file writes into the Consumer.
 
 ## Key Learnings
 
@@ -35,8 +39,24 @@ child.on('exit', () => { /* cleanup */ });
 
 ## Message Flow
 
-1. Core agent writes `.md` files to `.ai/tx/msgs/`
-2. Consumer watches directory, inserts into SQLite queue
-3. Dispatcher polls queue for task messages
-4. Workers spawn via Claude Agent SDK to handle tasks
+1. Agent writes `.md` file to `.ai/tx/msgs/`
+2. Consumer (chokidar) detects file → inserts to queue → emits event
+3. `core-message` → Injector injects to Claude (backoff retry if busy)
+4. `worker-message` → Dispatcher spawns worker immediately
 5. Workers write response messages back to msgs dir
+
+## Event-Driven Architecture
+
+**Consumer Events** (`MessageConsumer`):
+| Event | Payload | Trigger |
+|-------|---------|---------|
+| `core-message` | `{id, filepath, from, type}` | Message for `core/core` |
+| `worker-message` | `{id, agentId, from, type}` | Message for worker agent |
+
+**Dispatcher Events** (`WorkerDispatcher`):
+| Event | Payload | Trigger |
+|-------|---------|---------|
+| `worker:spawn` | `{agentId, model}` | Worker starting |
+| `worker:complete` | `{id, messagesProcessed, output}` | Worker finished |
+| `worker:error` | `{id, error}` | Worker error |
+| `mesh:loaded` | `{mesh, agents}` | Mesh config loaded |
