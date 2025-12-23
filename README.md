@@ -31,7 +31,7 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 > `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use [safe-claude](https://github.com/eighteyes/safe-claude) for this.
 
 ```bash
-git clone git@github.com:eighteyes/tx
+git clone git@github.com:eighteyes/tx.git
 cd tx-cli
 # installs global tx command
 npm link
