@@ -33,6 +33,7 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 ```bash
 git clone git@github.com:eighteyes/tx-cli
 cd tx-cli
+npm install
 # installs global tx command
 npm link
 
@@ -50,6 +51,7 @@ Cntl-B d
 ```
 
 ## Observability
+> Use a new terminal session, run from the same folder as `tx`. 
 - `tx msgs` - watch messages flowing in the system
 - `tx logs` - see system level processes
 - `tx spy` - watch agent outputs and tasks
@@ -59,19 +61,6 @@ Cntl-B d
 - `dev` - Basic developer workflow.
 - `research` - 4 agent basic researcher
 - `deep-research` - 6 agent research with theorizer / disprover loop, use "theory" or "hypothesis" in your prompt as intent
-
-## CLI Commands
-> These are intended to be run from your project root and will not work system wide.
-
-```bash
-tx start              # Start core agent (attaches to tmux)
-tx status             # Show system status
-tx msg [options]      # View messages
-tx logs [options]     # View logs
-tx spy [options]      # Real-time activity stream
-tx tasks [options]    # View task queue
-tx stop               # Stop core agent
-```
 
 ## Architecture
 > Note: As a matter of practice, I store all AI tooling information in `.ai` and hope that the vendor community will stop polluting our project roots with their hidden folders.
