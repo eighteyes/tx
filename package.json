@@ -6,6 +6,7 @@
     "tx": "./bin/tx"
   },
   "scripts": {
+    "postinstall": "npm rebuild",
     "build": "tsc",
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:e2e": "node --import tsx --test test/e2e/*.ts",

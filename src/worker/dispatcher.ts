@@ -347,6 +347,9 @@ export class WorkerDispatcher extends EventEmitter {
       }
       let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
 
+      // Inject messaging protocol for all agents
+      systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
+
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 

@@ -111,7 +111,7 @@ Cntl-B d
 
 By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they are not clear. You don't have to context switch to change what your AI is working on.
 
-We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task.
+We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task. Mesh agents run about 1k tokens and that's it. 
 
 Conversational AI interfaces have not changed in the past 60 years, how do we get minimum token inputs to have maximum impact?
 

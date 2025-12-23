@@ -1,11 +1,13 @@
 /**
- * PromptInjector - Injects workspace context into agent prompts
+ * PromptInjector - Injects context into agent prompts
  *
- * Adds information about expected output files and workspace location
- * to agent system prompts based on mesh config.
+ * Responsibilities:
+ * - Inject messaging protocol for inter-agent communication
+ * - Inject workspace context (output files, location)
  */
 
 import type { WorkspaceInfo } from './manager.ts';
+import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -13,6 +15,14 @@ export interface InjectionContext {
 }
 
 export class PromptInjector {
+  /**
+   * Inject messaging protocol into a system prompt
+   * Called for all mesh agents to ensure consistent message handling
+   */
+  injectMessagingProtocol(basePrompt: string): string {
+    return `${basePrompt}\n${MESSAGING_PROTOCOL}`;
+  }
+
   /**
    * Inject workspace context into a system prompt
    */
