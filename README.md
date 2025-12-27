@@ -30,9 +30,12 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
 
 ## Dependencies
-- `node` 
+- `node` (recommended: Node >= 20.19.0)
 - Authenticated Claude Code 
 - `tmux` 
+
+### Windows notes
+- If `npm install` fails during native rebuilds, ensure you are on Node >= 20.19.0 (via nvm-windows is fine).
 
 ## Quick Start
 > [!IMPORTANT]  
@@ -40,7 +43,7 @@ After install, run `tx start` in a new, or existing project directory. You will 
 
 ```bash
 git clone git@github.com:eighteyes/tx.git
-cd tx-cli
+cd tx
 npm install
 # installs global tx command
 npm link
