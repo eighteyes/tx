@@ -18,8 +18,19 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
-import { LifecycleHooks, type HookContext } from './hooks.ts';
+import {
+  LifecycleHooks,
+  QualityIterationError,
+  QualityHaltError,
+  QualityExhaustedError,
+  type HookContext,
+} from './hooks.ts';
 import { MeshValidator } from './mesh-validator.ts';
+import {
+  type GradedConfig,
+  type GateType,
+  type PreflightOutput,
+} from '../quality/index.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -74,6 +85,14 @@ type MeshAgentRouting = Record<string, MeshRoutingDestination>;
  */
 type MeshRouting = Record<string, MeshAgentRouting>;
 
+/**
+ * Iteration config for graded meshes
+ */
+interface IterationConfig {
+  maxIterations?: number;  // Max re-runs on quality failure (default: 3)
+  onFail?: 'loop' | 'halt';  // What to do on quality failure (default: loop)
+}
+
 interface MeshConfig {
   mesh: string;
   description?: string;
@@ -87,13 +106,18 @@ interface MeshConfig {
   };
   routing?: MeshRouting;  // Agent routing tables
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
+  graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
+  iteration?: IterationConfig;  // Iteration config for graded meshes
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
 /**
  * Resolve lifecycle hooks from config
- * worktree: true expands to full worktree lifecycle
- * Explicit lifecycle overrides worktree shorthand
+ * Supports multiple shorthands that expand to lifecycle hooks:
+ * - worktree: true → worktree:create + commit:auto + worktree:cleanup
+ * - graded: true → quality:preflight + individual quality gates
+ * - graded: ['checklist', 'rubric'] → quality:preflight + specific gates
+ * Explicit lifecycle overrides all shorthands
  */
 function resolveLifecycle(config: MeshConfig): { pre: string[]; post: string[] } | undefined {
   // Explicit lifecycle takes precedence
@@ -104,12 +128,56 @@ function resolveLifecycle(config: MeshConfig): { pre: string[]; post: string[] }
     };
   }
 
+  // Build lifecycle from shorthands
+  const pre: string[] = [];
+  const post: string[] = [];
+
+  // graded: true/array shorthand → individual quality gate hooks
+  if (config.graded) {
+    pre.push('quality:preflight');
+
+    // Determine which gates to use
+    const gates: GateType[] = Array.isArray(config.graded) ? config.graded : [
+      'checklist',
+      'rubric',
+      'adversarial',
+      'accuracy',
+      'summarizer',
+      'deterministic',
+    ];
+
+    // Add each gate as an individual hook
+    for (const gate of gates) {
+      let hookName = `quality:${gate}`;
+
+      // Only add iteration config to gates that can fail (not summarizer)
+      if (gate !== 'summarizer') {
+        const configParts: string[] = [];
+        if (config.iteration?.onFail) {
+          configParts.push(`onFail=${config.iteration.onFail}`);
+        }
+        if (config.iteration?.maxIterations) {
+          configParts.push(`maxIterations=${config.iteration.maxIterations}`);
+        }
+
+        if (configParts.length > 0) {
+          hookName += ':' + configParts.join(',');
+        }
+      }
+
+      post.push(hookName);
+    }
+  }
+
   // worktree: true shorthand
   if (config.worktree) {
-    return {
-      pre: ['worktree:create'],
-      post: ['commit:auto', 'worktree:cleanup'],
-    };
+    pre.unshift('worktree:create');  // worktree first
+    post.push('commit:auto', 'worktree:cleanup');
+  }
+
+  // Only return if we have any hooks
+  if (pre.length > 0 || post.length > 0) {
+    return { pre, post };
   }
 
   return undefined;
@@ -129,11 +197,22 @@ export interface DispatcherConfig {
   meshesDir: string;
 }
 
+/**
+ * Active worker state
+ */
+interface ActiveWorker {
+  runner: SdkRunner;
+  machine: WorkerStateMachine;
+  startedAt: number;
+  hookContext: HookContext;  // Lifecycle hook context (includes quality state)
+  startedPromise?: Promise<void>;  // Resolves when FSM 'start' transition completes
+}
+
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
   private running = false;
-  private activeWorkers: Map<string, { runner: SdkRunner; machine: WorkerStateMachine; startedAt: number }> = new Map();
+  private activeWorkers: Map<string, ActiveWorker> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
   private stateFile: string;
   private workspaceManager: WorkspaceManager;
@@ -263,19 +342,41 @@ export class WorkerDispatcher extends EventEmitter {
       // Get mesh config (poll() already reloaded it from disk)
       const meshConfig = this.meshConfigs.get(meshName);
 
-      // Create hook context
+      // Create hook context with task info for quality hooks
       const meshInstance = `${meshName}-${Date.now()}`;
+      const taskBody = nextMsg?.payload?.body as string || '';
       const hookContext: HookContext = {
         meshInstance,
         meshName,
         agentName: agent.name,
         workDir: this.config.workDir,
+        agentId,
+        taskId,
+        taskBody,
+        msgsDir: this.config.msgsDir,
       };
 
-      // Resolve lifecycle hooks (worktree: true or explicit lifecycle)
+      // Resolve lifecycle hooks (worktree: true, graded: true, or explicit lifecycle)
+      log.info('dispatcher', 'Resolving lifecycle hooks', {
+        agentId,
+        hasMeshConfig: !!meshConfig,
+        meshName: meshConfig?.mesh,
+        hasGraded: meshConfig?.graded !== undefined,
+        gradedValue: meshConfig?.graded,
+        hasWorktree: meshConfig?.worktree !== undefined,
+        hasLifecycle: meshConfig?.lifecycle !== undefined,
+      });
+
       const lifecycle = meshConfig ? resolveLifecycle(meshConfig) : undefined;
 
-      // Execute pre-hooks if configured
+      log.info('dispatcher', 'Lifecycle resolved', {
+        agentId,
+        hasLifecycle: !!lifecycle,
+        pre: lifecycle?.pre || [],
+        post: lifecycle?.post || [],
+      });
+
+      // Execute pre-hooks if configured (includes quality:preflight for graded meshes)
       if (lifecycle?.pre && lifecycle.pre.length > 0) {
         log.info('dispatcher', `Executing pre-hooks for ${agentId}`, {
           hooks: lifecycle.pre,
@@ -484,9 +585,18 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
       const worker = new SdkRunner(runnerConfig, this.queue);
       this.emit('worker:spawn', { agentId, model: agent.model });
 
+      // Track when FSM 'start' transition completes to avoid race condition
+      // When queue is empty, 'complete' fires before 'start' async handler finishes
+      // MUST be declared BEFORE event handlers that reference it
+      let startedResolve: () => void;
+      const startedPromise = new Promise<void>((resolve) => {
+        startedResolve = resolve;
+      });
+
       // Wire up SDK events to FSM
       worker.on('start', async (data) => {
         await machine.start(data.pid || process.pid);
+        startedResolve();  // Signal that FSM is now in 'running' state
         this.emit('worker:start', data);
       });
 
@@ -515,36 +625,187 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         }
       });
 
-      // Complete transition
+      // Complete transition - HELD COMPLETION pattern
+      // We hold the FSM.complete() until AFTER post-hooks pass to avoid race conditions
+      // with quality gate iteration loops
       worker.on('complete', async (data) => {
-        await machine.complete(data);
-        this.activeWorkers.delete(agentId);
-        this.writeWorkerState();
+        const activeWorker = this.activeWorkers.get(agentId);
+        const workerHookContext = activeWorker?.hookContext || hookContext;
 
+        // Wait for FSM 'start' transition to complete before proceeding
+        // This fixes race condition when queue is empty (0 messages processed)
+        if (activeWorker?.startedPromise) {
+          await activeWorker.startedPromise;
+        }
+
+        // Set worker output and sessionId in hook context for quality hooks
+        workerHookContext.workerOutput = data.output;
+        workerHookContext.sessionId = data.sessionId;
+
+        // Save output for debugging (but DON'T complete FSM yet)
         if (data.output) {
           this.saveSessionOutput(agentId, data.output);
         }
 
-        // Execute post-hooks if configured
+        // Execute post-hooks BEFORE completing FSM
+        // This allows quality gates to trigger session resume without race conditions
         if (lifecycle?.post && lifecycle.post.length > 0) {
-          log.info('dispatcher', `Executing post-hooks for ${agentId}`, {
+          log.info('dispatcher', `Executing post-hooks for ${agentId} (held completion)`, {
             hooks: lifecycle.post,
+            sessionId: data.sessionId?.slice(0, 8),
           });
 
           try {
-            await this.lifecycleHooks.executePostHooks(lifecycle.post, hookContext);
+            await this.lifecycleHooks.executePostHooks(lifecycle.post, workerHookContext);
           } catch (error) {
-            // Post-hook errors are logged but don't affect completion
-            log.error('dispatcher', `Post-hook execution failed`, {
-              agentId,
-              error: (error as Error).message,
-            });
+            // Handle quality iteration errors with SESSION RESUME (not respawn)
+            if (error instanceof QualityIterationError) {
+              log.info('dispatcher', 'Quality iteration required - resuming session', {
+                agentId,
+                iteration: workerHookContext.qualityIteration,
+                sessionId: data.sessionId?.slice(0, 8),
+                feedback: error.feedback?.slice(0, 100),
+              });
+
+              this.emit('quality:retry', {
+                agentId,
+                taskId: workerHookContext.taskId,
+                iteration: workerHookContext.qualityIteration,
+                feedback: error.feedback,
+              });
+
+              // Write feedback to sys-msgs for audit trail (NOT routed to consumer)
+              await this.lifecycleHooks.writeSystemFeedbackMessage(
+                workerHookContext,
+                agentId,
+                workerHookContext.taskId || '',
+                error.feedback,
+                workerHookContext.qualityIteration || 1
+              );
+
+              // Resume session with feedback instead of respawning
+              // This preserves conversation context and avoids FSM race condition
+              if (data.sessionId) {
+                log.info('dispatcher', 'Resuming session for quality iteration', {
+                  agentId,
+                  iteration: workerHookContext.qualityIteration,
+                  sessionId: data.sessionId.slice(0, 8),
+                });
+
+                // Resume the session with feedback
+                // The 'complete' event will fire again when resume finishes
+                const resumeResult = await worker.resume(data.sessionId, error.feedback);
+
+                // If resume fails, log error but don't crash
+                if (!resumeResult.success) {
+                  log.error('dispatcher', 'Session resume failed', {
+                    agentId,
+                    error: resumeResult.error,
+                  });
+                  // Fall through to complete the FSM with the original result
+                } else {
+                  // Resume succeeded, the 'complete' event handler will be called again
+                  // with the new output from the resumed session
+                  return;
+                }
+              } else {
+                // No sessionId available - fall back to legacy respawn behavior
+                log.warn('dispatcher', 'No sessionId available, falling back to respawn', {
+                  agentId,
+                  iteration: workerHookContext.qualityIteration,
+                });
+
+                // Complete FSM first to avoid race condition
+                await machine.complete(data);
+                this.activeWorkers.delete(agentId);
+                this.writeWorkerState();
+
+                // Then respawn after a delay
+                setTimeout(() => {
+                  if (this.running) {
+                    log.info('dispatcher', 'Respawning worker for quality iteration (legacy)', {
+                      agentId,
+                      iteration: workerHookContext.qualityIteration,
+                    });
+                    this.spawnWorker(meshName, agent);
+                  }
+                }, 500);
+                return;
+              }
+            }
+
+            // Handle quality halt errors
+            if (error instanceof QualityHaltError) {
+              log.warn('dispatcher', 'Quality stack HALT - stopping immediately', {
+                agentId,
+                taskId: workerHookContext.taskId,
+                feedback: error.feedback,
+              });
+
+              // Complete FSM before emitting events
+              await machine.complete(data);
+              this.activeWorkers.delete(agentId);
+              this.writeWorkerState();
+
+              this.emit('quality:halt', {
+                agentId,
+                taskId: workerHookContext.taskId,
+                feedback: error.feedback,
+              });
+              this.emit('worker:error', {
+                id: agentId,
+                error: `Quality HALT: ${error.feedback}`,
+                transitionName: 'error',
+              });
+              return;
+            }
+
+            // Handle max iterations exhausted
+            if (error instanceof QualityExhaustedError) {
+              log.warn('dispatcher', 'Quality stack exhausted max iterations', {
+                agentId,
+                taskId: workerHookContext.taskId,
+                iterations: workerHookContext.qualityIteration,
+              });
+
+              this.emit('quality:exhausted', {
+                agentId,
+                taskId: workerHookContext.taskId,
+                iterations: workerHookContext.qualityIteration,
+              });
+              // Continue with normal completion even if quality exhausted
+            }
+
+            // Other post-hook errors are logged but don't affect completion
+            if (!(error instanceof QualityExhaustedError)) {
+              log.error('dispatcher', 'Post-hook execution failed', {
+                agentId,
+                error: (error as Error).message,
+              });
+            }
           }
+        }
+
+        // NOW complete the FSM (after post-hooks pass or exhausted)
+        await machine.complete(data);
+        this.activeWorkers.delete(agentId);
+        this.writeWorkerState();
+
+        // Emit quality pass if we had preflight and made it here without errors
+        if (workerHookContext.qualityPreflight) {
+          this.emit('quality:pass', {
+            agentId,
+            taskId: workerHookContext.taskId,
+            iterations: workerHookContext.qualityIteration || 1,
+          });
         }
 
         this.emit('worker:complete', {
           ...data,
-          transitionName: 'complete'
+          transitionName: 'complete',
+          qualityResult: workerHookContext.qualityPreflight
+            ? { iterations: workerHookContext.qualityIteration || 1, passed: true }
+            : undefined,
         });
       });
 
@@ -584,7 +845,13 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         this.emit('worker:error', { ...data, transitionName: 'error' });
       });
 
-      this.activeWorkers.set(agentId, { runner: worker, machine, startedAt: Date.now() });
+      this.activeWorkers.set(agentId, {
+        runner: worker,
+        machine,
+        startedAt: Date.now(),
+        hookContext,
+        startedPromise,  // Add promise to track 'start' completion
+      });
       this.writeWorkerState();
 
       // Run the worker (async, don't await)
@@ -750,7 +1017,10 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         source: isGlobal ? 'global' : 'project',
         basePath,
         agents: config.agents.map(a => a.name),
-        warnings: validation.warnings.length
+        warnings: validation.warnings.length,
+        graded: config.graded,
+        worktree: config.worktree,
+        hasLifecycle: !!config.lifecycle,
       });
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
     } catch (error) {

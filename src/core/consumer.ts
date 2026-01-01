@@ -204,6 +204,12 @@ export class MessageConsumer extends EventEmitter {
       });
 
       // Emit events for event-driven dispatch (no polling needed)
+      // Skip headless messages - they're handled by tx run, not the dispatcher
+      if (parsed.frontmatter.headless === 'true') {
+        log.debug('consumer', `Skipping headless message: ${filename}`);
+        return;
+      }
+
       if (toAgent === 'core/core') {
         this.emit('core-message', {
           id,
