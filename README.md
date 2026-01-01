@@ -11,9 +11,10 @@
 Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
 
 ## Terms
-`mesh` - a collection of agents with a defined workflow
-`core` - the AI you use to interact with the tx system
-`task` - a unit of work which is sent to a mesh, or between agents
+- `mesh` - a collection of agents with a defined workflow
+- `message` - core unit of interaction between meshes and agents
+- `core` - the AI you use to interact with the tx system
+- `task` - a unit of work which is sent to a mesh, or between agents
 
 ## Usage
 After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". `tx` will write a file with frontmatter formatting, which starts the mesh process. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to you for response.
@@ -26,13 +27,15 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - Mesh message routing protocols provide for agent-driven workflows and HITL.
 - Conduct many parallel agent sessions from ONE conversation.
 - Chain agent outputs with plain language "research pain points around (topic) and plan a software project based off your findings"
-- Site specific search tooling to provide precise lookups when WebSearch is too general (or when Anthropic's crawler is blocked)
 - [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
 
 ## Dependencies
-- `node` 
+- `node` (recommended: Node >= 20.19.0)
 - Authenticated Claude Code 
 - `tmux` 
+
+### Windows notes
+- If `npm install` fails during native rebuilds, ensure you are on Node >= 20.19.0 (via nvm-windows is fine).
 
 ## Quick Start
 > [!IMPORTANT]  
@@ -40,7 +43,7 @@ After install, run `tx start` in a new, or existing project directory. You will 
 
 ```bash
 git clone git@github.com:eighteyes/tx.git
-cd tx-cli
+cd tx
 npm install
 # installs global tx command
 npm link
@@ -119,13 +122,15 @@ Subagents and skills are fantastic, their  but they interrupt my conversation, a
 Hooks are amazing for incorporating code logic with agentic output, but having them spin up a subagent session isn't really viable. 
 
 ## Philosophy
-`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
+`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to only automate. `tx run` supports headless operation. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
 
 By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they are not clear. You don't have to context switch to change what your AI is working on.
 
-We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information it needs to achieve it's task. Mesh agents run about 1k tokens and that's it. 
+We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information and direction it needs to achieve it's task. Mesh agents run about 1k tokens when in use. 
 
-Conversational AI interfaces have not changed in the past 60 years, how do we get minimum token inputs to have maximum impact?
+Conversational AI interfaces have not fundamentally changed in the past 60 years. "How does one wield this tool effectively and efficiently", asks the dedicated practitioner, how do we type less and have greater impact? Bespoke user interfaces.
+
+I made to this to facilitate my interactions with AI and implement the best patterns I can find.  
 
 ## Decisions
 - We write to files because it is the most "natural" behavior for an Coding AI to send information. Other experiments with tooling proved less effective.
