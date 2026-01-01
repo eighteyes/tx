@@ -132,7 +132,13 @@ export async function run(options: RunOptions = {}): Promise<void> {
     if (!msg.from.startsWith(`${mesh}/`)) return;
 
     // Skip messages TO other agents (inter-agent chatter)
+    // But allow: user/repl (intended) and core/core (fallback for headless mode)
     if (msg.to.startsWith(`${mesh}/`) && msg.to !== 'user/repl') return;
+
+    // In headless mode, intercept messages to core/core as they're meant for the user
+    // The worker prompt tells it to write to user/repl, but this is a fallback
+    const isForUser = msg.to === 'user/repl' || msg.to === 'core/core';
+    if (!isForUser && !msg.to.startsWith(`${mesh}/`)) return;
 
     // Track if this is a question requiring user input
     // ask-human = HITL, ask = question (when to user/repl), blocked = needs help

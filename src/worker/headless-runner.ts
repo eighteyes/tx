@@ -261,6 +261,11 @@ export class HeadlessRunner extends EventEmitter {
     systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
     systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
     systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
+    systemPrompt += `\n### Headless Routing\n`;
+    systemPrompt += `In headless mode, there is NO core agent. Route messages to the user instead:\n`;
+    systemPrompt += `- **task-complete**: Write to \`user/repl\` (NOT core/core)\n`;
+    systemPrompt += `- **ask-human**: Write to \`user/repl\` for user input\n`;
+    systemPrompt += `- **ask**: Write to other agents in this mesh if needed\n`;
 
     const runnerConfig: SdkRunnerConfig = {
       id: agentId,
@@ -389,6 +394,11 @@ export class HeadlessRunner extends EventEmitter {
     systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
     systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
     systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
+    systemPrompt += `\n### Headless Routing\n`;
+    systemPrompt += `In headless mode, there is NO core agent. Route messages to the user instead:\n`;
+    systemPrompt += `- **task-complete**: Write to \`user/repl\` (NOT core/core)\n`;
+    systemPrompt += `- **ask-human**: Write to \`user/repl\` for user input\n`;
+    systemPrompt += `- **ask**: Write to other agents in this mesh if needed\n`;
 
     // Add quality iteration context if this is a retry
     if (this.currentIteration > 1) {
