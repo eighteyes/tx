@@ -314,6 +314,7 @@ async function getAllMessages(logDir: string): Promise<ParsedMessage[]> {
  */
 async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise<void> {
   const sessionsDir = path.join(path.dirname(logDir), 'sessions');
+  const sysMsgsDir = path.join(path.dirname(logDir), 'sys-msgs');
 
   let messages = await getAllMessages(logDir);
   messages = messages.filter(msg => matchesFilter(msg, options));
@@ -325,15 +326,21 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     sessions = sessions.filter(s => s.agentId.toLowerCase().includes(options.agent!.toLowerCase()));
   }
 
-  if (messages.length === 0 && sessions.length === 0) {
-    console.log(`${colors.dim}No messages or sessions found matching filters.${colors.reset}\n`);
+  // Load system messages (quality feedback, etc.)
+  let systemMessages = await getAllMessages(sysMsgsDir);
+  systemMessages = systemMessages.filter(msg => matchesFilter(msg, options));
+  systemMessages = systemMessages.slice(-limit);
+
+  if (messages.length === 0 && sessions.length === 0 && systemMessages.length === 0) {
+    console.log(`${colors.dim}No messages, sessions, or system messages found matching filters.${colors.reset}\n`);
     return;
   }
 
-  // View modes: 'messages' | 'sessions'
-  let viewMode: 'messages' | 'sessions' = 'messages';
+  // View modes: 'messages' | 'sessions' | 'system'
+  let viewMode: 'messages' | 'sessions' | 'system' = 'messages';
   let selectedIndex = messages.length > 0 ? messages.length - 1 : 0;
   let sessionSelectedIndex = sessions.length > 0 ? 0 : 0;
+  let systemSelectedIndex = systemMessages.length > 0 ? systemMessages.length - 1 : 0;
   let viewingDetail = false;
   let viewingPrompt = false;
   let detailScrollOffset = 0;
@@ -354,7 +361,10 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     const sessTab = viewMode === 'sessions'
       ? `${colors.bright}${colors.green}[📋 Sessions (${sessions.length})]${colors.reset}`
       : `${colors.dim}📋 Sessions (${sessions.length})${colors.reset}`;
-    console.log(`\n${msgTab}  ${sessTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+    const sysTab = viewMode === 'system'
+      ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
+      : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
     const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  p prompt  f follow${followMode ? ' ●' : ' ○'}  q quit${colors.reset}`;
     console.log(`${controls}\n`);
@@ -401,7 +411,10 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     const sessTab = viewMode === 'sessions'
       ? `${colors.bright}${colors.green}[📋 Sessions (${sessions.length})]${colors.reset}`
       : `${colors.dim}📋 Sessions (${sessions.length})${colors.reset}`;
-    console.log(`\n${msgTab}  ${sessTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+    const sysTab = viewMode === 'system'
+      ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
+      : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
     const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  q quit${colors.reset}`;
     console.log(`${controls}\n`);
@@ -433,6 +446,110 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     }
 
     console.log();
+  }
+
+  function displaySystemList(): void {
+    clearScreen();
+
+    // Tab bar
+    const msgTab = viewMode === 'messages'
+      ? `${colors.bright}${colors.cyan}[📨 Messages (${messages.length})]${colors.reset}`
+      : `${colors.dim}📨 Messages (${messages.length})${colors.reset}`;
+    const sessTab = viewMode === 'sessions'
+      ? `${colors.bright}${colors.green}[📋 Sessions (${sessions.length})]${colors.reset}`
+      : `${colors.dim}📋 Sessions (${sessions.length})${colors.reset}`;
+    const sysTab = viewMode === 'system'
+      ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
+      : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+
+    const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  q quit${colors.reset}`;
+    console.log(`${controls}\n`);
+
+    if (systemMessages.length === 0) {
+      console.log(`${colors.dim}No system messages yet.${colors.reset}`);
+      console.log(`${colors.dim}System messages include quality gate feedback and internal notifications.${colors.reset}`);
+      return;
+    }
+
+    const visibleStart = Math.max(0, systemSelectedIndex - 15);
+    const visibleEnd = Math.min(systemMessages.length, systemSelectedIndex + 10);
+
+    for (let i = visibleStart; i < visibleEnd; i++) {
+      const msg = systemMessages[i];
+      const isSelected = i === systemSelectedIndex;
+
+      if (isSelected) {
+        process.stdout.write(`${colors.bright}${colors.yellow}▶ ${colors.reset}`);
+      } else {
+        process.stdout.write('  ');
+      }
+
+      const badge = getMessageBadge(msg);
+      const time = formatTime(msg.timestamp);
+      const typeColor = typeColors[msg.type] || colors.white;
+      const type = msg.type.padEnd(12);
+      const from = msg.from.padEnd(20);
+      const to = msg.to.padEnd(20);
+      const headline = msg.headline ? ` ${msg.headline.substring(0, 40)}` : '';
+
+      console.log(`${badge} ${colors.dim}${time}${colors.reset} ${typeColor}${type}${colors.reset} ${from} ${colors.dim}→${colors.reset} ${to}${headline}`);
+    }
+
+    console.log();
+  }
+
+  function displaySystemDetail(): void {
+    clearScreen();
+
+    const msg = systemMessages[systemSelectedIndex];
+    console.log(`\n${colors.bright}${colors.yellow}📢 System Message${colors.reset} ${colors.dim}(${systemSelectedIndex + 1}/${systemMessages.length})${colors.reset}`);
+    console.log(`${colors.dim}↑↓/jk scroll  ←/h/Esc/q back${colors.reset}\n`);
+
+    // Metadata
+    console.log(`${colors.dim}Time:${colors.reset}     ${formatTime(msg.timestamp)}`);
+    console.log(`${colors.dim}Type:${colors.reset}     ${msg.type}`);
+    console.log(`${colors.dim}From:${colors.reset}     ${msg.from}`);
+    console.log(`${colors.dim}To:${colors.reset}       ${msg.to}`);
+    if (msg.headline) console.log(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
+    if (msg.msgId) console.log(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+
+    // Rearmatter
+    if (msg.rearmatter) {
+      console.log();
+      console.log(`${colors.bright}${colors.yellow}Rearmatter${colors.reset}`);
+      if (msg.rearmatter.confidence !== undefined) {
+        const conf = msg.rearmatter.confidence as number;
+        const confColor = conf >= 0.9 ? colors.green : conf >= 0.7 ? colors.yellow : colors.red;
+        console.log(`${colors.dim}Confidence:${colors.reset} ${confColor}${(conf * 100).toFixed(0)}%${colors.reset}`);
+      }
+      if (msg.rearmatter.grade) {
+        const grade = msg.rearmatter.grade as string;
+        const gradeColor = ['A', 'B'].includes(grade) ? colors.green : ['C'].includes(grade) ? colors.yellow : colors.red;
+        console.log(`${colors.dim}Grade:${colors.reset}      ${gradeColor}${grade}${colors.reset}`);
+      }
+    }
+
+    console.log();
+    console.log(colors.dim + '─'.repeat(80) + colors.reset);
+    console.log();
+
+    // Content (scrollable)
+    const content = msg.content || colors.dim + 'No content' + colors.reset;
+    const contentLines = content.split('\n');
+    const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 20);
+    const maxScroll = Math.max(0, contentLines.length - viewportHeight);
+
+    detailScrollOffset = Math.max(0, Math.min(detailScrollOffset, maxScroll));
+
+    const visibleLines = contentLines.slice(detailScrollOffset, detailScrollOffset + viewportHeight);
+    visibleLines.forEach(line => console.log(line));
+
+    if (contentLines.length > viewportHeight) {
+      const scrollPercent = maxScroll > 0 ? Math.round((detailScrollOffset / maxScroll) * 100) : 0;
+      console.log();
+      console.log(`${colors.dim}[${scrollPercent}%] Line ${detailScrollOffset + 1}-${Math.min(detailScrollOffset + viewportHeight, contentLines.length)} of ${contentLines.length}${colors.reset}`);
+    }
   }
 
   function displayDetail(): void {
@@ -561,12 +678,16 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     } else if (viewingDetail) {
       if (viewMode === 'sessions') {
         displaySessionDetail();
+      } else if (viewMode === 'system') {
+        displaySystemDetail();
       } else {
         displayDetail();
       }
     } else {
       if (viewMode === 'sessions') {
         displaySessionList();
+      } else if (viewMode === 'system') {
+        displaySystemList();
       } else {
         displayMessageList();
       }
@@ -638,10 +759,12 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
           break;
       }
     } else if (viewingDetail) {
-      // Detail view navigation (messages or sessions)
+      // Detail view navigation (messages, sessions, or system)
       let contentLines: string[];
       if (viewMode === 'sessions' && sessions[sessionSelectedIndex]) {
         contentLines = sessions[sessionSelectedIndex].content.split('\n');
+      } else if (viewMode === 'system' && systemMessages[systemSelectedIndex]) {
+        contentLines = (systemMessages[systemSelectedIndex].content || '').split('\n');
       } else if (messages[selectedIndex]) {
         contentLines = (messages[selectedIndex].content || '').split('\n');
       } else {
@@ -687,23 +810,28 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
         case 'k':
           if (viewMode === 'messages') {
             if (selectedIndex > 0) { selectedIndex--; display(); }
-          } else {
+          } else if (viewMode === 'sessions') {
             if (sessionSelectedIndex > 0) { sessionSelectedIndex--; display(); }
+          } else if (viewMode === 'system') {
+            if (systemSelectedIndex > 0) { systemSelectedIndex--; display(); }
           }
           break;
         case 'down':
         case 'j':
           if (viewMode === 'messages') {
             if (selectedIndex < messages.length - 1) { selectedIndex++; display(); }
-          } else {
+          } else if (viewMode === 'sessions') {
             if (sessionSelectedIndex < sessions.length - 1) { sessionSelectedIndex++; display(); }
+          } else if (viewMode === 'system') {
+            if (systemSelectedIndex < systemMessages.length - 1) { systemSelectedIndex++; display(); }
           }
           break;
         case 'return':
         case 'right':
         case 'l':
           if ((viewMode === 'messages' && messages.length > 0) ||
-              (viewMode === 'sessions' && sessions.length > 0)) {
+              (viewMode === 'sessions' && sessions.length > 0) ||
+              (viewMode === 'system' && systemMessages.length > 0)) {
             viewingDetail = true;
             detailScrollOffset = 0;
             display();
@@ -718,8 +846,14 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
           break;
         case 'tab':
         case 's':
-          // Switch between messages and sessions
-          viewMode = viewMode === 'messages' ? 'sessions' : 'messages';
+          // Cycle through: messages -> sessions -> system -> messages
+          if (viewMode === 'messages') {
+            viewMode = 'sessions';
+          } else if (viewMode === 'sessions') {
+            viewMode = 'system';
+          } else {
+            viewMode = 'messages';
+          }
           detailScrollOffset = 0;
           display();
           break;

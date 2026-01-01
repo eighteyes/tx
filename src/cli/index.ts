@@ -12,6 +12,7 @@ import { spy } from './spy.ts';
 import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
+import { run } from './run.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -87,6 +88,7 @@ Commands:
   tx start       Start core agent (attaches to tmux)
   tx stop        Stop core agent
   tx status      Show system status
+  tx run         Headless mesh REPL (no core)
   tx msg         View messages
   tx logs        View logs
   tx spy         Real-time activity stream
@@ -95,6 +97,29 @@ Commands:
   tx tool        Search and web utilities
 
 Run 'tx <command> -h' for command-specific options.`,
+
+  run: `tx run - Headless mesh REPL (no core agent)
+
+Usage: tx run <mesh> <agent> "<prompt>"
+
+Arguments:
+  mesh      Name of the mesh to use
+  agent     Name of the agent in the mesh
+  prompt    Initial prompt to send (quoted)
+
+Examples:
+  tx run research sourcer "find papers on transformers"
+  tx run dev worker "implement user auth"
+
+REPL Commands:
+  /help, /?         Show available commands
+  /agents           List agents in mesh
+  /status           Show session status
+  /quit             Exit session
+
+Message Targeting:
+  @agent-name msg   Send to specific agent
+  message           Send to current agent`,
 
   start: `tx start - Start core agent
 
@@ -212,6 +237,20 @@ async function main() {
       if (wantsHelp) { console.log('tx status - Show system status'); break; }
       const result = await status();
       printStatus(result);
+      break;
+
+    case 'run':
+      if (wantsHelp) { showHelp('run'); break; }
+      // Args: mesh agent "prompt"
+      const meshArg = args.find(a => !a.startsWith('-'));
+      const agentArg = args.filter(a => !a.startsWith('-'))[1];
+      const promptArg = args.filter(a => !a.startsWith('-'))[2];
+      await run({
+        mesh: meshArg,
+        agent: agentArg,
+        prompt: promptArg,
+        model: flags.model as string | undefined,
+      });
       break;
 
     case 'msg':

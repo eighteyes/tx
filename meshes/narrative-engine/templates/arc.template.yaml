@@ -1,0 +1,44 @@
+# arc.yaml - Dramatic questions and narrative pressure
+# Copy this template to .ai/games/{game-id}/arc.yaml
+
+# Overall Arc Pressure (0-100)
+# At 80+, questions push toward resolution
+pressure: 0
+
+# Active Dramatic Questions
+# These are tensions seeking resolution - not plot, but gravitational wells
+questions:
+  - id: "q1"
+    question: "Who killed the merchant?"
+    type: mystery                 # mystery | loyalty | survival | identity | power
+    pressure: 0                   # Individual question pressure
+    status: active                # active | dormant | answered
+    stakes: "The wrong person may hang"
+
+  - id: "q2"
+    question: "Will the innkeeper's secret be discovered?"
+    type: survival
+    pressure: 0
+    status: active
+    stakes: "A child's life hangs in the balance"
+
+# Answered Questions (for history)
+# Once resolved, they become setting truths
+answered:
+  # - id: "q0"
+  #   question: "Did they reach the inn before nightfall?"
+  #   answer: "Yes, but barely"
+  #   consequence: "Added to truths: 'Something followed them from the forest'"
+
+# Scene Momentum
+# Current scene's energy state
+scene:
+  momentum: building              # building | releasing | spent
+  active_question: "q1"           # Which question this scene orbits
+  tension_points: []              # Moments of escalation this scene
+
+# Pressure Thresholds
+thresholds:
+  question_resolution: 80         # Question pressure needed to force resolution
+  arc_climax: 90                  # Overall pressure for major story turn
+  trait_evolution: 5              # Uses before trait evolves

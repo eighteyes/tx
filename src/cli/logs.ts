@@ -26,7 +26,9 @@ const componentColors: Record<string, string> = {
   'watcher': colors.magenta,
   'start': colors.cyan,
   'stop': colors.red,
-  'error': colors.red
+  'error': colors.red,
+  'quality': colors.magenta,
+  'headless-runner': colors.cyan
 };
 
 interface LogEntry {

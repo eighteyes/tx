@@ -25,8 +25,7 @@ Update tool does not trigger the file watcher and will not send messages to mesh
 - Use `log.info()` for informational messages
 - Use `log.debug()` for debug output
 
-Logs are written to `.ai/tx/logs/v4.jsonl` and can be viewed with `tx logs`.
-child.on('exit', () => { /* cleanup */ });
+Logs are written to `.ai/tx/logs/v4.jsonl` with the last run at `v4.last.jsonj` 
 
 ### Mesh-Builder Skill Updates
 

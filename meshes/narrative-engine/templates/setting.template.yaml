@@ -1,0 +1,50 @@
+# setting.yaml - World truths and atmosphere
+# Copy this template to .ai/games/{game-id}/setting.yaml
+
+# Source Material (if adapting a book/story)
+source:
+  title: ""                     # Book title, or "Original"
+  chapter: null                 # Starting chapter/section
+  divergence: ""                # How this game diverges from source
+
+# Immutable World Facts
+# These are ALWAYS true and affect outcome weights
+truths:
+  - "Magic exists but costs sanity"
+  - "The king is dead, the throne contested"
+  - "Winter has lasted three years"
+
+# Genre Constraints
+# These CANNOT happen - guardrails for outcome generation
+constraints:
+  - "No resurrection - death is permanent"
+  - "No mind control - agency is sacred"
+  - "Technology cannot exceed medieval level"
+
+# Atmospheric Directive
+# How NARRATOR should render scenes
+atmosphere: |
+  Dark fantasy. The world is weary, hope is scarce but stubborn.
+  Colors are muted except for blood and fire. Speech is terse.
+  Beauty exists in small moments - a shared meal, a kept promise.
+  The supernatural is wrong, not wondrous.
+
+# Locations
+# Current and known places
+locations:
+  current: "the_crossroads_inn"
+  known:
+    the_crossroads_inn:
+      description: "A sagging timber building where three roads meet"
+      truths:
+        - "The fire never quite warms the corners"
+        - "The innkeeper watches everyone"
+      present_entities:
+        - player
+        - innkeeper
+
+# Time
+time:
+  period: "Late evening"
+  season: "Deep winter"
+  elapsed: "Day 1"

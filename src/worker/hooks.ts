@@ -707,6 +707,13 @@ export class LifecycleHooks {
     }
     log.activity('quality:checklist', agentId, activityContent);
 
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'checklist', result.passed, activityContent, {
+      total: result.details?.total,
+      passed: result.details?.passed,
+      failed: result.details?.failed,
+    });
+
     if (!result.passed) {
       throw new QualityIterationError(result.feedback || 'Checklist failed');
     }
@@ -756,6 +763,12 @@ export class LifecycleHooks {
       }
     }
     log.activity('quality:rubric', agentId, rubricContent);
+
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'rubric', result.passed, rubricContent, {
+      overallScore: result.details?.overallScore,
+      threshold: result.details?.threshold,
+    });
 
     if (!result.passed) {
       throw new QualityIterationError(result.feedback || 'Rubric failed');
@@ -813,6 +826,14 @@ export class LifecycleHooks {
     }
     log.activity('quality:adversarial', agentId, advContent);
 
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'adversarial', result.passed, advContent, {
+      critical,
+      major,
+      minor,
+      confidence: result.confidence,
+    });
+
     if (!result.passed) {
       throw new QualityIterationError(result.feedback || 'Adversarial critique failed');
     }
@@ -851,7 +872,15 @@ export class LifecycleHooks {
       firstParty: result.details?.firstParty,
       secondParty: result.details?.secondParty,
     });
-    log.activity('quality:accuracy', agentId, `${result.passed ? 'PASS' : 'FAIL'}: ${result.details?.totalSources || 0} sources (1st=${result.details?.firstParty || 0}, 2nd=${result.details?.secondParty || 0})`);
+    const accContent = `${result.passed ? 'PASS' : 'FAIL'}: ${result.details?.totalSources || 0} sources (1st=${result.details?.firstParty || 0}, 2nd=${result.details?.secondParty || 0})`;
+    log.activity('quality:accuracy', agentId, accContent);
+
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'accuracy', result.passed, accContent, {
+      totalSources: result.details?.totalSources,
+      firstParty: result.details?.firstParty,
+      secondParty: result.details?.secondParty,
+    });
 
     if (!result.passed) {
       throw new QualityIterationError(result.feedback || 'Accuracy verification failed');
@@ -893,7 +922,14 @@ export class LifecycleHooks {
       selectedConfidence: result.details?.selectedConfidence,
       avgSimilarity: result.details?.avgSimilarity,
     });
-    log.activity('quality:summarizer', agentId, `Summary complete: ${result.details?.solutionCount || 1} solution(s), confidence=${result.details?.selectedConfidence || 0}`);
+    const sumContent = `Summary complete: ${result.details?.solutionCount || 1} solution(s), confidence=${result.details?.selectedConfidence || 0}`;
+    log.activity('quality:summarizer', agentId, sumContent);
+
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'summarizer', true, sumContent, {
+      solutionCount: result.details?.solutionCount,
+      selectedConfidence: result.details?.selectedConfidence,
+    });
 
     // Summarizer is informational only - does not throw on failure
   }
@@ -947,6 +983,13 @@ export class LifecycleHooks {
       }
     }
     log.activity('quality:deterministic', agentId, detContent);
+
+    // Write result to sys-msgs for visibility
+    this.writeQualityResultMessage(context, 'deterministic', result.passed, detContent, {
+      executed: result.details?.executed,
+      passed: result.details?.passed,
+      failed: result.details?.failed,
+    });
 
     if (!result.passed) {
       throw new QualityIterationError(result.feedback || 'Deterministic checks failed');
@@ -1200,6 +1243,58 @@ ${feedback}
     fs.writeFileSync(filepath, content);
     log.info('hooks', 'Wrote system feedback message (audit)', { agentId, taskId, iteration, filepath });
     return filepath;
+  }
+
+  /**
+   * Write quality gate result to sys-msgs for audit/visibility
+   * Called on both PASS and FAIL for all quality gates
+   */
+  private writeQualityResultMessage(
+    context: HookContext,
+    gate: string,
+    passed: boolean,
+    summary: string,
+    details?: Record<string, unknown>
+  ): void {
+    const msgsDir = context.msgsDir;
+    if (!msgsDir) return;
+
+    const sysMsgsDir = path.join(path.dirname(msgsDir), 'sys-msgs');
+    if (!fs.existsSync(sysMsgsDir)) {
+      fs.mkdirSync(sysMsgsDir, { recursive: true });
+    }
+
+    const agentId = context.agentId || `${context.meshName}/${context.agentName}`;
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `quality-${gate}-${context.taskId || Date.now()}`;
+    const filename = `${timestamp}-${gate}-${agentId.replace('/', '-')}-${passed ? 'pass' : 'fail'}.md`;
+    const filepath = path.join(sysMsgsDir, filename);
+
+    const detailsYaml = details
+      ? Object.entries(details)
+          .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+          .join('\n')
+      : '';
+
+    const content = `---
+to: ${agentId}
+from: quality/${gate}
+type: ${passed ? 'quality-pass' : 'quality-fail'}
+msg-id: ${msgId}
+headline: ${gate} ${passed ? 'PASS' : 'FAIL'}
+timestamp: ${new Date().toISOString()}
+---
+
+## Quality Gate: ${gate}
+
+**Result**: ${passed ? '✅ PASS' : '❌ FAIL'}
+
+${summary}
+${detailsYaml ? `\n---\n${detailsYaml}` : ''}
+`;
+
+    fs.writeFileSync(filepath, content);
+    log.debug('hooks', `Wrote quality result message`, { gate, passed, filepath });
   }
 
   /**

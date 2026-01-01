@@ -1,0 +1,42 @@
+# entities.yaml - All entities in the game world
+# Copy this template to .ai/games/{game-id}/entities.yaml
+
+# Player Character
+player:
+  name: ""
+  traits: []                    # Semantic modifiers: [STUBBORN], [QUICK-WITTED]
+  bonds: []                     # Relationships to NPCs
+  secrets: []                   # Things even the player might not know yet
+  momentum: null                # building | releasing | spent
+  pressure: {}                  # {trait_name: count} - evolution at 5
+
+# NPCs
+npcs:
+  example_npc:
+    name: "The Innkeeper"
+    traits:
+      - NERVOUS
+      - PROTECTIVE
+    bonds:
+      - target: player
+        type: suspicious_of
+      - target: hidden_child
+        type: protecting
+    secrets:
+      - "Hiding a child in the cellar"
+      - "Witnessed the murder but won't speak"
+    wants: "Keep the child safe"
+    fears: "The investigators discovering the cellar"
+    pressure: {}
+
+# Significant Objects (items with narrative weight)
+objects:
+  example_object:
+    name: "The Letter"
+    traits:
+      - INCRIMINATING
+      - WATER-DAMAGED
+    secrets:
+      - "Names the true murderer"
+      - "The signature is forged"
+    location: "hidden_in_floorboards"

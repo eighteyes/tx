@@ -332,6 +332,169 @@ rearmatter:
 | `worktree` | boolean | No | Enable git worktree isolation |
 | `lifecycle` | object | No | Pre/post hooks |
 | `toolRestriction` | string | No | Tool access policy: `unrestricted` (default) or `mcp-only` |
+| `graded` | boolean \| string[] | No | Enable quality stack evaluation (see graded section) |
+| `iteration` | object | No | Iteration config for graded meshes (maxIterations, onFail) |
+
+### graded Field (Shorthand for Quality Hooks)
+
+Enable quality assurance on worker outputs with automatic iteration on failure:
+
+```yaml
+# meshes/dev-graded/config.yaml
+mesh: dev-graded
+description: "Developer mesh with grading and iteration for quality assurance"
+
+graded: true  # Pre-flight decides which gates to run
+iteration:
+  maxIterations: 3
+  onFail: loop  # 'loop' or 'halt'
+
+agents:
+  - name: worker
+    model: opus
+    prompt: prompt.md
+
+entry_point: worker
+```
+
+**graded values**:
+- `false` (default): No quality stack
+- `true`: Pre-flight analysis determines gates based on task type
+- `["checklist", "rubric", "adversarial"]`: Specific gates to run
+
+**Under the hood**: `graded: true` is a shorthand that expands to lifecycle hooks:
+```yaml
+# graded: true with iteration config expands to:
+lifecycle:
+  pre:
+    - quality:preflight
+  post:
+    - quality:evaluate:onFail=loop,maxIterations=3
+```
+
+**Available quality gates**:
+| Gate | Type | Description |
+|------|------|-------------|
+| `checklist` | LLM | Task-type specific verification |
+| `rubric` | LLM | Dynamic criteria scoring from pre-flight |
+| `adversarial` | LLM | Challenge assumptions, find weaknesses |
+| `accuracy` | LLM | Source validation, first-party vs second-party |
+| `deterministic` | Code | Run tests, lint, type checks |
+| `summarizer` | LLM | Consensus from ensemble (weights by confidence) |
+
+**iteration config**:
+- `maxIterations`: Max re-runs on quality failure (default: 3)
+- `onFail`: Action when quality check fails
+  - `loop`: Re-run worker with feedback (default)
+  - `halt`: Stop immediately, emit error
+
+**Quality events** (visible in `tx spy`):
+```
+📋 [quality:preflight:start] Analyzing task...
+📋 [quality:preflight:complete] criteria=3, effort=medium
+🔄 [worker:spawn] dev-graded/worker starting...
+... worker execution ...
+📋 [quality:stack:start] Running evaluators...
+✅ [quality:stage:complete] checklist: PASS (0.95)
+✅ [quality:stage:complete] rubric: PASS (0.87)
+✅ [quality:pass] All gates passed
+```
+
+**When to use graded meshes**:
+- High-stakes implementations that need quality assurance
+- Tasks where iteration can improve output
+- When you want automatic feedback loops
+
+**When NOT to use graded meshes**:
+- Simple, trivial tasks
+- Time-sensitive operations (adds 2-4x overhead)
+- Tasks where iteration doesn't help
+
+### lifecycle Field
+
+The lifecycle field provides fine-grained control over pre/post hooks:
+
+```yaml
+# Explicit lifecycle hooks (preferred for advanced use)
+lifecycle:
+  pre:
+    - worktree:create
+    - quality:preflight
+  post:
+    - quality:evaluate:onFail=loop,maxIterations=3
+    - commit:auto
+    - worktree:cleanup
+```
+
+**Available lifecycle hooks**:
+
+| Hook | Phase | Description |
+|------|-------|-------------|
+| `worktree:create` | pre | Create isolated git worktree for worker |
+| `quality:preflight` | pre | Run LLM-based preflight analysis |
+| `quality:evaluate` | post | Run quality stack on worker output |
+| `commit:auto` | post | Spawn commit agent to create git commit |
+| `worktree:cleanup` | post | Remove worktree after completion |
+
+**Quality hook parameters**:
+
+Hooks can accept parameters using colon-separated format:
+
+```yaml
+# quality:preflight with custom gates
+- quality:preflight:gates=checklist+rubric+adversarial
+
+# quality:evaluate with full config
+- quality:evaluate:onFail=loop,maxIterations=5,gates=checklist+rubric
+```
+
+**Quality hook config options**:
+- `gates`: Quality gates to run (use `+` to separate, e.g., `checklist+rubric`)
+- `onFail`: Action on failure (`loop` or `halt`)
+- `maxIterations`: Max re-runs on failure
+
+**Execution flow**:
+```
+Pre-hooks (sequential) → Worker Execution → Post-hooks (sequential)
+         ↓                                           ↓
+  worktree:create                            quality:evaluate
+  quality:preflight                          commit:auto
+                                             worktree:cleanup
+```
+
+**Shorthand expansions**:
+
+```yaml
+# worktree: true expands to:
+lifecycle:
+  pre:
+    - worktree:create
+  post:
+    - commit:auto
+    - worktree:cleanup
+
+# graded: true with iteration expands to:
+lifecycle:
+  pre:
+    - quality:preflight
+  post:
+    - quality:evaluate:onFail=loop,maxIterations=3
+
+# Both can be combined in explicit lifecycle
+lifecycle:
+  pre:
+    - worktree:create
+    - quality:preflight
+  post:
+    - quality:evaluate:onFail=loop,maxIterations=3
+    - commit:auto
+    - worktree:cleanup
+```
+
+**Error handling**:
+- Pre-hook failures abort worker spawn and cleanup partial state
+- Post-hook failures are logged but don't affect completion (except quality hooks)
+- `quality:evaluate` errors trigger iteration loop or halt based on config
 
 ### intents Field
 

@@ -46,6 +46,7 @@ export interface SdkRunnerConfig {
   routing?: AgentRouting;  // Optional routing table for this agent
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
+  sessionId?: string;  // Resume existing session (for interrupt/revision flow)
 }
 
 export class SdkRunner extends EventEmitter {
@@ -53,6 +54,7 @@ export class SdkRunner extends EventEmitter {
   private queue: MessageQueue;
   private running = false;
   private abortController: AbortController | null = null;
+  private currentSessionId: string | null = null;
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -115,6 +117,7 @@ export class SdkRunner extends EventEmitter {
               settingSources: ['project'],  // Load project slash commands
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
+              resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
             }
           });
         } catch (error) {
@@ -138,6 +141,7 @@ export class SdkRunner extends EventEmitter {
                 maxTurns: this.config.maxTurns,
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
                 tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
+                resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
               }
             });
           } else {
@@ -183,7 +187,12 @@ export class SdkRunner extends EventEmitter {
 
             case 'system':
               if (msg.subtype === 'init') {
-                this.emit('init', { id: workerId, tools: msg.tools });
+                // Capture sessionId for resume/interrupt support
+                if ((msg as { sessionId?: string }).sessionId) {
+                  this.currentSessionId = (msg as { sessionId: string }).sessionId;
+                  log.info('sdk-runner', `Session ID captured`, { workerId, sessionId: this.currentSessionId });
+                }
+                this.emit('init', { id: workerId, tools: msg.tools, sessionId: this.currentSessionId });
               }
               break;
           }
@@ -205,10 +214,10 @@ export class SdkRunner extends EventEmitter {
       }
 
       const output = sessionOutput.join('\n\n---\n\n');
-      log.info('sdk-runner', `Worker complete`, { workerId, totalProcessed, success: !lastError });
+      log.info('sdk-runner', `Worker complete`, { workerId, totalProcessed, success: !lastError, sessionId: this.currentSessionId });
 
-      this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output });
-      return { success: !lastError, messagesProcessed: totalProcessed, output, error: lastError };
+      this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId });
+      return { success: !lastError, messagesProcessed: totalProcessed, output, error: lastError, sessionId: this.currentSessionId || undefined };
 
     } catch (error) {
       const err = error as Error;
@@ -253,7 +262,159 @@ export class SdkRunner extends EventEmitter {
     this.running = false;
   }
 
+  /**
+   * Get current session ID (for resume/interrupt)
+   */
+  getSessionId(): string | null {
+    return this.currentSessionId;
+  }
+
+  /**
+   * Check if runner is currently processing
+   */
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Resume an existing session with a new user message (feedback)
+   * This continues the conversation with the provided sessionId and feedback as the new prompt.
+   * Used for quality gate iteration loops where we want to preserve conversation context.
+   *
+   * @param sessionId - The session ID to resume
+   * @param feedback - The feedback message to send as the new user turn
+   * @returns WorkerResult with the resumed session outcome
+   */
+  async resume(sessionId: string, feedback: string): Promise<WorkerResult> {
+    const workerId = this.config.id;
+
+    if (this.running) {
+      return { success: false, messagesProcessed: 0, error: 'Already running' };
+    }
+
+    log.info('sdk-runner', `Resuming session with feedback`, {
+      workerId,
+      sessionId: sessionId.slice(0, 8) + '...',
+      feedbackLength: feedback.length
+    });
+
+    this.running = true;
+    this.abortController = new AbortController();
+    this.currentSessionId = sessionId;
+    this.emit('start', { id: workerId, resume: true, sessionId });
+
+    const sessionOutput: string[] = [];
+    let lastError: string | undefined;
+
+    try {
+      // Build the feedback prompt
+      const userPrompt = this.buildFeedbackPrompt(feedback);
+
+      // Determine tool configuration based on restriction policy
+      const toolsConfig = this.config.toolRestriction === 'mcp-only'
+        ? []
+        : undefined;
+
+      // Create query with resume option to continue the session
+      const q = query({
+        prompt: userPrompt,
+        options: {
+          cwd: this.config.workDir,
+          model: MODEL_MAP[this.config.model],
+          systemPrompt: this.config.systemPrompt,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          abortController: this.abortController,
+          maxTurns: this.config.maxTurns,
+          mcpServers: this.config.mcpServers,
+          tools: toolsConfig,
+          resume: sessionId,  // Resume the existing session
+        }
+      });
+
+      let resultMessage = '';
+      let isError = false;
+
+      for await (const msg of q) {
+        switch (msg.type) {
+          case 'assistant':
+            const textContent = msg.message.content
+              .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+              .map(block => block.text)
+              .join('\n');
+
+            if (textContent) {
+              sessionOutput.push(textContent);
+              this.emit('output', { id: workerId, data: textContent });
+              log.activity('output', workerId, textContent);
+            }
+
+            const toolUses = msg.message.content.filter((block): block is { type: 'tool_use'; name: string } => block.type === 'tool_use');
+            if (toolUses.length > 0) {
+              const toolNames = toolUses.map(t => t.name).join(', ');
+              log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
+              log.activity('tools', workerId, toolNames);
+              sessionOutput.push(`[Tools: ${toolNames}]`);
+            }
+            break;
+
+          case 'result':
+            const resultMsg = msg as SDKResultMessage;
+            resultMessage = resultMsg.subtype === 'success'
+              ? (resultMsg as SDKResultMessage & { subtype: 'success' }).result
+              : '';
+            isError = msg.is_error;
+            sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
+            if (resultMessage) sessionOutput.push(resultMessage);
+            break;
+
+          case 'system':
+            if (msg.subtype === 'init') {
+              // Session ID should be the same as the resumed session
+              this.emit('init', { id: workerId, tools: msg.tools, sessionId: this.currentSessionId, resumed: true });
+            }
+            break;
+        }
+      }
+
+      if (isError) {
+        lastError = resultMessage;
+        log.warn('sdk-runner', `Resume task error`, { workerId, error: resultMessage });
+      }
+
+      const output = sessionOutput.join('\n\n---\n\n');
+      log.info('sdk-runner', `Resume complete`, {
+        workerId,
+        success: !lastError,
+        sessionId: this.currentSessionId
+      });
+
+      this.emit('complete', { id: workerId, messagesProcessed: 1, output, sessionId: this.currentSessionId });
+      return { success: !lastError, messagesProcessed: 1, output, error: lastError, sessionId: this.currentSessionId || undefined };
+
+    } catch (error) {
+      const err = error as Error;
+      log.error('sdk-runner', `Resume error`, { workerId, error: err.message });
+      this.emit('error', { id: workerId, error: err.message });
+      return { success: false, messagesProcessed: 0, error: err.message };
+    } finally {
+      this.running = false;
+      this.abortController = null;
+    }
+  }
+
+  /**
+   * Build the feedback prompt for resume
+   */
+  private buildFeedbackPrompt(feedback: string): string {
+    const parts: string[] = [];
+
+    parts.push('## Quality Stack Feedback\n');
+    parts.push('The previous attempt did not pass quality evaluation. Please address the following feedback and try again:\n');
+    parts.push(feedback);
+    parts.push('\n---');
+    parts.push('\n**Action**: Review the feedback above and improve your solution.');
+
+    return parts.join('\n');
   }
 }

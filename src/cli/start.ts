@@ -148,6 +148,68 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
   });
 
+  // Quality stack event logging
+  dispatcher.on('quality:preflight:start', (data) => {
+    log.info('quality', 'Preflight analysis started', data);
+  });
+  dispatcher.on('quality:preflight:complete', (data) => {
+    log.info('quality', 'Preflight analysis complete', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      taskType: data.result?.taskType,
+      gates: [...(data.result?.requiredGates || []), ...(data.result?.suggestedGates || [])],
+    });
+  });
+  dispatcher.on('quality:stack:start', (data) => {
+    log.info('quality', 'Quality stack started', data);
+  });
+  dispatcher.on('quality:stage:complete', (data) => {
+    log.info('quality', 'Quality gate complete', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      gate: data.stage,
+      passed: data.result?.passed,
+      confidence: data.result?.confidence,
+    });
+  });
+  dispatcher.on('quality:stack:complete', (data) => {
+    log.info('quality', 'Quality stack complete', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      passed: data.result?.passed,
+      iterations: data.result?.iterations,
+    });
+  });
+  dispatcher.on('quality:pass', (data) => {
+    log.info('quality', 'Quality stack PASSED', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      iterations: data.result?.iterations,
+    });
+  });
+  dispatcher.on('quality:retry', (data) => {
+    log.warn('quality', 'Quality stack RETRY', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      iteration: data.iteration,
+      feedback: data.feedback,
+    });
+  });
+  dispatcher.on('quality:halt', (data) => {
+    log.error('quality', 'Quality stack HALTED', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      feedback: data.result?.feedback,
+    });
+  });
+  dispatcher.on('quality:exhausted', (data) => {
+    log.warn('quality', 'Quality stack EXHAUSTED (max iterations)', {
+      agentId: data.agentId,
+      taskId: data.taskId,
+      maxIterations: data.result?.iterations,
+    });
+  });
+
   // Event-driven message injector with backoff retry
   const pendingRetries = new Map<number, { timeout: NodeJS.Timeout; id: number }>();
   const MAX_INJECT_ATTEMPTS = 10;
@@ -245,6 +307,14 @@ export async function stop(workDir?: string): Promise<void> {
     console.log('✓ TX stopped');
   } else {
     console.log('TX is not running');
+  }
+
+  // Reset terminal state (fixes mouse mode, raw mode, escape sequence corruption)
+  process.stdout.write('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l'); // Disable mouse tracking
+  process.stdout.write('\x1b[0m');  // Reset colors/attributes
+  process.stdout.write('\x1bc');    // Full terminal reset (like 'reset' command)
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode?.(false);
   }
 }
 

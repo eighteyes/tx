@@ -183,6 +183,14 @@ export async function startClaudeInTmux(sessionName: string): Promise<TmuxSessio
     throw new Error(`Failed to create tmux session: ${sessionName}`);
   }
 
+  // Configure session-specific key bindings
+  try {
+    // Prefix + r = reset terminal (fixes mouse mode, escape sequence corruption)
+    execSync(`tmux bind-key -T prefix r send-keys -R \\; clear-history`, { stdio: 'pipe' });
+  } catch {
+    // Non-fatal - user can still run reset manually
+  }
+
   // Small delay for session to be ready
   await new Promise(resolve => setTimeout(resolve, 500));
 

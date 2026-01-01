@@ -51,20 +51,20 @@ The graph is the **SOURCE OF TRUTH** - build it first, then derive documentation
    - Create user, objective, feature, component entities
    - Map dependencies: user → objective → feature → component
    - Use default spec-graph rules (auto-detected)
+   - **Assign features to phases in `meta.phases`**:
+     - Analyze feature maturity: Is it implemented? Partially done? Planned?
+     - Use `pending` for unimplemented/planned features
+     - Use `I`, `II`, `III` for prioritized implementation phases
+     - Use `done` for fully implemented features
+     - Set appropriate status: `incomplete`, `in-progress`, `review-ready`, `complete`
+     - Example: `"meta.phases.done.feature:auth": {"status": "complete"}`
 
 4. **STEP 2: Populate code-graph.json SECOND**:
    - **CRITICAL**: Use `-g .ai/code-graph.json` flag (auto-detects code rules)
 
-   **Code Graph Common Mistakes to Avoid**:
-   - ❌ Creating high-level "system" modules instead of actual files
-   - ❌ Creating entities but never linking them (0 dependencies = useless graph!)
-   - ❌ Using vague names like `module:auth-system` instead of `module:auth-handler` (actual file)
-   - ❌ Skipping import/dependency scanning
-   - ❌ Leaving references unused/unconnected
-
-   **Correct Approach**:
+   **Code Graph Best Practices**:
    1. **Scan actual imports first**: `rg "require\(|import |from " src/` to find real dependencies
-   2. **Create module per file**: `module:auth-handler` (for auth-handler.js), NOT `module:auth-system`
+   2. **Create module per file**: `module:auth-handler` (for auth-handler.js) - use actual file names
    3. **Link every import**: If file A imports B, run `know -g .ai/code-graph.json link module:A module:B`
    4. **Use packages for grouping**: `package:auth` contains multiple auth-related modules
    5. **Add classes/functions optionally**: `class:UserAuth`, `function:validateToken` within modules
@@ -141,12 +141,11 @@ The graph is the **SOURCE OF TRUTH** - build it first, then derive documentation
    **Style Guidelines**:
    - Write in plain language for AI agents to understand the project
    - Include entity IDs as reference pointers (e.g., `user:developer`, `feature:cli`)
-   - Avoid duplicating graph structure or listing all entities
-   - Don't include query examples or know command tutorials
-   - Keep it concise - details are in the graphs, not here
+   - Reference graphs for structure and entity details
+   - Keep concise - graphs hold the details
 
-   **What to include**:
-   - **Purpose**: Plain language description + list key users/objectives/features
+   **Include**:
+   - **Purpose**: Plain language description + key users/objectives/features
    - **Tech Stack**: Language, frameworks, key dependencies (as entity IDs)
    - **Architecture Overview**: Plain language + core modules/packages/integration points
    - **Project Conventions**: Code style, testing strategy, git workflow (from STEP 6 scan)
@@ -155,12 +154,7 @@ The graph is the **SOURCE OF TRUTH** - build it first, then derive documentation
    - **Domain Context**: Business logic and data model references (as entity IDs)
    - **Graph Summary**: Simple stats (X entities) and validation status
 
-   **What NOT to include**:
-   - Query examples or know command usage
-   - Full entity listings or dependency trees
-   - Duplicated objectives/features for multiple users
-   - Graph structure diagrams or chains
-   - Tutorial content about the know tool
+   **Exclude**: Query examples, full entity listings, dependency trees, graph structure diagrams, know tool tutorials
 
    **Template**: Use clean template with entity ID references, refer users to know-tool skill for exploration
 
@@ -169,6 +163,12 @@ The graph is the **SOURCE OF TRUTH** - build it first, then derive documentation
    - Show code-graph statistics (entity counts, dependencies)
    - Display project.md summary
    - Confirm all files written successfully
+
+11. **Validate graph coverage**:
+   - Run `/know:connect` to check spec-graph coverage
+   - Ensure all entities are connected to root users
+   - If coverage < 100%, connect disconnected chains
+   - Guide user on next steps
 
 **Example Intelligence Gathering**
 
@@ -204,8 +204,13 @@ fd -g "*test*" -t d                        # Test directories
 - **Step 2.5 is critical**: If the graph is empty or has <5 entities, spend time discovering and populating it from the codebase
 - Infer user objectives from README, feature documentation, and user-facing code
 - Map components to features, features to user objectives
-- Don't overwrite user customizations - merge intelligently
+- Preserve user customizations - merge intelligently
 - Ask user to confirm before replacing existing content
 - Focus on actionable, specific information over generic templates
 - Cross-reference graph entities with actual codebase structure
 - Always validate the graph after populating it
+- **Run `/know:connect` at the end** to ensure graph coverage and connectivity
+
+---
+`r2` - Added /know:connect step to validate graph coverage
+`r1`

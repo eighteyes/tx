@@ -78,7 +78,8 @@ export interface WorkerResult {
   success: boolean;
   messagesProcessed: number;
   error?: string;
-  conversationId?: string;  // Captured from Claude output for resume
+  conversationId?: string;  // Captured from Claude output for resume (legacy)
+  sessionId?: string;       // SDK session ID for resume (preferred)
   output?: string;          // Captured session output
 }
 

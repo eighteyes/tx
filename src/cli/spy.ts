@@ -72,7 +72,7 @@ export async function spy(options: SpyOptions): Promise<void> {
 
     // Show recent activity (unless messages-only mode)
     if (!options.messages && lines.length > 0) {
-      const recentCount = Math.min(10, lines.length);
+      const recentCount = Math.min(25, lines.length);
       const recentLines = lines.slice(-recentCount);
       console.log(chalk.dim('--- Recent SDK output ---'));
       for (const line of recentLines) {
@@ -202,6 +202,36 @@ function printActivity(entry: ActivityEntry, json?: boolean): void {
     console.log();
   } else if (entry.event === 'tools') {
     console.log(`🔧 ${agent} ${chalk.dim(time)} ${chalk.cyan(entry.content)}\n`);
+  } else if (entry.event.startsWith('quality:')) {
+    // Quality hook events - format based on pass/fail/etc
+    const eventName = entry.event.replace('quality:', '');
+    let icon = '🔬';
+    let contentColor = chalk.dim;
+
+    if (entry.content.includes('PASS')) {
+      icon = '✅';
+      contentColor = chalk.green;
+    } else if (entry.content.includes('FAIL')) {
+      icon = '❌';
+      contentColor = chalk.red;
+    } else if (entry.content.includes('HALT')) {
+      icon = '🛑';
+      contentColor = chalk.red;
+    } else if (entry.content.includes('LOOP')) {
+      icon = '🔄';
+      contentColor = chalk.yellow;
+    } else if (entry.content.includes('EXHAUSTED')) {
+      icon = '⚠️';
+      contentColor = chalk.yellow;
+    } else if (entry.content.includes('SKIPPED')) {
+      icon = '⏭️';
+      contentColor = chalk.dim;
+    } else if (entry.content.includes('Starting') || entry.content.includes('Running')) {
+      icon = '▶️';
+      contentColor = chalk.cyan;
+    }
+
+    console.log(`${icon} ${agent} ${chalk.dim(time)} ${chalk.blue(`[${eventName}]`)} ${contentColor(entry.content)}\n`);
   } else {
     console.log(`📍 ${agent} ${chalk.dim(time)} [${entry.event}] ${entry.content}\n`);
   }
