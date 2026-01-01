@@ -114,6 +114,10 @@ Cntl-B d
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## What are we solving? Isn't this just subagents and skills? 
+Subagents and skills are fantastic, their  but they interrupt my conversation, and are not invoked as readily as I'd like. I also find the context pollution to be considerable and detracts from my ability to steer the Ai. There is also not enough tooling around them for getting the consistent, reproducible, composable behavior which I want to achieve. 
+Hooks are amazing for incorporating code logic with agentic output, but having them spin up a subagent session isn't really viable. 
+
 ## Philosophy
 `tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to strictly automate. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
 
@@ -130,6 +134,6 @@ Conversational AI interfaces have not changed in the past 60 years, how do we ge
 
 ## Troubleshooting
 - tx suppresses `stdout/stderr` so it doesn't interrupt the session. See error messages with `tx logs`
-- Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Quit and run `reset`. 
+- Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Try a tmux reset with cntl-b, r. If that doesn't work, cntl-c to exit claude, cntl-b, d and run `reset`. 
 - We are barely in Beta. There are Bugs here. 
-
+i
