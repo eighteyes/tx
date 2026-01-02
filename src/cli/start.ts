@@ -59,16 +59,22 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const lastMainLog = path.join(logsDir, 'v4.last.jsonl');
   const lastActivityLog = path.join(logsDir, 'activity.last.jsonl');
 
-  if (fs.existsSync(mainLog) && fs.statSync(mainLog).size > 0) {
-    fs.copyFileSync(mainLog, lastMainLog);
-    fs.writeFileSync(mainLog, ''); // Clear for fresh session
-    console.log(`[logs] Backed up v4.jsonl → v4.last.jsonl`);
-  }
-  if (fs.existsSync(activityLog) && fs.statSync(activityLog).size > 0) {
-    fs.copyFileSync(activityLog, lastActivityLog);
-    fs.writeFileSync(activityLog, ''); // Clear for fresh session
-    console.log(`[logs] Backed up activity.jsonl → activity.last.jsonl`);
-  }
+  // Backup logs if they exist and have content (try-catch handles missing files)
+  try {
+    if (fs.statSync(mainLog).size > 0) {
+      fs.copyFileSync(mainLog, lastMainLog);
+      fs.writeFileSync(mainLog, '');
+      console.log(`[logs] Backed up v4.jsonl → v4.last.jsonl`);
+    }
+  } catch { /* File doesn't exist, nothing to back up */ }
+
+  try {
+    if (fs.statSync(activityLog).size > 0) {
+      fs.copyFileSync(activityLog, lastActivityLog);
+      fs.writeFileSync(activityLog, '');
+      console.log(`[logs] Backed up activity.jsonl → activity.last.jsonl`);
+    }
+  } catch { /* File doesn't exist, nothing to back up */ }
 
   // Initialize logger (file-based to avoid polluting tmux session)
   log.init(cwd, 'debug');

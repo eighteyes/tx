@@ -116,19 +116,7 @@ interface FieldSpec {
 }
 
 /**
- * Valid rearmatter fields
- * - grade: Letter grade (A-F) for quality assessment
- * - confidence: Numeric confidence score (0.0-1.0)
- * - speculation: Degree of speculation in the response
- * - gaps: Known information gaps
- * - assumptions: Key assumptions made
- * - status: Current status (e.g., 'in-progress', 'complete')
- * - iteration: Iteration number for iterative workflows
- */
-const VALID_REARMATTER_FIELDS = ['grade', 'confidence', 'speculation', 'gaps', 'assumptions', 'status', 'iteration'];
-
-/**
- * Valid grade values
+ * Valid grade values for thresholds
  */
 const VALID_GRADES = ['A', 'B', 'C', 'D', 'F'];
 
@@ -521,7 +509,7 @@ export class MeshValidator {
       errors.push(`rearmatter.enabled must be a boolean${context}`);
     }
 
-    // Validate fields
+    // Validate fields - check structure only, allow arbitrary field names
     if (rm.fields !== undefined) {
       if (!Array.isArray(rm.fields)) {
         errors.push(`rearmatter.fields must be an array${context}`);
@@ -529,9 +517,8 @@ export class MeshValidator {
         for (const field of rm.fields) {
           if (typeof field !== 'string') {
             errors.push(`rearmatter.fields contains non-string value: ${field}${context}`);
-          } else if (!VALID_REARMATTER_FIELDS.includes(field)) {
-            warnings.push(`Unknown rearmatter field '${field}' (valid: ${VALID_REARMATTER_FIELDS.join(', ')})${context}`);
           }
+          // No allowlist check - meshes can define domain-specific rearmatter fields
         }
       }
     }
@@ -608,7 +595,7 @@ export class MeshValidator {
    * @param configs - Map of mesh name to config object
    * @returns Combined validation result
    */
-  static validateAll(configs: Map<string, unknown>): {
+  static validateAll(configs: Map<string, unknown>, options?: { silent?: boolean }): {
     valid: boolean;
     results: Map<string, ValidationResult>;
     totalErrors: number;
@@ -617,6 +604,7 @@ export class MeshValidator {
     const results = new Map<string, ValidationResult>();
     let totalErrors = 0;
     let totalWarnings = 0;
+    const silent = options?.silent ?? false;
 
     for (const [name, config] of configs) {
       const result = this.validate(config, `${name}.json`);
@@ -624,12 +612,13 @@ export class MeshValidator {
       totalErrors += result.errors.length;
       totalWarnings += result.warnings.length;
 
-      // Log validation results
-      if (result.errors.length > 0) {
-        log.error('mesh-validator', `Mesh '${name}' has errors`, { errors: result.errors });
-      }
-      if (result.warnings.length > 0) {
-        log.warn('mesh-validator', `Mesh '${name}' has warnings`, { warnings: result.warnings });
+      if (!silent) {
+        if (result.errors.length > 0) {
+          log.error('mesh-validator', `Mesh '${name}' has errors`, { errors: result.errors });
+        }
+        if (result.warnings.length > 0) {
+          log.warn('mesh-validator', `Mesh '${name}' has warnings`, { warnings: result.warnings });
+        }
       }
     }
 

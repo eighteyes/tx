@@ -30,7 +30,7 @@ atmosphere: |
   The supernatural is wrong, not wondrous.
 
 # Locations
-# Current and known places
+# Current and known places - adjacency defines valid movement
 locations:
   current: "the_crossroads_inn"
   known:
@@ -39,9 +39,41 @@ locations:
       truths:
         - "The fire never quite warms the corners"
         - "The innkeeper watches everyone"
+      adjacent: ["inn_stable", "inn_upstairs", "crossroads"]
       present_entities:
         - player
         - innkeeper
+
+    inn_stable:
+      description: "Cold and dark, hay moldering in corners"
+      truths:
+        - "Something died here recently"
+      adjacent: ["the_crossroads_inn", "crossroads"]
+      present_entities: []
+
+    inn_upstairs:
+      description: "Creaking floorboards, three doors, one locked"
+      truths:
+        - "The locked room has no keyhole on this side"
+      adjacent: ["the_crossroads_inn"]
+      present_entities: []
+
+    crossroads:
+      description: "Where three muddy roads meet under grey sky"
+      truths:
+        - "A gallows stands at the center, empty"
+      adjacent: ["the_crossroads_inn", "inn_stable", "north_road", "east_road", "south_road"]
+      present_entities: []
+
+# Transition Types
+# Special movement that bypasses adjacency requirements
+transition_types:
+  walk: "Normal movement, must follow adjacency"
+  dream: "No adjacency required, surreal logic applies"
+  memory: "Flashback sequence, no physical movement"
+  teleport: "Magical/supernatural transport, must be justified"
+  montage: "Time skip with travel implied, describe journey briefly"
+  cut: "Hard narrative cut, use sparingly for dramatic effect"
 
 # Time
 time:

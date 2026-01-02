@@ -253,14 +253,15 @@ describe('V4 Mesh Validator Test', () => {
       assert.ok(result.errors.some(e => e.includes('rearmatter.fields must be an array')));
     });
 
-    test('should warn about unknown rearmatter field', () => {
+    test('should accept arbitrary rearmatter fields without warnings', () => {
       const result = MeshValidator.validate({
         mesh: 'test',
         agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }],
-        rearmatter: { fields: ['unknown'] }
+        rearmatter: { fields: ['outcome_table', 'trait_pressure', 'custom_field'] }
       });
       assert.strictEqual(result.valid, true);
-      assert.ok(result.warnings.some(w => w.includes("Unknown rearmatter field 'unknown'")));
+      // No warnings about unknown fields - meshes can define domain-specific rearmatter
+      assert.ok(!result.warnings.some(w => w.includes("Unknown rearmatter field")));
     });
 
     test('should fail if confidence threshold is out of range', () => {
@@ -329,31 +330,6 @@ describe('V4 Mesh Validator Test', () => {
     });
   });
 
-  describe('validate - filename validation', () => {
-    test('should fail if mesh name does not match filename', () => {
-      const result = MeshValidator.validate(
-        {
-          mesh: 'actual-name',
-          agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }]
-        },
-        'different-name.json'
-      );
-      assert.strictEqual(result.valid, false);
-      assert.ok(result.errors.some(e => e.includes('Mesh name mismatch')));
-    });
-
-    test('should pass if mesh name matches filename', () => {
-      const result = MeshValidator.validate(
-        {
-          mesh: 'test',
-          agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }]
-        },
-        'test.json'
-      );
-      assert.strictEqual(result.valid, true);
-    });
-  });
-
   describe('validateAll', () => {
     test('should validate multiple configs', () => {
       const configs = new Map<string, unknown>();
@@ -366,7 +342,7 @@ describe('V4 Mesh Validator Test', () => {
         agents: []  // Empty agents - invalid
       });
 
-      const result = MeshValidator.validateAll(configs);
+      const result = MeshValidator.validateAll(configs, { silent: true });
       assert.strictEqual(result.valid, false);
       assert.strictEqual(result.totalErrors, 1);
       assert.ok(result.results.get('valid')?.valid);

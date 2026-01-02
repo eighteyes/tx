@@ -3,8 +3,8 @@
  *
  * Features:
  * - Interactive mode with vim-style navigation
+ * - Auto-follow for real-time updates (always on)
  * - Filter by type, agent, mesh, time
- * - Follow mode for real-time updates
  * - JSON output mode
  */
 
@@ -56,7 +56,6 @@ interface MsgOptions {
   since?: string;
   before?: string;
   limit?: string;
-  follow?: boolean;
   json?: boolean;
   interactive?: boolean;
   verbose?: boolean;
@@ -74,13 +73,32 @@ async function readMessage(filepath: string): Promise<ParsedMessage | null> {
     if (parts.length < 3) return null;
 
     const frontmatter = parseFrontmatter(parts[1].trim());
-    const body = parts.length >= 4 ? parts[2].trim() : parts.slice(2).join('---').trim();
-    const rearmatter = parts.length >= 4 ? parseRearmatter(parts[3].trim()) : null;
+
+    // Use file creation time for reliable ordering (LLMs hallucinate timestamps)
+    const stat = fs.statSync(filepath);
+    const timestamp = stat.birthtime.toISOString();
+
+    // Check if last part looks like structured YAML (has key: value lines)
+    // LLMs often use --- as markdown horizontal rules in body content
+    const lastPart = parts[parts.length - 1].trim();
+    const looksLikeYaml = lastPart.split('\n').some(line => /^[a-zA-Z_-]+:\s*.+/.test(line));
+
+    let body: string;
+    let rearmatter: Record<string, unknown> | null = null;
+
+    if (parts.length >= 4 && looksLikeYaml) {
+      // Last part is rearmatter, everything else is body
+      body = parts.slice(2, -1).join('---').trim();
+      rearmatter = parseRearmatter(lastPart);
+    } else {
+      // No rearmatter, everything after frontmatter is body
+      body = parts.slice(2).join('---').trim();
+    }
 
     return {
       filepath,
       filename: path.basename(filepath),
-      timestamp: frontmatter.timestamp || new Date().toISOString(),
+      timestamp,
       from: frontmatter.from || '?',
       to: frontmatter.to || '?',
       type: frontmatter.type || 'unknown',
@@ -344,8 +362,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
   let viewingDetail = false;
   let viewingPrompt = false;
   let detailScrollOffset = 0;
-  let followMode = options.follow || false;
   let watcher: FSWatcher | null = null;
+  let sysWatcher: FSWatcher | null = null;
 
   function clearScreen(): void {
     console.clear();
@@ -366,7 +384,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
       : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
     console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
-    const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  p prompt  f follow${followMode ? ' ●' : ' ○'}  q quit${colors.reset}`;
+    const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  p prompt  q quit${colors.reset}`;
     console.log(`${controls}\n`);
 
     if (messages.length === 0) {
@@ -715,7 +733,31 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     });
   }
 
-  if (followMode) setupWatcher();
+  function setupSysWatcher(): void {
+    if (sysWatcher) return;
+    if (!fs.existsSync(sysMsgsDir)) return;
+
+    sysWatcher = watch(sysMsgsDir, {
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 }
+    });
+
+    sysWatcher.on('add', async (filepath: string) => {
+      if (!filepath.endsWith('.md')) return;
+      const msg = await readMessage(filepath);
+      if (msg && matchesFilter(msg, options)) {
+        systemMessages.push(msg);
+        systemMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        systemSelectedIndex = systemMessages.length - 1;
+        if (!viewingDetail) display();
+      }
+    });
+  }
+
+  // Always follow - set up watchers immediately
+  setupWatcher();
+  setupSysWatcher();
 
   // Setup keyboard
   readline.emitKeypressEvents(process.stdin);
@@ -857,14 +899,6 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
           detailScrollOffset = 0;
           display();
           break;
-        case 'f':
-          if (viewMode === 'messages') {
-            followMode = !followMode;
-            if (followMode) setupWatcher();
-            else if (watcher) { watcher.close(); watcher = null; }
-            display();
-          }
-          break;
         case 'q':
           cleanup();
           process.exit(0);
@@ -877,6 +911,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
     if (watcher) watcher.close();
+    if (sysWatcher) sysWatcher.close();
     console.log(`\n${colors.dim}Exited message viewer${colors.reset}\n`);
   }
 
@@ -914,47 +949,6 @@ async function msgJson(logDir: string, options: MsgOptions): Promise<void> {
 }
 
 /**
- * Follow mode (tail -f style)
- */
-async function msgFollow(logDir: string, options: MsgOptions): Promise<void> {
-  console.log(`${colors.bright}${colors.cyan}📨 Messages${colors.reset} ${colors.dim}(follow mode)${colors.reset}\n`);
-
-  // Display existing messages first
-  let messages = await getAllMessages(logDir);
-  messages = messages.filter(msg => matchesFilter(msg, options));
-  const limit = parseInt(options.limit || '20');
-  messages = messages.slice(-limit);
-  messages.forEach(msg => displayMessage(msg, options));
-
-  console.log(`\n${colors.dim}Watching for new messages... (Ctrl+C to exit)${colors.reset}\n`);
-
-  let lastTimestamp = messages.length > 0 ? new Date(messages[messages.length - 1].timestamp).getTime() : 0;
-
-  const watcher = watch(`${logDir}/*.md`, {
-    ignoreInitial: true,
-    persistent: true,
-    awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 }
-  });
-
-  watcher.on('add', async (filepath: string) => {
-    const msg = await readMessage(filepath);
-    if (msg && matchesFilter(msg, options)) {
-      const msgTime = new Date(msg.timestamp).getTime();
-      if (msgTime > lastTimestamp) {
-        displayMessage(msg, options);
-        lastTimestamp = msgTime;
-      }
-    }
-  });
-
-  process.on('SIGINT', () => {
-    watcher.close();
-    console.log(`\n${colors.dim}Stopped watching messages${colors.reset}\n`);
-    process.exit(0);
-  });
-}
-
-/**
  * Main msg command
  */
 export async function msg(options: MsgOptions = {}): Promise<void> {
@@ -972,12 +966,7 @@ export async function msg(options: MsgOptions = {}): Promise<void> {
     return msgJson(logDir, options);
   }
 
-  // Follow mode (non-interactive)
-  if (options.follow && options.interactive === false) {
-    return msgFollow(logDir, options);
-  }
-
-  // Interactive mode (default)
+  // Interactive mode with auto-follow (default)
   if (options.interactive !== false) {
     return msgInteractive(logDir, options);
   }

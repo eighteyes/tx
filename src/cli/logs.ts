@@ -197,8 +197,14 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
     core: { component: 'core', label: 'core' },
     dispatcher: { component: 'dispatcher', label: 'dispatch' },
     consumer: { component: 'consumer', label: 'consumer' },
-    watcher: { component: 'watcher', label: 'watcher' }
+    watcher: { component: 'watcher', label: 'watcher' },
+    quality: { component: 'quality', label: 'quality' }
   };
+
+  // Text search pattern (set via '/' key)
+  let searchPattern = '';
+  // Agent filter (set via '@' key)
+  let agentFilter = '';
 
   function getFilteredLogs(): LogEntry[] {
     let v4Logs = readJSONLFile(v4Log);
@@ -214,6 +220,26 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
     if (activeFilters.size > 0) {
       const activeComponents = Array.from(activeFilters).map(f => filterMap[f]?.component || f);
       allLogs = allLogs.filter(log => activeComponents.some(c => log.component.includes(c)));
+    }
+
+    // Text search filter
+    if (searchPattern) {
+      try {
+        const regex = new RegExp(searchPattern, 'i');
+        allLogs = allLogs.filter(log => regex.test(log.message));
+      } catch {
+        // Invalid regex, skip filter
+      }
+    }
+
+    // Agent filter
+    if (agentFilter) {
+      allLogs = allLogs.filter(log => {
+        const logAgentId = (log.data as Record<string, unknown>)?.agentId ||
+                          (log.data as Record<string, unknown>)?.workerId ||
+                          log.component;
+        return String(logAgentId).toLowerCase().includes(agentFilter.toLowerCase());
+      });
     }
 
     return allLogs.sort((a, b) =>
@@ -236,7 +262,8 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       { key: 'n', label: 'consumer', filter: 'consumer', color: colors.green },
       { key: 'u', label: 'queue', filter: 'queue', color: colors.blue },
       { key: 'o', label: 'core', filter: 'core', color: colors.yellow },
-      { key: 't', label: 'watcher', filter: 'watcher', color: colors.magenta }
+      { key: 't', label: 'watcher', filter: 'watcher', color: colors.magenta },
+      { key: 'q', label: 'quality', filter: 'quality', color: colors.cyan }
     ];
 
     const filterDisplay = filterOptions.map(opt => {
@@ -264,14 +291,22 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       }
     }).join('  ');
 
-    const hasFilters = activeFilters.size > 0 || activeSeverityFilters.size > 0;
+    const hasFilters = activeFilters.size > 0 || activeSeverityFilters.size > 0 || searchPattern || agentFilter;
     const mode = hasFilters
       ? `${colors.dim}[filtered]${colors.reset}`
       : `${colors.dim}[all]${colors.reset}`;
 
     const sessionLabel = options.last ? `${colors.yellow}[prev session]${colors.reset}` : '';
 
-    console.log(`${colors.dim}tx logs${colors.reset}${sessionLabel}  ${filterDisplay}  |  ${severityDisplay}  |  ${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs  q quit ${mode}${colors.reset}\n`);
+    // Show active search/agent filters
+    const searchDisplay = searchPattern
+      ? `${colors.cyan}/${searchPattern}${colors.reset}  `
+      : `${colors.dim}/search${colors.reset}  `;
+    const agentDisplay = agentFilter
+      ? `${colors.magenta}@${agentFilter}${colors.reset}  `
+      : `${colors.dim}@agent${colors.reset}  `;
+
+    console.log(`${colors.dim}tx logs${colors.reset}${sessionLabel}  ${filterDisplay}  |  ${severityDisplay}  |  ${searchDisplay}${agentDisplay}${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs  q quit ${mode}${colors.reset}\n`);
   }
 
   function displayLogs(): void {
@@ -318,6 +353,9 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       case 't':
         toggleFilter('watcher');
         break;
+      case 'y':
+        toggleFilter('quality');
+        break;
       case '1':
         toggleSeverity('info');
         break;
@@ -333,6 +371,8 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       case 'a':
         activeFilters.clear();
         activeSeverityFilters.clear();
+        searchPattern = '';
+        agentFilter = '';
         displayLogs();
         break;
       case 'c':

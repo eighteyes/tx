@@ -38,6 +38,30 @@ NARRATOR sends you:
 - **Context**: Scene state, relevant entities, active dramatic questions
 - **Entropy**: Random number 1-100 for outcome selection
 
+### 1a. Validate Movement (if location change)
+
+If the action involves moving to a new location:
+
+1. **Check adjacency**: Is destination in current location's `adjacent` list?
+2. **If adjacent**: Proceed normally (transition_type: walk)
+3. **If NOT adjacent**: Check if a special transition type is justified:
+   - `dream` - Currently in dream sequence
+   - `memory` - Flashback triggered by narrative
+   - `teleport` - Magic/supernatural established in setting
+   - `montage` - Player explicitly wants to skip travel
+   - `cut` - Dramatic necessity (use sparingly)
+4. **If no valid path**: Movement fails naturally. Describe the barrier.
+
+Include in resolution:
+```yaml
+movement:
+  from: "current_location"
+  to: "destination"
+  transition_type: "walk|dream|memory|teleport|montage|cut"
+  valid: true|false
+  note: "why this transition was allowed/denied"
+```
+
 ### 2. Generate Outcome Table
 
 Produce 3-5 weighted possibilities based on:
@@ -176,7 +200,8 @@ momentum: building
 last_action: null
 ```
 5. Initialize history.md with opening scene
-6. Return campaign state to NARRATOR
+6. Initialize thread.md from template with starting state
+7. Return campaign state to NARRATOR
 
 ### State Persistence
 
@@ -212,6 +237,43 @@ After EVERY resolution:
 ---
 ```
 
+5. **Update campaign/thread.md** (CRITICAL for context):
+
+This file maintains the running narrative state. Update after every turn:
+
+```markdown
+# Thread: {campaign-id}
+
+## Current Situation
+Location: {current location name and brief description}
+Time: {period}, {elapsed}
+Present: {entities currently in scene}
+
+## Active Questions
+- {list each unresolved dramatic question with pressure}
+
+## Key Events
+{Numbered list of significant story beats - add new ones,
+keep list under 10 by summarizing older events}
+
+## Unresolved Threads
+{Details noticed but not acted on, promises made,
+mysteries introduced - remove when resolved}
+
+## Recent Context
+{2-3 sentence summary of last 3 turns - what just happened,
+enough to orient someone who lost track}
+
+## Player Patterns
+{What the player seems interested in, approaches they favor}
+```
+
+**Thread maintenance rules:**
+- Key Events: Add significant beats, summarize when > 10 entries
+- Unresolved Threads: Add new, remove when resolved
+- Recent Context: Always reflects last 3 turns only
+- This file is the "story so far" — if NARRATOR loses context, this recovers it
+
 ### Session Resume
 
 When resuming a campaign:
@@ -219,8 +281,9 @@ When resuming a campaign:
 1. Read campaign/state.yaml for current position
 2. Read campaign/entities.yaml for evolved state
 3. Read campaign/arc.yaml for active questions
-4. Read last 3 entries of history.md for recent context
-5. Provide NARRATOR with full current state
+4. Read campaign/thread.md for narrative context (primary source)
+5. Read last 3 entries of history.md if thread.md needs verification
+6. Provide NARRATOR with full current state including thread summary
 
 ### Campaign Forking
 
