@@ -55,6 +55,7 @@ export class SdkRunner extends EventEmitter {
   private running = false;
   private abortController: AbortController | null = null;
   private currentSessionId: string | null = null;
+  private currentQuery: ReturnType<typeof query> | null = null;
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -102,9 +103,8 @@ export class SdkRunner extends EventEmitter {
           });
         }
 
-        let q;
         try {
-          q = query({
+          this.currentQuery = query({
             prompt: userPrompt,
             options: {
               cwd: this.config.workDir,
@@ -129,7 +129,7 @@ export class SdkRunner extends EventEmitter {
               error: err.message
             });
             // Retry without project settings
-            q = query({
+            this.currentQuery = query({
               prompt: userPrompt,
               options: {
                 cwd: this.config.workDir,
@@ -152,7 +152,7 @@ export class SdkRunner extends EventEmitter {
         let resultMessage = '';
         let isError = false;
 
-        for await (const msg of q) {
+        for await (const msg of this.currentQuery) {
           switch (msg.type) {
             case 'assistant':
               const textContent = msg.message.content
@@ -227,6 +227,7 @@ export class SdkRunner extends EventEmitter {
     } finally {
       this.running = false;
       this.abortController = null;
+      this.currentQuery = null;
     }
   }
 
@@ -274,6 +275,36 @@ export class SdkRunner extends EventEmitter {
    */
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * Interrupt the current query execution.
+   * Used when a message file is revised mid-flight.
+   * The query will stop processing and return control to the caller.
+   */
+  async interrupt(): Promise<void> {
+    const workerId = this.config.id;
+
+    if (!this.currentQuery) {
+      log.debug('sdk-runner', 'Interrupt called but no active query', { workerId });
+      return;
+    }
+
+    log.info('sdk-runner', 'Interrupting active query', {
+      workerId,
+      sessionId: this.currentSessionId?.slice(0, 8)
+    });
+
+    try {
+      await this.currentQuery.interrupt();
+      this.emit('interrupted', { id: workerId, sessionId: this.currentSessionId });
+    } catch (error) {
+      log.error('sdk-runner', 'Failed to interrupt query', {
+        workerId,
+        error: (error as Error).message
+      });
+      throw error;
+    }
   }
 
   /**

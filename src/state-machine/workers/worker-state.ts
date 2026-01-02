@@ -17,6 +17,7 @@ export type WorkerState =
   | { status: 'initializing'; config: WorkerConfig; startedAt: number }
   | { status: 'running'; config: WorkerConfig; startedAt: number; pid: number }
   | { status: 'idle'; config: WorkerConfig; startedAt: number; pid: number; lastMessage?: Message }
+  | { status: 'awaiting'; config: WorkerConfig; startedAt: number; pid: number; awaitingResponses: Set<string>; awaitStartedAt: number }
   | { status: 'complete'; config: WorkerConfig; startedAt: number; endedAt: number; result: WorkerResult }
   | { status: 'error'; config: WorkerConfig; startedAt: number; endedAt: number; error: string };
 
@@ -28,10 +29,16 @@ export interface WorkerContext extends Context {
   messagesProcessed: number;
   readonly maxRetries: number;
   retryCount: number;
+  /** Session ID for resume when awaiting responses */
+  awaitSessionId?: string;
+  /** Timeout ID for await timeout */
+  awaitTimeoutId?: ReturnType<typeof setTimeout>;
+  /** Configured await timeout in ms (default 5 minutes) */
+  awaitTimeout: number;
 }
 
 export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext> {
-  constructor(id: string, config: WorkerConfig, meshName: string, agentName: string) {
+  constructor(id: string, config: WorkerConfig, meshName: string, agentName: string, awaitTimeout: number = 300000) {
     super(id, { status: 'pending', config }, {
       id,
       createdAt: Date.now(),
@@ -39,7 +46,8 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       agent: agentName,
       messagesProcessed: 0,
       maxRetries: 3,
-      retryCount: 0
+      retryCount: 0,
+      awaitTimeout
     });
 
     this.setupGuards();
@@ -82,9 +90,9 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       return { valid: true };
     });
 
-    // Guard: running|idle → complete
+    // Guard: running|idle|awaiting → complete
     this.registerGuard('complete', async (from) => {
-      if (from.status !== 'running' && from.status !== 'idle') {
+      if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
         return { valid: false, reason: `Cannot complete from ${from.status}` };
       }
       return { valid: true };
@@ -108,6 +116,38 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
           valid: false,
           reason: `Max retries (${context.maxRetries}) exceeded`
         };
+      }
+      return { valid: true };
+    });
+
+    // Guard: running|idle → awaiting
+    this.registerGuard('await', async (from) => {
+      if (from.status !== 'running' && from.status !== 'idle') {
+        return { valid: false, reason: `Cannot await from ${from.status}` };
+      }
+      return { valid: true };
+    });
+
+    // Guard: awaiting → running (response received)
+    this.registerGuard('awaitResume', async (from) => {
+      if (from.status !== 'awaiting') {
+        return { valid: false, reason: `Cannot resume await from ${from.status}` };
+      }
+      return { valid: true };
+    });
+
+    // Guard: awaiting → awaiting (additional ask)
+    this.registerGuard('awaitMore', async (from) => {
+      if (from.status !== 'awaiting') {
+        return { valid: false, reason: `Cannot add await from ${from.status}` };
+      }
+      return { valid: true };
+    });
+
+    // Guard: awaiting → error (timeout)
+    this.registerGuard('awaitTimeout', async (from) => {
+      if (from.status !== 'awaiting') {
+        return { valid: false, reason: `Cannot timeout from ${from.status}` };
       }
       return { valid: true };
     });
@@ -184,12 +224,18 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   }
 
   /**
-   * Transition: running|idle → complete
+   * Transition: running|idle|awaiting → complete
    */
   async complete(result: WorkerResult): Promise<void> {
     const from = this.state;
-    if (from.status !== 'running' && from.status !== 'idle') {
+    if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
       throw new Error(`Cannot complete from ${from.status}`);
+    }
+
+    // Clear any await timeout
+    if (this.context.awaitTimeoutId) {
+      clearTimeout(this.context.awaitTimeoutId);
+      this.context.awaitTimeoutId = undefined;
     }
 
     const startedAt = (from as any).startedAt || Date.now();
@@ -242,6 +288,148 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       config: from.config,
       startedAt: Date.now()
     });
+  }
+
+  /**
+   * Transition: running|idle → awaiting
+   * Enters when worker writes an `ask` message to another agent.
+   *
+   * @param targetAgent The agent ID we're waiting for a response from
+   * @param sessionId The session ID to preserve for resume
+   */
+  async enterAwait(targetAgent: string, sessionId: string): Promise<void> {
+    const from = this.state;
+    if (from.status !== 'running' && from.status !== 'idle') {
+      throw new Error(`Cannot await from ${from.status}`);
+    }
+
+    // Store session ID for resume
+    this.context.awaitSessionId = sessionId;
+
+    await this.transition('await', {
+      status: 'awaiting',
+      config: from.config,
+      startedAt: (from as any).startedAt,
+      pid: (from as any).pid,
+      awaitingResponses: new Set([targetAgent]),
+      awaitStartedAt: Date.now()
+    });
+  }
+
+  /**
+   * Transition: awaiting → awaiting (add another target)
+   * When worker sends additional ask messages while already awaiting.
+   *
+   * @param targetAgent Additional agent ID to wait for
+   */
+  async addAwaitTarget(targetAgent: string): Promise<void> {
+    const from = this.state;
+    if (from.status !== 'awaiting') {
+      throw new Error(`Cannot add await target from ${from.status}`);
+    }
+
+    const newSet = new Set(from.awaitingResponses);
+    newSet.add(targetAgent);
+
+    await this.transition('awaitMore', {
+      status: 'awaiting',
+      config: from.config,
+      startedAt: from.startedAt,
+      pid: from.pid,
+      awaitingResponses: newSet,
+      awaitStartedAt: from.awaitStartedAt
+    });
+  }
+
+  /**
+   * Handle response received from an awaiting target.
+   * If all responses received, transitions to running for resume.
+   * If more responses pending, stays in awaiting.
+   *
+   * @param respondingAgent The agent ID that responded
+   * @returns true if all responses received (ready to resume), false if still waiting
+   */
+  async receiveResponse(respondingAgent: string): Promise<boolean> {
+    const from = this.state;
+    if (from.status !== 'awaiting') {
+      throw new Error(`Cannot receive response from ${from.status}`);
+    }
+
+    const newSet = new Set(from.awaitingResponses);
+    newSet.delete(respondingAgent);
+
+    if (newSet.size === 0) {
+      // All responses received, transition to running
+      await this.transition('awaitResume', {
+        status: 'running',
+        config: from.config,
+        startedAt: from.startedAt,
+        pid: from.pid
+      });
+      return true;
+    }
+
+    // Still waiting for more responses
+    await this.transition('awaitMore', {
+      status: 'awaiting',
+      config: from.config,
+      startedAt: from.startedAt,
+      pid: from.pid,
+      awaitingResponses: newSet,
+      awaitStartedAt: from.awaitStartedAt
+    });
+    return false;
+  }
+
+  /**
+   * Transition: awaiting → error (timeout)
+   * Called when await timeout expires.
+   */
+  async awaitTimeoutError(): Promise<void> {
+    const from = this.state;
+    if (from.status !== 'awaiting') {
+      throw new Error(`Cannot timeout from ${from.status}`);
+    }
+
+    const pending = Array.from(from.awaitingResponses).join(', ');
+
+    await this.transition('awaitTimeout', {
+      status: 'error',
+      config: from.config,
+      startedAt: from.startedAt,
+      endedAt: Date.now(),
+      error: `Await timeout: still waiting for responses from [${pending}]`
+    });
+  }
+
+  /**
+   * Check if worker is in awaiting state
+   */
+  isAwaiting(): boolean {
+    return this.state.status === 'awaiting';
+  }
+
+  /**
+   * Get agents we're waiting for responses from
+   */
+  getAwaitingResponses(): Set<string> {
+    if (this.state.status !== 'awaiting') return new Set();
+    return new Set(this.state.awaitingResponses);
+  }
+
+  /**
+   * Get the await session ID for resume
+   */
+  getAwaitSessionId(): string | undefined {
+    return this.context.awaitSessionId;
+  }
+
+  /**
+   * Get await duration (ms) - how long we've been waiting
+   */
+  getAwaitDuration(): number {
+    if (this.state.status !== 'awaiting') return 0;
+    return Date.now() - this.state.awaitStartedAt;
   }
 
   /**

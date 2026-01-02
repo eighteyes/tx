@@ -20,7 +20,12 @@ export interface StatusResult {
   };
   workers: Array<{
     id: string;
+    status?: string;
     startedAt: number;
+    messagesProcessed?: number;
+    duration?: number;
+    awaitingResponses?: string[];
+    awaitDuration?: number;
   }>;
 }
 
@@ -76,7 +81,18 @@ export function printStatus(result: StatusResult): void {
     console.log(`\nWorkers: ${result.workers.length} active`);
     for (const worker of result.workers) {
       const elapsed = Math.round((Date.now() - worker.startedAt) / 1000);
-      console.log(`  ⚡ ${worker.id} (${elapsed}s)`);
+      const status = worker.status || 'running';
+
+      if (status === 'awaiting' && worker.awaitingResponses) {
+        // Show awaiting workers with wait targets
+        const awaitElapsed = worker.awaitDuration ? Math.round(worker.awaitDuration / 1000) : 0;
+        const targets = worker.awaitingResponses.join(', ');
+        console.log(`  ⏳ ${worker.id} (awaiting ${targets}) [${awaitElapsed}s/${elapsed}s]`);
+      } else {
+        // Show running/idle workers
+        const icon = status === 'idle' ? '💤' : '⚡';
+        console.log(`  ${icon} ${worker.id} (${status}) [${elapsed}s]`);
+      }
     }
   } else {
     console.log('\nWorkers: none active');

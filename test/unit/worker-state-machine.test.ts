@@ -233,4 +233,164 @@ describe('WorkerStateMachine', () => {
     assert.strictEqual(events[1].transitionName, 'start');
     assert.strictEqual(events[2].transitionName, 'complete');
   });
+
+  // Awaiting state tests
+  describe('awaiting state', () => {
+    it('should transition from running to awaiting', async () => {
+      const machine = new WorkerStateMachine('await-worker-1', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+
+      await machine.enterAwait('target/agent', 'session-123');
+
+      assert.strictEqual(machine.getStatus(), 'awaiting');
+      assert.strictEqual(machine.isAwaiting(), true);
+      const awaiting = machine.getAwaitingResponses();
+      assert.strictEqual(awaiting.size, 1);
+      assert.ok(awaiting.has('target/agent'));
+      assert.strictEqual(machine.getAwaitSessionId(), 'session-123');
+    });
+
+    it('should transition from idle to awaiting', async () => {
+      const machine = new WorkerStateMachine('await-worker-2', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.markIdle();
+
+      await machine.enterAwait('target/agent', 'session-456');
+
+      assert.strictEqual(machine.getStatus(), 'awaiting');
+      assert.strictEqual(machine.isAwaiting(), true);
+    });
+
+    it('should add multiple await targets', async () => {
+      const machine = new WorkerStateMachine('await-worker-3', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/system', 'session-789');
+
+      await machine.addAwaitTarget('target/cast');
+
+      const awaiting = machine.getAwaitingResponses();
+      assert.strictEqual(awaiting.size, 2);
+      assert.ok(awaiting.has('target/system'));
+      assert.ok(awaiting.has('target/cast'));
+    });
+
+    it('should transition to running when all responses received', async () => {
+      const machine = new WorkerStateMachine('await-worker-4', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/agent', 'session-abc');
+
+      const allReceived = await machine.receiveResponse('target/agent');
+
+      assert.strictEqual(allReceived, true);
+      assert.strictEqual(machine.getStatus(), 'running');
+      assert.strictEqual(machine.isAwaiting(), false);
+    });
+
+    it('should stay in awaiting when only partial responses received', async () => {
+      const machine = new WorkerStateMachine('await-worker-5', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/system', 'session-def');
+      await machine.addAwaitTarget('target/cast');
+
+      const allReceived = await machine.receiveResponse('target/system');
+
+      assert.strictEqual(allReceived, false);
+      assert.strictEqual(machine.getStatus(), 'awaiting');
+      const remaining = machine.getAwaitingResponses();
+      assert.strictEqual(remaining.size, 1);
+      assert.ok(remaining.has('target/cast'));
+    });
+
+    it('should transition to error on timeout', async () => {
+      const machine = new WorkerStateMachine('await-worker-6', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/agent', 'session-timeout');
+
+      await machine.awaitTimeoutError();
+
+      assert.strictEqual(machine.getStatus(), 'error');
+      const state = machine.getState() as any;
+      assert.ok(state.error.includes('Await timeout'));
+      assert.ok(state.error.includes('target/agent'));
+    });
+
+    it('should complete from awaiting state', async () => {
+      const machine = new WorkerStateMachine('await-worker-7', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/agent', 'session-complete');
+
+      await machine.complete({ success: true, messagesProcessed: 1 });
+
+      assert.strictEqual(machine.getStatus(), 'complete');
+    });
+
+    it('should track await duration', async () => {
+      const machine = new WorkerStateMachine('await-worker-8', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/agent', 'session-duration');
+
+      // Wait a bit
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const duration = machine.getAwaitDuration();
+      assert.ok(duration >= 50, `Await duration ${duration} should be at least 50ms`);
+    });
+
+    it('should reject await from pending state', async () => {
+      const machine = new WorkerStateMachine('await-worker-9', testConfig, 'test-mesh', 'test-agent');
+
+      try {
+        await machine.enterAwait('target/agent', 'session-fail');
+        assert.fail('Should have thrown error');
+      } catch (error) {
+        assert.strictEqual((error as Error).message, 'Cannot await from pending');
+      }
+    });
+
+    it('should reject await from complete state', async () => {
+      const machine = new WorkerStateMachine('await-worker-10', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.complete({ success: true, messagesProcessed: 1 });
+
+      try {
+        await machine.enterAwait('target/agent', 'session-fail');
+        assert.fail('Should have thrown error');
+      } catch (error) {
+        assert.strictEqual((error as Error).message, 'Cannot await from complete');
+      }
+    });
+
+    it('should accept custom await timeout', () => {
+      const customTimeout = 60000; // 1 minute
+      const machine = new WorkerStateMachine(
+        'await-worker-11',
+        testConfig,
+        'test-mesh',
+        'test-agent',
+        customTimeout
+      );
+
+      assert.strictEqual(machine.currentContext.awaitTimeout, customTimeout);
+    });
+
+    it('should use default await timeout of 5 minutes', () => {
+      const machine = new WorkerStateMachine(
+        'await-worker-12',
+        testConfig,
+        'test-mesh',
+        'test-agent'
+      );
+
+      assert.strictEqual(machine.currentContext.awaitTimeout, 300000);
+    });
+  });
 });

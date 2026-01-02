@@ -198,6 +198,43 @@ export interface DispatcherConfig {
 }
 
 /**
+ * Event emitted by Consumer when a message file is revised (edited)
+ */
+interface RevisionMessageEvent {
+  filepath: string;
+  agentId: string;
+  from: string;
+  type: string;
+  content: string;
+  headline?: string;
+}
+
+/**
+ * Event emitted by Consumer when an ask message is detected
+ */
+interface AskMessageEvent {
+  id: number;
+  filepath: string;
+  from: string;  // Agent that sent the ask (e.g., "narrative-engine/narrator")
+  to: string;    // Agent being asked (e.g., "narrative-engine/system")
+  headline?: string;
+  msgId?: string;
+}
+
+/**
+ * Event emitted by Consumer when an ask-response message is detected
+ */
+interface AskResponseMessageEvent {
+  id: number;
+  filepath: string;
+  from: string;  // Agent that responded (e.g., "narrative-engine/system")
+  to: string;    // Agent receiving the response (e.g., "narrative-engine/narrator")
+  content: string;
+  headline?: string;
+  msgId?: string;
+}
+
+/**
  * Active worker state
  */
 interface ActiveWorker {
@@ -219,6 +256,9 @@ export class WorkerDispatcher extends EventEmitter {
   private promptInjector: PromptInjector;
   private lifecycleHooks: LifecycleHooks;
   private boundMessageHandler: ((event: { agentId: string }) => void) | null = null;
+  private boundRevisionHandler: ((event: RevisionMessageEvent) => void) | null = null;
+  private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
+  private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -232,13 +272,27 @@ export class WorkerDispatcher extends EventEmitter {
 
   private writeWorkerState(): void {
     const state = {
-      workers: Array.from(this.activeWorkers.entries()).map(([id, w]) => ({
-        id,
-        status: w.machine.getStatus(),
-        startedAt: w.startedAt,
-        messagesProcessed: w.machine.getMessagesProcessed(),
-        duration: w.machine.getDuration()
-      })),
+      workers: Array.from(this.activeWorkers.entries()).map(([id, w]) => {
+        const status = w.machine.getStatus();
+        const baseState = {
+          id,
+          status,
+          startedAt: w.startedAt,
+          messagesProcessed: w.machine.getMessagesProcessed(),
+          duration: w.machine.getDuration()
+        };
+
+        // Add awaiting-specific fields if in awaiting state
+        if (status === 'awaiting') {
+          return {
+            ...baseState,
+            awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
+            awaitDuration: w.machine.getAwaitDuration()
+          };
+        }
+
+        return baseState;
+      }),
       updatedAt: Date.now(),
     };
     try {
@@ -266,6 +320,24 @@ export class WorkerDispatcher extends EventEmitter {
         this.handleWorkerMessage(event.agentId);
       };
       consumer.on('worker-message', this.boundMessageHandler);
+
+      // Subscribe to revision events for interrupt+resume handling
+      this.boundRevisionHandler = (event: RevisionMessageEvent) => {
+        this.handleRevisionMessage(event);
+      };
+      consumer.on('revision-message', this.boundRevisionHandler);
+
+      // Subscribe to ask message events for await state handling
+      this.boundAskMessageHandler = (event: AskMessageEvent) => {
+        this.handleAskMessage(event);
+      };
+      consumer.on('ask-message', this.boundAskMessageHandler);
+
+      // Subscribe to ask-response events for resuming awaiting workers
+      this.boundAskResponseHandler = (event: AskResponseMessageEvent) => {
+        this.handleAskResponseMessage(event);
+      };
+      consumer.on('ask-response-message', this.boundAskResponseHandler);
     }
   }
 
@@ -305,6 +377,359 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
+   * Handle message revision - interrupt active worker and resume with revised content
+   * This enables mid-flight corrections when message files are edited.
+   */
+  private async handleRevisionMessage(event: RevisionMessageEvent): Promise<void> {
+    const { agentId, content, headline } = event;
+
+    const activeWorker = this.activeWorkers.get(agentId);
+    if (!activeWorker) {
+      log.warn('dispatcher', `Revision received but no active worker found`, {
+        agentId,
+        headline,
+      });
+      return;
+    }
+
+    const sessionId = activeWorker.runner.getSessionId();
+    if (!sessionId) {
+      log.warn('dispatcher', `Revision received but worker has no session ID`, {
+        agentId,
+        headline,
+      });
+      return;
+    }
+
+    log.info('dispatcher', `Handling message revision`, {
+      agentId,
+      sessionId: sessionId.slice(0, 8),
+      headline,
+      contentLength: content.length,
+    });
+
+    try {
+      // Interrupt the current query
+      await activeWorker.runner.interrupt();
+
+      this.emit('revision:interrupt', {
+        agentId,
+        sessionId,
+        headline,
+      });
+
+      // Resume with the revised content
+      // Build a feedback prompt that includes the revision
+      const revisionPrompt = this.buildRevisionPrompt(content, headline);
+
+      log.info('dispatcher', `Resuming session with revised content`, {
+        agentId,
+        sessionId: sessionId.slice(0, 8),
+      });
+
+      // Resume the session with the revised content
+      // This will trigger the 'complete' event handler when finished
+      const result = await activeWorker.runner.resume(sessionId, revisionPrompt);
+
+      if (result.success) {
+        log.info('dispatcher', `Revision resume completed successfully`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+        });
+        this.emit('revision:complete', {
+          agentId,
+          sessionId,
+          success: true,
+        });
+      } else {
+        log.error('dispatcher', `Revision resume failed`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+          error: result.error,
+        });
+        this.emit('revision:error', {
+          agentId,
+          sessionId,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      const errorMsg = (error as Error).message;
+      log.error('dispatcher', `Failed to handle message revision`, {
+        agentId,
+        error: errorMsg,
+      });
+      this.emit('revision:error', {
+        agentId,
+        error: errorMsg,
+      });
+    }
+  }
+
+  /**
+   * Build a prompt for the revised message content
+   */
+  private buildRevisionPrompt(content: string, headline?: string): string {
+    const parts: string[] = [];
+
+    parts.push('## Message Revision\n');
+    parts.push('The task message has been revised. Please discard your previous work and process this updated message:\n');
+
+    if (headline) {
+      parts.push(`**Updated Headline**: ${headline}\n`);
+    }
+
+    parts.push('---\n');
+    parts.push(content);
+    parts.push('\n---');
+    parts.push('\n**Action**: Process the revised message above. Your previous response is no longer needed.');
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Handle ask message - transition worker to awaiting state
+   * When a worker writes an ask message to another agent, we:
+   * 1. Find the worker that sent the ask (by from field)
+   * 2. Transition it to awaiting state
+   * 3. Set up timeout for await
+   */
+  private async handleAskMessage(event: AskMessageEvent): Promise<void> {
+    const { from: senderAgentId, to: targetAgentId } = event;
+
+    const activeWorker = this.activeWorkers.get(senderAgentId);
+    if (!activeWorker) {
+      log.debug('dispatcher', `Ask message but no active worker found`, {
+        from: senderAgentId,
+        to: targetAgentId,
+      });
+      return;
+    }
+
+    const { machine, runner } = activeWorker;
+    const currentStatus = machine.getStatus();
+
+    // Get session ID for resume
+    const sessionId = runner.getSessionId();
+    if (!sessionId) {
+      log.warn('dispatcher', `Ask message but worker has no session ID`, {
+        from: senderAgentId,
+        to: targetAgentId,
+      });
+      return;
+    }
+
+    try {
+      if (currentStatus === 'awaiting') {
+        // Already awaiting, add this target to the set
+        log.info('dispatcher', `Adding await target`, {
+          from: senderAgentId,
+          to: targetAgentId,
+          existingTargets: Array.from(machine.getAwaitingResponses()),
+        });
+        await machine.addAwaitTarget(targetAgentId);
+      } else if (currentStatus === 'running' || currentStatus === 'idle') {
+        // Enter awaiting state
+        log.info('dispatcher', `Worker entering await state`, {
+          from: senderAgentId,
+          to: targetAgentId,
+          sessionId: sessionId.slice(0, 8),
+        });
+        await machine.enterAwait(targetAgentId, sessionId);
+
+        // Set up timeout
+        const timeout = machine.currentContext.awaitTimeout;
+        const timeoutId = setTimeout(() => {
+          this.handleAwaitTimeout(senderAgentId);
+        }, timeout);
+        machine.currentContext.awaitTimeoutId = timeoutId;
+
+        this.emit('worker:await', {
+          workerId: senderAgentId,
+          targets: [targetAgentId],
+          sessionId,
+        });
+      } else {
+        log.warn('dispatcher', `Cannot await from current state`, {
+          from: senderAgentId,
+          to: targetAgentId,
+          currentStatus,
+        });
+      }
+
+      this.writeWorkerState();
+    } catch (error) {
+      log.error('dispatcher', `Failed to enter await state`, {
+        from: senderAgentId,
+        to: targetAgentId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Handle ask-response message - resume awaiting worker
+   * When an agent responds to an ask:
+   * 1. Find the worker that's awaiting this response (by to field)
+   * 2. Remove the responder from awaitingResponses
+   * 3. If all responses received, resume the session
+   */
+  private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
+    const { from: respondingAgentId, to: awaitingAgentId, content } = event;
+
+    const activeWorker = this.activeWorkers.get(awaitingAgentId);
+    if (!activeWorker) {
+      log.debug('dispatcher', `Ask-response but no active worker found`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+      });
+      return;
+    }
+
+    const { machine, runner } = activeWorker;
+    const currentStatus = machine.getStatus();
+
+    if (currentStatus !== 'awaiting') {
+      log.warn('dispatcher', `Ask-response but worker not in awaiting state`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        currentStatus,
+      });
+      return;
+    }
+
+    // Check if we're actually waiting for this agent
+    const awaitingResponses = machine.getAwaitingResponses();
+    if (!awaitingResponses.has(respondingAgentId)) {
+      log.warn('dispatcher', `Ask-response from unexpected agent`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        awaiting: Array.from(awaitingResponses),
+      });
+      return;
+    }
+
+    try {
+      log.info('dispatcher', `Received ask-response`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        remainingBefore: awaitingResponses.size,
+      });
+
+      // Remove responder from awaiting set
+      const allReceived = await machine.receiveResponse(respondingAgentId);
+
+      this.emit('worker:resume', {
+        workerId: awaitingAgentId,
+        from: respondingAgentId,
+        allReceived,
+      });
+
+      // If all responses received, resume the session
+      if (allReceived) {
+        const sessionId = machine.getAwaitSessionId();
+        if (!sessionId) {
+          log.error('dispatcher', `All responses received but no session ID`, {
+            awaitingAgentId,
+          });
+          return;
+        }
+
+        log.info('dispatcher', `All responses received, resuming session`, {
+          awaitingAgentId,
+          sessionId: sessionId.slice(0, 8),
+        });
+
+        // Build resume prompt with the response content
+        const resumePrompt = this.buildAskResponsePrompt(respondingAgentId, content, event.headline);
+
+        // Resume the session
+        const result = await runner.resume(sessionId, resumePrompt);
+
+        if (result.success) {
+          log.info('dispatcher', `Session resumed successfully`, {
+            awaitingAgentId,
+            sessionId: sessionId.slice(0, 8),
+          });
+        } else {
+          log.error('dispatcher', `Session resume failed`, {
+            awaitingAgentId,
+            error: result.error,
+          });
+        }
+      }
+
+      this.writeWorkerState();
+    } catch (error) {
+      log.error('dispatcher', `Failed to handle ask-response`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Build a prompt for resuming with ask-response content
+   */
+  private buildAskResponsePrompt(from: string, content: string, headline?: string): string {
+    const parts: string[] = [];
+
+    parts.push('## Ask Response Received\n');
+    parts.push(`Response received from **${from}**:\n`);
+
+    if (headline) {
+      parts.push(`**Subject**: ${headline}\n`);
+    }
+
+    parts.push('---\n');
+    parts.push(content);
+    parts.push('\n---');
+    parts.push('\n**Action**: Process this response and continue with your task.');
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Handle await timeout - transition worker to error state
+   */
+  private async handleAwaitTimeout(agentId: string): Promise<void> {
+    const activeWorker = this.activeWorkers.get(agentId);
+    if (!activeWorker) {
+      return;
+    }
+
+    const { machine } = activeWorker;
+    if (machine.getStatus() !== 'awaiting') {
+      return;  // Already transitioned out of awaiting
+    }
+
+    log.warn('dispatcher', `Await timeout expired`, {
+      agentId,
+      awaitingResponses: Array.from(machine.getAwaitingResponses()),
+      awaitDuration: machine.getAwaitDuration(),
+    });
+
+    try {
+      await machine.awaitTimeoutError();
+
+      this.emit('worker:await-timeout', {
+        workerId: agentId,
+        awaitingResponses: Array.from(machine.getAwaitingResponses()),
+      });
+
+      // Cleanup
+      this.activeWorkers.delete(agentId);
+      this.writeWorkerState();
+    } catch (error) {
+      log.error('dispatcher', `Failed to handle await timeout`, {
+        agentId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
    * Stop the dispatcher
    */
   async stop(consumer?: EventEmitter): Promise<void> {
@@ -316,6 +741,18 @@ export class WorkerDispatcher extends EventEmitter {
     if (consumer && this.boundMessageHandler) {
       consumer.off('worker-message', this.boundMessageHandler);
       this.boundMessageHandler = null;
+    }
+    if (consumer && this.boundRevisionHandler) {
+      consumer.off('revision-message', this.boundRevisionHandler);
+      this.boundRevisionHandler = null;
+    }
+    if (consumer && this.boundAskMessageHandler) {
+      consumer.off('ask-message', this.boundAskMessageHandler);
+      this.boundAskMessageHandler = null;
+    }
+    if (consumer && this.boundAskResponseHandler) {
+      consumer.off('ask-response-message', this.boundAskResponseHandler);
+      this.boundAskResponseHandler = null;
     }
 
     // Kill all active workers

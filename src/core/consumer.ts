@@ -131,12 +131,12 @@ export class MessageConsumer extends EventEmitter {
       });
 
       this.watcher.on('add', (filepath: string) => {
-        if (filepath.endsWith('.md')) this.processFile(filepath);
+        if (filepath.endsWith('.md')) this.processFile(filepath, 'new');
       });
 
-      // Also watch for changes - handles agents overwriting existing files
+      // Watch for changes - handles message revisions (edited files)
       this.watcher.on('change', (filepath: string) => {
-        if (filepath.endsWith('.md')) this.processFile(filepath);
+        if (filepath.endsWith('.md')) this.processFile(filepath, 'revision');
       });
 
       this.watcher.on('ready', () => {
@@ -158,7 +158,7 @@ export class MessageConsumer extends EventEmitter {
     return this.running;
   }
 
-  private processFile(filepath: string): void {
+  private processFile(filepath: string, event: 'new' | 'revision' = 'new'): void {
     const filename = path.basename(filepath);
     try {
       const content = fs.readFileSync(filepath, 'utf-8');
@@ -170,6 +170,30 @@ export class MessageConsumer extends EventEmitter {
 
       // Resolve mesh routing: to: dev → to: dev/worker
       const toAgent = this.resolveToAgent(parsed.frontmatter.to);
+
+      // For revisions, emit revision-message event for interrupt handling
+      // before attempting to insert (which may fail due to duplicate constraint)
+      if (event === 'revision') {
+        log.info('consumer', `Message revision detected`, {
+          from: parsed.frontmatter.from,
+          to: toAgent,
+          type: parsed.frontmatter.type,
+          file: filename
+        });
+
+        // Emit revision event for dispatcher to handle interrupt+resume
+        if (toAgent !== 'core/core') {
+          this.emit('revision-message', {
+            filepath,
+            agentId: toAgent,
+            from: parsed.frontmatter.from,
+            type: parsed.frontmatter.type,
+            content: parsed.body,
+            headline: parsed.frontmatter.headline
+          });
+        }
+        return; // Don't queue revisions - they're handled via interrupt+resume
+      }
 
       const id = this.queue.insert({
         from_agent: parsed.frontmatter.from,
@@ -200,7 +224,8 @@ export class MessageConsumer extends EventEmitter {
         originalTo: parsed.frontmatter.to !== toAgent ? parsed.frontmatter.to : undefined,
         type: parsed.frontmatter.type,
         headline: parsed.frontmatter.headline,
-        file: filename
+        file: filename,
+        event
       });
 
       // Emit events for event-driven dispatch (no polling needed)
@@ -210,19 +235,58 @@ export class MessageConsumer extends EventEmitter {
         return;
       }
 
+      // Detect ask messages - these trigger await state in dispatcher
+      // Worker writes ask → consumer detects → dispatcher enters await
+      const messageType = parsed.frontmatter.type;
+      if (messageType === 'ask') {
+        log.info('consumer', `Ask message detected`, {
+          from: parsed.frontmatter.from,
+          to: toAgent,
+          file: filename
+        });
+        this.emit('ask-message', {
+          id,
+          filepath,
+          from: parsed.frontmatter.from,
+          to: toAgent,
+          headline: parsed.frontmatter.headline,
+          msgId: parsed.frontmatter['msg-id']
+        });
+      }
+
+      // Detect ask-response messages - these resume awaiting workers
+      if (messageType === 'ask-response') {
+        log.info('consumer', `Ask-response message detected`, {
+          from: parsed.frontmatter.from,
+          to: toAgent,
+          file: filename
+        });
+        this.emit('ask-response-message', {
+          id,
+          filepath,
+          from: parsed.frontmatter.from,
+          to: toAgent,
+          content: parsed.body,
+          headline: parsed.frontmatter.headline,
+          msgId: parsed.frontmatter['msg-id']
+        });
+      }
+
       if (toAgent === 'core/core') {
         this.emit('core-message', {
           id,
           filepath,
           from: parsed.frontmatter.from,
-          type: parsed.frontmatter.type
+          type: parsed.frontmatter.type,
+          event
         });
       } else {
         this.emit('worker-message', {
           id,
           agentId: toAgent,
           from: parsed.frontmatter.from,
-          type: parsed.frontmatter.type
+          type: parsed.frontmatter.type,
+          event
         });
       }
     } catch (err) {

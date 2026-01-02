@@ -869,6 +869,87 @@ core → coordinator → [worker1, worker2, worker3] → coordinator → core
 
 Coordinator distributes work, collects results.
 
+### Ask/Await Pattern (Agent-to-Agent Queries)
+
+When one agent needs information from another before continuing:
+
+```
+orchestrator → (ask) → specialist-a
+             ← (ask-response) ←
+orchestrator → (ask) → specialist-b
+             ← (ask-response) ←
+orchestrator → core (task-complete)
+```
+
+**Worker FSM Await State**: Workers enter an `awaiting` state when they write `ask` messages:
+
+```
+States: initializing → running → awaiting → running → complete
+                                    ↑           ↓
+                                    └───────────┘
+```
+
+**How it works**:
+1. Worker writes an `ask` message to another agent
+2. Consumer detects `type: ask` and emits `ask-message` event
+3. Dispatcher transitions worker to `awaiting` state
+4. Worker session ID preserved for resume
+5. Target agent processes ask and writes `ask-response`
+6. Consumer detects `ask-response` and emits event
+7. Dispatcher resumes worker session with response content
+8. Worker continues processing
+
+**Status display** (`tx status`):
+```
+Workers: 2 active
+  ⏳ research/coordinator (awaiting research/analyst) [15s/45s]
+  ⚡ research/analyst (running) [12s]
+```
+
+**Timeout handling**:
+- Default: 5 minutes (configurable via `awaitTimeout` in mesh config)
+- Timeout transitions worker to `error` state
+- Emits `worker:await-timeout` event
+
+**Events** (visible in `tx spy`):
+```
+📨 [ask-message] coordinator → analyst
+⏳ [worker:await] coordinator waiting for [analyst]
+📨 [ask-response] analyst → coordinator
+▶️ [worker:resume] coordinator resumed (from analyst)
+```
+
+**When to use**:
+- Orchestrator needs sub-agent input before proceeding
+- Multi-step workflows with inter-agent dependencies
+- Any scenario where conversation context must be preserved across agent calls
+
+**ask message format**:
+```yaml
+---
+to: {mesh}/{target-agent}
+from: {mesh}/{asking-agent}
+type: ask
+msg-id: ask-{topic}-{id}
+headline: Query description
+---
+
+Question or request for the target agent.
+```
+
+**ask-response format**:
+```yaml
+---
+to: {mesh}/{asking-agent}
+from: {mesh}/{target-agent}
+type: ask-response
+msg-id: ask-{topic}-{id}
+headline: Response summary
+---
+
+Response content from target agent.
+```
+
 ## Testing
 
 ### Test Harness Pattern
