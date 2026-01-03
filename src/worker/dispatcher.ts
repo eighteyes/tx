@@ -217,6 +217,7 @@ interface AskMessageEvent {
   filepath: string;
   from: string;  // Agent that sent the ask (e.g., "narrative-engine/narrator")
   to: string;    // Agent being asked (e.g., "narrative-engine/system")
+  type: string;  // 'ask' or 'ask-human'
   headline?: string;
   msgId?: string;
 }
@@ -492,10 +493,11 @@ export class WorkerDispatcher extends EventEmitter {
    * When a worker writes an ask message to another agent, we:
    * 1. Find the worker that sent the ask (by from field)
    * 2. Transition it to awaiting state
-   * 3. Set up timeout for await
+   * 3. For ask-human: interrupt the worker and inject steering prompt
+   * 4. Set up timeout for await
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
-    const { from: senderAgentId, to: targetAgentId } = event;
+    const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
 
     const activeWorker = this.activeWorkers.get(senderAgentId);
     if (!activeWorker) {
@@ -533,6 +535,7 @@ export class WorkerDispatcher extends EventEmitter {
         log.info('dispatcher', `Worker entering await state`, {
           from: senderAgentId,
           to: targetAgentId,
+          type: messageType,
           sessionId: sessionId.slice(0, 8),
         });
         await machine.enterAwait(targetAgentId, sessionId);
@@ -548,7 +551,52 @@ export class WorkerDispatcher extends EventEmitter {
           workerId: senderAgentId,
           targets: [targetAgentId],
           sessionId,
+          type: messageType,
         });
+
+        // For ask-human messages: interrupt worker and inject steering
+        // This prevents the worker from continuing and writing task-complete
+        if (messageType === 'ask-human') {
+          log.info('dispatcher', `Interrupting worker for ask-human`, {
+            from: senderAgentId,
+            sessionId: sessionId.slice(0, 8),
+          });
+
+          try {
+            // Interrupt the current query
+            await runner.interrupt();
+
+            this.emit('worker:interrupt', {
+              agentId: senderAgentId,
+              sessionId,
+              reason: 'ask-human',
+            });
+
+            // Resume with steering prompt that blocks further work
+            const steeringPrompt = this.buildAskHumanSteeringPrompt();
+
+            log.info('dispatcher', `Resuming with ask-human steering`, {
+              from: senderAgentId,
+              sessionId: sessionId.slice(0, 8),
+            });
+
+            // Resume the session with steering - this will complete when human responds
+            // The 'complete' event will fire but FSM guard will block it if still awaiting
+            const result = await runner.resume(sessionId, steeringPrompt);
+
+            if (!result.success) {
+              log.warn('dispatcher', `Ask-human steering resume returned error`, {
+                from: senderAgentId,
+                error: result.error,
+              });
+            }
+          } catch (interruptError) {
+            log.error('dispatcher', `Failed to interrupt/steer ask-human`, {
+              from: senderAgentId,
+              error: (interruptError as Error).message,
+            });
+          }
+        }
       } else {
         log.warn('dispatcher', `Cannot await from current state`, {
           from: senderAgentId,
@@ -565,6 +613,23 @@ export class WorkerDispatcher extends EventEmitter {
         error: (error as Error).message,
       });
     }
+  }
+
+  /**
+   * Build a steering prompt for ask-human flow
+   * This tells the worker to stop and wait for human response
+   */
+  private buildAskHumanSteeringPrompt(): string {
+    return `## Session Paused - Awaiting Human Response
+
+You sent an ask-human message to request human input.
+
+**IMPORTANT**: Your session is now PAUSED.
+- DO NOT write task-complete
+- DO NOT proceed with work
+- WAIT for the ask-response message
+
+The system will resume your session when the human responds.`;
   }
 
   /**
@@ -884,6 +949,10 @@ export class WorkerDispatcher extends EventEmitter {
         return;
       }
       let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+
+      // Inject preamble (tool guidance based on mesh agent count)
+      const agentCount = meshConfig?.agents?.length ?? 1;
+      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
 
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
@@ -1224,7 +1293,36 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
         }
 
         // NOW complete the FSM (after post-hooks pass or exhausted)
-        await machine.complete(data);
+        // Defense-in-depth: catch ValidationError if worker tries to complete with pending asks
+        try {
+          await machine.complete(data);
+        } catch (completeError) {
+          const errorMsg = (completeError as Error).message;
+
+          // Check if this is a protocol violation (completing with pending asks)
+          if (errorMsg.includes('PROTOCOL VIOLATION') || errorMsg.includes('outstanding asks')) {
+            log.warn('dispatcher', `BLOCKED: task-complete while asks pending`, {
+              agentId,
+              error: errorMsg,
+              currentState: machine.getStatus(),
+              awaitingResponses: Array.from(machine.getAwaitingResponses()),
+            });
+
+            this.emit('worker:blocked', {
+              agentId,
+              reason: 'pending-asks',
+              error: errorMsg,
+            });
+
+            // Don't delete the worker - it's still awaiting responses
+            this.writeWorkerState();
+            return;
+          }
+
+          // Re-throw other errors
+          throw completeError;
+        }
+
         this.activeWorkers.delete(agentId);
         this.writeWorkerState();
 

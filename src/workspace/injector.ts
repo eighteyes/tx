@@ -2,6 +2,7 @@
  * PromptInjector - Injects context into agent prompts
  *
  * Responsibilities:
+ * - Inject preamble (agent identity, tool guidance)
  * - Inject messaging protocol for inter-agent communication
  * - Inject workspace context (output files, location)
  */
@@ -14,7 +15,34 @@ export interface InjectionContext {
   taskId: string;
 }
 
+export interface PreambleContext {
+  agentCount: number;  // Number of agents in the mesh
+}
+
+const PREAMBLE_SINGLE_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
+
+# Use of Explore and Task
+- Freely use Task with custom context to parallel process a lightweight, JIT agent.
+- Freely use Explore for parallelized workflows, exceptional at lightweight answers and lots of Bash.`;
+
+const PREAMBLE_MULTI_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
+
+# Use of Explore
+- Freely use Explore for parallelized workflows, exceptional at lightweight answers and lots of Bash.
+
+# Multi-Agent Mesh
+This mesh has multiple agents. Coordinate via message files in .ai/tx/msgs/, not the Task tool.`;
+
 export class PromptInjector {
+  /**
+   * Inject preamble with tool guidance
+   * Multi-agent meshes get guidance to NOT use Task tool
+   */
+  injectPreamble(basePrompt: string, context: PreambleContext): string {
+    const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
+    return `${preamble}\n\n${basePrompt}`;
+  }
+
   /**
    * Inject messaging protocol into a system prompt
    * Called for all mesh agents to ensure consistent message handling

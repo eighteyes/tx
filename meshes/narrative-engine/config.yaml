@@ -40,6 +40,12 @@ routing:
 workspace:
   path: ".ai/games/{game-id}/"
 
+# Turn workspace for collaborative agent synthesis
+turn_workspace:
+  path: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/"
+  create_on_init: true
+  cleanup_on_complete: false  # Keep for history/replay
+
 # Transparency for debugging mechanics
 rearmatter:
   enabled: true

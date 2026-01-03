@@ -16,6 +16,7 @@ export interface PromptContext {
   taskMessage?: string;
   workspaceContext?: string;
   qualityGates?: string[];
+  agentCount?: number;  // Number of agents in this mesh (>1 = no Task tool)
 }
 
 export interface BuildOptions {
