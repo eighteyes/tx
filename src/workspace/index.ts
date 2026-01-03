@@ -3,7 +3,7 @@
  */
 
 export { WorkspaceManager, normalizeWorkspaceConfig, type WorkspaceConfig, type WorkspaceInfo } from './manager.ts';
-export { PromptInjector, type InjectionContext } from './injector.ts';
+export { PromptInjector, type InjectionContext, type PreambleContext } from './injector.ts';
 export { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 
 // Legacy workspace context (kept for compatibility)
