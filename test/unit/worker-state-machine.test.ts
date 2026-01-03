@@ -320,14 +320,35 @@ describe('WorkerStateMachine', () => {
       assert.ok(state.error.includes('target/agent'));
     });
 
-    it('should complete from awaiting state', async () => {
-      const machine = new WorkerStateMachine('await-worker-7', testConfig, 'test-mesh', 'test-agent');
+    it('should reject complete from awaiting state when asks are pending', async () => {
+      const machine = new WorkerStateMachine('await-worker-7a', testConfig, 'test-mesh', 'test-agent');
       await machine.initialize();
       await machine.start(12345);
       await machine.enterAwait('target/agent', 'session-complete');
 
-      await machine.complete({ success: true, messagesProcessed: 1 });
+      // Attempting to complete while awaiting with pending asks should throw
+      await assert.rejects(
+        machine.complete({ success: true, messagesProcessed: 1 }),
+        (err: Error) => err.message.includes('PROTOCOL VIOLATION')
+      );
 
+      // Should still be in awaiting state
+      assert.strictEqual(machine.getStatus(), 'awaiting');
+    });
+
+    it('should complete from awaiting state after all responses received', async () => {
+      const machine = new WorkerStateMachine('await-worker-7b', testConfig, 'test-mesh', 'test-agent');
+      await machine.initialize();
+      await machine.start(12345);
+      await machine.enterAwait('target/agent', 'session-complete');
+
+      // Receive the response first (clears awaitingResponses)
+      const allReceived = await machine.receiveResponse('target/agent');
+      assert.strictEqual(allReceived, true);
+      assert.strictEqual(machine.getStatus(), 'running');  // Now back to running
+
+      // Now complete should succeed
+      await machine.complete({ success: true, messagesProcessed: 1 });
       assert.strictEqual(machine.getStatus(), 'complete');
     });
 

@@ -51,4 +51,13 @@ Set \`status\` in frontmatter to indicate outcome:
 - \`blocked\` - Cannot proceed, needs intervention
 
 The \`status\` field determines message routing when routing tables are configured.
+
+### Ask-Human Flow (CRITICAL)
+
+When you write an \`ask-human\` message:
+1. Your session PAUSES until the human responds
+2. DO NOT write \`task-complete\` until you receive \`ask-response\`
+3. The system will resume your session with the response
+
+**VIOLATION**: Writing task-complete with pending asks = protocol error
 `;

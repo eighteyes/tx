@@ -237,9 +237,10 @@ export class MessageConsumer extends EventEmitter {
 
       // Detect ask messages - these trigger await state in dispatcher
       // Worker writes ask → consumer detects → dispatcher enters await
+      // Also handles ask-human messages which require interrupt + steering
       const messageType = parsed.frontmatter.type;
-      if (messageType === 'ask') {
-        log.info('consumer', `Ask message detected`, {
+      if (messageType === 'ask' || messageType === 'ask-human') {
+        log.info('consumer', `${messageType} message detected`, {
           from: parsed.frontmatter.from,
           to: toAgent,
           file: filename
@@ -249,6 +250,7 @@ export class MessageConsumer extends EventEmitter {
           filepath,
           from: parsed.frontmatter.from,
           to: toAgent,
+          type: messageType,
           headline: parsed.frontmatter.headline,
           msgId: parsed.frontmatter['msg-id']
         });

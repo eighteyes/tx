@@ -91,9 +91,21 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
     });
 
     // Guard: running|idle|awaiting → complete
-    this.registerGuard('complete', async (from) => {
+    // CRITICAL: Block task-complete when worker has outstanding ask-human messages
+    this.registerGuard('complete', async (from, _to, context) => {
       if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
         return { valid: false, reason: `Cannot complete from ${from.status}` };
+      }
+      // Block completion if awaiting responses (ask-human flow protection)
+      if (from.status === 'awaiting') {
+        const awaitingSet = (from as { awaitingResponses?: Set<string> }).awaitingResponses;
+        if (awaitingSet && awaitingSet.size > 0) {
+          const pending = Array.from(awaitingSet).join(', ');
+          return {
+            valid: false,
+            reason: `PROTOCOL VIOLATION: Cannot complete with outstanding asks pending: [${pending}]`
+          };
+        }
       }
       return { valid: true };
     });
