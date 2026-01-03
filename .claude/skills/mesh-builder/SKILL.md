@@ -316,24 +316,19 @@ rearmatter:
 
 ### Config Field Reference
 
+> **Full Reference**: See [docs/mesh-config.md](../../../docs/mesh-config.md) for comprehensive documentation of all config fields with types, defaults, behaviors, and examples.
+
+**Quick reference - commonly used fields**:
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `mesh` | string | Yes | Unique mesh identifier |
-| `description` | string | No | Human-readable description |
-| `agents` | array | Yes | List of agents in mesh |
+| `agents` | array | Yes | List of agents (name, model, prompt) |
 | `entry_point` | string | No | Agent that receives initial tasks |
-| `completion_agent` | string | No | Agent that signals completion |
-| `type` | string | No | `ephemeral` or `persistent` |
-| `routing` | object | No* | Message routing rules (*required for multi-agent meshes) |
-| `intents` | object | No | Intent patterns for auto-routing |
-| `workspace` | object | No | Workspace output configuration |
-| `rearmatter` | object | No | Transparency metadata config |
-| `system` | boolean | No | Mark as system mesh |
-| `worktree` | boolean | No | Enable git worktree isolation |
+| `routing` | object | No* | Message routing rules (*required for multi-agent) |
+| `graded` | boolean \| string[] | No | Enable quality stack evaluation |
 | `lifecycle` | object | No | Pre/post hooks |
-| `toolRestriction` | string | No | Tool access policy: `unrestricted` (default) or `mcp-only` |
-| `graded` | boolean \| string[] | No | Enable quality stack evaluation (see graded section) |
-| `iteration` | object | No | Iteration config for graded meshes (maxIterations, onFail) |
+| `workspace` | object | No | Workspace output configuration |
 
 ### graded Field (Shorthand for Quality Hooks)
 
@@ -1097,9 +1092,9 @@ tx stop                 # Kill tmux session, cleanup
 
 ## References
 
-- [mesh-config-reference.md](references/mesh-config-reference.md) - Config specification
-- [prompt-templates.md](references/prompt-templates.md) - Prompt examples
-- [workflows.md](references/workflows.md) - Message flow patterns
+**Primary Documentation**:
+- [docs/mesh-config.md](../../../docs/mesh-config.md) - **Authoritative config reference** (code-verified)
+
+**Skill References**:
 - [multi-agent-patterns.md](references/multi-agent-patterns.md) - Advanced patterns
 - [hitl-testing.md](references/hitl-testing.md) - HITL workflows
-- [debugging.md](references/debugging.md) - Troubleshooting guide
