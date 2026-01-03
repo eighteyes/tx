@@ -187,10 +187,35 @@ export class SdkRunner extends EventEmitter {
 
             case 'system':
               if (msg.subtype === 'init') {
-                // Capture sessionId for resume/interrupt support
-                if ((msg as { sessionId?: string }).sessionId) {
-                  this.currentSessionId = (msg as { sessionId: string }).sessionId;
-                  log.info('sdk-runner', `Session ID captured`, { workerId, sessionId: this.currentSessionId });
+                // Debug: log actual init message structure to resolve field name confusion
+                const initMsg = msg as Record<string, unknown>;
+                const hasConversationId = 'conversationId' in initMsg;
+                const hasSessionId = 'session_id' in initMsg;
+
+                log.debug('sdk-runner', `Init message structure`, {
+                  workerId,
+                  keys: Object.keys(initMsg).filter(k => k.includes('id') || k.includes('session')),
+                  hasConversationId,
+                  hasSessionId,
+                  conversationIdValue: initMsg.conversationId,
+                  sessionIdValue: initMsg.session_id
+                });
+
+                // Try both field names - SDK docs vs actual implementation may differ
+                const convId = (initMsg.conversationId as string) || (initMsg.session_id as string);
+
+                if (convId) {
+                  this.currentSessionId = convId;
+                  log.info('sdk-runner', `Session ID captured`, {
+                    workerId,
+                    sessionId: this.currentSessionId,
+                    source: hasConversationId ? 'conversationId' : 'session_id'
+                  });
+                } else {
+                  log.warn('sdk-runner', `No session ID found in init message`, {
+                    workerId,
+                    availableKeys: Object.keys(initMsg)
+                  });
                 }
                 this.emit('init', { id: workerId, tools: msg.tools, sessionId: this.currentSessionId });
               }
