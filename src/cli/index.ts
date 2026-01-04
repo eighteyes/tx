@@ -42,9 +42,10 @@ process.on('unhandledRejection', (reason: unknown) => {
     error: errorMsg,
     stack
   });
-  console.error('\n[FATAL] Unhandled promise rejection:', errorMsg);
-  console.error('See logs for details: .ai/tx/logs/v4.jsonl\n');
-  process.exit(1);
+  // Don't exit - log the error and continue running
+  // FSM state mismatches and other recoverable errors shouldn't kill the process
+  console.error('\n[ERROR] Unhandled promise rejection:', errorMsg);
+  console.error('Process continues. See logs: .ai/tx/logs/v4.jsonl\n');
 });
 
 const command = process.argv[2];

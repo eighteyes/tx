@@ -277,6 +277,16 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       return;
     }
 
+    // Log error state entry with full context for debugging
+    log.error('fsm', `Worker entering error state`, {
+      entityId: this.id,
+      fromStatus: from.status,
+      errorMessage,
+      messagesProcessed: this.context.messagesProcessed,
+      retryCount: this.context.retryCount,
+      stack: new Error().stack  // Capture call stack
+    });
+
     const startedAt = (from as any).startedAt || Date.now();
 
     await this.transition('error', {
