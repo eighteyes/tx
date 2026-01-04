@@ -700,6 +700,16 @@ The system will resume your session when the human responds.`;
           return;
         }
 
+        // Check if runner is still actively processing
+        // If so, the response is already queued and runner will see it naturally
+        if (runner.isRunning()) {
+          log.info('dispatcher', `Runner still active, response queued for current run`, {
+            awaitingAgentId,
+            sessionId: sessionId.slice(0, 8),
+          });
+          return;
+        }
+
         log.info('dispatcher', `All responses received, resuming session`, {
           awaitingAgentId,
           sessionId: sessionId.slice(0, 8),
@@ -847,6 +857,7 @@ The system will resume your session when the human responds.`;
       // Create hook context with task info for quality hooks
       const meshInstance = `${meshName}-${Date.now()}`;
       const taskBody = nextMsg?.payload?.body as string || '';
+      const featureName = nextMsg?.payload?.feature as string | undefined;
       const hookContext: HookContext = {
         meshInstance,
         meshName,
@@ -855,6 +866,7 @@ The system will resume your session when the human responds.`;
         agentId,
         taskId,
         taskBody,
+        featureName,  // Required for worktree-enabled meshes
         msgsDir: this.config.msgsDir,
       };
 
@@ -894,16 +906,16 @@ The system will resume your session when the human responds.`;
           });
 
           // Cleanup partial state (e.g., worktree created by earlier hook)
-          if (hookContext.worktreePath) {
+          if (hookContext.worktreePath && hookContext.featureName) {
             try {
               log.info('dispatcher', `Cleaning up worktree after pre-hook failure`, {
-                meshInstance,
+                featureName: hookContext.featureName,
                 path: hookContext.worktreePath,
               });
-              this.lifecycleHooks.getWorktreeManager().removeWorktree(meshInstance, true);
+              this.lifecycleHooks.getWorktreeManager().removeWorktree(hookContext.featureName, true);
             } catch (cleanupError) {
               log.error('dispatcher', `Failed to cleanup worktree after pre-hook failure`, {
-                meshInstance,
+                featureName: hookContext.featureName,
                 error: (cleanupError as Error).message,
               });
             }
@@ -1000,28 +1012,21 @@ The system will resume your session when the human responds.`;
       const workDir = hookContext.worktreePath || this.config.workDir;
 
       // If running in worktree, inject context and sanitize paths
-      if (hookContext.worktreePath) {
+      if (hookContext.worktreePath && hookContext.featureName) {
         // Inject worktree context into prompt
         const worktreeContext = `
 ## Worktree Context
 
-You are working in an isolated git worktree.
+You are working in an isolated git worktree for feature: **${hookContext.featureName}**
 
-- **Worktree Path**: ${hookContext.worktreePath}
+- **Feature**: ${hookContext.featureName}
 - **Branch**: ${hookContext.worktreeBranch || 'unknown'}
+- **Path**: ${hookContext.worktreePath}
 
 **IMPORTANT**:
-- Use relative paths or paths within this worktree directory
-- Do NOT use paths containing "${this.config.workDir}" - that is the main repository
-- All file operations should be relative to your current working directory
+- Use relative paths within this worktree
 - Your CWD is already set to the worktree path
-
-**Feature Assignment**: When you start working on a tracked feature, rename the worktree:
-\`\`\`bash
-git worktree move ${hookContext.worktreePath} .ai/tx/worktrees/{feature-name}
-git branch -m ${hookContext.worktreeBranch || 'current-branch'} tx-worktree-{feature-name}
-\`\`\`
-This enables \`/know:done\` to find and cleanup the worktree automatically.
+- Changes will be committed and merged when the feature is complete (/know:done)
 
 `;
         systemPrompt = worktreeContext + systemPrompt;
@@ -1031,6 +1036,7 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
 
         log.info('dispatcher', `Injected worktree context`, {
           agentId,
+          featureName: hookContext.featureName,
           worktreePath: hookContext.worktreePath,
         });
       }
