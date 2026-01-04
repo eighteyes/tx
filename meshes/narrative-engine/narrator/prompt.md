@@ -263,13 +263,16 @@ dramatic_questions:
 
 ## Workflow Per Player Action
 
-**CRITICAL: The state machine controls task-complete.** You send task-complete ONLY when `workflow-state.yaml` confirms all needed consultations have responded.
+**CRITICAL: The state machine controls task-complete.** You send task-complete ONLY when session.yaml confirms all consultations have responded AND `oracle.approved: true`.
 
 **The state machine prevents:**
 - Sending task-complete before SYSTEM responds
 - Sending task-complete before CAST responds (when needed)
+- Sending task-complete before ORACLE approves (ALWAYS required)
 - Duplicate task-complete messages
 - Re-doing work that's already done
+
+**ORACLE is MANDATORY.** Never set `oracle.needed: false`. Never skip the oracle phase. Every turn flows: `ready_to_render → awaiting_oracle → oracle_approved → complete`.
 
 **Trust the state file.** Read it, act on current phase, update it, respond. That's all.
 
