@@ -1101,7 +1101,10 @@ This enables \`/know:done\` to find and cleanup the worktree automatically.
 
       // Wire up SDK events to FSM
       worker.on('start', async (data) => {
-        await machine.start(data.pid || process.pid);
+        // Only call start if not already running (e.g., resumed from await state)
+        if (machine.currentState.status !== 'running') {
+          await machine.start(data.pid || process.pid);
+        }
         startedResolve();  // Signal that FSM is now in 'running' state
         this.emit('worker:start', data);
       });

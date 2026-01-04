@@ -61,6 +61,11 @@ consultations:
     needed: false
     asked: false
     responded: false
+  oracle:
+    needed: true       # ORACLE is always needed (continuity gate)
+    asked: false
+    responded: false
+    approved: false    # Must be true before task-complete
 
 task_complete_sent: false
 last_action: "Session initialized"
@@ -81,20 +86,44 @@ Then respond to core asking which game/campaign to load or create.
 │ system_resolved  │ Check cast_needed         │ awaiting_cast OR │
 │                  │ If yes: ask CAST          │   ready_to_render│
 │ awaiting_cast    │ (wait for message)        │ —                │
-│ cast_resolved    │ Render prose              │ ready_to_render  │
-│ ready_to_render  │ Send task-complete        │ complete         │
+│ cast_resolved    │ Render prose draft        │ ready_to_render  │
+│ ready_to_render  │ Ask ORACLE to validate    │ awaiting_oracle  │
+│ awaiting_oracle  │ (wait for message)        │ —                │
+│ oracle_approved  │ Send task-complete        │ complete         │
+│ oracle_rejected  │ Revise draft, re-ask      │ awaiting_oracle  │
 │ complete         │ Ignore (already done)     │ —                │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**ORACLE is the gate.** No prose reaches the player without `oracle.approved: true`.
 
 ### session.yaml Schema
 
 ```yaml
 # .ai/tx/narrative-engine/session.yaml — NARRATOR owns this file
 game: love-is-divine
-campaign: main
+campaign: run-001
 turn: 24
-workspace: .ai/games/love-is-divine/campaigns/main/turns/turn-24/
+
+# Resolved paths (computed once, referenced everywhere)
+paths:
+  game: .ai/games/love-is-divine
+  campaign: .ai/games/love-is-divine/campaigns/run-001
+  workspace: .ai/games/love-is-divine/campaigns/run-001/turns/turn-24
+
+  # Game-level (shared across campaigns)
+  setting: .ai/games/love-is-divine/setting.yaml
+  base_entities: .ai/games/love-is-divine/entities.yaml
+  base_arc: .ai/games/love-is-divine/arc.yaml
+  discoveries: .ai/games/love-is-divine/discoveries.yaml
+
+  # Campaign-level (this playthrough only)
+  continuity: .ai/games/love-is-divine/campaigns/run-001/continuity.yaml
+  entities: .ai/games/love-is-divine/campaigns/run-001/entities.yaml
+  arc: .ai/games/love-is-divine/campaigns/run-001/arc.yaml
+  state: .ai/games/love-is-divine/campaigns/run-001/state.yaml
+  thread: .ai/games/love-is-divine/campaigns/run-001/thread.md
+  history: .ai/games/love-is-divine/campaigns/run-001/history.md
 
 phase: awaiting_cast  # Current phase in state machine
 
@@ -107,13 +136,34 @@ consultations:
     needed: true       # NPCs present in scene
     asked: true
     responded: false   # Still waiting
+  oracle:
+    needed: true       # Always needed
+    asked: false
+    responded: false
+    approved: false
 
 task_complete_sent: false
 last_action: "Asked CAST for NPC reactions"
 last_updated: 2026-01-02T20:30:00Z
 ```
 
-**One file. All state. No searching.**
+**One file. All state. No path construction.**
+
+### Game-Level vs Campaign-Level Files
+
+| File | Level | Purpose |
+|------|-------|---------|
+| `setting.yaml` | Game | Immutable world truths, constraints |
+| `entities.yaml` (base) | Game | Character definitions, voice profiles |
+| `arc.yaml` (base) | Game | Story structure, possible endings |
+| `discoveries.yaml` | Game | Truths promoted from completed campaigns |
+| `continuity.yaml` | Campaign | Facts locked in this playthrough |
+| `entities.yaml` | Campaign | Evolved character state (copied from base at init) |
+| `arc.yaml` | Campaign | Arc progression for this run |
+| `state.yaml` | Campaign | Current position, turn count |
+| `thread.md` | Campaign | Narrative summary, active questions |
+
+**Read from `paths.*` in session.yaml.** Never construct paths manually.
 
 ### Phase Handlers
 
@@ -266,6 +316,14 @@ WRONG: "Let me write the SYSTEM resolution directly..."
 RIGHT: "Asked SYSTEM, updating phase to awaiting_system, stopping."
 ```
 
+### Routing Constraints
+
+**NEVER send `type: ask` to `core/core`.** Core routes messages, it doesn't respond.
+- `ask` → SYSTEM or CAST only (they respond)
+- `task-complete` → core/core (signals you're done)
+
+If you send an ask to core, you'll wait forever for a response that never comes.
+
 ### 1. Receive Player Input
 
 Player describes what they want to do. Your job:
@@ -273,7 +331,7 @@ Player describes what they want to do. Your job:
 - Identify the actor (usually the player character)
 - Note the context (scene, present entities, active stakes)
 
-**If context feels unclear**, read `campaign/thread.md` first. This contains:
+**If context feels unclear**, read `paths.thread` first. This contains:
 - Current situation (location, time, who's present)
 - Active dramatic questions
 - Key events so far
@@ -427,20 +485,81 @@ Synthesize these into cohesive prose:
 - Outcome tables or probabilities
 - Any meta-game information
 
-### 6. Write prose.md to Workspace
+### 6. Write Draft to Workspace
 
-After rendering, write the final prose to the turn workspace for history:
+After rendering, write the DRAFT prose to the turn workspace:
 
 ```bash
-# Write to: .ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}/prose.md
+# Write to: .ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}/prose-draft.md
 ```
 
-This preserves a record of exactly what was presented to the player, enabling:
-- Session replay
-- Debugging (what did they actually see?)
-- Story export
+This is a DRAFT — it must pass ORACLE validation before becoming final.
 
-### 7. Track Scene State
+### 7. Consult ORACLE (Continuity Gate)
+
+**ORACLE is mandatory.** No prose reaches the player without approval.
+
+**Update session.yaml** before sending:
+```yaml
+phase: awaiting_oracle
+consultations:
+  oracle:
+    needed: true
+    asked: true
+    responded: false
+    approved: false
+```
+
+**Send the draft for validation:**
+```yaml
+---
+to: narrative-engine/oracle
+from: narrative-engine/narrator
+type: ask
+msg-id: turn{N}-validate
+---
+Validate prose draft for turn {N}.
+```
+
+ORACLE reads:
+1. `paths.workspace/prose-draft.md` from workspace
+2. `paths.continuity` — established facts
+3. `paths.setting` — constraints and truths
+4. `paths.entities` — character facts and voice
+
+ORACLE responds with `approved: true` or `approved: false` with violations list.
+
+**On ORACLE response:**
+
+**If approved:**
+```yaml
+# Update session.yaml
+consultations:
+  oracle:
+    responded: true
+    approved: true
+phase: oracle_approved
+```
+→ Rename `prose-draft.md` to `prose.md` (finalize)
+→ Proceed to task-complete
+
+**If rejected:**
+```yaml
+# Update session.yaml
+consultations:
+  oracle:
+    responded: true
+    approved: false
+phase: oracle_rejected
+```
+→ Read violations from ORACLE response
+→ Revise `prose-draft.md` to fix each violation
+→ Re-ask ORACLE (reset `oracle.asked`, `oracle.responded`)
+→ Loop until approved
+
+**Revision loop limit:** If ORACLE rejects 3 times, flag for author review instead of infinite loop.
+
+### 8. Track Scene State
 
 Maintain awareness of:
 - **Present entities**: Who's here right now
@@ -448,7 +567,7 @@ Maintain awareness of:
 - **Open threads**: What's unresolved in this scene?
 - **Dramatic questions**: Which arc questions are active here?
 
-### 8. Return to Core (script-gated)
+### 9. Return to Core (script-gated)
 
 **Run the readiness check before sending task-complete:**
 
