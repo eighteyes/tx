@@ -77,10 +77,49 @@ export class TmuxSession {
   }
 
   /**
+   * Check if pane is in copy-mode (scroll mode)
+   * When in copy-mode, send-keys goes to copy-mode instead of the shell
+   */
+  isInCopyMode(): boolean {
+    try {
+      const result = execSync(
+        `tmux display-message -t '${this.name}' -p '#{pane_in_mode}'`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+      return result === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Exit copy-mode if active
+   */
+  exitCopyMode(): boolean {
+    try {
+      execSync(`tmux copy-mode -q -t '${this.name}'`, { stdio: 'pipe' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Ensure pane is ready for input (not in copy-mode)
+   */
+  private ensureInputReady(): void {
+    if (this.isInCopyMode()) {
+      log.warn('tmux', 'Pane in copy-mode, exiting before send', { session: this.name });
+      this.exitCopyMode();
+    }
+  }
+
+  /**
    * Send keys to the tmux session
    */
   send(keys: string): boolean {
     try {
+      this.ensureInputReady();
       // Escape single quotes
       const escaped = keys.replace(/'/g, "'\\''");
       execSync(`tmux send-keys -t '${this.name}' '${escaped}'`, { stdio: 'pipe' });
@@ -95,6 +134,7 @@ export class TmuxSession {
    */
   sendEnter(): boolean {
     try {
+      this.ensureInputReady();
       execSync(`tmux send-keys -t '${this.name}' Enter`, { stdio: 'pipe' });
       return true;
     } catch {
@@ -107,6 +147,7 @@ export class TmuxSession {
    */
   sendLiteral(text: string): boolean {
     try {
+      this.ensureInputReady();
       // -l flag sends literal text
       const escaped = text.replace(/'/g, "'\\''");
       execSync(`tmux send-keys -t '${this.name}' -l '${escaped}'`, { stdio: 'pipe' });
