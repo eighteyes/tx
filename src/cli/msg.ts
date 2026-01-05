@@ -56,6 +56,7 @@ interface MsgOptions {
   since?: string;
   before?: string;
   limit?: string;
+  follow?: boolean;
   json?: boolean;
   interactive?: boolean;
   verbose?: boolean;

@@ -13,6 +13,7 @@ import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
+import { serve } from './serve.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -90,6 +91,7 @@ Commands:
   tx stop        Stop core agent
   tx status      Show system status
   tx run         Headless mesh REPL (no core)
+  tx serve       Start HTTP API server for mesh
   tx msg         View messages
   tx logs        View logs
   tx spy         Real-time activity stream
@@ -121,6 +123,26 @@ REPL Commands:
 Message Targeting:
   @agent-name msg   Send to specific agent
   message           Send to current agent`,
+
+  serve: `tx serve - Start HTTP API server for mesh
+
+Usage: tx serve <mesh> [options]
+
+Arguments:
+  mesh              Name of the mesh to use
+
+Options:
+  --port <port>     Port to listen on (default: 3333)
+  --agent <agent>   Agent to route tasks to (default: worker)
+
+Examples:
+  tx serve dev
+  tx serve research --port 8080 --agent coordinator
+
+Endpoints:
+  POST /task        Submit new task (body: {"prompt": "..."})
+  GET  /job/:id     Get job status and result
+  GET  /health      Health check`,
 
   start: `tx start - Start core agent
 
@@ -252,6 +274,17 @@ async function main() {
         agent: agentArg,
         prompt: promptArg,
         model: flags.model as string | undefined,
+      });
+      break;
+
+    case 'serve':
+      if (wantsHelp) { showHelp('serve'); break; }
+      // Args: mesh
+      const serveMeshArg = args.find(a => !a.startsWith('-'));
+      await serve({
+        mesh: serveMeshArg,
+        agent: flags.agent as string | undefined,
+        port: flags.port as string | undefined,
       });
       break;
 
