@@ -1,6 +1,7 @@
 /**
  * Worktree Integration Test
- * Tests the full worktree workflow with dispatcher and hooks
+ *
+ * Tests the full worktree workflow with hooks and feature-aware naming.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -53,7 +54,7 @@ describe('Worktree Integration', () => {
         const worktrees = worktreeManager.listWorktrees();
         for (const wt of worktrees) {
           try {
-            worktreeManager.removeWorktree(wt.meshInstance, true);
+            worktreeManager.removeWorktree(wt.featureName, true);
           } catch {
             // Ignore errors during cleanup
           }
@@ -67,12 +68,13 @@ describe('Worktree Integration', () => {
   });
 
   it('should execute full pre-mesh workflow with worktree creation', async () => {
-    const meshInstance = 'feature-dev-123456789';
+    const featureName = 'user-auth';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
+      featureName,
     };
 
     // Execute pre-hooks (simulating dispatcher behavior)
@@ -82,9 +84,11 @@ describe('Worktree Integration', () => {
     assert.ok(context.worktreePath, 'Worktree path should be set in context');
     assert.ok(fs.existsSync(context.worktreePath), 'Worktree directory should exist');
 
-    // Verify worktree is in correct location
-    const expectedBasePath = path.join(testDir, '.ai', 'tx', 'worktrees');
-    assert.ok(context.worktreePath.startsWith(expectedBasePath), 'Worktree should be in correct base path');
+    // Verify worktree path ends with feature name
+    assert.ok(context.worktreePath.endsWith(featureName), 'Worktree path should end with feature name');
+
+    // Verify branch name follows convention
+    assert.strictEqual(context.worktreeBranch, `feature/${featureName}`, 'Branch should follow feature/{name} convention');
 
     // Verify worktree has correct files
     const readmePath = path.join(context.worktreePath, 'README.md');
@@ -96,36 +100,17 @@ describe('Worktree Integration', () => {
     assert.strictEqual(mainReadme, '# Test Project', 'Main working directory should be unaffected');
 
     // Cleanup
-    worktreeManager.removeWorktree(meshInstance, true);
+    worktreeManager.removeWorktree(featureName, true);
   });
 
-  it('should execute full post-mesh workflow with notification', async () => {
-    const meshInstance = 'feature-dev-123456789';
+  it('should execute full workflow - worktree persists for review', async () => {
+    const featureName = 'api-endpoints';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
-    };
-
-    // Create worktree first
-    await hooks.executePreHooks(['worktree:create'], context);
-    assert.ok(context.worktreePath, 'Worktree should be created');
-
-    // Worktree should persist for user review (no cleanup hook called)
-    assert.ok(fs.existsSync(context.worktreePath), 'Worktree should persist for review');
-
-    // Cleanup
-    worktreeManager.removeWorktree(meshInstance, true);
-  });
-
-  it('should execute full workflow with cleanup', async () => {
-    const meshInstance = 'feature-dev-123456789';
-    const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
-      agentName: 'worker',
-      workDir: testDir,
+      featureName,
     };
 
     // Pre-hooks: Create worktree
@@ -136,30 +121,36 @@ describe('Worktree Integration', () => {
     // Simulate mesh work: Make changes in worktree
     fs.writeFileSync(path.join(worktreePath, 'new-file.txt'), 'Created by mesh');
 
-    // Post-hooks: Cleanup worktree
-    await hooks.executePostHooks(['worktree:cleanup'], context);
+    // Post-hooks: commit:auto runs, but NO automatic cleanup
+    // (worktree:cleanup removed - cleanup happens via /know:done)
 
-    // Worktree should be removed
-    assert.ok(!fs.existsSync(worktreePath), 'Worktree should be cleaned up');
-    assert.strictEqual(worktreeManager.hasWorktree(meshInstance), false, 'Worktree should not exist');
+    // Worktree should STILL exist for user review
+    assert.ok(fs.existsSync(worktreePath), 'Worktree should persist for review');
+    assert.strictEqual(worktreeManager.hasWorktree(featureName), true, 'Worktree should still exist');
+
+    // Manual cleanup (simulating /know:done)
+    worktreeManager.removeWorktree(featureName, true);
+    assert.ok(!fs.existsSync(worktreePath), 'Worktree should be cleaned up after manual removal');
   });
 
-  it('should handle multiple concurrent worktrees', async () => {
-    const mesh1 = 'feature-auth';
-    const mesh2 = 'feature-ui';
+  it('should handle multiple concurrent worktrees for different features', async () => {
+    const feature1 = 'auth-system';
+    const feature2 = 'ui-components';
 
     const context1: HookContext = {
-      meshInstance: mesh1,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-1',
+      meshName: 'dev',
       agentName: 'worker1',
       workDir: testDir,
+      featureName: feature1,
     };
 
     const context2: HookContext = {
-      meshInstance: mesh2,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-2',
+      meshName: 'dev',
       agentName: 'worker2',
       workDir: testDir,
+      featureName: feature2,
     };
 
     // Create two worktrees
@@ -169,6 +160,10 @@ describe('Worktree Integration', () => {
     assert.ok(context1.worktreePath, 'Worktree 1 should be created');
     assert.ok(context2.worktreePath, 'Worktree 2 should be created');
     assert.notStrictEqual(context1.worktreePath, context2.worktreePath, 'Worktrees should have different paths');
+
+    // Verify feature-based naming
+    assert.ok(context1.worktreePath.endsWith(feature1), 'Worktree 1 path should match feature');
+    assert.ok(context2.worktreePath.endsWith(feature2), 'Worktree 2 path should match feature');
 
     // Make different changes in each
     fs.writeFileSync(path.join(context1.worktreePath, 'auth.txt'), 'Auth feature');
@@ -181,17 +176,18 @@ describe('Worktree Integration', () => {
     assert.ok(!fs.existsSync(path.join(context2.worktreePath, 'auth.txt')), 'No auth file in worktree 2');
 
     // Cleanup
-    worktreeManager.removeWorktree(mesh1, true);
-    worktreeManager.removeWorktree(mesh2, true);
+    worktreeManager.removeWorktree(feature1, true);
+    worktreeManager.removeWorktree(feature2, true);
   });
 
   it('should handle worktree with uncommitted changes', async () => {
-    const meshInstance = 'feature-dev-123456789';
+    const featureName = 'dirty-feature';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
+      featureName,
     };
 
     // Create worktree
@@ -202,11 +198,11 @@ describe('Worktree Integration', () => {
     fs.writeFileSync(path.join(worktreePath, 'changes.txt'), 'Uncommitted work');
 
     // Check status
-    const status = worktreeManager.getWorktreeStatus(meshInstance);
+    const status = worktreeManager.getWorktreeStatus(featureName);
     assert.strictEqual(status, 'dirty', 'Worktree should be dirty');
 
-    // Force cleanup should work even with uncommitted changes
-    await hooks.executePostHooks(['worktree:cleanup'], context);
+    // Force cleanup via manual removal (simulating /know:done with force)
+    worktreeManager.removeWorktree(featureName, true);
 
     assert.ok(!fs.existsSync(worktreePath), 'Worktree should be removed even with uncommitted changes');
   });
@@ -215,20 +211,21 @@ describe('Worktree Integration', () => {
     const executionLog: string[] = [];
 
     // Add custom hooks that log execution
-    hooks.addPreHook('log:start', (context) => {
+    hooks.addPreHook('log:start', () => {
       executionLog.push('pre:start');
     });
 
-    hooks.addPostHook('log:end', (context) => {
+    hooks.addPostHook('log:end', () => {
       executionLog.push('post:end');
     });
 
-    const meshInstance = 'feature-dev-123456789';
+    const featureName = 'sequence-test';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
+      featureName,
     };
 
     // Execute pre-hooks
@@ -250,21 +247,42 @@ describe('Worktree Integration', () => {
     );
 
     // Cleanup
-    worktreeManager.removeWorktree(meshInstance, true);
+    worktreeManager.removeWorktree(featureName, true);
   });
 
-  it('should fail worker spawn if pre-hook fails', async () => {
+  it('should fail if featureName is missing for worktree hook', async () => {
+    const context: HookContext = {
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
+      agentName: 'worker',
+      workDir: testDir,
+      // No featureName!
+    };
+
+    // Pre-hook should throw because featureName is required
+    await assert.rejects(
+      () => hooks.executePreHooks(['worktree:create'], context),
+      /Worktree requires feature:/,
+      'Should throw when featureName is missing'
+    );
+
+    // Worktree should not be created
+    assert.strictEqual(context.worktreePath, undefined, 'Worktree should not be created');
+  });
+
+  it('should fail worker spawn if pre-hook fails before worktree', async () => {
     // Add a failing pre-hook
     hooks.addPreHook('fail:validation', () => {
       throw new Error('Validation failed');
     });
 
-    const meshInstance = 'feature-dev-123456789';
+    const featureName = 'fail-test';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
+      featureName,
     };
 
     // Pre-hook should throw and prevent worker spawn
@@ -284,12 +302,13 @@ describe('Worktree Integration', () => {
       throw new Error('Notification failed');
     });
 
-    const meshInstance = 'feature-dev-123456789';
+    const featureName = 'post-fail-test';
     const context: HookContext = {
-      meshInstance,
-      meshName: 'feature-dev',
+      meshInstance: 'dev-worker-123',
+      meshName: 'dev',
       agentName: 'worker',
       workDir: testDir,
+      featureName,
     };
 
     // Create worktree
@@ -303,6 +322,38 @@ describe('Worktree Integration', () => {
     assert.ok(fs.existsSync(context.worktreePath), 'Worktree should persist despite post-hook failure');
 
     // Cleanup
-    worktreeManager.removeWorktree(meshInstance, true);
+    worktreeManager.removeWorktree(featureName, true);
+  });
+
+  it('should reuse existing worktree for same feature', async () => {
+    const featureName = 'reuse-test';
+    const context1: HookContext = {
+      meshInstance: 'dev-worker-1',
+      meshName: 'dev',
+      agentName: 'worker',
+      workDir: testDir,
+      featureName,
+    };
+
+    const context2: HookContext = {
+      meshInstance: 'dev-worker-2',
+      meshName: 'dev',
+      agentName: 'worker',
+      workDir: testDir,
+      featureName, // Same feature!
+    };
+
+    // Create first worktree
+    await hooks.executePreHooks(['worktree:create'], context1);
+    const firstPath = context1.worktreePath;
+
+    // "Create" second worktree - should reuse
+    await hooks.executePreHooks(['worktree:create'], context2);
+    const secondPath = context2.worktreePath;
+
+    assert.strictEqual(firstPath, secondPath, 'Should reuse existing worktree for same feature');
+
+    // Cleanup
+    worktreeManager.removeWorktree(featureName, true);
   });
 });

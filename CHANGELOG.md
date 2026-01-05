@@ -56,10 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs/mesh-config.md**: Comprehensive config reference (code-verified)
 - **Mesh-builder skill**: Updated to reference authoritative docs
 
-#### Spec Graph Features (Designed)
-- **feature:persistent-storage**: Schema-driven storage for knowledge-base and hierarchical patterns
-- **feature:message-hold-delivery**: Hold messages until delivery conditions met
-
 ### Changed
 
 - **Message revision handling**: Dispatcher handles message revisions and awaiting state

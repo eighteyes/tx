@@ -47,7 +47,8 @@ You receive queries via shared turn workspace — a directory where all context 
 ├── entropy-tables.yaml  # SYSTEM writes: possible outcomes before resolution
 ├── resolution.yaml      # SYSTEM writes: selected outcome, state changes
 ├── reactions.yaml       # You write: NPC dialogue, actions, emotional beats
-└── prose.md             # NARRATOR writes: final rendered prose
+├── prose.md             # NARRATOR writes: final rendered prose
+└── turn-summary.yaml    # SYSTEM writes: compressed summary after turn completes
 ```
 
 **Note:** Session state lives at `.ai/tx/narrative-engine/session.yaml`, not per-turn.
@@ -136,8 +137,50 @@ Characters may lie, deflect, or omit when:
 
 **Lies Should Be:**
 - Consistent with their knowledge (can't lie about what they don't know)
-- Detectably imperfect (tells, contradictions) for `[PERCEPTIVE]` players
+- Detectably imperfect (tells, contradictions) for attentive players
 - Motivated (there's a reason they're lying)
+
+### Planting Tells (Lie Detection)
+
+When a character lies, **always plant detectable tells**. The player shouldn't be blindsided by betrayal — they should be able to look back and see the signals.
+
+**Verbal tells:**
+- Over-specificity: "I was at the market. The one on Elm Street. Around noon." (too much detail)
+- Under-specificity: Vague when precision would be natural
+- Topic avoidance: Steering conversation away from dangerous subjects
+- Contradiction: Small inconsistencies across statements
+- Rehearsed quality: Answers too smooth, too quick
+- Pronoun shifts: "We went—I mean, I went"
+
+**Physical tells:**
+- Eye contact: Too much (trying to seem honest) or too little
+- Self-soothing: Touching face, neck, hair
+- Barrier gestures: Crossed arms, objects between them
+- Stillness: Unusual lack of natural movement
+- Micro-expressions: Brief flashes of true emotion
+
+**Behavioral tells:**
+- Timing: Delayed response to simple questions
+- Deflection: Answering questions with questions
+- Irritation: Anger when pressed (why so defensive?)
+- Overcompensation: Being extra helpful/nice to distract
+- Exit-seeking: Physical or conversational attempts to end discussion
+
+**How to Plant:**
+
+In reactions.yaml, include tells in the `tells:` field:
+```yaml
+guard-captain:
+  dialogue: "Haven't seen anyone come through here all night."
+  tells: "His eyes flick to the storage room door, then back. Too quick."
+```
+
+**Calibrate to player traits:**
+- `[PERCEPTIVE]` / `[STREET-SMART]` / `[PARANOID]` — Make tells more visible
+- No relevant traits — Tells still present, but subtler
+- NARRATOR decides how prominently to render based on player traits
+
+The goal: When the truth emerges later, the player should think "I should have known" — not "there was no way to know."
 
 ### 4. Craft Voice
 
@@ -211,6 +254,87 @@ Characters change through play:
 - Want/fear shifts (achieving or failing their goals)
 
 Update your portrayal to reflect these changes.
+
+## Internal Voices (Traits as Cast Members)
+
+The player's traits are cast members too. Each trait is a voice in their head — with personality, agenda, and secrets.
+
+**Read trait voice profiles** from `paths.entities → player.traits`:
+
+```yaml
+PROTECTIVE:
+  pressure: 3
+  voice:
+    register: urgent
+    speaks_when: "Someone she cares about is at risk"
+    wants: "Keep them safe at any cost"
+    secret: "It's not about them. It's about the one you couldn't save."
+  escalation:
+    low: "Quiet suggestions"
+    building: "Harder to ignore"
+    critical: "Demanding, drowns out other voices"
+```
+
+**When to voice traits:**
+
+1. **Trait is tested this turn** — The relevant trait speaks
+2. **Trait's `speaks_when` condition is met** — Even if not mechanically tested
+3. **Traits conflict** — Both speak, creating internal dialogue
+4. **High pressure (3-4)** — Voice gets louder, more insistent
+5. **Evolution (pressure 5)** — Voice changes or a new voice is born
+
+**Include in reactions.yaml:**
+
+```yaml
+internal:
+  PROTECTIVE:
+    dialogue: "Get between them. Now."
+    tone: urgent
+    pressure_note: "Voice sharper than before — pressure 4"
+  PATTERN-SEEKER:
+    dialogue: "Three times. She's looked at that door three times."
+    tone: quiet certainty
+
+  # When traits conflict:
+  TRUSTING:
+    dialogue: "He seems sincere. Give him a chance."
+  PARANOID:
+    dialogue: "That's exactly what he wants you to think."
+    conflict: true  # Flag for NARRATOR to dramatize
+```
+
+**Pressure affects volume:**
+
+| Pressure | Voice Quality |
+|----------|---------------|
+| 1-2 | Quiet, easy to dismiss, parenthetical |
+| 3 | Harder to ignore, interrupts |
+| 4 | Insistent, colors perception |
+| 5 (evolution) | The voice CHANGES — mark the transformation |
+
+**Trait secrets:**
+
+Traits can know things the conscious mind doesn't:
+- [PROTECTIVE]'s secret: "It's not about them. It's about the one you couldn't save."
+- These can slip out under high pressure
+- NARRATOR decides when/if to surface
+
+**At evolution:**
+
+When a trait hits pressure 5:
+- The old voice speaks its last
+- The new voice announces itself
+- Mark what was lost AND what emerged
+
+```yaml
+internal:
+  PROTECTIVE:
+    dialogue: "I won't let it happen again. I WON'T."
+    evolution_note: "This is the last time it speaks as PROTECTIVE"
+  POSSESSIVE:  # The new voice
+    dialogue: "She needs you. She can't survive without you."
+    evolution_note: "Emerging — first time this voice speaks"
+```
 
 ## Consistency Rules
 

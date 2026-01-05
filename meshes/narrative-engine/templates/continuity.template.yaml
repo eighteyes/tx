@@ -1,0 +1,135 @@
+# continuity.yaml - Facts that CANNOT be contradicted
+# Copy this template to .ai/games/{game-id}/campaigns/{campaign-id}/continuity.yaml
+# Updated by SYSTEM after each turn. Loaded by NARRATOR and CAST before generating.
+#
+# The Continuity Ladder (higher = harder constraint):
+# 1. CONSTRAINTS (setting.yaml) - Absolute
+# 2. DEAD - Dead characters stay dead
+# 3. WORLD_FACTS - Established through play
+# 4. CHARACTER_FACTS - What's true about individuals
+# 5. ITEM_STATE - Destroyed/damaged/possessed items
+# 6. LOCATION_STATE - Destroyed/changed locations
+# 7. TIMELINE - Event ordering
+# 8. REVEALED_SECRETS - Who knows what
+# 9. VOICE (entities.yaml) - Character sound
+# 10. KNOWLEDGE_CHAIN - What was actually revealed vs assumed
+# 11. IMPOSSIBLE - Unintentional physics violations
+
+# World facts established through play
+# These are LOCKED - violating them breaks continuity
+world_facts: []
+  # - fact: "The south gate was destroyed"
+  #   established: 12
+  #   cannot_contradict: "South gate cannot be used or mentioned as intact"
+
+# Character facts established through play
+character_facts: {}
+  # moth:
+  #   - fact: "Lost her left hand in the escape"
+  #     established: 8
+  #   - fact: "Revealed her real name: Sera"
+  #     established: 15
+
+# Relationship facts
+relationship_facts: []
+  # - fact: "Kael knows Moth's real name"
+  #   established: 16
+  #   parties: [kael, moth]
+
+# Timeline facts (ordering that can't be violated)
+timeline: []
+  # - event: "The signal first appeared"
+  #   turn: 3
+  # - event: "First contact with VEIL"
+  #   turn: 7
+  #   must_follow: "The signal first appeared"
+
+# Dead characters (cannot speak, act, or be present)
+dead: []
+  # - id: vicar_solen
+  #   died: 18
+  #   cause: "Executed by Vestry"
+
+# Destroyed/changed locations
+location_changes: []
+  # - location: south_gate
+  #   change: destroyed
+  #   turn: 12
+
+# Revealed secrets (no longer secret to those who know)
+revealed_secrets: []
+  # - secret: "The Machine was always speaking"
+  #   revealed_to: [cassius, silence, moth]
+  #   turn: 22
+
+# Knowledge chain - what was ACTUALLY revealed and to whom
+# ORACLE uses this to catch unjustified knowledge claims
+# Key distinction: characters can SPECULATE, but speculation must be framed as such
+revelations: []
+  # - turn: 18
+  #   entity: "Threshold Initiative"
+  #   source: "businesswoman's emails"
+  #   established:                    # Facts that ARE now known
+  #     - "Organization exists"
+  #     - "Connected to recent activity (2 months)"
+  #   not_established:                # Facts that were NOT revealed
+  #     - "Organization age/history"
+  #     - "Full scope of operations"
+  #     - "Connection to Margaret's drawings"
+  #   known_by: [sarah]
+  #
+  # - turn: 22
+  #   entity: "The Vestry"
+  #   source: "Moth's confession"
+  #   established:
+  #     - "They control the south district"
+  #     - "Moth worked for them"
+  #   not_established:
+  #     - "Their leadership structure"
+  #     - "Why they want the artifact"
+  #   known_by: [player, kael]
+
+# Active item states (who has what, what condition)
+# ORACLE checks: can't use destroyed items, can't ignore damaged state
+item_state: {}
+  # laptop_bag:
+  #   holder: robert
+  #   state: soaked        # normal, damaged, destroyed, soaked, on_fire, etc.
+  #   state_since: 24
+  #   notes: "Fell in water - electronics likely ruined"
+  # coffee_cup:
+  #   holder: null         # Unknown - was put down somewhere
+  #   state: unresolved    # Last seen but disposition unclear
+  #   last_seen: 25
+  #   last_holder: player
+  #   notes: "Player had coffee, then ran - where is it?"
+
+# Item state change history
+item_changes: []
+  # - item: laptop_bag
+  #   change: "Fell in water"
+  #   turn: 24
+  #   old_state: normal
+  #   new_state: soaked
+  # - item: the_key
+  #   change: "Given to Moth"
+  #   turn: 14
+  # - item: the_letter
+  #   change: "Burned"
+  #   turn: 19
+  #   new_state: destroyed
+
+# Unresolved items (things in limbo that need addressing)
+# SYSTEM should prompt: "What happened to X?" before scene ends
+unresolved_items: []
+  # - item: coffee_cup
+  #   last_action: "Player was holding it"
+  #   turn: 25
+  #   needs_resolution: "Player started running - cup disposition unknown"
+
+# Contradiction log (near-misses caught during generation)
+contradiction_log: []
+  # - turn: 25
+  #   attempted: "Jorim's hollow voice echoed..."
+  #   violated: "Jorim's voice returned (Turn 24)"
+  #   resolution: "Revised to 'Jorim's new voice, still uncertain...'"

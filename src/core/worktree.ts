@@ -1,8 +1,8 @@
 /**
- * WorktreeManager - Git worktree lifecycle management
+ * WorktreeManager - Git worktree lifecycle management for feature isolation
  *
- * Handles creating, managing, and cleaning up git worktrees for isolated mesh execution.
- * Each worktree provides a separate working directory with its own branch.
+ * Creates feature-named worktrees that integrate with /know:done workflow.
+ * Naming: .ai/worktrees/{feature-name} with branch feature/{feature-name}
  */
 
 import { execSync } from 'node:child_process';
@@ -14,23 +14,20 @@ export interface WorktreeInfo {
   path: string;
   branch: string;
   head: string;
-  meshInstance: string;
+  featureName: string;
 }
 
 export interface WorktreeOptions {
-  basePath?: string;  // Base directory for worktrees (default: .ai/tx/worktrees)
-  branchPrefix?: string;  // Branch name prefix (default: tx-worktree)
+  basePath?: string;  // Base directory for worktrees (default: .ai/worktrees)
 }
 
 export class WorktreeManager {
   private workDir: string;
   private basePath: string;
-  private branchPrefix: string;
 
   constructor(workDir: string, options: WorktreeOptions = {}) {
     this.workDir = workDir;
-    this.basePath = options.basePath || path.join(workDir, '.ai', 'tx', 'worktrees');
-    this.branchPrefix = options.branchPrefix || 'tx-worktree';
+    this.basePath = options.basePath || path.join(workDir, '.ai', 'worktrees');
 
     // Ensure base path exists
     if (!fs.existsSync(this.basePath)) {
@@ -39,20 +36,31 @@ export class WorktreeManager {
   }
 
   /**
-   * Create a git worktree for a mesh instance
-   * @param meshInstance Unique mesh instance ID (e.g., "feature-dev-1234567890")
+   * Create a git worktree for a feature
+   * @param featureName Feature name (e.g., "user-authentication")
    * @returns Absolute path to the worktree
    */
-  createWorktree(meshInstance: string): string {
+  createWorktree(featureName: string): string {
+    // Validate feature name (kebab-case, no special chars)
+    if (!/^[a-z0-9-]+$/.test(featureName)) {
+      throw new Error(`Invalid feature name: "${featureName}". Use kebab-case (e.g., "user-auth")`);
+    }
+
     // Check if we're already running inside a worktree
     if (this.isInWorktree(this.workDir)) {
       throw new Error('Cannot create worktree: already running inside a worktree');
     }
 
-    const timestamp = Date.now();
-    const uniqueSuffix = `${timestamp}-${Math.random().toString(36).substr(2, 9)}`;
-    const branchName = `${this.branchPrefix}-${meshInstance}-${uniqueSuffix}`;
-    const worktreePath = path.join(this.basePath, `${meshInstance}-${uniqueSuffix}`);
+    const branchName = `feature/${featureName}`;
+    const worktreePath = path.join(this.basePath, featureName);
+
+    // Check if worktree already exists
+    if (fs.existsSync(worktreePath)) {
+      log.info('worktree', `Worktree already exists for ${featureName}, reusing`, {
+        path: worktreePath,
+      });
+      return worktreePath;
+    }
 
     try {
       // Check if we're in a git repository
@@ -69,19 +77,38 @@ export class WorktreeManager {
         });
       } catch {
         log.error('worktree', `Cannot create worktree: repository has no commits`, {
-          meshInstance,
+          featureName,
           hint: 'Make an initial commit before using worktrees',
         });
         throw new Error('Cannot create worktree: repository has no commits');
       }
 
-      // Create worktree with new branch
-      execSync(`git worktree add "${worktreePath}" -b ${branchName}`, {
-        cwd: this.workDir,
-        stdio: 'pipe',
-      });
+      // Check if branch already exists
+      let branchExists = false;
+      try {
+        execSync(`git rev-parse --verify ${branchName}`, {
+          cwd: this.workDir,
+          stdio: 'pipe',
+        });
+        branchExists = true;
+      } catch {
+        // Branch doesn't exist, we'll create it
+      }
 
-      log.info('worktree', `Created worktree for ${meshInstance}`, {
+      // Create worktree (with existing or new branch)
+      if (branchExists) {
+        execSync(`git worktree add "${worktreePath}" ${branchName}`, {
+          cwd: this.workDir,
+          stdio: 'pipe',
+        });
+      } else {
+        execSync(`git worktree add "${worktreePath}" -b ${branchName}`, {
+          cwd: this.workDir,
+          stdio: 'pipe',
+        });
+      }
+
+      log.info('worktree', `Created worktree for feature: ${featureName}`, {
         path: worktreePath,
         branch: branchName,
       });
@@ -89,7 +116,7 @@ export class WorktreeManager {
       return worktreePath;
     } catch (error) {
       const errorMsg = (error as Error).message;
-      log.error('worktree', `Failed to create worktree for ${meshInstance}`, {
+      log.error('worktree', `Failed to create worktree for ${featureName}`, {
         error: errorMsg,
       });
       throw new Error(`Failed to create worktree: ${errorMsg}`);
@@ -97,33 +124,31 @@ export class WorktreeManager {
   }
 
   /**
-   * Remove a git worktree
-   * @param meshInstance Mesh instance ID
+   * Remove a git worktree by feature name
+   * @param featureName Feature name
    * @param force Force removal even if worktree has uncommitted changes
    */
-  removeWorktree(meshInstance: string, force = false): void {
+  removeWorktree(featureName: string, force = false): void {
+    const worktreePath = path.join(this.basePath, featureName);
+
+    if (!fs.existsSync(worktreePath)) {
+      log.warn('worktree', `No worktree found for ${featureName}`);
+      return;
+    }
+
     try {
-      // Find worktree path by mesh instance
-      const worktrees = this.listWorktrees();
-      const target = worktrees.find((w) => w.meshInstance === meshInstance);
-
-      if (!target) {
-        log.warn('worktree', `No worktree found for ${meshInstance}`);
-        return;
-      }
-
       const forceFlag = force ? '--force' : '';
-      execSync(`git worktree remove "${target.path}" ${forceFlag}`, {
+      execSync(`git worktree remove "${worktreePath}" ${forceFlag}`, {
         cwd: this.workDir,
         stdio: 'pipe',
       });
 
-      log.info('worktree', `Removed worktree for ${meshInstance}`, {
-        path: target.path,
+      log.info('worktree', `Removed worktree for ${featureName}`, {
+        path: worktreePath,
       });
     } catch (error) {
       const errorMsg = (error as Error).message;
-      log.error('worktree', `Failed to remove worktree for ${meshInstance}`, {
+      log.error('worktree', `Failed to remove worktree for ${featureName}`, {
         error: errorMsg,
       });
       throw new Error(`Failed to remove worktree: ${errorMsg}`);
@@ -131,15 +156,13 @@ export class WorktreeManager {
   }
 
   /**
-   * Get the path to a worktree without creating it
-   * Returns the most recent worktree path for the mesh instance
-   * @param meshInstance Mesh instance ID
+   * Get the path to a worktree by feature name
+   * @param featureName Feature name
    * @returns Worktree path or undefined if not found
    */
-  getWorktreePath(meshInstance: string): string | undefined {
-    const worktrees = this.listWorktrees();
-    const target = worktrees.find((w) => w.meshInstance === meshInstance);
-    return target?.path;
+  getWorktreePath(featureName: string): string | undefined {
+    const worktreePath = path.join(this.basePath, featureName);
+    return fs.existsSync(worktreePath) ? worktreePath : undefined;
   }
 
   /**
@@ -176,34 +199,28 @@ export class WorktreeManager {
       if (line.startsWith('worktree ')) {
         const worktreePath = line.substring('worktree '.length);
 
-        // Only include TX-managed worktrees
-        if (worktreePath.includes(this.basePath)) {
+        // Only include TX-managed worktrees (in our basePath)
+        if (worktreePath.startsWith(this.basePath)) {
           currentWorktree.path = worktreePath;
+          // Extract feature name from path (last segment)
+          currentWorktree.featureName = path.basename(worktreePath);
         }
       } else if (line.startsWith('HEAD ')) {
         currentWorktree.head = line.substring('HEAD '.length);
       } else if (line.startsWith('branch ')) {
         const branch = line.substring('branch '.length);
         currentWorktree.branch = branch.replace('refs/heads/', '');
-
-        // Extract mesh instance from branch name
-        // Format: tx-worktree-{meshInstance}-{timestamp}-{random}
-        const escapedPrefix = this.branchPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const match = branch.match(new RegExp(`${escapedPrefix}-(.+)-(\\d+-[a-z0-9]+)$`));
-        if (match) {
-          currentWorktree.meshInstance = match[1];
-        }
       } else if (line === '') {
         // End of worktree entry
-        if (currentWorktree.path && currentWorktree.meshInstance) {
+        if (currentWorktree.path && currentWorktree.featureName) {
           worktrees.push(currentWorktree as WorktreeInfo);
         }
         currentWorktree = {};
       }
     }
 
-    // Handle last entry if file doesn't end with blank line
-    if (currentWorktree.path && currentWorktree.meshInstance) {
+    // Handle last entry if output doesn't end with blank line
+    if (currentWorktree.path && currentWorktree.featureName) {
       worktrees.push(currentWorktree as WorktreeInfo);
     }
 
@@ -211,16 +228,14 @@ export class WorktreeManager {
   }
 
   /**
-   * Check if a worktree exists for a mesh instance
+   * Check if a worktree exists for a feature
    */
-  hasWorktree(meshInstance: string): boolean {
-    return this.getWorktreePath(meshInstance) !== undefined;
+  hasWorktree(featureName: string): boolean {
+    return this.getWorktreePath(featureName) !== undefined;
   }
 
   /**
    * Check if a directory is inside a git worktree
-   * @param dir Directory to check
-   * @returns true if inside a worktree, false otherwise
    */
   private isInWorktree(dir: string): boolean {
     try {
@@ -230,23 +245,18 @@ export class WorktreeManager {
         stdio: 'pipe',
       }).trim();
 
-      // If the .git directory is a file (not a directory), we're in a worktree
-      // Worktrees have a .git file that points to the actual git directory
       const gitPath = path.isAbsolute(gitDir) ? gitDir : path.join(dir, gitDir);
 
       if (fs.existsSync(gitPath)) {
         const stats = fs.statSync(gitPath);
-        // If .git is a file, we're in a worktree
+        // If .git is a file (not directory), we're in a worktree
         if (stats.isFile()) {
           return true;
         }
       }
 
-      // Alternative check: use git rev-parse --is-inside-worktree
-      // and check if gitdir contains "worktrees"
       return gitDir.includes('worktrees');
     } catch {
-      // If git command fails, we're not in a worktree
       return false;
     }
   }
@@ -254,12 +264,11 @@ export class WorktreeManager {
   /**
    * Get worktree status (clean, dirty, conflicts)
    */
-  getWorktreeStatus(meshInstance: string): 'clean' | 'dirty' | 'conflicts' | 'not-found' {
-    const worktreePath = this.getWorktreePath(meshInstance);
+  getWorktreeStatus(featureName: string): 'clean' | 'dirty' | 'conflicts' | 'not-found' {
+    const worktreePath = this.getWorktreePath(featureName);
     if (!worktreePath) return 'not-found';
 
     try {
-      // Check for uncommitted changes
       const status = execSync('git status --porcelain', {
         cwd: worktreePath,
         encoding: 'utf-8',
@@ -277,5 +286,12 @@ export class WorktreeManager {
     } catch {
       return 'not-found';
     }
+  }
+
+  /**
+   * Get the branch name for a feature
+   */
+  getBranchName(featureName: string): string {
+    return `feature/${featureName}`;
   }
 }

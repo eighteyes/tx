@@ -14,6 +14,7 @@ interface SpyOptions {
   agent?: string;
   json?: boolean;
   output?: boolean;  // Show agent output only
+  full?: boolean;    // Show full output without truncation
 }
 
 const TYPE_ICONS: Record<string, string> = {
@@ -79,7 +80,7 @@ export async function spy(options: SpyOptions): Promise<void> {
         try {
           const entry = JSON.parse(line) as ActivityEntry;
           if (options.agent && !entry.agentId.includes(options.agent)) continue;
-          printActivity(entry, options.json);
+          printActivity(entry, options.json, options.full);
         } catch {
           // Skip invalid lines
         }
@@ -133,7 +134,7 @@ export async function spy(options: SpyOptions): Promise<void> {
             try {
               const entry = JSON.parse(line) as ActivityEntry;
               if (options.agent && !entry.agentId.includes(options.agent)) continue;
-              printActivity(entry, options.json);
+              printActivity(entry, options.json, options.full);
             } catch {
               // Skip invalid lines
             }
@@ -182,7 +183,7 @@ function printMessage(msg: {
   console.log();
 }
 
-function printActivity(entry: ActivityEntry, json?: boolean): void {
+function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): void {
   if (json) {
     console.log(JSON.stringify(entry));
     return;
@@ -192,13 +193,21 @@ function printActivity(entry: ActivityEntry, json?: boolean): void {
   const agent = chalk.magenta(entry.agentId);
 
   if (entry.event === 'output') {
-    // Truncate long output, show first line or first 200 chars
-    const lines = entry.content.split('\n');
-    const preview = lines[0].length > 200 ? lines[0].substring(0, 200) + '...' : lines[0];
-    const moreLines = lines.length > 1 ? chalk.dim(` (+${lines.length - 1} lines)`) : '';
-
     console.log(`💭 ${agent} ${chalk.dim(time)}`);
-    console.log(`   ${preview}${moreLines}`);
+
+    if (full) {
+      // Show full output with proper indentation
+      const lines = entry.content.split('\n');
+      for (const line of lines) {
+        console.log(`   ${line}`);
+      }
+    } else {
+      // Truncate long output, show first line or first 200 chars
+      const lines = entry.content.split('\n');
+      const preview = lines[0].length > 200 ? lines[0].substring(0, 200) + '...' : lines[0];
+      const moreLines = lines.length > 1 ? chalk.dim(` (+${lines.length - 1} lines)`) : '';
+      console.log(`   ${preview}${moreLines}`);
+    }
     console.log();
   } else if (entry.event === 'tools') {
     console.log(`🔧 ${agent} ${chalk.dim(time)} ${chalk.cyan(entry.content)}\n`);

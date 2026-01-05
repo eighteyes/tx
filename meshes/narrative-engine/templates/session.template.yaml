@@ -1,0 +1,54 @@
+# session.yaml - Narrator session state
+# Lives at: .ai/tx/narrative-engine/session.yaml
+# Owned by: narrator
+# Updated by: narrator on every phase transition
+
+# Active context
+game: {game-id}
+campaign: {campaign-id}
+turn: 0
+
+# Resolved paths (computed once, used everywhere)
+# Agents reference these instead of constructing paths
+paths:
+  game: .ai/games/{game-id}
+  campaign: .ai/games/{game-id}/campaigns/{campaign-id}
+  workspace: .ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}
+
+  # Game-level files (shared across all campaigns)
+  setting: .ai/games/{game-id}/setting.yaml
+  author: .ai/games/{game-id}/author.yaml
+  base_entities: .ai/games/{game-id}/entities.yaml
+  base_arc: .ai/games/{game-id}/arc.yaml
+  discoveries: .ai/games/{game-id}/discoveries.yaml
+
+  # Campaign-level files (specific to this playthrough)
+  continuity: .ai/games/{game-id}/campaigns/{campaign-id}/continuity.yaml
+  entities: .ai/games/{game-id}/campaigns/{campaign-id}/entities.yaml
+  arc: .ai/games/{game-id}/campaigns/{campaign-id}/arc.yaml
+  state: .ai/games/{game-id}/campaigns/{campaign-id}/state.yaml
+  thread: .ai/games/{game-id}/campaigns/{campaign-id}/thread.md
+  history: .ai/games/{game-id}/campaigns/{campaign-id}/history.md
+
+# State machine
+phase: init
+# Phases: init → awaiting_system → awaiting_cast → awaiting_oracle → complete
+
+consultations:
+  system:
+    needed: false
+    asked: false
+    responded: false
+  cast:
+    needed: false
+    asked: false
+    responded: false
+  oracle:
+    needed: true      # Always needed (continuity gate)
+    asked: false
+    responded: false
+    approved: false   # Must be true before task-complete
+
+task_complete_sent: false
+last_action: "Session initialized"
+last_updated: null

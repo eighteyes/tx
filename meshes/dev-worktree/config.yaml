@@ -1,0 +1,32 @@
+mesh: dev-worktree
+description: "Developer mesh with git worktree isolation for feature development"
+
+intents:
+  patterns:
+    - "build feature"
+    - "implement in isolation"
+    - "isolated development"
+  commands:
+    build: "/know:build"
+    implement: "/know:build"
+
+agents:
+  - name: worker
+    model: sonnet
+    prompt: prompt.md
+
+entry_point: worker
+
+# Enable git worktree isolation
+# Requires 'feature:' in task frontmatter
+worktree: true
+
+workspace:
+  path: ".ai/output/{task-id}/"
+
+routing:
+  worker:
+    complete:
+      core: "Feature implementation complete"
+    blocked:
+      core: "Need clarification or human input"

@@ -80,3 +80,11 @@ time:
   period: "Late evening"
   season: "Deep winter"
   elapsed: "Day 1"
+
+# Genre Modules
+# Load from references/genres/ for genre-specific extraction and guidance
+# Most stories blend genres—list primary first, then secondary
+genre_modules: []
+  # - dark-fantasy      # Primary lens
+  # - romance           # Secondary elements
+  # - mystery           # Tertiary thread

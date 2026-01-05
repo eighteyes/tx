@@ -93,6 +93,12 @@ interface IterationConfig {
   onFail?: 'loop' | 'halt';  // What to do on quality failure (default: loop)
 }
 
+interface ContinuationConfig {
+  type: 'session' | 'none';       // session = auto-resume, none = fresh each time
+  // Phase 2:
+  // compress_turn_count?: number; // Summarize after N turns
+}
+
 interface MeshConfig {
   mesh: string;
   description?: string;
@@ -100,6 +106,7 @@ interface MeshConfig {
   entry_point?: string;
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
+  continuation?: ContinuationConfig;  // Session continuation config
   lifecycle?: {
     pre?: string[];   // Pre-hooks executed before worker spawn
     post?: string[];  // Post-hooks executed after worker completion
@@ -114,7 +121,7 @@ interface MeshConfig {
 /**
  * Resolve lifecycle hooks from config
  * Supports multiple shorthands that expand to lifecycle hooks:
- * - worktree: true → worktree:create + commit:auto + worktree:cleanup
+ * - worktree: true → worktree:create + commit:auto (cleanup via /know:done)
  * - graded: true → quality:preflight + individual quality gates
  * - graded: ['checklist', 'rubric'] → quality:preflight + specific gates
  * Explicit lifecycle overrides all shorthands
@@ -170,9 +177,10 @@ function resolveLifecycle(config: MeshConfig): { pre: string[]; post: string[] }
   }
 
   // worktree: true shorthand
+  // NOTE: worktree:cleanup is NOT automatic - user runs /know:done to merge and cleanup
   if (config.worktree) {
     pre.unshift('worktree:create');  // worktree first
-    post.push('commit:auto', 'worktree:cleanup');
+    post.push('commit:auto');        // commit changes, but KEEP worktree for review
   }
 
   // Only return if we have any hooks
@@ -189,6 +197,10 @@ interface AgentConfig {
   prompt: string;  // Path to prompt file
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
+  // Sampling parameters (optional, can be overridden via message frontmatter)
+  temperature?: number;  // 0.0-1.0, controls randomness
+  maxTokens?: number;    // Max tokens in response
+  topP?: number;         // 0.0-1.0, nucleus sampling
 }
 
 export interface DispatcherConfig {
@@ -1083,6 +1095,24 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
       }
 
+      // Check for session continuation
+      let sessionId: string | undefined;
+      if (meshConfig?.continuation?.type === 'session') {
+        const existingSession = this.queue.getConversationId(agentId);
+        if (existingSession) {
+          sessionId = existingSession;
+          log.info('dispatcher', `Resuming session for ${agentId}`, {
+            sessionId: sessionId.slice(0, 8) + '...'
+          });
+        }
+      }
+
+      // Merge sampling parameters: message frontmatter overrides agent config
+      // This allows per-task overrides via message frontmatter
+      const temperature = (nextMsg?.payload?.temperature as number | undefined) ?? agent.temperature;
+      const maxTokens = (nextMsg?.payload?.maxTokens as number | undefined) ?? agent.maxTokens;
+      const topP = (nextMsg?.payload?.topP as number | undefined) ?? agent.topP;
+
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
         model: agent.model,
@@ -1092,6 +1122,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         routing,
         mcpServers,
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
+        sessionId,  // Resume session if continuation enabled
+        // Sampling parameters (from agent config, overrideable via message frontmatter)
+        temperature,
+        maxTokens,
+        topP,
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -1334,6 +1369,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         this.activeWorkers.delete(agentId);
         this.writeWorkerState();
+
+        // Save session ID for continuation (if enabled and session captured)
+        if (meshConfig?.continuation?.type === 'session' && data.sessionId) {
+          this.queue.setConversationId(agentId, data.sessionId);
+          log.info('dispatcher', `Session saved for ${agentId}`, {
+            sessionId: data.sessionId.slice(0, 8) + '...'
+          });
+        }
 
         // Emit quality pass if we had preflight and made it here without errors
         if (workerHookContext.qualityPreflight) {

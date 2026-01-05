@@ -59,34 +59,6 @@ If you need clarification from the user:
 - Include specific question with options if applicable
 - Wait for response before proceeding
 
-## Worktree Management
-
-If running in an isolated git worktree, the system will inject worktree context.
-
-### Claiming the Worktree for a Feature
-
-When you start working on a tracked feature, rename the worktree to match the feature name:
-
-```bash
-# Rename worktree directory
-git worktree move {{worktree.path}} {{worktree.base}}/{{feature-name}}
-
-# Rename branch
-git branch -m {{worktree.branch}} tx-worktree-{{feature-name}}
-```
-
-**Why?** This enables feature cleanup commands to find and remove the worktree automatically.
-
-**When to rename:**
-- After confirming which feature you're implementing
-- Before making any commits
-- Only once per feature
-
-**Skip renaming if:**
-- You're doing exploratory work (no tracked feature)
-- Running tests or one-off tasks
-- The worktree is already named for a feature
-
 ## Quality Standards
 
 Before marking task complete:

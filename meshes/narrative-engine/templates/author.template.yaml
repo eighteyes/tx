@@ -1,0 +1,126 @@
+# author.yaml - Writing voice and style semantics
+# Copy this template to .ai/games/{game-id}/author.yaml
+# NARRATOR reads this to calibrate prose rendering
+#
+# Every game has its own author. This file IS that author's voice.
+
+# Overall voice descriptor (1 line)
+voice: "dry, embodied, system-literate; skeptical but non-moralizing"
+
+# Point of view
+pov:
+  lens: close_interior          # close_interior | distant_third | omniscient | second_person
+  technique: free_indirect      # free_indirect | direct_interior | reported | stream
+  # free_indirect: thoughts blend into narration without "she thought"
+  # direct_interior: explicit "she thought" or italicized thoughts
+  # stream: unfiltered consciousness
+
+# Tense
+tense:
+  baseline: past                # past | present
+  variations:
+    - trigger: "loops, compulsion, obsessive thought"
+      shift_to: present_progressive
+    # - trigger: "memories"
+    #   shift_to: past_perfect
+
+# Sentence cadence (percentages should sum to ~100)
+cadence:
+  long:                         # 30-50 words, braided clauses
+    percentage: 30
+    description: "Complex sentences with embedded clauses, building tension"
+  medium:                       # 12-25 words
+    percentage: 55
+    description: "Workhouse sentences, clear and propulsive"
+  short:                        # 1-6 words
+    percentage: 15
+    description: "Punches. Impact. Breath."
+  fragments:
+    count: "3-5 per scene"
+    description: "Purposeful incomplete thoughts"
+
+# Stylistic devices (counts per scene/turn)
+devices:
+  catalog_list:
+    count: 1
+    format: "spaced ellipses"
+    example: "the coffee … the window … the sound of her own breathing"
+  parentheticals:
+    count: "2-4"
+    format: "spaced"
+    example: "She waited ( longer than she should have ) for the reply."
+  italics:
+    count: "2-5"
+    use: "somatic sensation, affect, emphasis"
+    example: "The *ache* behind her eyes sharpened."
+  meta_brackets:
+    count: "0-1"
+    use: "system intrusion, glitch, frame-break"
+    example: "[ loading … ]"
+  code_fences:
+    allowed: true
+    use: "commands, logs, system output only — never dialogue"
+
+# Diction palette (word families to draw from)
+diction:
+  primary:
+    - category: somatic
+      words: [ache, tendon, pulse, jaw, hands, breath, gut, spine]
+    - category: cognitive_tech
+      words: [protocol, latency, loop, buffer, signal, process, cache]
+  secondary:
+    - category: corporate
+      words: [policy, safety, throughput, compliance, metrics, stakeholder]
+    - category: scientific
+      words: [neurochemistry, systems, method, mechanism, threshold, gradient]
+  texture:
+    - category: dynamics
+      words: [stasis, movement, force, gather, spread, pressure, release]
+    - category: ephemeral
+      words: [spirit, energy, mind, presence, absence, trace, echo]
+
+# Punctuation constraints
+punctuation:
+  semicolons: forbidden         # forbidden | rare | allowed
+  colons:
+    max_per_scene: 1
+  em_dashes: allowed            # preferred for interruption/pivot
+  ellipses:
+    use: "trailing thought, catalog lists"
+    in_dialogue: rare
+
+# Formatting
+formatting:
+  markdown_headings: forbidden  # forbidden | scene_breaks_only | allowed
+  horizontal_rules: forbidden   # use prose transitions instead
+  paragraph_length: "varied, 1-5 sentences"
+
+# Scene endings
+endings:
+  style: attenuate              # attenuate | cliffhanger | resolution | question
+  # attenuate: trail off, unresolved, echo
+  # cliffhanger: sharp cut at tension peak
+  # resolution: beat lands, moment of stillness
+  # question: explicit or implicit question hanging
+  description: "No tidy conclusions. Let it linger."
+
+# What to preserve vs transform
+transformation_rule: "Preserve all facts and content; change only diction, cadence, and punctuation."
+
+# Example passage in this voice (optional but helpful for calibration)
+# example: |
+#   She checked the inbox again ( the third time in ten minutes ) and the
+#   *ache* behind her eyes sharpened. The cursor blinked. The fan hummed.
+#   The coffee went cold.
+#
+#   Nothing.
+#
+#   The protocol was clear—wait for confirmation before proceeding—but
+#   waiting had its own weight, accumulating in her shoulders like
+#   something she'd have to carry out of here. She minimized the window.
+#   Opened it again. The loop was running and she was inside it now,
+#   checking … waiting … checking.
+#
+#   [ buffer full ]
+#
+#   She closed the laptop. Didn't help.

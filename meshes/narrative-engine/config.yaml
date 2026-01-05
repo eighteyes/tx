@@ -18,8 +18,16 @@ agents:
     model: sonnet
     prompt: cast/prompt.md
 
+  - name: oracle
+    model: haiku
+    prompt: oracle/prompt.md
+
 entry_point: narrator
 completion_agent: narrator
+
+# Session persistence - game continues where you left off
+continuation:
+  type: session
 
 # NARRATOR orchestrates via ask/ask-response pattern
 # SYSTEM and CAST respond to NARRATOR's queries
@@ -35,6 +43,9 @@ routing:
   cast:
     complete:
       narrator: "Character responses ready"
+  oracle:
+    complete:
+      narrator: "Continuity validation complete"
 
 # Game state lives here
 workspace:

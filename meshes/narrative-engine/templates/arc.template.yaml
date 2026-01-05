@@ -42,3 +42,19 @@ thresholds:
   question_resolution: 80         # Question pressure needed to force resolution
   arc_climax: 90                  # Overall pressure for major story turn
   trait_evolution: 5              # Uses before trait evolves
+
+# Possible Endings
+# Terminus states discovered through play or seeded initially
+# These are possibilities, not prescriptions—play maps which paths lead here
+possible_endings: []
+  # - name: "The Reckoning"
+  #   description: "Truth exposed, consequences faced"
+  #   tone: bittersweet            # triumphant | tragic | bittersweet | ambiguous | quiet
+  #   requirements: "Major secret must be revealed publicly"
+  #   discovered_in: null          # null if seeded, campaign-id if discovered
+
+# Forbidden Endings
+# Terminus states that would betray the story's core
+forbidden_endings: []
+  # - "Protagonist becomes what they fought against without recognition"
+  # - "Deus ex machina resolution"

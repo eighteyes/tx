@@ -3,9 +3,14 @@
 
 ![alt text](tx-logo.png)
 
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/eighteyes/tx)
+[![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![GitHub Issues](https://img.shields.io/github/issues/eighteyes/tx)](https://github.com/eighteyes/tx/issues)
+
 </div>
 
-# TX v0.1.0
+# TX v0.2.0
 
 ## Objective
 Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
@@ -140,5 +145,4 @@ I made to this to facilitate my interactions with AI and implement the best patt
 ## Troubleshooting
 - tx suppresses `stdout/stderr` so it doesn't interrupt the session. See error messages with `tx logs`
 - Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Try a tmux reset with cntl-b, r. If that doesn't work, cntl-c to exit claude, cntl-b, d and run `reset`. 
-- We are barely in Beta. There are Bugs here. 
-i
+- We are barely in Beta. There are Bugs here.

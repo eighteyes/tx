@@ -327,8 +327,55 @@ rearmatter:
 | `entry_point` | string | No | Agent that receives initial tasks |
 | `routing` | object | No* | Message routing rules (*required for multi-agent) |
 | `graded` | boolean \| string[] | No | Enable quality stack evaluation |
+| `continuation` | object | No | Session continuation config |
 | `lifecycle` | object | No | Pre/post hooks |
 | `workspace` | object | No | Workspace output configuration |
+
+**Agent-level sampling parameters** (set on each agent in the `agents` array):
+
+| Field | Type | Range | Description |
+|-------|------|-------|-------------|
+| `temperature` | number | 0.0-1.0 | Controls randomness (0=deterministic, 1=creative) |
+| `maxTokens` | number | 1-128000 | Max tokens in response |
+| `topP` | number | 0.0-1.0 | Nucleus sampling threshold |
+
+These can also be overridden per-task via message frontmatter.
+
+### continuation Field (Session Persistence)
+
+Enable automatic session resumption for all agents in the mesh:
+
+```yaml
+# meshes/research/config.yaml
+mesh: research
+description: "Research mesh with session persistence"
+
+continuation:
+  type: session   # Each agent auto-resumes from last session
+
+agents:
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer/prompt.md
+  - name: sourcer
+    model: haiku
+    prompt: sourcer/prompt.md
+
+entry_point: interviewer
+```
+
+**continuation.type values**:
+- `session`: Each agent resumes from their last session (stored in SQLite)
+- `none` (default): Fresh session each time
+
+**How it works**:
+1. On spawn: Check DB for existing session ID for this agent
+2. If found: Resume session with `query({ resume: sessionId })`
+3. On complete: Save new session ID to DB
+4. Next invocation: Continues exactly where it left off
+
+**Phase 2 (future)**:
+- `compress_turn_count`: Summarize after N turns to manage context limits
 
 ### graded Field (Shorthand for Quality Hooks)
 
@@ -466,7 +513,8 @@ lifecycle:
     - worktree:create
   post:
     - commit:auto
-    - worktree:cleanup
+# NOTE: worktree:cleanup is NOT automatic!
+# Worktree persists for user review, then /know:done merges and cleans up
 
 # graded: true with iteration expands to:
 lifecycle:
@@ -483,7 +531,7 @@ lifecycle:
   post:
     - quality:evaluate:onFail=loop,maxIterations=3
     - commit:auto
-    - worktree:cleanup
+# User runs /know:done to merge feature branch and cleanup worktree
 ```
 
 **Error handling**:
@@ -1089,6 +1137,220 @@ tx stop                 # Kill tmux session, cleanup
 2. **Include blocked route to core** - For when agents can't proceed
 3. **Use descriptive route reasons** - Helps with debugging
 4. **Single-agent meshes don't need routing** - They default to core/core
+
+## Empirically-Validated Prompt Rules
+
+These rules are derived from academic research with measured improvements. See [mesh-builder-rules.md](../../../.ai/research/prompt-steering-techniques/mesh-builder-rules.md) for full documentation.
+
+### XML Structure (Required)
+
+Claude was trained on XML tags and interprets them as semantic boundaries. **Always use XML tags**:
+
+```xml
+<role>          <!-- Agent identity, responsibilities, boundaries -->
+<task>          <!-- Current task description -->
+<context>       <!-- Relevant background -->
+<instructions>  <!-- Step-by-step guidance -->
+<output-format> <!-- Expected response structure -->
+```
+
+**Impact**: +10-15% instruction-following accuracy
+
+### Role Boundaries (Required)
+
+Always define what the agent should NOT do. Prevents role overlap and improves handoffs.
+
+```xml
+<role>
+<responsibilities>
+PRIMARY: Find and validate sources
+</responsibilities>
+
+<boundaries>
+DO NOT:
+- Formulate hypotheses (analyst's job)
+- Write final reports (writer's job)
+</boundaries>
+
+<handoff-criteria>
+Done when: 20+ sources saved with metadata
+</handoff-criteria>
+</role>
+```
+
+**Impact**: +7% F1 score, clearer coordination
+
+### Verification-First (Recommended)
+
+Add backward reasoning verification before finalizing outputs. "Almost free lunch" - low overhead, high benefit.
+
+```xml
+<verification-first>
+Before completing:
+1. What must be true for this conclusion?
+2. Verify each premise independently
+3. Check for contradictions
+4. If verification fails, revise or ask-human
+</verification-first>
+```
+
+**Impact**: 40-60% error reduction
+
+### Confidence Scoring (Recommended)
+
+Require explicit confidence levels. Enables calibrated HITL triggers.
+
+```xml
+<uncertainty-calibration>
+For each claim, assess confidence:
+- HIGH (>80%): Proceed
+- MEDIUM (60-80%): Proceed with caveats
+- LOW (<60%): ABSTAIN and send ask-human
+
+HITL triggers:
+- Overall confidence LOW
+- High-impact decision with MEDIUM confidence
+- Contradictory information unresolvable
+</uncertainty-calibration>
+```
+
+**Impact**: 50-70% reduction in overconfident errors
+
+### Layered Reasoning with HITL (For Complex Tasks)
+
+Structure reasoning into layers with checkpoints for escalation:
+
+```xml
+<instructions>
+LAYER 1 - Understanding:
+- Restate task
+- CHECKPOINT: If ambiguous → ask-human
+
+LAYER 2 - Planning:
+- Outline approach
+- CHECKPOINT: If confidence < 70% → ask-human
+
+LAYER 3 - Execution:
+- Execute step-by-step
+- CHECKPOINT: If verification fails → self-correct or ask-human
+
+LAYER 4 - Review:
+- Verify success criteria met
+- CHECKPOINT: If confidence < 80% → ask-human
+</instructions>
+```
+
+### Self-Refine (For High-Value Outputs)
+
+Generate → Feedback → Refine cycle for important outputs:
+
+```xml
+<self-refine>
+ITERATION 1:
+<generate>Initial output</generate>
+<feedback>What are weaknesses? What improvements needed?</feedback>
+<refine>Improved version</refine>
+
+ITERATION 2 (if needed):
+<feedback>Were issues resolved?</feedback>
+<refine>Final version</refine>
+</self-refine>
+```
+
+**Impact**: +20% quality improvement
+
+### Tool Schema (Required)
+
+Enable `strict: true` on all tool definitions:
+
+```yaml
+# In mesh config or tool definitions
+tools:
+  - name: WebSearch
+    strict: true  # REQUIRED - prevents schema errors
+    input_schema:
+      type: object
+      properties:
+        query:
+          type: string
+          minLength: 3
+      required: [query]
+      additionalProperties: false
+```
+
+### Sampling Parameters (Per-Agent)
+
+Control generation behavior per-agent via mesh config or per-task via message frontmatter:
+
+```yaml
+# meshes/dev/config.yaml
+mesh: dev
+agents:
+  - name: worker
+    model: opus
+    prompt: prompt.md
+    temperature: 0.2    # Low for deterministic coding
+    maxTokens: 8192     # Longer responses allowed
+    topP: 0.95          # Slight nucleus sampling
+```
+
+**Frontmatter override** (per-task):
+```yaml
+---
+to: dev/worker
+from: core/core
+type: task
+temperature: 0.0  # Override to fully deterministic for this task
+maxTokens: 4096   # Limit response size
+---
+```
+
+| Parameter | Type | Range | Description |
+|-----------|------|-------|-------------|
+| `temperature` | number | 0.0-1.0 | Controls randomness (0=deterministic, 1=creative) |
+| `maxTokens` | number | 1-128000 | Max tokens in response |
+| `topP` | number | 0.0-1.0 | Nucleus sampling threshold |
+
+**Precedence**: Message frontmatter > Agent config > SDK defaults
+
+### Temperature by Role
+
+Set generation temperature based on agent role:
+
+| Agent Type | Temperature | Rationale |
+|------------|-------------|-----------|
+| Sourcer | 0.0 - 0.3 | Factual accuracy |
+| Analyst | 0.3 - 0.5 | Balanced reasoning |
+| Writer | 0.5 - 0.7 | Creative synthesis |
+| Coder | 0.0 - 0.2 | Deterministic |
+
+### Constitutional Principles (For Multi-Agent Meshes)
+
+Define governing principles at mesh level:
+
+```yaml
+# In mesh config
+constitution:
+  principles:
+    - id: accuracy
+      priority: 1
+      text: "Prioritize factual accuracy over speed"
+    - id: transparency
+      priority: 2
+      text: "Make reasoning steps visible"
+    - id: coordination
+      priority: 3
+      text: "State assumptions and handoff criteria explicitly"
+```
+
+Inject into agent prompts:
+```xml
+<constitution>
+{{ mesh.constitution.principles }}
+</constitution>
+```
+
+**Impact**: 95% jailbreak blocking, consistent behavioral norms
 
 ## References
 

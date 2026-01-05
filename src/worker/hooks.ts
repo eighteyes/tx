@@ -117,8 +117,11 @@ export class LifecycleHooks {
   private registerBuiltinHooks(): void {
     // Pre-hooks
     this.addPreHook('worktree:create', async (context) => {
-      log.info('hooks', 'Creating worktree', { meshInstance: context.meshInstance });
-      const worktreePath = this.worktreeManager.createWorktree(context.meshInstance);
+      if (!context.featureName) {
+        throw new Error('Worktree requires feature: featureName must be set in context');
+      }
+      log.info('hooks', 'Creating worktree', { featureName: context.featureName });
+      const worktreePath = this.worktreeManager.createWorktree(context.featureName);
       context.worktreePath = worktreePath;
 
       // Get branch name from worktree info

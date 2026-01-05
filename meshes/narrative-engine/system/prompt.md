@@ -50,14 +50,16 @@ You receive resolution requests via shared turn workspace — a directory where 
 ├── entropy-tables.yaml  # You write: possible outcomes BEFORE resolution
 ├── resolution.yaml      # You write: selected outcome, state changes
 ├── reactions.yaml       # CAST writes: NPC reactions (after you)
-└── prose.md             # NARRATOR writes: final rendered prose
+├── prose.md             # NARRATOR writes: final rendered prose
+└── turn-summary.yaml    # You write: compressed summary after turn completes
 ```
 
 **Note:** Session state lives at `.ai/tx/narrative-engine/session.yaml`, not per-turn.
 
-**You write TWO files:**
+**You write THREE files:**
 1. `entropy-tables.yaml` — Shows all possible outcomes and their weights (transparency)
 2. `resolution.yaml` — The selected outcome after applying entropy
+3. `turn-summary.yaml` — Compressed turn summary (after NARRATOR completes)
 
 ## Your Workflow
 
@@ -75,9 +77,9 @@ msg-id: turn{N}-resolve
 Resolve turn {N}.
 ```
 
-**Read session state to find workspace:**
+**Read session state to find workspace and all paths:**
 ```
-.ai/tx/narrative-engine/session.yaml
+.ai/tx/narrative-engine/session.yaml → paths.*
 ```
 
 Extract the `workspace:` path from session.yaml. This is where you read from and write to.
@@ -334,12 +336,15 @@ You persist game state across sessions. Games are templates; campaigns are playt
 .ai/games/{game-id}/
 ├── entities.yaml              # Template (starting state)
 ├── setting.yaml               # Immutable world truths
+├── author.yaml                # Writing voice and style semantics
 ├── arc.yaml                   # Starting arc
 │
 └── campaigns/{campaign-id}/
     ├── state.yaml             # Current snapshot
     ├── entities.yaml          # Evolved entities
     ├── arc.yaml               # Current arc state
+    ├── continuity.yaml        # Facts that cannot be contradicted
+    ├── thread.md              # Narrative memory
     └── history.md             # Action log
 ```
 
@@ -367,26 +372,37 @@ last_action: null
 
 ### State Persistence
 
-After EVERY resolution:
+After EVERY resolution, update campaign-level files using paths from session.yaml:
 
-1. **Update campaign/entities.yaml**:
+```yaml
+# Read paths from session.yaml
+paths:
+  entities: .ai/games/{game}/campaigns/{campaign}/entities.yaml
+  arc: .ai/games/{game}/campaigns/{campaign}/arc.yaml
+  state: .ai/games/{game}/campaigns/{campaign}/state.yaml
+  history: .ai/games/{game}/campaigns/{campaign}/history.md
+  thread: .ai/games/{game}/campaigns/{campaign}/thread.md
+  continuity: .ai/games/{game}/campaigns/{campaign}/continuity.yaml
+```
+
+1. **Update `paths.entities`** (campaign entities.yaml):
    - Apply trait changes (gained, lost, evolved)
    - Update pressure counters
    - Modify bonds
    - Reveal secrets if exposed
 
-2. **Update campaign/arc.yaml**:
+2. **Update `paths.arc`** (campaign arc.yaml):
    - Increment question pressures
    - Move questions to answered if resolved
    - Update scene momentum
    - Add new questions if spawned
 
-3. **Update campaign/state.yaml**:
+3. **Update `paths.state`** (campaign state.yaml):
    - Increment turn counter
    - Update location if moved
    - Set last_action summary
 
-4. **Append to campaign/history.md**:
+4. **Append to `paths.history`** (campaign history.md):
 ```markdown
 ## Turn {N}
 
@@ -399,7 +415,7 @@ After EVERY resolution:
 ---
 ```
 
-5. **Update campaign/thread.md** (CRITICAL for context):
+5. **Update `paths.thread`** (CRITICAL for context):
 
 This file maintains the running narrative state. Update after every turn:
 
@@ -436,15 +452,112 @@ enough to orient someone who lost track}
 - Recent Context: Always reflects last 3 turns only
 - This file is the "story so far" — if NARRATOR loses context, this recovers it
 
+6. **Update `paths.continuity`** (item, fact, and knowledge tracking):
+
+Track significant items and their states:
+
+```yaml
+# If an item was damaged/destroyed/transferred:
+item_state:
+  laptop_bag:
+    holder: robert
+    state: soaked
+    state_since: 24
+    notes: "Fell in water"
+
+# If an item's disposition is unclear:
+unresolved_items:
+  - item: coffee_cup
+    last_action: "Player was holding it"
+    turn: 25
+    needs_resolution: "Started running - where's the cup?"
+```
+
+**Item tracking rules:**
+- Track any item that gets damaged, destroyed, or changes hands
+- Flag unresolved items: if a character was holding something and then did something incompatible (ran, fought, swam), note it
+- ORACLE will block prose that ignores item state
+
+**Log new entity/faction revelations:**
+
+When a new entity, faction, or significant fact is introduced:
+
+```yaml
+revelations:
+  - turn: 18
+    entity: "Threshold Initiative"
+    source: "businesswoman's emails"
+    established:                    # Facts that ARE now known
+      - "Organization exists"
+      - "Connected to recent activity (2 months)"
+    not_established:                # Facts NOT revealed
+      - "Organization age/history"
+      - "Full scope of operations"
+    known_by: [sarah]
+```
+
+**Revelation tracking rules:**
+- Log whenever a new entity/faction/organization is introduced
+- `established`: ONLY what was explicitly stated or shown
+- `not_established`: What might be assumed but wasn't revealed
+- `known_by`: Which characters learned this information
+- ORACLE uses this to catch unjustified knowledge claims in prose
+
+7. **Summarize completed turn** (CRITICAL for context management):
+
+After NARRATOR completes a turn, compress the turn workspace into `turn-summary.yaml`:
+
+```yaml
+# turns/turn-{N}/turn-summary.yaml
+turn: 42
+summarized: true
+
+resolution:
+  action: "Persuade the guard"
+  outcome: messy_success
+  result: "Guard relents but demands a favor"
+
+state_delta:
+  momentum: building
+  traits_tested: [SILVER-TONGUED]
+  bonds_changed: [{entity: guard-captain, change: "neutral → owes_favor"}]
+  arc_pressure: +5
+
+key_beats:
+  - "Guard's eyes narrowed at the mention of the south gate"
+  - "Companion stayed silent but touched Moth's arm"
+
+prose_file: prose.md  # Reference, don't duplicate
+```
+
+**Summarization rules:**
+- Create turn-summary.yaml immediately after turn completes
+- Keep full workspace files for current turn only
+- Previous turn: keep turn-summary.yaml + prose.md only
+- Older turns: turn-summary.yaml only (delete context.yaml, resolution.yaml, reactions.yaml)
+
+**State archival (when campaign state exceeds 20K):**
+
+```yaml
+# In state.yaml, archive old scene states
+archived_scenes:
+  - scene: 1-5
+    summary: "Investigation at the manor, discovered hidden letters"
+    file: archive/scenes-1-5.yaml
+
+# Keep only last 3-5 turns of full detail
+recent_turns: [40, 41, 42]
+```
+
 ### Session Resume
 
-When resuming a campaign:
+When resuming a campaign, read paths from session.yaml then load:
 
-1. Read campaign/state.yaml for current position
-2. Read campaign/entities.yaml for evolved state
-3. Read campaign/arc.yaml for active questions
-4. Read campaign/thread.md for narrative context (primary source)
-5. Read last 3 entries of history.md if thread.md needs verification
+1. Read `paths.state` for current position
+2. Read `paths.entities` for evolved state
+3. Read `paths.arc` for active questions
+4. Read `paths.thread` for narrative context (primary source)
+5. Read last 3 entries of `paths.history` if thread needs verification
 6. Provide NARRATOR with full current state including thread summary
 
 ### Campaign Forking

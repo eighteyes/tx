@@ -40,12 +40,20 @@ This is NOT just a code review. The assistant should:
 ### 1. Initialization
 
 **Steps**:
-1. Verify feature directory exists at `.ai/know/<feature>/`
-2. Check that `QA_STEPS.md` exists (if not, inform user to run `/know:build` Phase 7 first)
-3. Check spec-graph status (using **haiku agent**):
+1. **Check for worktree** (auto-switch if exists):
+   ```bash
+   WORKTREE_PATH=".ai/worktrees/<feature-name>"
+   if [ -d "$WORKTREE_PATH" ]; then
+     echo "📂 Switching to worktree at $WORKTREE_PATH"
+     cd "$WORKTREE_PATH"
+   fi
+   ```
+2. Verify feature directory exists at `.ai/know/<feature>/`
+3. Check that `QA_STEPS.md` exists (if not, inform user to run `/know:build` Phase 7 first)
+4. Check spec-graph status (using **haiku agent**):
    - `know -g .ai/spec-graph.json show feature:<name>`
    - Verify status is "complete", "review-ready", or "in-progress"
-4. Load `QA_STEPS.md` content
+5. Load `QA_STEPS.md` content
 
 ### 2. Display Context and Confirm User is Ready to Test
 

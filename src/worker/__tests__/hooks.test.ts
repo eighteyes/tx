@@ -1,5 +1,7 @@
 /**
  * LifecycleHooks tests
+ *
+ * Tests lifecycle hook execution and worktree integration.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -50,7 +52,7 @@ describe('LifecycleHooks', () => {
         const worktrees = worktreeManager.listWorktrees();
         for (const wt of worktrees) {
           try {
-            worktreeManager.removeWorktree(wt.meshInstance, true);
+            worktreeManager.removeWorktree(wt.featureName, true);
           } catch {
             // Ignore errors during cleanup
           }
@@ -68,7 +70,7 @@ describe('LifecycleHooks', () => {
   });
 
   it('should register built-in post-hooks', () => {
-    assert.ok(hooks.hasPostHook('worktree:cleanup'), 'Should have worktree:cleanup post-hook');
+    // NOTE: worktree:cleanup removed - cleanup happens via /know:done
     assert.ok(hooks.hasPostHook('commit:auto'), 'Should have commit:auto post-hook');
   });
 
@@ -102,7 +104,7 @@ describe('LifecycleHooks', () => {
     });
 
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
@@ -126,7 +128,7 @@ describe('LifecycleHooks', () => {
     });
 
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
@@ -143,7 +145,7 @@ describe('LifecycleHooks', () => {
     });
 
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
@@ -162,7 +164,7 @@ describe('LifecycleHooks', () => {
     });
 
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
@@ -172,43 +174,44 @@ describe('LifecycleHooks', () => {
     await hooks.executePostHooks(['failing'], context);
   });
 
-  it('should create worktree with worktree:create hook', async () => {
+  it('should require featureName for worktree:create hook', async () => {
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
+      // No featureName - should fail
+    };
+
+    await assert.rejects(
+      () => hooks.executePreHooks(['worktree:create'], context),
+      /Worktree requires feature:/,
+      'Should throw error when featureName is missing'
+    );
+  });
+
+  it('should create worktree with worktree:create hook', async () => {
+    const featureName = 'test-feature';
+    const context: HookContext = {
+      meshInstance: 'test-mesh-123',
+      meshName: 'test',
+      agentName: 'agent',
+      workDir: testDir,
+      featureName,
     };
 
     await hooks.executePreHooks(['worktree:create'], context);
 
     assert.ok(context.worktreePath, 'Should set worktreePath in context');
     assert.ok(fs.existsSync(context.worktreePath), 'Worktree should exist');
+    assert.strictEqual(context.worktreeBranch, `feature/${featureName}`, 'Should set correct branch name');
 
     // Cleanup
     const worktreeManager = hooks.getWorktreeManager();
-    worktreeManager.removeWorktree(context.meshInstance, true);
+    worktreeManager.removeWorktree(featureName, true);
   });
 
-  it('should cleanup worktree with worktree:cleanup hook', async () => {
-    const context: HookContext = {
-      meshInstance: 'test-mesh',
-      meshName: 'test',
-      agentName: 'agent',
-      workDir: testDir,
-    };
-
-    // Create worktree first
-    await hooks.executePreHooks(['worktree:create'], context);
-    const worktreePath = context.worktreePath;
-
-    assert.ok(worktreePath && fs.existsSync(worktreePath), 'Worktree should exist');
-
-    // Cleanup worktree
-    await hooks.executePostHooks(['worktree:cleanup'], context);
-
-    assert.ok(!fs.existsSync(worktreePath), 'Worktree should be removed');
-  });
+  // NOTE: worktree:cleanup test removed - cleanup now happens via /know:done, not hooks
 
   it('should share context between hooks', async () => {
     hooks.addPreHook('set-value', (context) => {
@@ -220,7 +223,7 @@ describe('LifecycleHooks', () => {
     });
 
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,
@@ -231,7 +234,7 @@ describe('LifecycleHooks', () => {
 
   it('should warn for unknown hooks', async () => {
     const context: HookContext = {
-      meshInstance: 'test-mesh',
+      meshInstance: 'test-mesh-123',
       meshName: 'test',
       agentName: 'agent',
       workDir: testDir,

@@ -1,5 +1,7 @@
 /**
  * WorktreeManager tests
+ *
+ * Tests feature-aware worktree management for isolated development.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -41,7 +43,7 @@ describe('WorktreeManager', () => {
         const worktrees = manager.listWorktrees();
         for (const wt of worktrees) {
           try {
-            manager.removeWorktree(wt.meshInstance, true);
+            manager.removeWorktree(wt.featureName, true);
           } catch {
             // Ignore errors during cleanup
           }
@@ -54,38 +56,38 @@ describe('WorktreeManager', () => {
     }
   });
 
-  it('should create a worktree', () => {
-    const meshInstance = 'test-mesh';
-    const worktreePath = manager.createWorktree(meshInstance);
+  it('should create a worktree for a feature', () => {
+    const featureName = 'user-auth';
+    const worktreePath = manager.createWorktree(featureName);
 
     assert.ok(worktreePath, 'Worktree path should be returned');
     assert.ok(fs.existsSync(worktreePath), 'Worktree directory should exist');
-    assert.ok(worktreePath.includes(meshInstance), 'Path should include mesh instance name');
+    assert.ok(worktreePath.endsWith(featureName), 'Path should end with feature name');
   });
 
   it('should list worktrees', () => {
-    const meshInstance1 = 'mesh-1';
-    const meshInstance2 = 'mesh-2';
+    const feature1 = 'feature-one';
+    const feature2 = 'feature-two';
 
-    manager.createWorktree(meshInstance1);
-    manager.createWorktree(meshInstance2);
+    manager.createWorktree(feature1);
+    manager.createWorktree(feature2);
 
     const worktrees = manager.listWorktrees();
 
     assert.ok(worktrees.length >= 2, 'Should have at least 2 worktrees');
 
-    const mesh1Worktree = worktrees.find((w) => w.meshInstance === meshInstance1);
-    const mesh2Worktree = worktrees.find((w) => w.meshInstance === meshInstance2);
+    const wt1 = worktrees.find((w) => w.featureName === feature1);
+    const wt2 = worktrees.find((w) => w.featureName === feature2);
 
-    assert.ok(mesh1Worktree, 'Should find mesh-1 worktree');
-    assert.ok(mesh2Worktree, 'Should find mesh-2 worktree');
-    assert.ok(mesh1Worktree.branch.includes(meshInstance1), 'Branch should include mesh instance');
+    assert.ok(wt1, 'Should find feature-one worktree');
+    assert.ok(wt2, 'Should find feature-two worktree');
+    assert.ok(wt1.branch.includes(feature1), 'Branch should include feature name');
   });
 
   it('should get worktree path', () => {
-    const meshInstance = 'test-mesh';
-    const createdPath = manager.createWorktree(meshInstance);
-    const retrievedPath = manager.getWorktreePath(meshInstance);
+    const featureName = 'test-feature';
+    const createdPath = manager.createWorktree(featureName);
+    const retrievedPath = manager.getWorktreePath(featureName);
 
     assert.strictEqual(retrievedPath, createdPath, 'Retrieved path should match created path');
   });
@@ -96,47 +98,47 @@ describe('WorktreeManager', () => {
   });
 
   it('should remove a worktree', () => {
-    const meshInstance = 'test-mesh';
-    const worktreePath = manager.createWorktree(meshInstance);
+    const featureName = 'test-feature';
+    const worktreePath = manager.createWorktree(featureName);
 
     assert.ok(fs.existsSync(worktreePath), 'Worktree should exist before removal');
 
-    manager.removeWorktree(meshInstance);
+    manager.removeWorktree(featureName);
 
     assert.ok(!fs.existsSync(worktreePath), 'Worktree should not exist after removal');
-    assert.strictEqual(manager.getWorktreePath(meshInstance), undefined, 'Should not find worktree after removal');
+    assert.strictEqual(manager.getWorktreePath(featureName), undefined, 'Should not find worktree after removal');
   });
 
   it('should check if worktree exists', () => {
-    const meshInstance = 'test-mesh';
+    const featureName = 'test-feature';
 
-    assert.strictEqual(manager.hasWorktree(meshInstance), false, 'Should not have worktree initially');
+    assert.strictEqual(manager.hasWorktree(featureName), false, 'Should not have worktree initially');
 
-    manager.createWorktree(meshInstance);
+    manager.createWorktree(featureName);
 
-    assert.strictEqual(manager.hasWorktree(meshInstance), true, 'Should have worktree after creation');
+    assert.strictEqual(manager.hasWorktree(featureName), true, 'Should have worktree after creation');
 
-    manager.removeWorktree(meshInstance);
+    manager.removeWorktree(featureName);
 
-    assert.strictEqual(manager.hasWorktree(meshInstance), false, 'Should not have worktree after removal');
+    assert.strictEqual(manager.hasWorktree(featureName), false, 'Should not have worktree after removal');
   });
 
   it('should get worktree status as clean', () => {
-    const meshInstance = 'test-mesh';
-    manager.createWorktree(meshInstance);
+    const featureName = 'test-feature';
+    manager.createWorktree(featureName);
 
-    const status = manager.getWorktreeStatus(meshInstance);
+    const status = manager.getWorktreeStatus(featureName);
     assert.strictEqual(status, 'clean', 'New worktree should be clean');
   });
 
   it('should get worktree status as dirty when files are modified', () => {
-    const meshInstance = 'test-mesh';
-    const worktreePath = manager.createWorktree(meshInstance);
+    const featureName = 'test-feature';
+    const worktreePath = manager.createWorktree(featureName);
 
     // Modify a file
     fs.writeFileSync(path.join(worktreePath, 'README.md'), '# Modified');
 
-    const status = manager.getWorktreeStatus(meshInstance);
+    const status = manager.getWorktreeStatus(featureName);
     assert.strictEqual(status, 'dirty', 'Worktree with modified files should be dirty');
   });
 
@@ -149,28 +151,60 @@ describe('WorktreeManager', () => {
     const customBasePath = path.join(testDir, 'custom-worktrees');
     const customManager = new WorktreeManager(testDir, { basePath: customBasePath });
 
-    const meshInstance = 'test-mesh';
-    const worktreePath = customManager.createWorktree(meshInstance);
+    const featureName = 'test-feature';
+    const worktreePath = customManager.createWorktree(featureName);
 
     assert.ok(worktreePath.includes('custom-worktrees'), 'Should use custom base path');
     assert.ok(fs.existsSync(worktreePath), 'Worktree should exist at custom path');
 
     // Cleanup
-    customManager.removeWorktree(meshInstance, true);
+    customManager.removeWorktree(featureName, true);
   });
 
-  it('should handle custom branch prefix', () => {
-    const customManager = new WorktreeManager(testDir, { branchPrefix: 'custom-prefix' });
+  it('should use feature/{name} branch convention', () => {
+    const featureName = 'test-feature';
+    manager.createWorktree(featureName);
 
-    const meshInstance = 'test-mesh';
-    customManager.createWorktree(meshInstance);
+    const worktrees = manager.listWorktrees();
+    const worktree = worktrees.find((w) => w.featureName === featureName);
 
-    const worktrees = customManager.listWorktrees();
-    const worktree = worktrees.find((w) => w.meshInstance === meshInstance);
-
-    assert.ok(worktree?.branch.startsWith('custom-prefix'), 'Should use custom branch prefix');
+    assert.ok(worktree, 'Should find worktree');
+    assert.strictEqual(worktree.branch, `feature/${featureName}`, 'Branch should follow feature/{name} convention');
+    assert.strictEqual(manager.getBranchName(featureName), `feature/${featureName}`, 'getBranchName should return correct branch');
 
     // Cleanup
-    customManager.removeWorktree(meshInstance, true);
+    manager.removeWorktree(featureName, true);
+  });
+
+  it('should reject invalid feature names', () => {
+    // Feature names must be kebab-case
+    assert.throws(
+      () => manager.createWorktree('Invalid Name'),
+      /Invalid feature name/,
+      'Should reject names with spaces'
+    );
+
+    assert.throws(
+      () => manager.createWorktree('UPPERCASE'),
+      /Invalid feature name/,
+      'Should reject uppercase names'
+    );
+
+    assert.throws(
+      () => manager.createWorktree('with_underscore'),
+      /Invalid feature name/,
+      'Should reject names with underscores'
+    );
+  });
+
+  it('should reuse existing worktree for same feature', () => {
+    const featureName = 'test-feature';
+    const firstPath = manager.createWorktree(featureName);
+    const secondPath = manager.createWorktree(featureName);
+
+    assert.strictEqual(firstPath, secondPath, 'Should return same path for existing worktree');
+
+    // Cleanup
+    manager.removeWorktree(featureName, true);
   });
 });

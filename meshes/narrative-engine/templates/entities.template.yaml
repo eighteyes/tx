@@ -4,16 +4,89 @@
 # Player Character
 player:
   name: ""
-  traits: []                    # Semantic modifiers: [STUBBORN], [QUICK-WITTED]
   bonds: []                     # Relationships to NPCs
   secrets: []                   # Things even the player might not know yet
   momentum: null                # building | releasing | spent
-  pressure: {}                  # {trait_name: count} - evolution at 5
+
+  # Physical appearance for VISUAL blocks (image generation)
+  # NARRATOR references this for consistent character rendering
+  appearance:
+    age: ""                     # "early 30s", "teenage", "elderly"
+    ethnicity: ""               # "East Asian", "Black", "South Asian", "Latina", etc.
+    build: ""                   # "slight", "athletic", "heavyset", "wiry"
+    hair: ""                    # "short black curls", "long gray braid", "shaved"
+    distinguishing: []          # ["scar across left cheek", "always wears red scarf"]
+    # Example:
+    # age: "late 20s"
+    # ethnicity: "Black"
+    # build: "athletic"
+    # hair: "close-cropped natural"
+    # distinguishing: ["silver rings on every finger", "tired eyes"]
+
+  # Traits as internal voices (Disco Elysium style)
+  # Each trait is a cast member in the player's head
+  traits: {}
+    # PROTECTIVE:
+    #   pressure: 0              # Evolution at 5
+    #   voice:
+    #     register: urgent       # calm | urgent | seductive | cold | manic
+    #     cadence: short bursts  # How it speaks
+    #     speaks_when: "Someone she cares about is at risk"
+    #     vocabulary: [shield, between, harm, safe, watch]
+    #     wants: "Keep them safe at any cost"
+    #     fears: "Failing to protect, again"
+    #     secret: "It's not about them. It's about the one you couldn't save."
+    #
+    #   # How this trait sounds at different pressure levels
+    #   escalation:
+    #     low: "Quiet suggestions, easy to dismiss"
+    #     building: "Harder to ignore, interrupts other thoughts"
+    #     critical: "Demanding, drowns out other voices"
+    #
+    # PATTERN-SEEKER:
+    #   pressure: 0
+    #   voice:
+    #     register: calm
+    #     cadence: observational, detached
+    #     speaks_when: "Details don't add up"
+    #     vocabulary: [pattern, anomaly, three times, notice, wrong]
+    #     wants: "Find the hidden structure"
+    #     fears: "Chaos without meaning"
+    #     secret: "Sometimes the pattern is you."
+    #   escalation:
+    #     low: "Gentle noticing"
+    #     building: "Insistent cataloging"
+    #     critical: "Everything connects, everything means something"
+    #
+    # STUBBORN:
+    #   pressure: 2
+    #   voice:
+    #     register: cold
+    #     cadence: clipped, definitive
+    #     speaks_when: "Someone wants you to back down"
+    #     vocabulary: [won't, refuse, they think, weakness, hold]
+    #     wants: "Never yield"
+    #     fears: "Being seen as weak"
+    #     secret: "You've forgotten what you're holding onto."
+    #   escalation:
+    #     low: "Stiffening resolve"
+    #     building: "Digging in despite reason"
+    #     critical: "The position IS the identity now"
+    #   evolves_to: DEFIANT | INFLEXIBLE  # Possible evolution paths
 
 # NPCs
 npcs:
   example_npc:
     name: "The Innkeeper"
+
+    # Physical appearance for VISUAL blocks
+    appearance:
+      age: "50s"
+      ethnicity: "Eastern European"
+      build: "stocky"
+      hair: "graying, pulled back"
+      distinguishing: ["flour-dusted apron", "wedding ring she keeps touching"]
+
     traits:
       - NERVOUS
       - PROTECTIVE
@@ -28,6 +101,32 @@ npcs:
     wants: "Keep the child safe"
     fears: "The investigators discovering the cellar"
     pressure: {}
+
+    # Voice profile - how this character SOUNDS
+    # Extract via Phase 6b of game-maker.md
+    # voice:
+    #   cadence: measured           # staccato | measured | flowing | explosive
+    #   register: casual            # formal | casual | street | archaic | technical
+    #   directness: evasive         # blunt | diplomatic | evasive | cryptic
+    #   verbosity: terse            # terse | balanced | verbose | rambling
+    #
+    #   signature_phrases:
+    #     - "Well now, that's..."
+    #     - "Mind the step"
+    #
+    #   vocabulary:
+    #     favored: [hearth, proper, tending]
+    #     forbidden: [never swears, avoids direct answers]
+    #
+    #   emotional_tells:
+    #     fear: "Sentences trail off, busies hands with cleaning"
+    #     anger: "Gets quieter, more formal, moves toward the door"
+    #     affection: "Offers food, uses endearments"
+    #
+    #   addressing:
+    #     strangers: "Formal, keeps physical distance"
+    #     regulars: "First names, teasing familiarity"
+    #     the_child: "Softens completely, different person"
 
 # Significant Objects (items with narrative weight)
 objects:

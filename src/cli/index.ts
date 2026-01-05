@@ -173,6 +173,7 @@ Options:
   -a, --agent <agent>   Filter by agent
   -m, --messages        Messages only (no SDK output)
   -o, --output          SDK output only (no messages)
+  -f, --full            Show full output without truncation
   --json                JSON output`,
 
   tasks: `tx tasks - View task queue
@@ -291,7 +292,8 @@ async function main() {
         messages: Boolean(flags.m || flags.messages),
         output: Boolean(flags.o || flags.output),
         agent: flags.a as string || flags.agent as string,
-        json: Boolean(flags.json)
+        json: Boolean(flags.json),
+        full: Boolean(flags.f || flags.full)
       });
       break;
 
