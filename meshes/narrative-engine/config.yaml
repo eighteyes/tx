@@ -22,6 +22,10 @@ agents:
     model: haiku
     prompt: oracle/prompt.md
 
+  - name: scribe
+    model: haiku
+    prompt: scribe/prompt.md
+
 entry_point: narrator
 completion_agent: narrator
 
@@ -46,6 +50,9 @@ routing:
   oracle:
     complete:
       narrator: "Continuity validation complete"
+  scribe:
+    complete:
+      narrator: "Turn compression and state management complete"
 
 # Game state lives here
 workspace:
