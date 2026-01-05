@@ -141,6 +141,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     meshesDir: path.join(txRoot, 'meshes')
   }, queue);
 
+  // Wire up parity gate: consumer subscribes to dispatcher for session-start events
+  consumer.subscribeToDispatcher(dispatcher);
+
   dispatcher.on('worker:spawn', ({ agentId, model, resume, sessionId }) => {
     log.info('dispatcher', `Spawning worker: ${agentId}`, { model, mode: resume ? `resume:${sessionId?.slice(0, 8)}` : 'new', sessionId });
   });

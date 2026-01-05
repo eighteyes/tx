@@ -16,6 +16,24 @@ import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 
+/**
+ * Pending ask tracking for parity gate
+ * Tracks outbound asks by msg-id to ensure workers wait for responses
+ */
+interface PendingAsk {
+  to: string;        // Target agent
+  timestamp: number; // When ask was sent
+}
+
+/**
+ * Event emitted when task-complete is rejected due to pending asks
+ */
+export interface ParityReminderEvent {
+  agentId: string;
+  pendingAsks: Array<{ msgId: string; to: string }>;
+  deletedFile: string;
+}
+
 interface Frontmatter {
   to: string;
   from: string;
@@ -40,6 +58,9 @@ export class MessageConsumer extends EventEmitter {
   private running = false;
   private meshesDir: string;
   private meshEntryPoints: Map<string, string> = new Map();
+  // Parity gate: track pending asks per agent by msg-id
+  // Map<agentId, Map<msgId, PendingAsk>>
+  private pendingAsks: Map<string, Map<string, PendingAsk>> = new Map();
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -97,6 +118,25 @@ export class MessageConsumer extends EventEmitter {
     };
 
     scanDir(this.meshesDir);
+  }
+
+  /**
+   * Subscribe to dispatcher events for parity gate
+   * Clears pending asks when a new session starts for an agent
+   */
+  subscribeToDispatcher(dispatcher: EventEmitter): void {
+    dispatcher.on('session-start', ({ agentId }: { agentId: string }) => {
+      if (this.pendingAsks.has(agentId)) {
+        const pendingCount = this.pendingAsks.get(agentId)!.size;
+        if (pendingCount > 0) {
+          log.info('consumer', `Clearing ${pendingCount} stale pending asks on session start`, {
+            agentId,
+            msgIds: Array.from(this.pendingAsks.get(agentId)!.keys()),
+          });
+        }
+        this.pendingAsks.delete(agentId);
+      }
+    });
   }
 
   /**
@@ -240,41 +280,138 @@ export class MessageConsumer extends EventEmitter {
       // Also handles ask-human messages which require interrupt + steering
       const messageType = parsed.frontmatter.type;
       if (messageType === 'ask' || messageType === 'ask-human') {
+        const msgId = parsed.frontmatter['msg-id'];
+        const fromAgent = parsed.frontmatter.from;
+
         log.info('consumer', `${messageType} message detected`, {
-          from: parsed.frontmatter.from,
+          from: fromAgent,
           to: toAgent,
+          msgId,
           file: filename
         });
+
+        // Parity gate: track pending ask by msg-id
+        if (msgId) {
+          if (!this.pendingAsks.has(fromAgent)) {
+            this.pendingAsks.set(fromAgent, new Map());
+          }
+          this.pendingAsks.get(fromAgent)!.set(msgId, {
+            to: toAgent,
+            timestamp: Date.now(),
+          });
+          log.info('consumer', `Parity gate: tracking ask`, {
+            fromAgent,
+            msgId,
+            to: toAgent,
+            pendingCount: this.pendingAsks.get(fromAgent)!.size,
+          });
+        }
+
         this.emit('ask-message', {
           id,
           filepath,
-          from: parsed.frontmatter.from,
+          from: fromAgent,
           to: toAgent,
           type: messageType,
           headline: parsed.frontmatter.headline,
-          msgId: parsed.frontmatter['msg-id']
+          msgId
         });
       }
 
       // Detect ask-response messages - these resume awaiting workers
       if (messageType === 'ask-response') {
+        const msgId = parsed.frontmatter['msg-id'];
+        const respondingAgent = parsed.frontmatter.from;
+
         log.info('consumer', `Ask-response message detected`, {
-          from: parsed.frontmatter.from,
+          from: respondingAgent,
           to: toAgent,
+          msgId,
           file: filename
         });
+
+        // Parity gate: remove from pending asks by msg-id
+        // The response is TO the agent who originally sent the ask
+        if (msgId) {
+          const agentPendingAsks = this.pendingAsks.get(toAgent);
+          if (agentPendingAsks && agentPendingAsks.has(msgId)) {
+            agentPendingAsks.delete(msgId);
+            log.info('consumer', `Parity gate: resolved ask`, {
+              agentId: toAgent,
+              msgId,
+              from: respondingAgent,
+              remainingPending: agentPendingAsks.size,
+            });
+            // Clean up empty maps
+            if (agentPendingAsks.size === 0) {
+              this.pendingAsks.delete(toAgent);
+            }
+          } else {
+            // Warning: ask-response for unknown msg-id
+            log.warn('consumer', `Parity gate: ask-response for unknown msg-id`, {
+              agentId: toAgent,
+              msgId,
+              from: respondingAgent,
+              knownMsgIds: agentPendingAsks ? Array.from(agentPendingAsks.keys()) : [],
+            });
+          }
+        }
+
         this.emit('ask-response-message', {
           id,
           filepath,
-          from: parsed.frontmatter.from,
+          from: respondingAgent,
           to: toAgent,
           content: parsed.body,
           headline: parsed.frontmatter.headline,
-          msgId: parsed.frontmatter['msg-id']
+          msgId
         });
       }
 
       if (toAgent === 'core/core') {
+        // Parity gate: check if task-complete has pending asks
+        if (messageType === 'task-complete') {
+          const fromAgent = parsed.frontmatter.from;
+          const agentPendingAsks = this.pendingAsks.get(fromAgent);
+
+          if (agentPendingAsks && agentPendingAsks.size > 0) {
+            // Build pending asks list for reminder
+            const pendingAsksList = Array.from(agentPendingAsks.entries()).map(([msgId, ask]) => ({
+              msgId,
+              to: ask.to,
+            }));
+
+            log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
+              fromAgent,
+              pendingAsks: pendingAsksList,
+              file: filename,
+            });
+
+            // DELETE the task-complete file
+            try {
+              fs.unlinkSync(filepath);
+              log.info('consumer', `Parity gate: deleted blocked task-complete file`, {
+                filepath: filename,
+              });
+            } catch (unlinkErr) {
+              log.error('consumer', `Parity gate: failed to delete task-complete file`, {
+                filepath: filename,
+                error: (unlinkErr as Error).message,
+              });
+            }
+
+            // Emit parity-reminder event for dispatcher to inject feedback
+            this.emit('parity-reminder', {
+              agentId: fromAgent,
+              pendingAsks: pendingAsksList,
+              deletedFile: filepath,
+            } as ParityReminderEvent);
+
+            // Skip emitting core-message - the task-complete is blocked
+            return;
+          }
+        }
+
         this.emit('core-message', {
           id,
           filepath,
@@ -283,6 +420,49 @@ export class MessageConsumer extends EventEmitter {
           event
         });
       } else {
+        // Parity gate: check if task-complete TO another worker has pending asks
+        if (messageType === 'task-complete') {
+          const fromAgent = parsed.frontmatter.from;
+          const agentPendingAsks = this.pendingAsks.get(fromAgent);
+
+          if (agentPendingAsks && agentPendingAsks.size > 0) {
+            // Build pending asks list for reminder
+            const pendingAsksList = Array.from(agentPendingAsks.entries()).map(([msgId, ask]) => ({
+              msgId,
+              to: ask.to,
+            }));
+
+            log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
+              fromAgent,
+              pendingAsks: pendingAsksList,
+              file: filename,
+            });
+
+            // DELETE the task-complete file
+            try {
+              fs.unlinkSync(filepath);
+              log.info('consumer', `Parity gate: deleted blocked task-complete file`, {
+                filepath: filename,
+              });
+            } catch (unlinkErr) {
+              log.error('consumer', `Parity gate: failed to delete task-complete file`, {
+                filepath: filename,
+                error: (unlinkErr as Error).message,
+              });
+            }
+
+            // Emit parity-reminder event for dispatcher to inject feedback
+            this.emit('parity-reminder', {
+              agentId: fromAgent,
+              pendingAsks: pendingAsksList,
+              deletedFile: filepath,
+            } as ParityReminderEvent);
+
+            // Skip emitting worker-message - the task-complete is blocked
+            return;
+          }
+        }
+
         this.emit('worker-message', {
           id,
           agentId: toAgent,

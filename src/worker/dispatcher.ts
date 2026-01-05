@@ -31,6 +31,7 @@ import {
   type GateType,
   type PreflightOutput,
 } from '../quality/index.ts';
+import type { ParityReminderEvent } from '../core/consumer.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -272,6 +273,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundRevisionHandler: ((event: RevisionMessageEvent) => void) | null = null;
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
+  private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -351,6 +353,12 @@ export class WorkerDispatcher extends EventEmitter {
         this.handleAskResponseMessage(event);
       };
       consumer.on('ask-response-message', this.boundAskResponseHandler);
+
+      // Subscribe to parity-reminder events for injecting feedback when task-complete blocked
+      this.boundParityReminderHandler = (event: ParityReminderEvent) => {
+        this.handleParityReminder(event);
+      };
+      consumer.on('parity-reminder', this.boundParityReminderHandler);
     }
   }
 
@@ -778,6 +786,115 @@ The system will resume your session when the human responds.`;
   }
 
   /**
+   * Handle parity reminder - inject feedback into worker when task-complete is blocked
+   * due to pending asks
+   */
+  private async handleParityReminder(event: ParityReminderEvent): Promise<void> {
+    const { agentId, pendingAsks, deletedFile } = event;
+
+    const activeWorker = this.activeWorkers.get(agentId);
+    if (!activeWorker) {
+      log.warn('dispatcher', `Parity reminder but no active worker found`, {
+        agentId,
+        pendingAsks,
+        deletedFile,
+      });
+      return;
+    }
+
+    const { runner } = activeWorker;
+    const sessionId = runner.getSessionId();
+
+    if (!sessionId) {
+      log.warn('dispatcher', `Parity reminder but worker has no session ID`, {
+        agentId,
+        pendingAsks,
+      });
+      return;
+    }
+
+    log.info('dispatcher', `Handling parity reminder`, {
+      agentId,
+      sessionId: sessionId.slice(0, 8),
+      pendingAsks,
+    });
+
+    try {
+      // Interrupt the current query
+      await runner.interrupt();
+
+      this.emit('parity:interrupt', {
+        agentId,
+        sessionId,
+        pendingAsks,
+      });
+
+      // Build reminder prompt
+      const reminderPrompt = this.buildParityReminderPrompt(pendingAsks);
+
+      log.info('dispatcher', `Resuming session with parity reminder`, {
+        agentId,
+        sessionId: sessionId.slice(0, 8),
+      });
+
+      // Resume the session with the reminder
+      const result = await runner.resume(sessionId, reminderPrompt);
+
+      if (result.success) {
+        log.info('dispatcher', `Parity reminder resume completed`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+        });
+        this.emit('parity:resume', {
+          agentId,
+          sessionId,
+          success: true,
+        });
+      } else {
+        log.error('dispatcher', `Parity reminder resume failed`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+          error: result.error,
+        });
+        this.emit('parity:error', {
+          agentId,
+          sessionId,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      const errorMsg = (error as Error).message;
+      log.error('dispatcher', `Failed to handle parity reminder`, {
+        agentId,
+        error: errorMsg,
+      });
+      this.emit('parity:error', {
+        agentId,
+        error: errorMsg,
+      });
+    }
+  }
+
+  /**
+   * Build a reminder prompt for the parity gate violation
+   */
+  private buildParityReminderPrompt(pendingAsks: Array<{ msgId: string; to: string }>): string {
+    const parts: string[] = [];
+
+    parts.push('## Parity Gate: Pending Asks\n');
+    parts.push('Your task-complete was rejected. You have unresolved asks:\n');
+
+    for (const ask of pendingAsks) {
+      parts.push(`- msg-id: ${ask.msgId} → ${ask.to}`);
+    }
+
+    parts.push('\n**Action**: Wait for responses before completing your task.');
+    parts.push('Once all responses arrive, you may write a new task-complete message.');
+
+    return parts.join('\n');
+  }
+
+  /**
    * Handle await timeout - transition worker to error state
    */
   private async handleAwaitTimeout(agentId: string): Promise<void> {
@@ -840,6 +957,10 @@ The system will resume your session when the human responds.`;
     if (consumer && this.boundAskResponseHandler) {
       consumer.off('ask-response-message', this.boundAskResponseHandler);
       this.boundAskResponseHandler = null;
+    }
+    if (consumer && this.boundParityReminderHandler) {
+      consumer.off('parity-reminder', this.boundParityReminderHandler);
+      this.boundParityReminderHandler = null;
     }
 
     // Kill all active workers
@@ -1131,6 +1252,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       const worker = new SdkRunner(runnerConfig, this.queue);
       this.emit('worker:spawn', { agentId, model: agent.model });
+
+      // Parity gate: emit session-start for consumer to clear stale pending asks
+      this.emit('session-start', { agentId });
 
       // Track when FSM 'start' transition completes to avoid race condition
       // When queue is empty, 'complete' fires before 'start' async handler finishes
