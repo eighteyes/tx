@@ -575,19 +575,42 @@ describe('Ask-Parity-Gate', () => {
       assert.strictEqual(parityEvent.pendingAsks[0].msgId, msgId);
     });
 
-    it('should not track asks without msg-id', async () => {
+    it('should track asks without msg-id via count fallback', async () => {
       const agentId = 'dev/worker';
+      const targetAgent = 'brain/brain';
 
       // Worker sends ask WITHOUT msg-id
       writeMessage(temp.dir, {
         from: agentId,
-        to: 'brain/brain',
+        to: targetAgent,
         type: 'ask',
-        // no msgId
+        // no msgId - will be tracked by count
       });
       await waitForEvent(consumer, 'ask-message');
 
-      // Should be able to complete (no tracked pending asks)
+      // Task-complete should be BLOCKED (count-based tracking still applies)
+      const parityPromise = waitForEvent(consumer, 'parity-reminder');
+
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        type: 'task-complete',
+      });
+
+      const parityEvent = await parityPromise as ParityReminderEvent;
+      assert.strictEqual(parityEvent.agentId, agentId);
+      assert.strictEqual(deletedFiles.length, 1);
+
+      // Now send response (will use count fallback)
+      writeMessage(temp.dir, {
+        from: targetAgent,
+        to: agentId,
+        type: 'ask-response',
+        // no msgId - resolved by count
+      });
+      await waitForEvent(consumer, 'ask-response-message');
+
+      // Now task-complete should pass
       const coreMessagePromise = waitForEvent(consumer, 'core-message');
 
       writeMessage(temp.dir, {
@@ -597,7 +620,8 @@ describe('Ask-Parity-Gate', () => {
       });
 
       await coreMessagePromise;
-      assert.strictEqual(deletedFiles.length, 0);
+      // File was deleted once from first blocked attempt
+      assert.strictEqual(deletedFiles.length, 1);
     });
 
     it('should track asks per agent independently', async () => {
