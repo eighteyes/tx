@@ -27,7 +27,8 @@ import {
 import type { SemanticModel } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
-import { type GradedConfig, type GateType } from '../quality/index.ts';
+import { type GradedConfig } from '../quality/index.ts';
+import { resolveLifecycle } from './lifecycle-utils.ts';
 
 interface AgentConfig {
   name: string;
@@ -51,6 +52,7 @@ interface MeshConfig {
   entry_point?: string;
   toolRestriction?: ToolRestriction;
   graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
+  worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit
   iteration?: IterationConfig;  // Iteration config for graded meshes
   lifecycle?: {
     pre?: string[];
@@ -65,64 +67,7 @@ export interface HeadlessRunnerConfig {
   workDir: string;
   msgsDir: string;
   meshesDir: string;
-}
-
-/**
- * Resolve lifecycle hooks from config
- * Supports shorthands that expand to lifecycle hooks:
- * - graded: true → quality:preflight + individual quality gates
- * - graded: ['checklist', 'rubric'] → quality:preflight + specific gates
- */
-function resolveLifecycle(config: MeshConfig): { pre: string[]; post: string[] } | undefined {
-  // Explicit lifecycle takes precedence
-  if (config.lifecycle) {
-    return {
-      pre: config.lifecycle.pre || [],
-      post: config.lifecycle.post || [],
-    };
-  }
-
-  // graded: true/array shorthand → individual quality gate hooks
-  if (config.graded) {
-    const pre: string[] = ['quality:preflight'];
-    const post: string[] = [];
-
-    // Determine which gates to use
-    const gates: GateType[] = Array.isArray(config.graded) ? config.graded : [
-      'checklist',
-      'rubric',
-      'adversarial',
-      'accuracy',
-      'summarizer',
-      'deterministic',
-    ];
-
-    // Add each gate as an individual hook
-    for (const gate of gates) {
-      let hookName = `quality:${gate}`;
-
-      // Only add iteration config to gates that can fail (not summarizer)
-      if (gate !== 'summarizer') {
-        const configParts: string[] = [];
-        if (config.iteration?.onFail) {
-          configParts.push(`onFail=${config.iteration.onFail}`);
-        }
-        if (config.iteration?.maxIterations) {
-          configParts.push(`maxIterations=${config.iteration.maxIterations}`);
-        }
-
-        if (configParts.length > 0) {
-          hookName += ':' + configParts.join(',');
-        }
-      }
-
-      post.push(hookName);
-    }
-
-    return { pre, post };
-  }
-
-  return undefined;
+  frontmatter?: Record<string, string>;  // Additional frontmatter (e.g., feature, msg-id)
 }
 
 export class HeadlessRunner extends EventEmitter {
@@ -201,7 +146,7 @@ export class HeadlessRunner extends EventEmitter {
     const taskId = `headless-${Date.now()}`;
     const meshInstance = `${this.config.mesh}-${Date.now()}`;
 
-    // Create hook context
+    // Create hook context (include featureName from frontmatter for worktree support)
     this.hookContext = {
       meshInstance,
       meshName: this.config.mesh,
@@ -210,6 +155,7 @@ export class HeadlessRunner extends EventEmitter {
       agentId,
       taskId,
       taskBody: taskBody || '',
+      featureName: this.config.frontmatter?.feature,  // For worktree:create hook
       msgsDir: this.config.msgsDir,
       qualityIteration: this.currentIteration,
       qualityMaxIterations: this.maxIterations,
@@ -222,6 +168,9 @@ export class HeadlessRunner extends EventEmitter {
       meshName: this.meshConfig.mesh,
       hasGraded: this.meshConfig.graded !== undefined,
       gradedValue: this.meshConfig.graded,
+      hasWorktree: this.meshConfig.worktree !== undefined,
+      worktreeValue: this.meshConfig.worktree,
+      featureName: this.hookContext.featureName,
       hasLifecycle: this.meshConfig.lifecycle !== undefined,
     });
 
@@ -322,8 +271,17 @@ export class HeadlessRunner extends EventEmitter {
 
     // Run worker (async, don't await - it processes messages from queue)
     this.runner.run().catch((error) => {
-      log.error('headless-runner', 'Worker error', { error: (error as Error).message });
-      this.emit('error', { id: agentId, error: (error as Error).message });
+      const err = error as Error & { stderr?: string; code?: number | string; exitCode?: number };
+      const errorContext: Record<string, unknown> = {
+        error: err.message,
+        stack: err.stack?.split('\n').slice(0, 3).join(' | '),
+      };
+      if (err.stderr) errorContext.stderr = err.stderr.slice(0, 300);
+      if (err.code !== undefined) errorContext.code = err.code;
+      if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
+
+      log.error('headless-runner', 'Worker error', errorContext);
+      this.emit('error', { id: agentId, error: err.message, stderr: err.stderr, code: err.code || err.exitCode });
       this.running = false;
     });
   }
@@ -462,8 +420,17 @@ export class HeadlessRunner extends EventEmitter {
 
     // Run worker (async, don't await - it processes messages from queue)
     this.runner.run().catch((error) => {
-      log.error('headless-runner', 'Worker error', { error: (error as Error).message });
-      this.emit('error', { id: agentId, error: (error as Error).message });
+      const err = error as Error & { stderr?: string; code?: number | string; exitCode?: number };
+      const errorContext: Record<string, unknown> = {
+        error: err.message,
+        stack: err.stack?.split('\n').slice(0, 3).join(' | '),
+      };
+      if (err.stderr) errorContext.stderr = err.stderr.slice(0, 300);
+      if (err.code !== undefined) errorContext.code = err.code;
+      if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
+
+      log.error('headless-runner', 'Worker error', errorContext);
+      this.emit('error', { id: agentId, error: err.message, stderr: err.stderr, code: err.code || err.exitCode });
       this.running = false;
     });
   }

@@ -101,16 +101,21 @@ Run 'tx <command> -h' for command-specific options.`,
 
   run: `tx run - Headless mesh REPL (no core agent)
 
-Usage: tx run <mesh> <agent> "<prompt>"
+Usage: tx run <mesh> <agent> [options] "<prompt>"
 
 Arguments:
   mesh      Name of the mesh to use
   agent     Name of the agent in the mesh
   prompt    Initial prompt to send (quoted)
 
+Options:
+  --front key=value   Pass frontmatter to worker (repeatable)
+                      e.g., --front feature=my-feature --front msg-id=123
+
 Examples:
   tx run research sourcer "find papers on transformers"
   tx run dev worker "implement user auth"
+  tx run dev-worktree worker --front feature=auth-system "build login page"
 
 REPL Commands:
   /help, /?         Show available commands
@@ -243,15 +248,32 @@ async function main() {
 
     case 'run':
       if (wantsHelp) { showHelp('run'); break; }
-      // Args: mesh agent "prompt"
-      const meshArg = args.find(a => !a.startsWith('-'));
-      const agentArg = args.filter(a => !a.startsWith('-'))[1];
-      const promptArg = args.filter(a => !a.startsWith('-'))[2];
+      // Args: mesh agent "prompt" with optional --front key=value (repeatable)
+      const nonFlagArgs = args.filter((a, i) => {
+        // Skip args that are --front or values after --front
+        if (a === '--front') return false;
+        if (i > 0 && args[i-1] === '--front') return false;
+        // Skip other flags and their values
+        if (a.startsWith('-')) return false;
+        if (i > 0 && args[i-1].startsWith('-') && args[i-1] !== '--front') return false;
+        return true;
+      });
+      // Collect all --front values
+      const frontArgs: string[] = [];
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--front' && args[i+1]) {
+          frontArgs.push(args[++i]);
+        }
+      }
+      const meshArg = nonFlagArgs[0];
+      const agentArg = nonFlagArgs[1];
+      const promptArg = nonFlagArgs[2];
       await run({
         mesh: meshArg,
         agent: agentArg,
         prompt: promptArg,
         model: flags.model as string | undefined,
+        front: frontArgs.length > 0 ? frontArgs : undefined,
       });
       break;
 

@@ -150,8 +150,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   dispatcher.on('worker:complete', ({ id, messagesProcessed, sessionId }) => {
     log.info('dispatcher', `Worker complete: ${id}`, { messagesProcessed, sessionId });
   });
-  dispatcher.on('worker:error', ({ id, error }) => {
-    log.error('dispatcher', `Worker error: ${id}`, { error });
+  dispatcher.on('worker:error', ({ id, error, stack, stderr, code }) => {
+    // Log detailed error info for debugging SDK failures
+    const errorContext: Record<string, unknown> = { error };
+    if (code !== undefined) errorContext.exitCode = code;
+    if (stderr) errorContext.stderr = stderr.slice(0, 300);
+    if (stack) errorContext.stack = stack.split('\n').slice(0, 3).join(' | ');
+
+    log.error('dispatcher', `Worker error: ${id}`, errorContext);
   });
   dispatcher.on('worker:output', ({ id, data }) => {
     log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
@@ -337,6 +343,7 @@ function buildMeshList(meshesDir: string): string {
     description?: string;
     entry_point?: string;
     intents?: { patterns?: string[] };
+    worktree?: boolean;  // Requires feature: frontmatter
   }> = [];
 
   // Scan meshes directory for config files (YAML preferred, JSON legacy)
@@ -399,6 +406,11 @@ function buildMeshList(meshesDir: string): string {
 
       // Add routing info
       line += `\n  Route to: \`${mesh.mesh}/${entryPoint}\``;
+
+      // Add worktree requirement note (dynamically detected from config)
+      if (mesh.worktree) {
+        line += `\n  **REQUIRES**: \`feature:\` frontmatter with kebab-case feature name`;
+      }
 
       return line;
     })
@@ -463,6 +475,28 @@ Please run the test suite and report results.
 \`\`\`
 
 Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
+
+## Worktree-Enabled Meshes
+
+Meshes marked with **REQUIRES: \`feature:\`** run in isolated git worktrees. Include the \`feature:\` field:
+
+\`\`\`markdown
+---
+to: dev-worktree/worker
+from: core/core
+type: task
+feature: user-authentication
+msg-id: task-${Date.now()}
+headline: Implement login form
+---
+
+Build the login form component.
+\`\`\`
+
+**Rules**:
+- Feature name must be kebab-case (e.g., \`user-auth\`, not \`userAuth\`)
+- Creates isolated worktree at \`.ai/worktrees/{feature}/\`
+- Changes stay isolated until merged via \`/know:done {feature}\`
 
 ## CRITICAL: Slash Command Routing
 

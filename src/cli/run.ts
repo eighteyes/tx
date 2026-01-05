@@ -24,6 +24,7 @@ export interface RunOptions {
   agent?: string;
   prompt?: string;
   model?: string;
+  front?: string[];  // --front key=value pairs for frontmatter
 }
 
 interface ParsedMessage {
@@ -37,16 +38,40 @@ interface ParsedMessage {
 }
 
 /**
+ * Parse --front key=value pairs into frontmatter object
+ */
+function parseFrontmatter(frontArgs: string[] = []): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const arg of frontArgs) {
+    const eqIndex = arg.indexOf('=');
+    if (eqIndex === -1) {
+      console.log(chalk.yellow(`Warning: Invalid --front format "${arg}", expected key=value`));
+      continue;
+    }
+    const key = arg.substring(0, eqIndex);
+    const value = arg.substring(eqIndex + 1);
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
  * Main run command
  */
 export async function run(options: RunOptions = {}): Promise<void> {
-  const { mesh, agent, prompt } = options;
+  const { mesh, agent, prompt, front } = options;
 
   if (!mesh || !agent || !prompt) {
     console.log(chalk.red('Usage: tx run <mesh> <agent> "<prompt>"'));
     console.log(chalk.dim('Example: tx run research sourcer "find papers on transformers"'));
+    console.log(chalk.dim('Options:'));
+    console.log(chalk.dim('  --front key=value   Pass frontmatter (repeatable)'));
+    console.log(chalk.dim('  Example: tx run dev-worktree worker --front feature=my-feature "task"'));
     process.exit(1);
   }
+
+  // Parse frontmatter options
+  const frontmatter = parseFrontmatter(front);
 
   const workDir = process.env.TX_CWD || process.cwd();
   const msgsDir = path.join(workDir, '.ai', 'tx', 'msgs');
@@ -66,13 +91,14 @@ export async function run(options: RunOptions = {}): Promise<void> {
   await consumer.start();
   log.info('run', 'Message consumer started', { msgsDir });
 
-  // Initialize runner
+  // Initialize runner (pass frontmatter for worktree/feature support)
   const runner = new HeadlessRunner({
     mesh,
     agent,
     workDir,
     msgsDir,
     meshesDir,
+    frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined,
   }, queue);
 
   try {

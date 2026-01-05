@@ -265,9 +265,37 @@ export class SdkRunner extends EventEmitter {
       return { success: !lastError, messagesProcessed: totalProcessed, output, error: lastError, sessionId: this.currentSessionId || undefined };
 
     } catch (error) {
-      const err = error as Error;
-      log.error('sdk-runner', `Worker error`, { workerId, error: err.message });
-      this.emit('error', { id: workerId, error: err.message });
+      const err = error as Error & {
+        stderr?: string;
+        stdout?: string;
+        cause?: Error;
+        code?: number | string;
+        exitCode?: number;
+      };
+
+      // Build detailed error context for debugging
+      const errorContext: Record<string, unknown> = {
+        workerId,
+        error: err.message,
+        name: err.name,
+        stack: err.stack?.split('\n').slice(0, 5).join('\n'),  // First 5 lines of stack
+      };
+
+      // Capture any additional error properties from SDK
+      if (err.stderr) errorContext.stderr = err.stderr.slice(0, 500);
+      if (err.stdout) errorContext.stdout = err.stdout.slice(0, 500);
+      if (err.cause) errorContext.cause = (err.cause as Error).message;
+      if (err.code !== undefined) errorContext.code = err.code;
+      if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
+
+      log.error('sdk-runner', `Worker error`, errorContext);
+      this.emit('error', {
+        id: workerId,
+        error: err.message,
+        stack: err.stack,
+        stderr: err.stderr,
+        code: err.code || err.exitCode,
+      });
       return { success: false, messagesProcessed: totalProcessed, error: err.message };
     } finally {
       this.running = false;
@@ -483,9 +511,37 @@ export class SdkRunner extends EventEmitter {
       return { success: !lastError, messagesProcessed: 1, output, error: lastError, sessionId: this.currentSessionId || undefined };
 
     } catch (error) {
-      const err = error as Error;
-      log.error('sdk-runner', `Resume error`, { workerId, error: err.message });
-      this.emit('error', { id: workerId, error: err.message });
+      const err = error as Error & {
+        stderr?: string;
+        stdout?: string;
+        cause?: Error;
+        code?: number | string;
+        exitCode?: number;
+      };
+
+      // Build detailed error context for debugging
+      const errorContext: Record<string, unknown> = {
+        workerId,
+        sessionId: sessionId.slice(0, 8) + '...',
+        error: err.message,
+        name: err.name,
+        stack: err.stack?.split('\n').slice(0, 5).join('\n'),
+      };
+
+      if (err.stderr) errorContext.stderr = err.stderr.slice(0, 500);
+      if (err.stdout) errorContext.stdout = err.stdout.slice(0, 500);
+      if (err.cause) errorContext.cause = (err.cause as Error).message;
+      if (err.code !== undefined) errorContext.code = err.code;
+      if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
+
+      log.error('sdk-runner', `Resume error`, errorContext);
+      this.emit('error', {
+        id: workerId,
+        error: err.message,
+        stack: err.stack,
+        stderr: err.stderr,
+        code: err.code || err.exitCode,
+      });
       return { success: false, messagesProcessed: 0, error: err.message };
     } finally {
       this.running = false;

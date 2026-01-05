@@ -1,75 +1,124 @@
 # narrative-engine/config.yaml
-# LLM-Native Tabletop RPG System
-# No stats. No HP. Pure semantic mechanics.
+# LLM-Native Tabletop RPG System - Coordinator Architecture
+# Separates orchestration (haiku) from creative work (opus/sonnet)
 
 mesh: narrative-engine
-description: "Statless RPG where traits are semantically weighted, damage is trait accumulation, and outcomes emerge from JIT probability tables + external entropy"
+description: "Statless RPG with coordinator pattern. Traits are semantically weighted, damage is trait accumulation, outcomes emerge from JIT probability tables + external entropy."
 
 agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    # State machine, routing, entropy, file management
+    # Does NOT do creative work
+
   - name: system
     model: sonnet
     prompt: system/prompt.md
-
-  - name: narrator
-    model: opus
-    prompt: narrator/prompt.md
+    # Mechanics engine, outcome tables, trait tracking
 
   - name: cast
     model: sonnet
     prompt: cast/prompt.md
+    # NPC voices, reactions, character consistency
+
+  - name: narrator
+    model: opus
+    prompt: narrator/prompt.md
+    temperature: 0.6  # Creative prose
+    # Prose rendering ONLY - receives inputs, outputs prose
 
   - name: oracle
     model: haiku
     prompt: oracle/prompt.md
+    # Continuity validation against established facts
+
+  - name: editor
+    model: sonnet
+    prompt: editor/prompt.md
+    temperature: 0.3  # Analytical
+    # Adversarial prose review against author.yaml
+    # Only fires if oracle passes
 
   - name: scribe
     model: haiku
     prompt: scribe/prompt.md
+    # Context compression, state management, game canon promotion
+    # Only fires if editor passes (or max iterations)
 
-entry_point: narrator
-completion_agent: narrator
+entry_point: coordinator
+completion_agent: coordinator
 
-# Session persistence - game continues where you left off
+# Session persistence
 continuation:
   type: session
 
-# NARRATOR orchestrates via ask/ask-response pattern
-# SYSTEM and CAST respond to NARRATOR's queries
+# Coordinator supervises, agents can ask each other directly
 routing:
+  coordinator:
+    ask:
+      narrator: "Advance game / render prose / make new game"
+      oracle: "Validate continuity"
+      editor: "Review prose against author.yaml"
+      scribe: "Compress turn state"
+    ask-human:
+      core: "Need player input"
+    complete:
+      core: "Turn complete, prose delivered"
+
   narrator:
-    complete:
-      core: "Scene rendered, awaiting player input"
-    blocked:
-      core: "Cannot proceed - need clarification"
+    ask:
+      system: "Need mechanical resolution"
+      cast: "Need character reactions"
+    ask-response:
+      coordinator: "Prose rendered"
+
   system:
-    complete:
+    ask-response:
       narrator: "Mechanical resolution complete"
+
   cast:
-    complete:
-      narrator: "Character responses ready"
+    ask-response:
+      narrator: "Character reactions ready"
+
   oracle:
-    complete:
-      narrator: "Continuity validation complete"
+    ask-response:
+      coordinator: "Continuity validation complete"
+
+  editor:
+    ask-response:
+      coordinator: "Prose review complete"
+
   scribe:
-    complete:
-      narrator: "Turn compression and state management complete"
+    ask-response:
+      coordinator: "Turn compression complete"
 
-# Game state lives here
+# Editor iteration config
+iteration:
+  editor_narrator_loop:
+    maxIterations: 3
+    onMaxReached: proceed_with_flag  # Don't block, flag for human review
+
+# Workspace configuration
+# Base workspace for agents (doesn't require game context)
 workspace:
-  path: ".ai/games/{game-id}/"
+  path: ".ai/tx/narrative-engine/"
+  create_on_init: false  # Agents create their own paths based on session
 
-# Turn workspace for collaborative agent synthesis
+# Turn workspace template (resolved after game exists)
 turn_workspace:
   path: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/"
-  create_on_init: true
-  cleanup_on_complete: false  # Keep for history/replay
+  create_on_init: false  # Coordinator creates after game-id known
+  cleanup_on_complete: false
 
-# Transparency for debugging mechanics
+# Transparency
 rearmatter:
   enabled: true
   fields:
-    - outcome_table      # What possibilities were generated
-    - selected_outcome   # What RNG chose
-    - trait_pressure     # Current pressure on traits
-    - momentum           # Scene momentum state
-    - arc_pressure       # How close to arc resolution
+    - outcome_table
+    - selected_outcome
+    - trait_pressure
+    - momentum
+    - arc_pressure
+    - editor_passes      # How many editor iterations
+    - prose_violations   # Any unresolved violations

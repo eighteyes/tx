@@ -252,6 +252,7 @@ export class MessageConsumer extends EventEmitter {
           headline: parsed.frontmatter.headline,
           status: parsed.frontmatter.status,
           command: parsed.frontmatter.command,
+          feature: parsed.frontmatter.feature,  // For worktree-enabled meshes
           body: parsed.body,
           rearmatter: parsed.rearmatter,
           filepath
