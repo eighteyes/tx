@@ -235,6 +235,7 @@ to: core/core
 from: narrative-engine/coordinator
 type: task-complete
 msg-id: turn{N}-complete
+format: verbatim
 ---
 {Final prose content from prose.md}
 
@@ -248,6 +249,8 @@ msg-id: turn{N}-complete
 | editor_passes | {iteration count} |
 | prose_violations | {true/false} |
 ```
+
+**Note:** `format: verbatim` tells core to render prose as-is with markdown formatting. Do NOT use `format: narrative`.
 
 **Sending task-complete to core (game created):**
 ```yaml
