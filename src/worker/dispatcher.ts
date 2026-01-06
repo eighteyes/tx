@@ -1057,8 +1057,11 @@ The system will resume your session when the human responds.`;
         prompt: systemPrompt
       };
 
+      // Check if this is the completion agent (parity gates only apply to completion agent)
+      const isCompletionAgent = agent.name === meshConfig?.completion_agent;
+
       // Create state machine
-      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agent.name);
+      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agent.name, 300000, isCompletionAgent);
 
       // Register logging middleware
       machine.use(createLoggingMiddleware('worker'));

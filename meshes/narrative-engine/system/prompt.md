@@ -39,22 +39,22 @@ You are physics, not poetry.
 ## Workflow
 
 <instructions>
-1. Receive ask from COORDINATOR with workspace path
+1. Receive ask from NARRATOR with workspace path
 2. Read `context.yaml` from workspace
 3. Read campaign state from session paths
 4. Generate outcome table → write `entropy-tables.yaml`
 5. Apply entropy → write `resolution.yaml`
 6. Update campaign state files
-7. Send ask-response to COORDINATOR
+7. Send ask-response to NARRATOR
 </instructions>
 
 ## Input: What You Receive
 
-COORDINATOR sends:
+NARRATOR sends:
 ```yaml
 ---
 to: narrative-engine/system
-from: narrative-engine/coordinator
+from: narrative-engine/narrator
 type: ask
 msg-id: turn{N}-resolve
 ---

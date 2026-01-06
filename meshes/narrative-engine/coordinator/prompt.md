@@ -55,29 +55,26 @@ On receiving ANY task from core:
 When core requests a new game (no existing session):
 
 1. Write initial session.yaml with phase: `game_creation`
-2. Send ask to NARRATOR:
-   ```yaml
-   type: ask
-   Load reference: narrator/references/game-maker.md
-
-   Run HITL extraction loop with player to create:
-   - Game name (becomes game-id, kebab-case)
-   - author.yaml (prose voice - CRITICAL, do this early)
-   - setting.yaml
-   - arc.yaml
-   - protagonist.yaml
-   - entities.yaml
-
-   Author.yaml defines YOUR voice for this game. Extract it during
-   Phase 6c of game-maker. Without it, prose defaults to generic AI.
-
-   Create all artifacts in .ai/games/{game-id}/
-   When complete, respond with game-id and campaign-id.
-   ```
-3. On NARRATOR response:
-   - Update session.yaml with game/campaign paths
+2. Send ask to NARRATOR for game-maker extraction
+3. WAIT for NARRATOR ask-response
+4. When NARRATOR responds with game-id:
+   - Update session.yaml with paths from response
    - Set phase: `init`
-   - Send task-complete to core: "Game '{game-name}' created. Ready for first turn."
+   - **IMMEDIATELY send task-complete to core:**
+     ```yaml
+     ---
+     to: core/core
+     from: narrative-engine/coordinator
+     type: task-complete
+     msg-id: game-created
+     ---
+     Game '{game-name}' created. Ready for first turn.
+
+     Game ID: {game-id}
+     Campaign ID: campaign-1
+     ```
+
+**CRITICAL**: After game creation, you MUST send task-complete to core. This signals the session is ready for player input.
 
 ## Turn Flow
 

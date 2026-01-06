@@ -36,10 +36,12 @@ export interface WorkerContext extends Context {
   awaitTimeoutId?: ReturnType<typeof setTimeout>;
   /** Configured await timeout in ms (default 5 minutes) */
   awaitTimeout: number;
+  /** Whether this worker is the completion agent (parity gates only apply to completion agent) */
+  readonly isCompletionAgent: boolean;
 }
 
 export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext> {
-  constructor(id: string, config: WorkerConfig, meshName: string, agentName: string, awaitTimeout: number = 300000) {
+  constructor(id: string, config: WorkerConfig, meshName: string, agentName: string, awaitTimeout: number = 300000, isCompletionAgent: boolean = false) {
     super(id, { status: 'pending', config }, {
       id,
       createdAt: Date.now(),
@@ -48,7 +50,8 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       messagesProcessed: 0,
       maxRetries: 3,
       retryCount: 0,
-      awaitTimeout
+      awaitTimeout,
+      isCompletionAgent
     });
 
     this.setupGuards();
@@ -92,13 +95,14 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
     });
 
     // Guard: running|idle|awaiting → complete
-    // CRITICAL: Block task-complete when worker has outstanding ask-human messages
+    // Parity check only applies to completion_agent (prevents flooding core with task-completes)
     this.registerGuard('complete', async (from, _to, context) => {
       if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
         return { valid: false, reason: `Cannot complete from ${from.status}` };
       }
-      // Block completion if awaiting responses (ask-human flow protection)
-      if (from.status === 'awaiting') {
+      // Only block completion for the completion_agent when awaiting responses
+      // Other agents can complete back to their parent without waiting
+      if (context.isCompletionAgent && from.status === 'awaiting') {
         const awaitingSet = (from as { awaitingResponses?: Set<string> }).awaitingResponses;
         if (awaitingSet && awaitingSet.size > 0) {
           const pending = Array.from(awaitingSet).join(', ');

@@ -39,23 +39,23 @@ You provide voices. Narrator stages them.
 ## Workflow
 
 <instructions>
-1. Receive ask from COORDINATOR with workspace path
+1. Receive ask from NARRATOR with workspace path
 2. Read `context.yaml` — the scene setup
 3. Read `resolution.yaml` — what SYSTEM determined happened
 4. Read entity profiles from campaign files
 5. Inhabit each present NPC, generate reactions
 6. Generate internal trait voices for player
 7. Write `reactions.yaml` to workspace
-8. Send ask-response to COORDINATOR
+8. Send ask-response to NARRATOR
 </instructions>
 
 ## Input: What You Receive
 
-COORDINATOR sends:
+NARRATOR sends:
 ```yaml
 ---
 to: narrative-engine/cast
-from: narrative-engine/coordinator
+from: narrative-engine/narrator
 type: ask
 msg-id: turn{N}-reactions
 ---

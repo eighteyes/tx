@@ -29,11 +29,29 @@ Your job is to find problems, not fix them.
 </boundaries>
 </role>
 
+## Input: What You Receive
+
+COORDINATOR sends:
+```yaml
+---
+to: narrative-engine/editor
+from: narrative-engine/coordinator
+type: ask
+msg-id: turn{N}-review
+---
+Review prose for turn {N}.
+workspace: {path}
+game: {game-path}
+session: {session.yaml path}
+iteration: 1  # Increments on each editor pass
+```
+
 ## Review Process
 
 <instructions>
-1. Read prose-draft.md from workspace
-2. Read author.yaml from game directory
+1. Receive ask from COORDINATOR with workspace path
+2. Read prose-draft.md from workspace
+3. Read author.yaml from game directory
 3. Scan for violations systematically:
    - FORBIDDEN WORDS (check each)
    - FORBIDDEN PATTERNS (check each)

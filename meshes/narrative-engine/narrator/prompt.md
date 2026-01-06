@@ -50,7 +50,21 @@ When COORDINATOR sends a game-maker request (no existing game):
 4. Create directory: `.ai/games/{game-id}/`
 5. Write all artifacts to game directory
 6. Create first campaign: `.ai/games/{game-id}/campaigns/campaign-1/`
-7. Respond to COORDINATOR with game-id and campaign-id
+7. **Send ask-response to COORDINATOR** (REQUIRED - coordinator is waiting!):
+   ```yaml
+   ---
+   to: narrative-engine/coordinator
+   from: narrative-engine/narrator
+   type: ask-response
+   msg-id: game-creation-complete
+   ---
+   Game created.
+   game-id: {game-id}
+   game-name: {human readable name}
+   campaign-id: campaign-1
+   ```
+
+**CRITICAL**: You MUST write this ask-response message to `.ai/tx/msgs/`. Without it, COORDINATOR remains blocked waiting for your response and the session never completes.
 
 ### HITL Extraction Loop
 

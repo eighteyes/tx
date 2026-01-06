@@ -183,6 +183,20 @@ export class SdkRunner extends EventEmitter {
               isError = msg.is_error;
               sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
               if (resultMessage) sessionOutput.push(resultMessage);
+
+              // Log SDK metrics: cost, duration, tokens
+              log.info('sdk-runner', `SDK metrics`, {
+                workerId,
+                subtype: resultMsg.subtype,
+                totalCostUsd: resultMsg.total_cost_usd,
+                durationMs: resultMsg.duration_ms,
+                durationApiMs: resultMsg.duration_api_ms,
+                numTurns: resultMsg.num_turns,
+                inputTokens: resultMsg.usage.input_tokens,
+                outputTokens: resultMsg.usage.output_tokens,
+                cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
+                cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
+              });
               break;
 
             case 'system':
@@ -450,6 +464,20 @@ export class SdkRunner extends EventEmitter {
             isError = msg.is_error;
             sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
             if (resultMessage) sessionOutput.push(resultMessage);
+
+            // Log SDK metrics: cost, duration, tokens
+            log.info('sdk-runner', `SDK metrics (resume)`, {
+              workerId,
+              subtype: resultMsg.subtype,
+              totalCostUsd: resultMsg.total_cost_usd,
+              durationMs: resultMsg.duration_ms,
+              durationApiMs: resultMsg.duration_api_ms,
+              numTurns: resultMsg.num_turns,
+              inputTokens: resultMsg.usage.input_tokens,
+              outputTokens: resultMsg.usage.output_tokens,
+              cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
+              cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
+            });
             break;
 
           case 'system':

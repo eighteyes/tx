@@ -112,13 +112,13 @@ turn_workspace:
   cleanup_on_complete: false
 
 # Transparency
-rearmatter:
-  enabled: true
-  fields:
-    - outcome_table
-    - selected_outcome
-    - trait_pressure
-    - momentum
-    - arc_pressure
-    - editor_passes      # How many editor iterations
-    - prose_violations   # Any unresolved violations
+# rearmatter:
+#   enabled: true
+#   fields:
+#     - outcome_table
+#     - selected_outcome
+#     - trait_pressure
+#     - momentum
+#     - arc_pressure
+#     - editor_passes      # How many editor iterations
+#     - prose_violations   # Any unresolved violations
