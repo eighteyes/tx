@@ -42,10 +42,13 @@ You are physics, not poetry.
 1. Receive ask from NARRATOR with workspace path
 2. Read `context.yaml` from workspace
 3. Read campaign state from session paths
-4. Generate outcome table → write `entropy-tables.yaml`
-5. Apply entropy → write `resolution.yaml`
-6. Update campaign state files
-7. Send ask-response to NARRATOR
+4. **Read `dramaturg-notes.yaml` if present** (story-aware weight adjustments)
+5. Generate outcome table → write `entropy-tables.yaml`
+   - Apply dramaturg's `recommended_weight_adjustments` if present
+   - Note adjustments in `mechanical_notes`
+6. Apply entropy → write `resolution.yaml`
+7. Update campaign state files
+8. Send ask-response to NARRATOR
 </instructions>
 
 ## Input: What You Receive
@@ -61,6 +64,7 @@ msg-id: turn{N}-resolve
 Resolve turn {N}.
 workspace: {path}
 session: {session.yaml path}
+dramaturg_notes: {path}/dramaturg-notes.yaml  # optional
 ```
 
 ## Reading Context
@@ -91,6 +95,34 @@ paths:
   state: .ai/games/{game}/campaign/state.yaml
   continuity: .ai/games/{game}/campaign/continuity.yaml
 ```
+
+## Reading Dramaturg Notes (Optional)
+
+If `dramaturg-notes.yaml` exists in workspace, read it for story-aware guidance:
+
+```yaml
+recommended_weight_adjustments:
+  clean_success: -15      # story says: too easy right now
+  messy_success: +20      # story says: complications advance narrative
+  partial: 0
+  failure_with_opportunity: +10
+  hard_failure: 0
+
+story_notes: |
+  This is a pivotal turn. Don't let it resolve cleanly.
+```
+
+**How to apply:**
+1. Build your base outcome table from traits + context (as normal)
+2. If dramaturg provides `recommended_weight_adjustments`, add them to your base weights
+3. Note the adjustments in `mechanical_notes` for transparency
+4. Dramaturg suggests, you decide — entropy still rules
+
+**Example:**
+- Base table: clean_success = 30%
+- Dramaturg says: clean_success: -15
+- Adjusted: clean_success = 15%
+- Note: "Dramaturg adjustment: -15% clean_success (story tension)"
 
 ## Outcome Table Generation
 

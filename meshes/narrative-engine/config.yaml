@@ -12,20 +12,35 @@ agents:
     # State machine, routing, entropy, file management
     # Does NOT do creative work
 
+  - name: dramaturg
+    model: haiku
+    prompt: dramaturg/prompt.md
+    # Story-aware outcome suggestions
+    # Reads arc context, suggests weight adjustments
+
   - name: system
     model: sonnet
     prompt: system/prompt.md
     # Mechanics engine, outcome tables, trait tracking
+    # Accepts dramaturg notes for story-aware weighting
 
   - name: cast
     model: sonnet
     prompt: cast/prompt.md
     # NPC voices, reactions, character consistency
 
+  - name: scene-crafter
+    model: haiku
+    prompt: scene-crafter/prompt.md
+    # Scene structure, beats, transitions, pacing
+    # Identifies decision points for player agency
+
   - name: narrator
     model: opus
     prompt: narrator/prompt.md
-    # Prose rendering ONLY - receives inputs, outputs prose
+    # Prose rendering with staged build (1.5-2k words)
+    # Orchestrates dramaturg, system, cast, scene-crafter
+    # Handles mid-turn player decisions
 
   - name: oracle
     model: haiku
@@ -51,7 +66,7 @@ completion_agent: coordinator
 continuation:
   type: session
 
-# Coordinator supervises, agents can ask each other directly
+# Coordinator supervises, narrator orchestrates sub-agents
 routing:
   coordinator:
     ask:
@@ -66,12 +81,18 @@ routing:
 
   narrator:
     ask:
+      dramaturg: "Analyze story context"
       system: "Need mechanical resolution"
       cast: "Need character reactions"
+      scene-crafter: "Outline scene structure"
     ask-human:
-      core: "Need player input for HITL extraction"
+      core: "HITL extraction / mid-turn decisions"
     ask-response:
       coordinator: "Prose rendered"
+
+  dramaturg:
+    ask-response:
+      narrator: "Story analysis complete"
 
   system:
     ask-response:
@@ -80,6 +101,10 @@ routing:
   cast:
     ask-response:
       narrator: "Character reactions ready"
+
+  scene-crafter:
+    ask-response:
+      narrator: "Scene outline complete"
 
   oracle:
     ask-response:
