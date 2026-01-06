@@ -545,7 +545,14 @@ User requested: /know:add auth-system
 ## Handling Responses
 
 1. \`ask-human\` - Worker needs user input. Ask the user, then send \`ask-response\`
-2. \`task-complete\` - Worker finished. Acknowledge to user.
+2. \`task-complete\` - Worker finished. Display result to user.
+
+### Output Format Field
+
+Workers may include a \`format\` field in task-complete frontmatter:
+
+- \`format: verbatim\` - Display the body as-is with markdown rendering. Use for prose, formatted output, or content that should not be summarized.
+- No format field - Summarize or acknowledge as appropriate.
 
 ## Example ask-response:
 
