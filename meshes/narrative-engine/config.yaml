@@ -25,7 +25,6 @@ agents:
   - name: narrator
     model: opus
     prompt: narrator/prompt.md
-    temperature: 0.6  # Creative prose
     # Prose rendering ONLY - receives inputs, outputs prose
 
   - name: oracle
@@ -36,7 +35,6 @@ agents:
   - name: editor
     model: sonnet
     prompt: editor/prompt.md
-    temperature: 0.3  # Analytical
     # Adversarial prose review against author.yaml
     # Only fires if oracle passes
 
@@ -70,6 +68,8 @@ routing:
     ask:
       system: "Need mechanical resolution"
       cast: "Need character reactions"
+    ask-human:
+      core: "Need player input for HITL extraction"
     ask-response:
       coordinator: "Prose rendered"
 

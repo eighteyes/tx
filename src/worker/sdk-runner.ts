@@ -47,10 +47,6 @@ export interface SdkRunnerConfig {
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
   sessionId?: string;  // Resume existing session (for interrupt/revision flow)
-  // Sampling parameters (optional, from mesh config or message frontmatter)
-  temperature?: number;  // 0.0-1.0, controls randomness
-  maxTokens?: number;    // Max tokens in response
-  topP?: number;         // 0.0-1.0, nucleus sampling
 }
 
 export class SdkRunner extends EventEmitter {
@@ -107,18 +103,6 @@ export class SdkRunner extends EventEmitter {
           });
         }
 
-        // Build extraArgs for sampling parameters (passed to Claude Code CLI)
-        const extraArgs: Record<string, string | null> = {};
-        if (this.config.temperature !== undefined) {
-          extraArgs['temperature'] = String(this.config.temperature);
-        }
-        if (this.config.maxTokens !== undefined) {
-          extraArgs['max-tokens'] = String(this.config.maxTokens);
-        }
-        if (this.config.topP !== undefined) {
-          extraArgs['top-p'] = String(this.config.topP);
-        }
-
         try {
           this.currentQuery = query({
             prompt: userPrompt,
@@ -134,8 +118,6 @@ export class SdkRunner extends EventEmitter {
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
-              // Sampling parameters via extraArgs (CLI pass-through)
-              extraArgs: Object.keys(extraArgs).length > 0 ? extraArgs : undefined,
             }
           });
         } catch (error) {
@@ -160,8 +142,6 @@ export class SdkRunner extends EventEmitter {
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
                 tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
                 resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
-                // Sampling parameters via extraArgs (CLI pass-through)
-                extraArgs: Object.keys(extraArgs).length > 0 ? extraArgs : undefined,
               }
             });
           } else {
@@ -419,18 +399,6 @@ export class SdkRunner extends EventEmitter {
         ? []
         : undefined;
 
-      // Build extraArgs for sampling parameters (passed to Claude Code CLI)
-      const extraArgs: Record<string, string | null> = {};
-      if (this.config.temperature !== undefined) {
-        extraArgs['temperature'] = String(this.config.temperature);
-      }
-      if (this.config.maxTokens !== undefined) {
-        extraArgs['max-tokens'] = String(this.config.maxTokens);
-      }
-      if (this.config.topP !== undefined) {
-        extraArgs['top-p'] = String(this.config.topP);
-      }
-
       // Create query with resume option to continue the session
       const q = query({
         prompt: userPrompt,
@@ -445,8 +413,6 @@ export class SdkRunner extends EventEmitter {
           mcpServers: this.config.mcpServers,
           tools: toolsConfig,
           resume: sessionId,  // Resume the existing session
-          // Sampling parameters via extraArgs (CLI pass-through)
-          extraArgs: Object.keys(extraArgs).length > 0 ? extraArgs : undefined,
         }
       });
 

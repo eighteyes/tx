@@ -28,10 +28,6 @@ export interface MeshAgentConfig {
   model: SemanticModel;
   prompt: string;  // Path to prompt file relative to workDir
   workspace?: WorkspaceConfigSchema;
-  // Sampling parameters (optional, can be overridden via message frontmatter)
-  temperature?: number;  // 0.0-1.0, controls randomness
-  maxTokens?: number;    // Max tokens in response
-  topP?: number;         // 0.0-1.0, nucleus sampling
 }
 
 /**
@@ -178,10 +174,6 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   model: { type: 'string', required: true, enum: ['opus', 'sonnet', 'haiku'] },
   prompt: { type: 'string', required: true },
   workspace: { type: 'object' },
-  // Sampling parameters
-  temperature: { type: 'number', minimum: 0, maximum: 1 },
-  maxTokens: { type: 'number', minimum: 1, maximum: 128000 },
-  topP: { type: 'number', minimum: 0, maximum: 1 },
 };
 
 /**

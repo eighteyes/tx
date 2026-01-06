@@ -125,10 +125,6 @@ interface AgentConfig {
   prompt: string;  // Path to prompt file
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
-  // Sampling parameters (optional, can be overridden via message frontmatter)
-  temperature?: number;  // 0.0-1.0, controls randomness
-  maxTokens?: number;    // Max tokens in response
-  topP?: number;         // 0.0-1.0, nucleus sampling
 }
 
 export interface DispatcherConfig {
@@ -469,7 +465,19 @@ export class WorkerDispatcher extends EventEmitter {
     }
 
     try {
-      if (currentStatus === 'awaiting') {
+      // ask-human is fire-and-forget - don't add to awaitingResponses
+      // Human response comes back as new task input, not ask-response
+      // Worker can complete without waiting for human response
+      if (messageType === 'ask-human') {
+        log.info('dispatcher', `ask-human sent (fire-and-forget, no await)`, {
+          from: senderAgentId,
+          to: targetAgentId,
+        });
+        this.emit('worker:ask-human', {
+          workerId: senderAgentId,
+          target: targetAgentId,
+        });
+      } else if (currentStatus === 'awaiting') {
         // Already awaiting, add this target to the set
         log.info('dispatcher', `Adding await target`, {
           from: senderAgentId,
@@ -721,7 +729,7 @@ The system will resume your session when the human responds.`;
 
     const activeWorker = this.activeWorkers.get(agentId);
     if (!activeWorker) {
-      log.warn('dispatcher', `Parity reminder but no active worker found`, {
+      log.warn('dispatcher', `Pending asks/tasks reminder: no active worker found`, {
         agentId,
         pendingAsks,
         deletedFile,
@@ -733,14 +741,14 @@ The system will resume your session when the human responds.`;
     const sessionId = runner.getSessionId();
 
     if (!sessionId) {
-      log.warn('dispatcher', `Parity reminder but worker has no session ID`, {
+      log.warn('dispatcher', `Pending asks/tasks reminder: worker has no session ID`, {
         agentId,
         pendingAsks,
       });
       return;
     }
 
-    log.info('dispatcher', `Handling parity reminder`, {
+    log.info('dispatcher', `Handling pending asks/tasks reminder`, {
       agentId,
       sessionId: sessionId.slice(0, 8),
       pendingAsks,
@@ -759,7 +767,7 @@ The system will resume your session when the human responds.`;
       // Build reminder prompt
       const reminderPrompt = this.buildParityReminderPrompt(pendingAsks);
 
-      log.info('dispatcher', `Resuming session with parity reminder`, {
+      log.info('dispatcher', `Resuming session with pending asks/tasks reminder`, {
         agentId,
         sessionId: sessionId.slice(0, 8),
       });
@@ -768,7 +776,7 @@ The system will resume your session when the human responds.`;
       const result = await runner.resume(sessionId, reminderPrompt);
 
       if (result.success) {
-        log.info('dispatcher', `Parity reminder resume completed`, {
+        log.info('dispatcher', `Pending asks/tasks reminder: resume completed`, {
           agentId,
           sessionId: sessionId.slice(0, 8),
         });
@@ -778,7 +786,7 @@ The system will resume your session when the human responds.`;
           success: true,
         });
       } else {
-        log.error('dispatcher', `Parity reminder resume failed`, {
+        log.error('dispatcher', `Pending asks/tasks reminder: resume failed`, {
           agentId,
           sessionId: sessionId.slice(0, 8),
           error: result.error,
@@ -791,7 +799,7 @@ The system will resume your session when the human responds.`;
       }
     } catch (error) {
       const errorMsg = (error as Error).message;
-      log.error('dispatcher', `Failed to handle parity reminder`, {
+      log.error('dispatcher', `Pending asks/tasks reminder: handling failed`, {
         agentId,
         error: errorMsg,
       });
@@ -1155,12 +1163,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
       }
 
-      // Merge sampling parameters: message frontmatter overrides agent config
-      // This allows per-task overrides via message frontmatter
-      const temperature = (nextMsg?.payload?.temperature as number | undefined) ?? agent.temperature;
-      const maxTokens = (nextMsg?.payload?.maxTokens as number | undefined) ?? agent.maxTokens;
-      const topP = (nextMsg?.payload?.topP as number | undefined) ?? agent.topP;
-
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
         model: agent.model,
@@ -1171,10 +1173,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         mcpServers,
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
         sessionId,  // Resume session if continuation enabled
-        // Sampling parameters (from agent config, overrideable via message frontmatter)
-        temperature,
-        maxTokens,
-        topP,
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);

@@ -45,10 +45,6 @@ export interface AgentConfig {
   model: SemanticModel; // e.g., "sonnet"
   prompt: string;
   capabilities?: string[];
-  // Sampling parameters (optional, can be set in mesh config or overridden via message frontmatter)
-  temperature?: number;  // 0.0-1.0, controls randomness
-  maxTokens?: number;    // Max tokens in response
-  topP?: number;         // 0.0-1.0, nucleus sampling
 }
 
 export interface AgentState {

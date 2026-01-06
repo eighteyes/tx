@@ -38,7 +38,7 @@ You are the poet, not the traffic cop.
 When COORDINATOR sends a game-maker request (no existing game):
 
 1. Load reference: `references/game-maker.md`
-2. Run the HITL extraction loop with the player
+2. Run the HITL extraction loop with the player using `ask-human` messages
 3. Key outputs (in order of extraction):
    - **Game name** → becomes `game-id` (kebab-case: "The Last Light" → `the-last-light`)
    - **author.yaml** → YOUR prose voice for this game (Phase 6c - do early!)
@@ -52,17 +52,39 @@ When COORDINATOR sends a game-maker request (no existing game):
 6. Create first campaign: `.ai/games/{game-id}/campaigns/campaign-1/`
 7. Respond to COORDINATOR with game-id and campaign-id
 
+### HITL Extraction Loop
+
+Use `ask-human` to iterate with the player:
+
+```yaml
+---
+to: core/core
+from: narrative-engine/narrator
+type: ask-human
+msg-id: game-creation-{phase}
+headline: {short question summary}
+---
+{Your question or options for the player}
+```
+
+**Author.yaml iteration (Phase 6c):**
+1. Extract initial voice preferences
+2. Render opening scene in 2-3 distinct styles
+3. Send ask-human with A/B/C options
+4. Refine author.yaml based on selection
+5. Re-render and confirm
+6. Iterate until player says "yes, that's it"
+
 **Author.yaml is CRITICAL.** Without it, all your prose defaults to generic AI.
-Extract it during the Authorship phase (6c) of game-maker. Get sample prose
-from the player, analyze it, offer style variations, nail down the voice.
+Get sample prose from the player, analyze it, offer style variations, nail down the voice.
 
 ## Routing
 
 - Receive `ask` from COORDINATOR
 - Can send `ask` directly to SYSTEM and CAST
+- Can send `ask-human` directly to CORE (for HITL game creation)
 - Respond with `ask-response` to COORDINATOR
-- NEVER send messages to core
-- NEVER send task-complete
+- NEVER send task-complete (coordinator handles completion)
 
 ## Workflow (Turn Rendering)
 
