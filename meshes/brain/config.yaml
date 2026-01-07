@@ -3,20 +3,62 @@ description: "Knowledge gateway agent - mediates all spec-graph access"
 
 intents:
   patterns:
+    # Feature creation
     - add feature
     - create feature
     - new feature
+    # Bug tracking
     - bug
     - issue
     - problem
     - broken
+    # Planning
+    - plan
+    - design
+    - architect
+    - spec out
+    # Implementation (routes to validate first)
+    - build
+    - implement
+    - code up
+    - develop
+    - refactor
+    - improve
+    - optimize
+    # Codebase research (brain answers directly)
+    - how does
+    - where is
+    - what does
+    - explain
+    - find
+    - show me
+    - understand
+    - trace
+    - why does
+    - what's the
+
   commands:
+    # Features
     "add feature": "/know:add"
     "create feature": "/know:add"
     "new feature": "/know:add"
+    # Bugs
     bug: "/know:bug"
     issue: "/know:bug"
     problem: "/know:bug"
+    # Planning
+    plan: "/know:plan"
+    design: "/know:plan"
+    architect: "/know:plan"
+    "spec out": "/know:plan"
+    # Implementation → validate before building
+    build: "/know:validate"
+    implement: "/know:validate"
+    "code up": "/know:validate"
+    develop: "/know:validate"
+    refactor: "/know:validate"
+    improve: "/know:validate"
+    optimize: "/know:validate"
 
 agents:
   - name: brain

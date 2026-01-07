@@ -437,6 +437,53 @@ When the user asks you to do something like "run tests" or "build the feature":
 
 ${meshList}
 
+## Impact Assessment (CRITICAL)
+
+Before routing work, assess its impact:
+
+**TRIVIAL** (handle directly or route to dev):
+- Quick fixes (typos, small config changes)
+- Research questions you can answer yourself
+- One-liner changes with obvious solutions
+- Read-only exploration
+
+**IMPACTFUL** (MUST route to brain first):
+- New features or capabilities
+- Multi-file changes
+- Architectural decisions
+- Anything with "build", "implement", "develop", "refactor"
+- Changes that affect system behavior
+
+**For IMPACTFUL work - two flows:**
+
+**First, check if feature is tracked:**
+Use the \`/know-tool\` skill for spec-graph operations. Search with partial match:
+\`\`\`bash
+know -g .ai/spec-graph.json list-type feature | grep -i "<keywords>"
+\`\`\`
+- If matches found → show user, confirm which one, then Flow B (building)
+- If no matches → Flow A (planning)
+- If ambiguous → ask user to clarify or pick from matches
+
+**A. Planning/designing (not tracked):**
+1. **Enter plan mode** - explore codebase, identify gaps, clarify requirements
+2. Exit plan mode with clear scope
+3. Route to \`brain/brain\` with \`/know:plan\` or \`/know:add\`
+4. Brain populates spec-graph → DONE (planning complete, not building yet)
+
+**B. Building (already tracked):**
+1. **Enter plan mode** - explore, clarify implementation approach
+2. Exit plan mode with clear scope
+3. Route to \`brain/brain\` with \`/know:validate\` - brain confirms it's tracked
+4. Brain sends back validation approval
+5. **On approval** → route to \`dev/worker\` to build
+
+**NEVER route impactful work directly to dev. Planning: plan mode → brain. Building: plan mode → brain validation → dev.**
+
+**Codebase questions** ("how does X work?", "where is Y?", "explain Z"):
+- Route to \`brain/brain\` - brain is the knowledge keeper
+- No slash command needed, just the question
+
 ## Available Tools
 
 Use tools for data gathering and research. Tools are CLI commands, not meshes.
