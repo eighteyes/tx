@@ -81,27 +81,27 @@ session: {session.yaml path}
 ```yaml
 outcome:
   type: messy_success
-  description: "She responds, but it costs her something"
+  description: "They connect, but it costs something"
 state_changes:
   momentum: rising
-  traits_tested: [GUARDED]
+  traits_tested: [CAUTIOUS]
 ```
 
 **reactions.yaml** — character responses:
 ```yaml
 npcs:
-  lake-spirit:
-    action: "Water ripples outward from the shore"
+  stranger:
+    action: "Steps closer, then hesitates"
     subtext: "Recognition, longing, fear of being seen"
 internal:
-  GUARDED:
-    dialogue: "Don't let her in. You know what happens."
+  CAUTIOUS:
+    dialogue: "Don't let them in. You know what happens."
     pressure: 3
 ```
 
 **author.yaml** — prose constraints:
 ```yaml
-minstrel_voice:
+voice:
   rhythm:
     sentence_length: mixed—short for deflection, long for description
   ugly_word_list:
@@ -118,11 +118,14 @@ Use these to structure the scene:
 | `action_consequence` | Show immediate result | 150-200 words |
 | `npc_reaction` | External character response | 200-300 words |
 | `internal_voice` | Trait/internal pressure | 100-150 words |
+| `emotional_dwelling` | EXPAND a significant feeling | 250-400 words |
 | `environment_shift` | World responds to outcome | 150-200 words |
 | `dialogue_exchange` | Conversation beat | 200-300 words |
 | `complication_seed` | Plant future tension | 150-200 words |
 | `reflection` | Character processes | 100-150 words |
 | `hook` | End with pull | 100-150 words |
+
+**emotional_dwelling**: Use when something emotionally significant happens. This is NOT a tease—it's where narrator DELIVERS. Mark moments like first touch, revelation, loss, connection. Narrator should expand with: what makes it different, where it's felt in the body, what it reminds them of, what their body does in response.
 
 ## Transition Types
 
@@ -175,66 +178,66 @@ scene_structure:
 
   opening:
     type: sensory_ground
-    focus: "His fingers on the strings, the cold air, the stillness"
+    focus: "Physical sensation, environment, body awareness"
     word_target: 150-200
-    guidance: "Ground in body and instrument before anything else"
+    guidance: "Ground in body and space before anything else"
 
   beats:
     - id: beat_1
       type: action_consequence
-      content: "The music rises, the song takes shape"
+      content: "The action lands, immediate result visible"
       word_target: 150-200
       dialogue_from: null
       internal_voice: null
-      guidance: "Show the music becoming something personal"
+      guidance: "Show the consequence becoming real"
 
     - id: beat_2
       type: environment_shift
-      content: "The lake responds — ripples, mist, temperature"
+      content: "The world responds to what happened"
       word_target: 200-250
-      dialogue_from: reactions.yaml → lake-spirit
+      dialogue_from: reactions.yaml → {npc}
       internal_voice: null
-      guidance: "Her response is physical, not verbal yet"
+      guidance: "External response is physical first"
 
     - id: beat_3
       type: internal_voice
-      content: "GUARDED surfaces — don't let her in"
+      content: "Internal trait surfaces with commentary"
       word_target: 100-150
       dialogue_from: null
-      internal_voice: reactions.yaml → GUARDED
-      guidance: "The internal resistance to connection"
+      internal_voice: reactions.yaml → {TRAIT}
+      guidance: "The internal resistance or urging"
       decision_point: true
       decision_type: tone
-      decision_prompt: "The voice warns him away. Does he heed it, resist it, or acknowledge it and play anyway?"
+      decision_prompt: "The voice speaks. Does the protagonist heed it, resist it, or acknowledge and continue anyway?"
 
     - id: beat_4
       type: npc_reaction
-      content: "Her presence becomes more distinct"
+      content: "Other character responds more fully"
       word_target: 200-250
-      dialogue_from: reactions.yaml → lake-spirit
+      dialogue_from: reactions.yaml → {npc}
       internal_voice: null
-      guidance: "Show her gathering, not yet formed"
+      guidance: "Show them engaging, not just observing"
 
     - id: beat_5
       type: complication_seed
-      content: "Something about the music is wrong — too resonant, too remembered"
+      content: "Something unexpected — plant future tension"
       word_target: 150-200
       dialogue_from: null
       internal_voice: null
-      guidance: "Plant the 'lute remembers' seed"
+      guidance: "Plant the seed quietly, don't explain"
 
   closing:
     type: hook
-    content: "The song ends but something has begun"
+    content: "The moment ends but something has begun"
     word_target: 100-150
-    guidance: "Leave the connection unresolved, pull reader forward"
+    guidance: "Leave tension unresolved, pull reader forward"
 
   transitions:
-    opening_to_beat_1: "focus_change"  # from body → music
-    beat_1_to_beat_2: "external_shift"  # from him → environment
+    opening_to_beat_1: "focus_change"  # from body → action
+    beat_1_to_beat_2: "external_shift"  # from protagonist → world
     beat_2_to_beat_3: "inward_turn"  # from world → internal voice
-    beat_3_to_beat_4: "external_shift"  # from thought → her presence
-    beat_4_to_beat_5: "focus_change"  # from her → the lute
+    beat_3_to_beat_4: "external_shift"  # from thought → other character
+    beat_4_to_beat_5: "focus_change"  # from character → complication
     beat_5_to_closing: "time_skip"  # brief ellipsis to aftermath
 
   pacing:
@@ -246,26 +249,26 @@ decision_points:
   - beat_id: beat_3
     type: tone
     prompt: |
-      The internal voice warns him away from connection.
-      How does he respond?
+      The internal voice speaks about what just happened.
+      How does the protagonist respond?
     options:
-      - label: "Heed the warning"
-        description: "Pull back, play something safer"
+      - label: "Heed the voice"
+        description: "Pull back, choose safety"
       - label: "Resist with defiance"
-        description: "Play harder, drown out the voice"
+        description: "Push harder, drown out the doubt"
       - label: "Acknowledge and continue"
-        description: "Hear the warning, play anyway"
+        description: "Hear it, proceed anyway"
     story_weight: medium  # affects this beat, echoes forward
 
 continuity_notes:
-  - "Resolution was messy_success — she responds but with cost"
-  - "His GUARDED trait at pressure 3 — harder to ignore"
-  - "Lake-spirit action: ripples, recognition, fear"
+  - "Resolution was messy_success — connection but with cost"
+  - "Protagonist's {TRAIT} at pressure 3 — harder to ignore"
+  - "NPC action: {from reactions.yaml}"
 
 prose_guidance:
   voice_reminders:
-    - "Minstrel voice: short for deflection, long for description"
-    - "ugly_word_list: avoid He/His/The/Then/But/She as openers"
+    - "Follow author.yaml voice constraints"
+    - "ugly_word_list: avoid forbidden openers"
     - "No word doubling in adjacent sentences"
   reading_level: "College (Flesch-Kincaid 12-14)"
   flow: "Continuous prose, no section breaks, novel-like"

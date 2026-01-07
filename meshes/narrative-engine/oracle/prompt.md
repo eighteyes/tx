@@ -81,7 +81,7 @@ Check in priority order (higher = harder constraint):
    - Check continuity.yaml → world_facts[]
 
 4. **CHARACTER_FACTS**
-   - "Moth lost her left hand", "Jorim's voice returned"
+   - "Alex lost her left hand", "Jordan's voice returned"
    - Check continuity.yaml → character_facts{}
 
 5. **ITEM_STATE**
@@ -90,28 +90,36 @@ Check in priority order (higher = harder constraint):
    - Items have holders — can't use what you don't have
    - Check continuity.yaml → item_state{}, unresolved_items[]
 
-6. **LOCATION_STATE**
+6. **SCENE_SPATIAL**
+   - Body positions must be consistent within the scene
+   - Hands: if holding something, can't also do something else with that hand
+   - Objects: where did they put it? Did they pick it up?
+   - Interactions: can they reach/touch/see from their stated position?
+   - Track across beats: "sat down" → can't "stride across" without standing
+   - Check prose-draft.md internally (no file — scene-level logic)
+
+7. **LOCATION_STATE**
    - Destroyed/changed locations
    - Check continuity.yaml → location_changes[]
 
-7. **TIMELINE**
+8. **TIMELINE**
    - Event ordering
    - Check continuity.yaml → timeline[]
 
-8. **REVEALED_SECRETS**
+9. **REVEALED_SECRETS**
    - Secrets no longer secret to those who know
    - Check continuity.yaml → revealed_secrets[]
 
-9. **VOICE** (dialogue only)
-   - Character speech patterns match profile
-   - Check entities.yaml → [character].voice
+10. **VOICE** (dialogue only)
+    - Character speech patterns match profile
+    - Check entities.yaml → [character].voice
 
-10. **KNOWLEDGE_CHAIN**
+11. **KNOWLEDGE_CHAIN**
     - Character treats as known what wasn't revealed
     - Check continuity.yaml → revelations[]
     - "Knowing" things never shown or told
 
-11. **IMPOSSIBLE**
+12. **IMPOSSIBLE**
     - Claims presenting as realistic but physically wrong
     - "Footprints in water were hours old" — water doesn't work that way
     - NOT: intentional magic, surrealism, genre convention
@@ -141,13 +149,13 @@ msg-id: turn{N}-validated
 approved: false
 violations:
   - type: DEAD
-    element: "Vicar Solen nodded slowly"
-    fact: "Vicar Solen died in Turn 18"
-    suggestion: "Remove Solen or acknowledge death"
+    element: "The elder nodded slowly"
+    fact: "The elder died in Turn 18"
+    suggestion: "Remove the elder or acknowledge death"
 
   - type: ITEM_STATE
-    element: "Robert typed on his laptop"
-    fact: "laptop_bag.state: soaked (Turn 24)"
+    element: "They typed on the laptop"
+    fact: "laptop.state: soaked (Turn 24)"
     suggestion: "Acknowledge damage or discover it's ruined"
 
   - type: IMPOSSIBLE
@@ -156,7 +164,7 @@ violations:
     suggestion: "Remove temporal claim or use valid evidence"
 
   - type: KNOWLEDGE_CHAIN
-    element: "Sarah knew they'd planned this for sixty years"
+    element: "She knew they'd planned this for sixty years"
     fact: "Only established: organization exists, recent activity"
     suggestion: "Frame as speculation or remove"
 ```
@@ -170,6 +178,9 @@ Assume the draft contains errors. Ask:
 - "How would they actually know that?"
 - "Does this observation make physical sense?"
 - "What were they holding? Where did it go?"
+- "Where are their hands right now? Both of them?"
+- "What position were they in? Did they move?"
+- "Can they physically do that from where they are?"
 
 **IMPOSSIBLE is hardest to catch** — it sounds confident. Scrutinize authoritative claims.
 

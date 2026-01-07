@@ -69,22 +69,22 @@ session: {session.yaml path}
 **context.yaml** — the scene:
 ```yaml
 turn: 42
-player_action: "I try to convince the guard"
+player_action: "I try to convince them to help"
 actor:
-  id: moth
-  traits: [SILVER-TONGUED, DESPERATE]
+  id: protagonist
+  traits: [PERSUASIVE, DESPERATE]
 scene:
-  present: [guard-captain, moth, companion]
+  present: [gatekeeper, protagonist, ally]
 ```
 
 **resolution.yaml** — what happened:
 ```yaml
 outcome:
   type: messy_success
-  description: "Guard relents but demands a favor"
+  description: "They relent but demand a favor"
 state_changes:
   bonds_changed:
-    - entity: guard-captain
+    - entity: gatekeeper
       change: "neutral → owes_favor"
 ```
 
@@ -133,7 +133,7 @@ When characters lie, plant detectable tells:
 
 Include tells in the `tells:` field:
 ```yaml
-guard-captain:
+gatekeeper:
   dialogue: "Haven't seen anyone come through."
   tells: "Eyes flick to storage room door. Too quick."
 ```
@@ -163,22 +163,22 @@ Write to workspace:
 
 ```yaml
 npcs:
-  guard-captain:
+  gatekeeper:
     dialogue: "Fine. But you'll owe me. When I call, you answer."
-    action: Steps aside, hand still on sword hilt
+    action: Steps aside, hand still on weapon
     subtext: Calculating, sees opportunity
     tone: grudging
-    tells: Eyes flick to companion, measuring their worth too
+    tells: Eyes flick to ally, measuring their worth too
 
-  companion:
+  ally:
     dialogue: null  # Stays silent
-    action: Exhales with relief, touches Moth's arm
+    action: Exhales with relief, touches protagonist's arm
     subtext: Grateful but worried about the deal
     tone: anxious
 
 internal:
-  SILVER-TONGUED:
-    dialogue: "Keep pushing. He's almost there."
+  PERSUASIVE:
+    dialogue: "Keep pushing. They're almost there."
     tone: confident
     pressure_note: "Pressure 2 — background voice"
 

@@ -107,6 +107,99 @@ endings:
 # What to preserve vs transform
 transformation_rule: "Preserve all facts and content; change only diction, cadence, and punctuation."
 
+# ═══════════════════════════════════════════════════════════
+# UNIVERSAL CONSTRAINTS (apply to all games)
+# ═══════════════════════════════════════════════════════════
+
+universal:
+
+  ugly_word_list:
+    avoid: [He, His, The, Then, But, She, And, This, That]
+    rule: NEVER start a sentence with these words. Mid-sentence use only when no graceful alternative exists.
+    guidance: |
+      These words work but rarely sing. Prefer alternatives:
+      "He walked" → "Walking the shore, he..." or start with object/sensation
+      "The lake" → "Copper light on still water—the lake..."
+      "But" → em-dash, semicolon, or restructure
+      "She said" → action beat, or cut tag entirely
+      Never start consecutive sentences with the same word.
+
+  word_doubling:
+    rule: NEVER repeat a word within the same sentence or adjacent sentences
+    guidance: |
+      Find synonyms, restructure, or cut. If "water" appears in one sentence,
+      the next must use "lake", "surface", "wet", or nothing.
+      Exception: intentional poetic repetition for rhythm (rare, marked)
+
+  litotes:
+    budget: 2  # Max 1-2 per scene. AI defaults to 20+. Unacceptable.
+    rule: Default to positive. Say what it IS, not what it isn't.
+    forbidden_constructions:
+      - "not X, but Y"       # "not anger, but recognition" → name the thing
+      - "not X—Y"            # "not word—wound" → commit to wound
+      - "not [adj], not [adj]"  # stacking negations = lazy emphasis
+      - "Not [noun]. [Statement]"  # "Not evasion. Truth." → just say truth
+    when_acceptable: "Emphasis through denial. 'This was not a man who asked twice.' Earns its negative."
+
+  emotional_exposition:
+    rule: DWELL in significant emotional moments. Don't tease—DELIVER.
+    guidance: |
+      When something matters emotionally, expand it. Statements like
+      "This was different" or "Something shifted" are PROMISES. Pay off immediately:
+      - What makes it different? Describe the specific quality.
+      - Where is it felt in the body? Skin, chest, throat, gut?
+      - What does it remind them of? What does it NOT remind them of?
+      - What is the body doing in response? Tension releasing? Breath catching?
+      Give the reader the EXPERIENCE, not just the label.
+
+  metaphor_fatigue:
+    rule: Keep metaphors FRESH. Same domain ≠ same metaphor.
+    guidance: |
+      Characters may have signature metaphor domains (a sailor thinks in knots
+      and currents, a smith in heat and hammer). That's voice. The problem is
+      REPETITION within the domain.
+      Track what you've used. Same domain is fine. Same IMAGE is not.
+
+  kill_words:
+    - suddenly
+    - somehow
+    - seemed
+    - orbs (for eyes)
+    - ministrations
+    - amidst
+    - whilst
+    - myriad
+    - delve
+    - tapestry
+    - testament
+    - beacon
+    - vessel
+    - journey
+    - visage
+    - countenance
+    - digits (for fingers)
+    - tresses
+
+  kill_patterns:
+    - "She realized that"
+    - "It was as if"
+    - "There was something about"
+    - "heart pounded" (cliché)
+    - "eyes [verbed]" (eyes don't act, faces do)
+    - dialogue tags with adverbs
+    - explaining emotion instead of showing
+
+  required_techniques:
+    - body before interpretation
+    - subtext in dialogue
+    - sensory grounding in every scene
+    - short sentences for impact, long for atmosphere
+
+  dialogue_tags:
+    preferred: [said, asked]
+    acceptable: action beats instead of tags
+    forbidden: adverb-laden tags
+
 # Example passage in this voice (optional but helpful for calibration)
 # example: |
 #   She checked the inbox again ( the third time in ten minutes ) and the

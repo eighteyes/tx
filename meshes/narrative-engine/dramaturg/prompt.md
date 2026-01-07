@@ -86,8 +86,8 @@ phases:
   - name: "Revelation"
     pressure_range: [61, 85]
 seeds:
-  - "The lute remembers what he forgot"
-  - "She has taken form before"
+  - "The artifact holds a secret"
+  - "They have met before, forgotten"
 ```
 
 **state.yaml** — current narrative state:
@@ -95,16 +95,16 @@ seeds:
 momentum: rising
 arc_pressure: 45
 active_questions:
-  - question: "Will she reveal herself?"
+  - question: "Will they trust each other?"
     pressure: 60
-  - question: "Can he play without armor?"
+  - question: "Can they let their guard down?"
     pressure: 35
 ```
 
 **context.yaml** — the current action:
 ```yaml
 turn: 5
-player_action: "Play the song that reminds me of home"
+player_action: "I reach out to touch their hand"
 entropy: 67
 ```
 
@@ -150,69 +150,77 @@ story_context:
   phase_transition_near: false
 
   active_questions:
-    - question: "Will she reveal herself?"
+    - question: "Will they trust each other?"
       pressure: 60
       status: pressurized  # ready to resolve soon
-    - question: "Can he play without armor?"
+    - question: "Can they let their guard down?"
       pressure: 35
       status: building
 
   seeds_status:
-    - seed: "The lute remembers what he forgot"
+    - seed: "The artifact holds a secret"
       readiness: planted  # needs more setup
-    - seed: "She has taken form before"
+    - seed: "They have met before, forgotten"
       readiness: ready  # could trigger naturally
 
 outcome_analysis:
   clean_success:
-    story_effect: "Deflates tension too early"
-    recommendation: "-15 weight"
-    reasoning: "He hasn't earned easy success yet"
+    story_effect: "Release after tension, earned victory"
+    when_interesting: "After sustained struggle, or when arc needs a breath"
+    when_boring: "Too early, nothing at stake yet"
 
   messy_success:
-    story_effect: "Advances relationship while introducing complication"
-    recommendation: "+20 weight"
-    reasoning: "She responds but it costs her something"
+    story_effect: "Progress with complication, new threads"
+    when_interesting: "Relationships deepening, mid-arc complexity"
+    when_boring: "Every success is messy = predictable"
 
   partial:
-    story_effect: "Maintains tension, delays resolution"
-    recommendation: "neutral"
-    reasoning: "Safe but not interesting"
+    story_effect: "Maintains tension, incomplete resolution"
+    when_interesting: "Building toward climax, raising stakes"
+    when_boring: "Stalling without purpose"
 
   failure:
-    story_effect: "Opens vulnerability, invites retry"
-    recommendation: "+10 weight"
-    reasoning: "His failure could trigger her protective response"
+    story_effect: "Forces adaptation, creates player agency"
+    when_interesting: "Player needs to problem-solve, try new approach"
+    when_boring: "Repeated failure without new options"
 
+  hard_failure:
+    story_effect: "Consequences land, world pushes back"
+    when_interesting: "Stakes need to feel real, hubris check"
+    when_boring: "Punishing without teaching"
+
+# Example weights for THIS turn (not defaults - analyze each turn fresh):
 recommended_weight_adjustments:
-  clean_success: -15
-  messy_success: +20
-  partial: 0
-  failure_with_opportunity: +10
-  hard_failure: 0
+  clean_success: 0   # Adjust based on arc position
+  messy_success: 0   # Adjust based on relationship state
+  partial: 0         # Adjust based on pacing needs
+  failure_with_opportunity: 0  # Adjust based on player adaptation potential
+  hard_failure: 0    # Adjust based on stakes/consequence needs
 
 new_directions:
-  - suggestion: "The lute could respond to her presence"
-    trigger: "If outcome involves music + proximity"
-    story_reason: "Activates the 'lute remembers' seed"
+  - suggestion: "The artifact could react to proximity"
+    trigger: "If outcome involves closeness"
+    story_reason: "Activates the 'artifact holds a secret' seed"
 
-  - suggestion: "She could almost take form, then retreat"
+  - suggestion: "A flash of recognition, then retreat"
     trigger: "If outcome involves connection"
     story_reason: "Builds toward the revelation phase"
 
 story_notes: |
-  This is a pivotal turn. He's playing something personal for the first time.
-  Don't let it resolve cleanly — the story needs the complication of her
-  response to deepen. A messy success where she responds unexpectedly
-  (mist thickens, water ripples, temperature changes) would advance both
-  active questions without resolving either.
+  This is a pivotal turn. The protagonist is reaching out for the first time.
+  Don't let it resolve cleanly — the story needs complication to deepen.
+  A messy success where they connect but something unexpected happens
+  would advance both active questions without resolving either.
 
-  The "lute remembers" seed is almost ready. If he plays something truly
-  from the past, the lute might vibrate in a way it shouldn't — planting
-  the mystery that pays off later.
+  The "artifact" seed is almost ready. If this moment of connection
+  triggers something in the artifact, it plants a mystery that pays off later.
 ```
 
 ## Principles
+
+**This is not an on-rails story.** The player has agency. Outcomes should create situations they must respond to, not march toward predetermined beats.
+
+**Failure is where story lives.** Success ends scenes. Failure *opens* them. A character collapsing mid-attempt and needing allies to catch them — that's more story than "you succeed." Failure forces adaptation, creates dependency, reveals character.
 
 **Tension is currency.** Don't spend it on clean victories unless the story has earned a release.
 
