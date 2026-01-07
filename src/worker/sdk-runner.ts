@@ -84,6 +84,12 @@ export class SdkRunner extends EventEmitter {
         const taskMessage = this.queue.pollOne(workerId);
         if (!taskMessage) break;
 
+        // Fresh context for each message - don't accumulate conversation history
+        // Session resume is only for explicit interrupt/feedback flows via resume(), not queue processing
+        // Clear both runtime and config session IDs to prevent context accumulation
+        this.currentSessionId = null;
+        this.config.sessionId = undefined;
+
         totalProcessed++;
         log.info('sdk-runner', `Processing message`, { workerId, messageId: taskMessage.id, type: taskMessage.type });
 
@@ -182,7 +188,6 @@ export class SdkRunner extends EventEmitter {
                 : '';
               isError = msg.is_error;
               sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
-              if (resultMessage) sessionOutput.push(resultMessage);
 
               // Log SDK metrics: cost, duration, tokens
               log.info('sdk-runner', `SDK metrics`, {
@@ -463,7 +468,6 @@ export class SdkRunner extends EventEmitter {
               : '';
             isError = msg.is_error;
             sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
-            if (resultMessage) sessionOutput.push(resultMessage);
 
             // Log SDK metrics: cost, duration, tokens
             log.info('sdk-runner', `SDK metrics (resume)`, {
