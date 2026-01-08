@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { MessageQueue } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type { SemanticModel, WorkerConfig } from '../shared/types.ts';
+import type { SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
@@ -94,11 +94,10 @@ interface IterationConfig {
   onFail?: 'loop' | 'halt';  // What to do on quality failure (default: loop)
 }
 
-interface ContinuationConfig {
-  type: 'session' | 'none';       // session = auto-resume, none = fresh each time
-  // Phase 2:
-  // compress_turn_count?: number; // Summarize after N turns
-}
+// continuation field: boolean | string[] | undefined
+// - true = all agents persist sessions
+// - string[] = only listed agents persist sessions
+// - undefined/false = no session persistence
 
 interface MeshConfig {
   mesh: string;
@@ -107,7 +106,7 @@ interface MeshConfig {
   entry_point?: string;
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
-  continuation?: ContinuationConfig;  // Session continuation config
+  continuation?: boolean | string[];  // true = all, array = specific agents, omit = none
   lifecycle?: {
     pre?: string[];   // Pre-hooks executed before worker spawn
     post?: string[];  // Post-hooks executed after worker completion
@@ -197,6 +196,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
+  private sessionMetrics: Map<string, SessionMetrics> = new Map();
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -238,6 +238,16 @@ export class WorkerDispatcher extends EventEmitter {
     } catch {
       // Ignore write errors
     }
+  }
+
+  /**
+   * Check if an agent should have session continuation enabled
+   */
+  private shouldContinueAgent(agentName: string, continuation: boolean | string[] | undefined): boolean {
+    if (!continuation) return false;
+    if (continuation === true) return true;
+    if (Array.isArray(continuation)) return continuation.includes(agentName);
+    return false;
   }
 
   /**
@@ -938,6 +948,21 @@ The system will resume your session when the human responds.`;
         msgsDir: this.config.msgsDir,
       };
 
+      // Initialize session metrics if first worker in this mesh instance
+      if (meshInstance && !this.sessionMetrics.has(meshInstance)) {
+        this.sessionMetrics.set(meshInstance, {
+          meshInstance,
+          meshName: meshConfig?.mesh || meshName,
+          workers: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          totalCostUsd: 0,
+          totalDurationMs: 0,
+          workerCount: 0,
+          startedAt: Date.now(),
+        });
+      }
+
       // Resolve lifecycle hooks (worktree: true, graded: true, or explicit lifecycle)
       log.info('dispatcher', 'Resolving lifecycle hooks', {
         agentId,
@@ -1156,7 +1181,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Check for session continuation
       let sessionId: string | undefined;
-      if (meshConfig?.continuation?.type === 'session') {
+      if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)) {
         const existingSession = this.queue.getConversationId(agentId);
         if (existingSession) {
           sessionId = existingSession;
@@ -1419,11 +1444,31 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           throw completeError;
         }
 
+        // Accumulate worker metrics into session metrics
+        if (data.metrics && workerHookContext.meshInstance) {
+          const session = this.sessionMetrics.get(workerHookContext.meshInstance);
+          if (session) {
+            const workerMetrics: WorkerMetrics = {
+              ...data.metrics,
+              completedAt: Date.now(),
+            };
+            session.workers.push(workerMetrics);
+            session.totalInputTokens += data.metrics.totalInputTokens;
+            session.totalOutputTokens += data.metrics.totalOutputTokens;
+            session.totalCostUsd += data.metrics.totalCostUsd;
+            session.workerCount++;
+          }
+        }
+
         this.activeWorkers.delete(agentId);
         this.writeWorkerState();
 
+        // Check if mesh session is complete
+        this.checkSessionComplete(workerHookContext.meshInstance);
+
         // Save session ID for continuation (if enabled and session captured)
-        if (meshConfig?.continuation?.type === 'session' && data.sessionId) {
+        const agentName = agentId.split('/')[1];
+        if (this.shouldContinueAgent(agentName, meshConfig?.continuation) && data.sessionId) {
           this.queue.setConversationId(agentId, data.sessionId);
           log.info('dispatcher', `Session saved for ${agentId}`, {
             sessionId: data.sessionId.slice(0, 8) + '...'
@@ -1829,5 +1874,34 @@ ${output}
    */
   getWorkspaceManager(): WorkspaceManager {
     return this.workspaceManager;
+  }
+
+  /**
+   * Check if a mesh session is complete (no active workers from that mesh)
+   * If complete, log session metrics and cleanup
+   */
+  private checkSessionComplete(meshInstance: string | undefined): void {
+    if (!meshInstance) return;
+
+    const session = this.sessionMetrics.get(meshInstance);
+    if (!session) return;
+
+    // Check if any workers from this mesh are still active
+    const activeInMesh = Array.from(this.activeWorkers.values())
+      .some(w => w.hookContext?.meshInstance === meshInstance);
+
+    if (!activeInMesh) {
+      session.completedAt = Date.now();
+      session.totalDurationMs = session.completedAt - session.startedAt;
+
+      // Log session summary
+      log.sessionComplete(session);
+
+      // Emit event for external consumers
+      this.emit('session:complete', session);
+
+      // Cleanup
+      this.sessionMetrics.delete(meshInstance);
+    }
   }
 }

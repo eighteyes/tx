@@ -345,6 +345,36 @@ lifecycle:
 - `commit:auto` - Auto-commit changes
 - `worktree:cleanup` - Remove worktree after completion
 
+### `continuation`
+Boolean or Array - Session persistence across worker spawns
+
+```yaml
+# All agents persist sessions
+continuation: true
+
+# Specific agents only
+continuation:
+  - coordinator
+  - narrator
+
+# No persistence (default - omit field)
+```
+
+**Options**:
+- `true` - All agents in mesh persist their Claude session across spawns
+- `string[]` - Only listed agent names persist sessions
+- Omitted/`false` - Each spawn starts fresh (no session reuse)
+
+**Use cases**:
+- Coordinator-only: State machine remembers prior turns
+- All agents: Full conversation memory across turns (can cause context bloat)
+- None: Stateless workers (state tracked in files instead)
+
+**Behavior**:
+- When enabled, agent's Claude session ID is stored in SQLite
+- On next spawn, session is resumed (full conversation context preserved)
+- Sessions stored per-agent using key `{mesh}/{agent}`
+
 ### `config`
 Object - Custom mesh-specific configuration
 

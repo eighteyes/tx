@@ -62,20 +62,25 @@ agents:
 entry_point: coordinator
 completion_agent: coordinator
 
-# Session persistence
+# Session persistence (only coordinator tracks state across turns)
 continuation:
-  type: session
+  - coordinator
 
-# Coordinator supervises, narrator orchestrates sub-agents
+# Phase-based routing with direct agent communication
+# Phase 1: DRAMATURG + SCENE-CRAFTER (prep)
+# Phase 2: NARRATOR + SYSTEM + CAST (render)
+# Phase 3: EDITOR + NARRATOR (review loop - editor leads)
+# Coordinator kicks off each phase, agents communicate directly within phase
+
 routing:
   coordinator:
     ask:
-      narrator: "Advance game / render prose / make new game"
+      narrator: "Render prose (phase 2)"
+      editor: "Review prose (phase 3 - editor leads revision loop)"
       oracle: "Validate continuity"
-      editor: "Review prose against author.yaml"
       scribe: "Compress turn state"
     ask-human:
-      core: "Need player input"
+      core: "Need player input OR game state anomaly"
     complete:
       core: "Turn complete, prose delivered"
 
@@ -88,7 +93,8 @@ routing:
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
-      coordinator: "Prose rendered"
+      coordinator: "Initial prose rendered"
+      editor: "Revised prose ready"  # Direct response to editor in phase 3
 
   dramaturg:
     ask-response:
@@ -111,18 +117,17 @@ routing:
       coordinator: "Continuity validation complete"
 
   editor:
+    ask:
+      narrator: "Fix violations"  # Direct ask to narrator for revisions
     ask-response:
-      coordinator: "Prose review complete"
+      coordinator: "Review complete (CLEAN or max iterations)"
 
   scribe:
     ask-response:
       coordinator: "Turn compression complete"
 
-# Editor iteration config
-iteration:
-  editor_narrator_loop:
-    maxIterations: 3
-    onMaxReached: proceed_with_flag  # Don't block, flag for human review
+# Editor manages its own iteration loop (max 3)
+# Coordinator only sees: phase started → phase complete
 
 # Workspace configuration
 # Base workspace for agents (doesn't require game context)
