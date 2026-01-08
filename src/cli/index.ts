@@ -13,6 +13,7 @@ import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
+import { server } from './server.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -89,6 +90,7 @@ Commands:
   tx start       Start core agent (attaches to tmux)
   tx stop        Stop core agent
   tx status      Show system status
+  tx server      Start HTTP/WebSocket server (multi-tenant)
   tx run         Headless mesh REPL (no core)
   tx msg         View messages
   tx logs        View logs
@@ -221,6 +223,31 @@ get-www options:
 youtube-transcript options:
   -l, --lang <lang>     Language code (e.g., "en")
   -T, --timestamps      Include timestamps`,
+
+  server: `tx server - Start HTTP/WebSocket server (multi-tenant)
+
+Usage: tx server [options]
+
+Options:
+  -p, --port <port>     Port to listen on (default: 3000)
+  -H, --host <host>     Host to bind to (default: 0.0.0.0)
+  -m, --mesh <mesh>     Default mesh for sessions
+
+Environment:
+  TX_STORAGE_TYPE       'local' or 'redis' (default: local)
+  TX_REDIS_URL          Redis connection URL
+  TX_REDIS_PREFIX       Redis key prefix (default: tx)
+  TX_BASE_DIR           Base directory for local storage
+
+API Endpoints:
+  POST   /v1/sessions              Create session
+  GET    /v1/sessions/:id          Get session
+  DELETE /v1/sessions/:id          Destroy session
+  POST   /v1/sessions/:id/hibernate
+  POST   /v1/sessions/:id/resume
+  POST   /v1/sessions/:id/messages Send message
+  GET    /v1/sessions/:id/messages List messages
+  WS     /v1/sessions/:id/stream   Real-time stream`,
 };
 
 function showHelp(cmd: string): void {
@@ -344,6 +371,15 @@ async function main() {
     case 'stop':
       if (wantsHelp) { console.log('tx stop - Stop core agent'); break; }
       await stop();
+      break;
+
+    case 'server':
+      if (wantsHelp) { showHelp('server'); break; }
+      await server({
+        port: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
+        host: flags.H as string || flags.host as string,
+        mesh: flags.m as string || flags.mesh as string,
+      });
       break;
 
     case 'tool':

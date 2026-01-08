@@ -18,10 +18,12 @@
     "@anthropic-ai/sdk": "^0.71.2",
     "@noble/curves": "^2.0.1",
     "@scure/bip39": "^2.0.1",
+    "@types/ioredis": "^4.28.10",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "dotenv": "^17.2.3",
+    "ioredis": "^5.9.0",
     "ws": "^8.18.3",
     "yaml": "^2.8.2",
     "youtube-transcript-plus": "^1.1.1"
