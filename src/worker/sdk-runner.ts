@@ -6,7 +6,7 @@ import { EventEmitter } from 'node:events';
 import { query, type SDKResultMessage, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
-import type { SemanticModel, WorkerResult } from '../shared/types.ts';
+import type { SemanticModel, WorkerResult, QueryMetrics, WorkerMetrics } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
@@ -56,11 +56,36 @@ export class SdkRunner extends EventEmitter {
   private abortController: AbortController | null = null;
   private currentSessionId: string | null = null;
   private currentQuery: ReturnType<typeof query> | null = null;
+  private queryMetrics: QueryMetrics[] = [];
+  private startedAt: number = 0;
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
     this.config = config;
     this.queue = queue;
+  }
+
+  /**
+   * Aggregate all query metrics into a single WorkerMetrics object
+   */
+  private aggregateMetrics(): WorkerMetrics {
+    const totals = this.queryMetrics.reduce((acc, q) => ({
+      inputTokens: acc.inputTokens + q.inputTokens,
+      outputTokens: acc.outputTokens + q.outputTokens,
+      costUsd: acc.costUsd + q.totalCostUsd,
+      durationMs: acc.durationMs + q.durationMs,
+    }), { inputTokens: 0, outputTokens: 0, costUsd: 0, durationMs: 0 });
+
+    return {
+      agentId: this.config.id,
+      model: this.config.model,
+      queries: this.queryMetrics,
+      totalInputTokens: totals.inputTokens,
+      totalOutputTokens: totals.outputTokens,
+      totalCostUsd: totals.costUsd,
+      totalDurationMs: totals.durationMs,
+      startedAt: this.startedAt,
+    };
   }
 
   async run(): Promise<WorkerResult> {
@@ -73,6 +98,9 @@ export class SdkRunner extends EventEmitter {
     log.info('sdk-runner', `Starting worker`, { workerId, model: this.config.model });
     this.running = true;
     this.abortController = new AbortController();
+    // Reset metrics for this run
+    this.queryMetrics = [];
+    this.startedAt = Date.now();
     this.emit('start', { id: workerId });
 
     let totalProcessed = 0;
@@ -189,6 +217,19 @@ export class SdkRunner extends EventEmitter {
               isError = msg.is_error;
               sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
 
+              // Capture query metrics for aggregation
+              const metrics: QueryMetrics = {
+                inputTokens: resultMsg.usage.input_tokens,
+                outputTokens: resultMsg.usage.output_tokens,
+                cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
+                cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
+                totalCostUsd: resultMsg.total_cost_usd,
+                durationMs: resultMsg.duration_ms,
+                durationApiMs: resultMsg.duration_api_ms,
+                numTurns: resultMsg.num_turns,
+              };
+              this.queryMetrics.push(metrics);
+
               // Log SDK metrics: cost, duration, tokens
               log.info('sdk-runner', `SDK metrics`, {
                 workerId,
@@ -260,7 +301,7 @@ export class SdkRunner extends EventEmitter {
       const output = sessionOutput.join('\n\n---\n\n');
       log.info('sdk-runner', `Worker complete`, { workerId, totalProcessed, success: !lastError, sessionId: this.currentSessionId });
 
-      this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId });
+      this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
       return { success: !lastError, messagesProcessed: totalProcessed, output, error: lastError, sessionId: this.currentSessionId || undefined };
 
     } catch (error) {
@@ -469,6 +510,19 @@ export class SdkRunner extends EventEmitter {
             isError = msg.is_error;
             sessionOutput.push(`[Result: ${resultMsg.subtype}]`);
 
+            // Capture query metrics for aggregation (resume adds to existing metrics)
+            const resumeMetrics: QueryMetrics = {
+              inputTokens: resultMsg.usage.input_tokens,
+              outputTokens: resultMsg.usage.output_tokens,
+              cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
+              cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
+              totalCostUsd: resultMsg.total_cost_usd,
+              durationMs: resultMsg.duration_ms,
+              durationApiMs: resultMsg.duration_api_ms,
+              numTurns: resultMsg.num_turns,
+            };
+            this.queryMetrics.push(resumeMetrics);
+
             // Log SDK metrics: cost, duration, tokens
             log.info('sdk-runner', `SDK metrics (resume)`, {
               workerId,
@@ -505,7 +559,7 @@ export class SdkRunner extends EventEmitter {
         sessionId: this.currentSessionId
       });
 
-      this.emit('complete', { id: workerId, messagesProcessed: 1, output, sessionId: this.currentSessionId });
+      this.emit('complete', { id: workerId, messagesProcessed: 1, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
       return { success: !lastError, messagesProcessed: 1, output, error: lastError, sessionId: this.currentSessionId || undefined };
 
     } catch (error) {

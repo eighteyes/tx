@@ -90,3 +90,50 @@ export interface CoreConfig {
   dbPath: string;
   msgsDir: string;
 }
+
+// Token and cost tracking types
+
+/**
+ * Token usage metrics from a single SDK query
+ */
+export interface QueryMetrics {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  totalCostUsd: number;
+  durationMs: number;
+  durationApiMs: number;
+  numTurns: number;
+}
+
+/**
+ * Aggregated metrics for a worker session (may include multiple queries)
+ */
+export interface WorkerMetrics {
+  agentId: string;
+  model: SemanticModel;
+  queries: QueryMetrics[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+  totalDurationMs: number;
+  startedAt: number;
+  completedAt?: number;
+}
+
+/**
+ * Aggregated metrics for an entire mesh session
+ */
+export interface SessionMetrics {
+  meshInstance: string;
+  meshName: string;
+  workers: WorkerMetrics[];
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+  totalDurationMs: number;
+  workerCount: number;
+  startedAt: number;
+  completedAt?: number;
+}
