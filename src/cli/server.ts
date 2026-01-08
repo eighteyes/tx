@@ -4,25 +4,39 @@
  * Responsibilities:
  * - Expose REST API for session management
  * - Provide WebSocket endpoint for real-time message streaming
- * - Route messages to mesh entry agents
- * - Manage storage provider lifecycle
+ * - Authenticate requests and enforce quotas
+ * - Manage worker pool for message processing
  */
 
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { URL } from 'node:url';
+import YAML from 'yaml';
 import { log } from '../shared/logger.ts';
 import {
   createStorageProviderFromEnv,
   type StorageProvider,
-  type SessionState,
   type AgentMessage,
 } from '../storage/index.ts';
+import {
+  SessionManager,
+  WorkerPool,
+  AuthMiddleware,
+  RateLimiter,
+  QuotaManager,
+  rateLimitKey,
+  type MeshConfig,
+  type TenantInfo,
+} from '../server/index.ts';
 
 interface ServerOptions {
   port?: number;
   host?: string;
   mesh?: string;
+  concurrency?: number;
+  authEnabled?: boolean;
 }
 
 interface RequestContext {
@@ -31,18 +45,23 @@ interface RequestContext {
   params: Record<string, string>;
   query: URLSearchParams;
   body: unknown;
+  tenant: TenantInfo;
 }
 
-type RouteHandler = (ctx: RequestContext, storage: StorageProvider) => Promise<unknown>;
+type RouteHandler = (ctx: RequestContext, deps: ServerDeps) => Promise<unknown>;
+
+interface ServerDeps {
+  storage: StorageProvider;
+  sessionManager: SessionManager;
+  workerPool: WorkerPool;
+  quotaManager: QuotaManager;
+  rateLimiter: RateLimiter;
+}
 
 /**
  * Parse route pattern and extract params
- * e.g., '/sessions/:id' matches '/sessions/abc123' → { id: 'abc123' }
  */
-function matchRoute(
-  pattern: string,
-  path: string
-): Record<string, string> | null {
+function matchRoute(pattern: string, path: string): Record<string, string> | null {
   const patternParts = pattern.split('/');
   const pathParts = path.split('/');
 
@@ -72,22 +91,46 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
   {
     method: 'POST',
     pattern: '/v1/sessions',
-    handler: async (ctx, storage) => {
-      const { meshId, tenantId } = ctx.body as { meshId: string; tenantId?: string };
+    handler: async (ctx, deps) => {
+      const { meshId, entryAgent, ttlSeconds } = ctx.body as {
+        meshId: string;
+        entryAgent?: string;
+        ttlSeconds?: number;
+      };
+
       if (!meshId) {
         throw { status: 400, message: 'meshId is required' };
       }
-      const session = await storage.createSession(meshId, tenantId);
+
+      // Check quota
+      const quotaCheck = deps.quotaManager.checkQuota(ctx.tenant.tenantId, 'session');
+      if (!quotaCheck.allowed) {
+        throw { status: 429, message: quotaCheck.message };
+      }
+
+      const session = await deps.sessionManager.create({
+        meshId,
+        tenantId: ctx.tenant.tenantId,
+        entryAgent,
+        ttlSeconds,
+      });
+
+      deps.quotaManager.recordSessionCreated(ctx.tenant.tenantId);
+
       return session;
     },
   },
   {
     method: 'GET',
     pattern: '/v1/sessions/:id',
-    handler: async (ctx, storage) => {
-      const session = await storage.getSession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
+      }
+      // Check tenant ownership
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
       }
       return session;
     },
@@ -95,24 +138,45 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
   {
     method: 'DELETE',
     pattern: '/v1/sessions/:id',
-    handler: async (ctx, storage) => {
-      await storage.destroySession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.get(ctx.params.id);
+      if (!session) {
+        throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
+
+      await deps.sessionManager.destroy(ctx.params.id);
+      deps.quotaManager.recordSessionDestroyed(ctx.tenant.tenantId);
+
       return { success: true };
     },
   },
   {
     method: 'POST',
     pattern: '/v1/sessions/:id/hibernate',
-    handler: async (ctx, storage) => {
-      await storage.hibernateSession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.get(ctx.params.id);
+      if (!session) {
+        throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
+
+      await deps.sessionManager.hibernate(ctx.params.id);
       return { success: true };
     },
   },
   {
     method: 'POST',
     pattern: '/v1/sessions/:id/resume',
-    handler: async (ctx, storage) => {
-      const session = await storage.resumeSession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.resume(ctx.params.id);
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
       return session;
     },
   },
@@ -121,10 +185,19 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
   {
     method: 'POST',
     pattern: '/v1/sessions/:id/messages',
-    handler: async (ctx, storage) => {
-      const session = await storage.getSession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
+
+      // Check quota
+      const quotaCheck = deps.quotaManager.checkQuota(ctx.tenant.tenantId, 'message');
+      if (!quotaCheck.allowed) {
+        throw { status: 429, message: quotaCheck.message };
       }
 
       const { to, body, type, headline } = ctx.body as {
@@ -138,8 +211,7 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
         throw { status: 400, message: 'body is required' };
       }
 
-      // Default to mesh entry point if 'to' not specified
-      const targetAgent = to || `${session.meshId}/worker`;
+      const targetAgent = to || session.config.entryAgent || `${session.meshId}/worker`;
 
       const message: AgentMessage = {
         from: 'api/client',
@@ -150,8 +222,11 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
         timestamp: Date.now(),
       };
 
-      const msgId = await storage.writeMessage(ctx.params.id, message);
-      await storage.queueInsert(ctx.params.id, message);
+      const msgId = await deps.storage.writeMessage(ctx.params.id, message);
+      await deps.storage.queueInsert(ctx.params.id, message);
+
+      deps.quotaManager.recordMessageSent(ctx.tenant.tenantId);
+      await deps.sessionManager.touch(ctx.params.id);
 
       return { msgId, message };
     },
@@ -159,23 +234,55 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
   {
     method: 'GET',
     pattern: '/v1/sessions/:id/messages',
-    handler: async (ctx, storage) => {
-      const session = await storage.getSession(ctx.params.id);
+    handler: async (ctx, deps) => {
+      const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
       }
 
       const limit = parseInt(ctx.query.get('limit') || '50', 10);
       const since = ctx.query.get('since') || undefined;
       const type = ctx.query.get('type') || undefined;
 
-      const messages = await storage.listMessages(ctx.params.id, {
+      const messages = await deps.storage.listMessages(ctx.params.id, {
         limit,
         sinceId: since,
         type,
       });
 
       return { messages };
+    },
+  },
+
+  // Tenant usage
+  {
+    method: 'GET',
+    pattern: '/v1/usage',
+    handler: async (ctx, deps) => {
+      const usage = deps.quotaManager.getUsage(ctx.tenant.tenantId);
+      return {
+        usage,
+        quotas: ctx.tenant.quotas,
+      };
+    },
+  },
+
+  // Worker stats
+  {
+    method: 'GET',
+    pattern: '/v1/stats',
+    handler: async (ctx, deps) => {
+      const workerStats = deps.workerPool.getStats();
+      const sessions = deps.sessionManager.getActiveSessions()
+        .filter(s => s.tenantId === ctx.tenant.tenantId);
+
+      return {
+        sessions: sessions.length,
+        workers: workerStats,
+      };
     },
   },
 
@@ -204,7 +311,7 @@ async function parseBody(req: http.IncomingMessage): Promise<unknown> {
       }
       try {
         resolve(JSON.parse(body));
-      } catch (err) {
+      } catch {
         reject(new Error('Invalid JSON body'));
       }
     });
@@ -213,134 +320,51 @@ async function parseBody(req: http.IncomingMessage): Promise<unknown> {
 }
 
 /**
- * Handle HTTP request
+ * Load mesh configuration
  */
-async function handleRequest(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  storage: StorageProvider
-): Promise<void> {
-  const url = new URL(req.url || '/', `http://${req.headers.host}`);
-  const method = req.method || 'GET';
-  const path = url.pathname;
+function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<MeshConfig | null> {
+  return async (meshId: string) => {
+    const meshPath = path.join(meshesDir, meshId);
 
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    // Try YAML config
+    const yamlPath = path.join(meshPath, 'config.yaml');
+    if (fs.existsSync(yamlPath)) {
+      const content = fs.readFileSync(yamlPath, 'utf-8');
+      const config = YAML.parse(content);
 
-  if (method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
+      // Load agent prompts
+      const agents: Record<string, { prompt: string; model?: string; maxTurns?: number }> = {};
+      const agentsDir = meshPath;
 
-  // Find matching route
-  for (const route of routes) {
-    if (route.method !== method) continue;
-
-    const params = matchRoute(route.pattern, path);
-    if (params === null) continue;
-
-    try {
-      const body = await parseBody(req);
-      const ctx: RequestContext = {
-        method,
-        path,
-        params,
-        query: url.searchParams,
-        body,
-      };
-
-      const result = await route.handler(ctx, storage);
-
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(result));
-      return;
-    } catch (err) {
-      const status = (err as { status?: number }).status || 500;
-      const message = (err as { message?: string }).message || 'Internal server error';
-
-      log.error('server', 'Request error', { method, path, status, message });
-
-      res.writeHead(status, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: message }));
-      return;
-    }
-  }
-
-  // No route matched
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
-}
-
-/**
- * Handle WebSocket connection for real-time streaming
- */
-async function handleWebSocket(
-  ws: WebSocket,
-  sessionId: string,
-  storage: StorageProvider
-): Promise<void> {
-  const session = await storage.getSession(sessionId);
-  if (!session) {
-    ws.close(4404, 'Session not found');
-    return;
-  }
-
-  log.info('server', 'WebSocket connected', { sessionId });
-
-  // Subscribe to messages for this session
-  const subscription = storage.subscribeMessages(sessionId);
-
-  // Forward messages to WebSocket
-  (async () => {
-    try {
-      for await (const event of subscription) {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify(event));
+      for (const [agentName, agentConfig] of Object.entries(config.agents || {})) {
+        const promptPath = path.join(agentsDir, agentName, 'prompt.md');
+        let prompt = '';
+        if (fs.existsSync(promptPath)) {
+          prompt = fs.readFileSync(promptPath, 'utf-8');
         }
-      }
-    } catch (err) {
-      log.error('server', 'WebSocket subscription error', {
-        sessionId,
-        error: (err as Error).message,
-      });
-    }
-  })();
-
-  ws.on('message', async (data) => {
-    try {
-      const payload = JSON.parse(data.toString());
-
-      // Handle incoming messages from client
-      if (payload.type === 'message') {
-        const message: AgentMessage = {
-          from: 'api/client',
-          to: payload.to || `${session.meshId}/worker`,
-          type: payload.messageType || 'task',
-          body: payload.body,
-          headline: payload.headline,
-          timestamp: Date.now(),
+        agents[agentName] = {
+          prompt,
+          model: (agentConfig as { model?: string }).model,
+          maxTurns: (agentConfig as { maxTurns?: number }).maxTurns,
         };
-
-        const msgId = await storage.writeMessage(sessionId, message);
-        await storage.queueInsert(sessionId, message);
-
-        ws.send(JSON.stringify({ type: 'ack', msgId }));
       }
-    } catch (err) {
-      log.error('server', 'WebSocket message error', {
-        sessionId,
-        error: (err as Error).message,
-      });
-      ws.send(JSON.stringify({ type: 'error', message: (err as Error).message }));
-    }
-  });
 
-  ws.on('close', () => {
-    log.info('server', 'WebSocket disconnected', { sessionId });
-  });
+      return {
+        mesh: config.mesh || meshId,
+        entry_point: config.entry_point,
+        agents,
+      };
+    }
+
+    // Try JSON config
+    const jsonPath = path.join(meshPath, 'config.json');
+    if (fs.existsSync(jsonPath)) {
+      const content = fs.readFileSync(jsonPath, 'utf-8');
+      return JSON.parse(content);
+    }
+
+    return null;
+  };
 }
 
 /**
@@ -349,28 +373,151 @@ async function handleWebSocket(
 export async function server(options: ServerOptions): Promise<void> {
   const port = options.port || parseInt(process.env.TX_SERVER_PORT || '3000', 10);
   const host = options.host || process.env.TX_SERVER_HOST || '0.0.0.0';
+  const concurrency = options.concurrency || parseInt(process.env.TX_WORKER_CONCURRENCY || '10', 10);
+  const authEnabled = options.authEnabled ?? process.env.TX_AUTH_ENABLED === 'true';
+  const meshesDir = process.env.TX_ROOT
+    ? path.join(process.env.TX_ROOT, 'meshes')
+    : path.join(process.cwd(), 'meshes');
 
   // Initialize storage provider
   const storage = createStorageProviderFromEnv();
   await storage.init();
+  log.info('server', 'Storage provider initialized', { type: process.env.TX_STORAGE_TYPE || 'local' });
 
-  log.info('server', 'Storage provider initialized', {
-    type: process.env.TX_STORAGE_TYPE || 'local',
+  // Initialize session manager
+  const sessionManager = new SessionManager({ storage });
+  sessionManager.start();
+
+  // Initialize auth
+  const auth = new AuthMiddleware({ enabled: authEnabled });
+  auth.loadFromEnv();
+
+  // Initialize rate limiter
+  const rateLimiter = new RateLimiter({
+    enabled: true,
+    defaultLimit: 60,  // 60 requests per minute
+    defaultBurst: 100,
+  });
+  rateLimiter.start();
+
+  // Initialize quota manager
+  const quotaManager = new QuotaManager({ storage });
+  quotaManager.start();
+
+  // Initialize worker pool
+  const workerPool = new WorkerPool({
+    storage,
+    sessionManager,
+    concurrency,
+    meshConfigLoader: createMeshConfigLoader(meshesDir),
+  });
+  workerPool.start();
+
+  // Wire up events
+  workerPool.on('worker:complete', ({ sessionId, durationMs }) => {
+    const session = sessionManager.getActiveSessions().find(s => s.sessionId === sessionId);
+    if (session?.tenantId) {
+      quotaManager.recordWorkerCompleted(session.tenantId, durationMs);
+    }
   });
 
+  sessionManager.on('session:destroyed', (sessionId) => {
+    // Already handled in route
+  });
+
+  const deps: ServerDeps = { storage, sessionManager, workerPool, quotaManager, rateLimiter };
+
   // Create HTTP server
-  const httpServer = http.createServer((req, res) => {
-    handleRequest(req, res, storage).catch((err) => {
-      log.error('server', 'Unhandled request error', { error: (err as Error).message });
-      res.writeHead(500);
-      res.end('Internal server error');
-    });
+  const httpServer = http.createServer(async (req, res) => {
+    const url = new URL(req.url || '/', `http://${req.headers.host}`);
+    const method = req.method || 'GET';
+    const reqPath = url.pathname;
+
+    // CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    if (method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    // Authenticate
+    const authResult = auth.authenticate(req);
+    if (!authResult.authenticated) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: authResult.error }));
+      return;
+    }
+
+    const tenant = authResult.tenant!;
+
+    // Rate limit check
+    const limitKey = rateLimitKey(tenant.tenantId, reqPath);
+    const limitResult = rateLimiter.check(limitKey, tenant.quotas.maxMessagesPerMinute);
+
+    res.setHeader('X-RateLimit-Remaining', String(limitResult.remaining));
+    res.setHeader('X-RateLimit-Reset', String(limitResult.resetAt));
+
+    if (!limitResult.allowed) {
+      res.setHeader('Retry-After', String(limitResult.retryAfter || 60));
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Rate limit exceeded', retryAfter: limitResult.retryAfter }));
+      return;
+    }
+
+    // Record API request
+    quotaManager.recordApiRequest(tenant.tenantId);
+
+    // Find matching route
+    for (const route of routes) {
+      if (route.method !== method) continue;
+
+      const params = matchRoute(route.pattern, reqPath);
+      if (params === null) continue;
+
+      try {
+        const body = await parseBody(req);
+        const ctx: RequestContext = {
+          method,
+          path: reqPath,
+          params,
+          query: url.searchParams,
+          body,
+          tenant,
+        };
+
+        const result = await route.handler(ctx, deps);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(result));
+        return;
+      } catch (err) {
+        const status = (err as { status?: number }).status || 500;
+        const message = (err as { message?: string }).message || 'Internal server error';
+
+        if (status >= 500) {
+          log.error('server', 'Request error', { method, path: reqPath, status, message });
+          quotaManager.recordApiRequest(tenant.tenantId, true);
+        }
+
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: message }));
+        return;
+      }
+    }
+
+    // No route matched
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
   });
 
   // Create WebSocket server
   const wss = new WebSocketServer({ server: httpServer });
 
-  wss.on('connection', (ws, req) => {
+  wss.on('connection', async (ws, req) => {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const match = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/stream$/);
 
@@ -380,9 +527,82 @@ export async function server(options: ServerOptions): Promise<void> {
     }
 
     const sessionId = match[1];
-    handleWebSocket(ws, sessionId, storage).catch((err) => {
-      log.error('server', 'WebSocket handler error', { error: (err as Error).message });
-      ws.close(4500, 'Internal error');
+
+    // Authenticate WebSocket
+    const authResult = auth.authenticate(req);
+    if (!authResult.authenticated) {
+      ws.close(4401, 'Unauthorized');
+      return;
+    }
+
+    const tenant = authResult.tenant!;
+
+    // Get session
+    const session = await sessionManager.get(sessionId);
+    if (!session) {
+      ws.close(4404, 'Session not found');
+      return;
+    }
+
+    if (session.tenantId !== tenant.tenantId) {
+      ws.close(4403, 'Access denied');
+      return;
+    }
+
+    log.info('server', 'WebSocket connected', { sessionId, tenantId: tenant.tenantId });
+
+    // Subscribe to messages
+    const subscription = storage.subscribeMessages(sessionId);
+
+    (async () => {
+      try {
+        for await (const event of subscription) {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(event));
+          }
+        }
+      } catch (err) {
+        log.error('server', 'WebSocket subscription error', { sessionId, error: (err as Error).message });
+      }
+    })();
+
+    ws.on('message', async (data) => {
+      try {
+        const payload = JSON.parse(data.toString());
+
+        if (payload.type === 'message') {
+          // Check quota
+          const quotaCheck = quotaManager.checkQuota(tenant.tenantId, 'message');
+          if (!quotaCheck.allowed) {
+            ws.send(JSON.stringify({ type: 'error', message: quotaCheck.message }));
+            return;
+          }
+
+          const message: AgentMessage = {
+            from: 'api/client',
+            to: payload.to || session.config.entryAgent || `${session.meshId}/worker`,
+            type: payload.messageType || 'task',
+            body: payload.body,
+            headline: payload.headline,
+            timestamp: Date.now(),
+          };
+
+          const msgId = await storage.writeMessage(sessionId, message);
+          await storage.queueInsert(sessionId, message);
+
+          quotaManager.recordMessageSent(tenant.tenantId);
+          await sessionManager.touch(sessionId);
+
+          ws.send(JSON.stringify({ type: 'ack', msgId }));
+        }
+      } catch (err) {
+        log.error('server', 'WebSocket message error', { sessionId, error: (err as Error).message });
+        ws.send(JSON.stringify({ type: 'error', message: (err as Error).message }));
+      }
+    });
+
+    ws.on('close', () => {
+      log.info('server', 'WebSocket disconnected', { sessionId });
     });
   });
 
@@ -392,6 +612,11 @@ export async function server(options: ServerOptions): Promise<void> {
 
     wss.close();
     httpServer.close();
+
+    await workerPool.stop();
+    await quotaManager.stop();
+    rateLimiter.stop();
+    sessionManager.stop();
     await storage.close();
 
     process.exit(0);
@@ -403,16 +628,26 @@ export async function server(options: ServerOptions): Promise<void> {
   // Start listening
   httpServer.listen(port, host, () => {
     log.info('server', `tx-server listening on http://${host}:${port}`);
-    console.log(`\n  tx-server running on http://${host}:${port}\n`);
-    console.log('  Endpoints:');
-    console.log('    POST   /v1/sessions           Create session');
-    console.log('    GET    /v1/sessions/:id       Get session');
-    console.log('    DELETE /v1/sessions/:id       Destroy session');
-    console.log('    POST   /v1/sessions/:id/messages   Send message');
-    console.log('    GET    /v1/sessions/:id/messages   List messages');
-    console.log('    WS     /v1/sessions/:id/stream     Real-time stream\n');
-    console.log('  Environment:');
-    console.log(`    TX_STORAGE_TYPE: ${process.env.TX_STORAGE_TYPE || 'local'}`);
-    console.log(`    TX_REDIS_URL: ${process.env.TX_REDIS_URL || '(not set)'}\n`);
+    console.log(`
+  tx-server running on http://${host}:${port}
+
+  API Endpoints:
+    POST   /v1/sessions              Create session
+    GET    /v1/sessions/:id          Get session
+    DELETE /v1/sessions/:id          Destroy session
+    POST   /v1/sessions/:id/hibernate
+    POST   /v1/sessions/:id/resume
+    POST   /v1/sessions/:id/messages Send message
+    GET    /v1/sessions/:id/messages List messages
+    GET    /v1/usage                 Get usage stats
+    GET    /v1/stats                 Get worker stats
+    WS     /v1/sessions/:id/stream   Real-time stream
+
+  Configuration:
+    TX_STORAGE_TYPE:      ${process.env.TX_STORAGE_TYPE || 'local'}
+    TX_REDIS_URL:         ${process.env.TX_REDIS_URL || '(not set)'}
+    TX_AUTH_ENABLED:      ${authEnabled}
+    TX_WORKER_CONCURRENCY: ${concurrency}
+`);
   });
 }
