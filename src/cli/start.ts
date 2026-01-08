@@ -4,9 +4,10 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import YAML from 'yaml';
-import { TmuxSession, findClaudePath, injectFile, getSessionName } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, injectFile, getSessionName, waitForUserIdle } from '../core/tmux.ts';
 import { MessageQueue } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -51,6 +52,43 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       process.exit(1);
     }
     throw err;
+  }
+
+  // Optional checks for know CLI - warn but allow continue
+  const knowWarnings: string[] = [];
+
+  // Check 1: know CLI in PATH
+  const knowInPath = process.env.PATH?.split(':').some(p => {
+    try { return fs.existsSync(path.join(p, 'know')); } catch { return false; }
+  });
+  if (!knowInPath) {
+    knowWarnings.push(`know CLI not in PATH (install: npm install -g know-cli)`);
+  }
+
+  // Check 2: .claude/commands/know/ exists
+  const knowCommandsDir = path.join(cwd, '.claude', 'commands', 'know');
+  if (!fs.existsSync(knowCommandsDir)) {
+    knowWarnings.push(`/know:* commands not found (.claude/commands/know/)`);
+  }
+
+  // If warnings, prompt user to continue or abort
+  if (knowWarnings.length > 0) {
+    console.warn(`\n⚠️  Know integration not configured:`);
+    for (const warn of knowWarnings) {
+      console.warn(`   • ${warn}`);
+    }
+    console.warn(`\nBrain mesh and /know:* workflows will not work.`);
+    console.warn(`Other meshes (dev, test, research) will work fine.\n`);
+
+    const continueStart = await promptYesNo('Continue without know? (y/n): ');
+    if (!continueStart) {
+      console.log('\nTo set up know:');
+      console.log(`  1. Install CLI:  npm install -g know-cli`);
+      console.log(`  2. Init project: know init`);
+      console.log(`  Or copy commands: cp -r ${txRoot}/.claude/commands/know ${cwd}/.claude/commands/\n`);
+      process.exit(0);
+    }
+    console.log('');  // Blank line before continuing
   }
 
   // Backup previous logs before starting fresh session
@@ -229,12 +267,16 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const pendingRetries = new Map<number, { timeout: NodeJS.Timeout; id: number }>();
   const MAX_INJECT_ATTEMPTS = 10;
 
-  const tryInject = (id: number, filepath: string, from: string, type: string, attempt = 1) => {
+  const tryInject = async (id: number, filepath: string, from: string, type: string, attempt = 1) => {
     if (!fs.existsSync(filepath)) {
       log.warn('injector', 'Message source file not found', { id, from, type, filepath });
       queue.markProcessed(id);
       return;
     }
+
+    // Wait for user to stop typing before injecting
+    // Uses env vars TX_INJECT_DEBOUNCE_MS (default 5000) and TX_INJECT_MAX_WAIT_MS (default 60000)
+    await waitForUserIdle(tmux);
 
     const injected = injectFile(tmux, filepath);
     log.debug('injector', 'injectFile result', { id, injected, attempt });
@@ -423,6 +465,11 @@ function getCorePrompt(msgsDir: string, meshesDir: string): string {
   return `# TX V4 Core Agent
 
 You are the core agent for TX. You coordinate work by writing messages to meshes.
+
+To verify TX is operational:
+\`\`\`bash
+tx status --json
+\`\`\`
 
 ## CRITICAL: How Work Gets Done
 
@@ -634,4 +681,21 @@ ${msg.payload?.body || JSON.stringify(msg.payload, null, 2)}
 
 Process this message. If it's ask-human, present the question and wait for user input, then send ask-response.
 `;
+}
+
+/**
+ * Prompt user for yes/no confirmation
+ */
+function promptYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase().startsWith('y'));
+    });
+  });
 }
