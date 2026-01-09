@@ -9,7 +9,9 @@
     "declaration": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "downlevelIteration": true
   },
   "include": ["src/**/*", "test/**/*"]
 }

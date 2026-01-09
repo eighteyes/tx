@@ -16,15 +16,29 @@ agents:
   - name: worker
     model: opus
     prompt: prompt.md
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
 
 entry_point: worker
 
 workspace:
   path: ".ai/output/{task-id}/"
 
+iteration:
+  maxIterations: 3
+  onMaxReached: core
+
 routing:
   worker:
     complete:
-      core: "Implementation complete"
+      reviewer: "Implementation done, ready for review"
     blocked:
       core: "Need clarification or human input"
+  reviewer:
+    approved:
+      core: "Implementation complete and reviewed"
+    needs-work:
+      worker: "Review failed, fixes needed"
+    blocked:
+      core: "Review blocked, need human input"

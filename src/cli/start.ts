@@ -8,7 +8,7 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import YAML from 'yaml';
 import { TmuxSession, findClaudePath, injectFile, getSessionName, waitForUserIdle } from '../core/tmux.ts';
-import { MessageQueue } from '../queue/index.ts';
+import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
@@ -263,6 +263,67 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     });
   });
 
+  // Self-healing event logging
+  dispatcher.on('agent:nudged', (data) => {
+    log.warn('self-healing', 'Stuck agent nudged', {
+      agentId: data.agentId,
+      nudgeCount: data.nudgeCount,
+      reason: data.reason,
+      duration: data.duration,
+    });
+  });
+  dispatcher.on('agent:escalated', (data) => {
+    log.error('self-healing', 'Stuck agent escalated and killed', {
+      agentId: data.agentId,
+      reason: data.reason,
+      duration: data.duration,
+      nudgeCount: data.nudgeCount,
+    });
+  });
+
+  // Initialize stale message cleaner
+  const staleCleaner = new StaleMessageCleaner(queue.getDatabase(), {
+    ttlMs: 1800000,      // 30 minutes
+    scanIntervalMs: 300000, // 5 minutes
+    action: 'archive',
+  });
+  staleCleaner.on('stale:archived', (msg) => {
+    log.info('self-healing', 'Stale message archived', {
+      id: msg.id,
+      to: msg.to_agent,
+      type: msg.type,
+      reason: msg.reason,
+    });
+  });
+  staleCleaner.start();
+
+  // Initialize deadlock detector
+  const deadlockDetector = new DeadlockDetector(queue, msgsDir, {
+    enabled: true,
+    scanIntervalMs: 60000, // 1 minute
+    autoBreakDepth: 3,
+    escalateDepth: 5,
+  });
+  deadlockDetector.on('deadlock:detected', (cycle) => {
+    log.warn('self-healing', 'Deadlock detected', {
+      agents: cycle.agents,
+      depth: cycle.cycleDepth,
+    });
+  });
+  deadlockDetector.on('deadlock:broken', (data) => {
+    log.info('self-healing', 'Deadlock broken', {
+      cycle: data.cycle.agents,
+      brokenMsgId: data.brokenAsk.msg_id,
+    });
+  });
+  deadlockDetector.on('deadlock:escalated', (cycle) => {
+    log.error('self-healing', 'Deadlock escalated to human', {
+      agents: cycle.agents,
+      depth: cycle.cycleDepth,
+    });
+  });
+  deadlockDetector.start();
+
   // Event-driven message injector with backoff retry
   const pendingRetries = new Map<number, { timeout: NodeJS.Timeout; id: number }>();
   const MAX_INJECT_ATTEMPTS = 10;
@@ -341,6 +402,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.info('injector', `Marked ${pendingRetries.size} pending retries as processed on shutdown`);
   }
   pendingRetries.clear();
+
+  // Stop self-healing components
+  staleCleaner.stop();
+  deadlockDetector.stop();
+
   await dispatcher.stop(consumer);
   await consumer.stop();
   queue.close();

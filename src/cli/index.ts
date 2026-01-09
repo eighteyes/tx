@@ -241,9 +241,9 @@ async function main() {
       break;
 
     case 'status':
-      if (wantsHelp) { console.log('tx status - Show system status'); break; }
+      if (wantsHelp) { console.log('tx status - Show system status\n\nOptions:\n  --json    Output as JSON (for programmatic use)'); break; }
       const result = await status();
-      printStatus(result);
+      printStatus(result, Boolean(flags.json));
       break;
 
     case 'run':

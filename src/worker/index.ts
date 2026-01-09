@@ -21,3 +21,12 @@ export {
   type RoutingRule,
   type WorkspaceConfigSchema
 } from './mesh-validator.ts';
+
+// Export stuck agent detector
+export {
+  StuckAgentDetector,
+  type StuckAgentConfig,
+  type StuckAgent,
+  type ActiveWorkerInfo,
+  DEFAULT_STUCK_CONFIG
+} from './stuck-detector.ts';

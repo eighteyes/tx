@@ -1,21 +1,10 @@
 mesh: dev-graded
-description: "Developer mesh with grading and iteration for quality assurance"
+description: "Developer mesh with grading and iteration for quality assurance, use to evaluate large swaths of work, not for everyday development."
 
 graded: true
 iteration:
   maxIterations: 5
   onFail: loop
-
-intents:
-  patterns:
-    - build
-    - implement
-    - "code up"
-    - fix
-    - develop
-  commands:
-    build: "/know:build"
-    implement: "/know:build"
 
 agents:
   - name: worker

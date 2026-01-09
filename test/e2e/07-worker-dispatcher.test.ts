@@ -61,7 +61,6 @@ You are a test worker. When you receive a task, acknowledge it.`;
       workDir: testDir,
       msgsDir,
       meshesDir,
-      pollInterval: 100  // Fast polling for tests
     }, queue);
   });
 

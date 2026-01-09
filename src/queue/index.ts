@@ -38,6 +38,14 @@ export interface MessageFilter {
   limit?: number;
 }
 
+export interface PendingAsk {
+  id?: number;
+  from_agent: string;
+  to_agent: string;
+  msg_id: string;
+  created_at?: number;
+}
+
 export class MessageQueue {
   private db: Database.Database;
   private insertStmt: Database.Statement;
@@ -90,6 +98,17 @@ export class MessageQueue {
         conversation_id TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS pending_asks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_agent TEXT NOT NULL,
+        to_agent TEXT NOT NULL,
+        msg_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_from ON pending_asks(from_agent);
+      CREATE INDEX IF NOT EXISTS idx_pending_to ON pending_asks(to_agent);
+      CREATE INDEX IF NOT EXISTS idx_pending_msgid ON pending_asks(msg_id);
     `);
   }
 
@@ -419,4 +438,160 @@ export class MessageQueue {
     `).run(Date.now());
     return result.changes;
   }
+
+  // ============================================
+  // Parity Gate: Pending Ask Tracking
+  // ============================================
+
+  /**
+   * Track a pending ask (persisted to SQLite)
+   */
+  trackPendingAsk(fromAgent: string, toAgent: string, msgId: string): number {
+    const result = this.db.prepare(`
+      INSERT INTO pending_asks (from_agent, to_agent, msg_id, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(fromAgent, toAgent, msgId, Date.now());
+    return result.lastInsertRowid as number;
+  }
+
+  /**
+   * Resolve a pending ask - progressive matching
+   * 1. Try exact msg-id match
+   * 2. Fall back to from/to agent match
+   * Returns: { resolved: boolean, matchType: 'msg-id' | 'agent' | 'none', ask?: PendingAsk }
+   */
+  resolvePendingAsk(
+    respondingAgent: string,
+    targetAgent: string,
+    msgId?: string
+  ): { resolved: boolean; matchType: 'msg-id' | 'agent' | 'none'; ask?: PendingAsk } {
+    // 1. Try exact msg-id match first
+    if (msgId) {
+      const byMsgId = this.db.prepare(`
+        SELECT id, from_agent, to_agent, msg_id, created_at
+        FROM pending_asks
+        WHERE from_agent = ? AND msg_id = ?
+        LIMIT 1
+      `).get(targetAgent, msgId) as PendingAsk | undefined;
+
+      if (byMsgId) {
+        this.db.prepare('DELETE FROM pending_asks WHERE id = ?').run(byMsgId.id);
+        return { resolved: true, matchType: 'msg-id', ask: byMsgId };
+      }
+    }
+
+    // 2. Fall back to agent match (oldest first)
+    const byAgent = this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      WHERE from_agent = ? AND to_agent = ?
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get(targetAgent, respondingAgent) as PendingAsk | undefined;
+
+    if (byAgent) {
+      this.db.prepare('DELETE FROM pending_asks WHERE id = ?').run(byAgent.id);
+      return { resolved: true, matchType: 'agent', ask: byAgent };
+    }
+
+    return { resolved: false, matchType: 'none' };
+  }
+
+  /**
+   * Get all pending asks for an agent
+   */
+  getPendingAsks(fromAgent: string): PendingAsk[] {
+    return this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      WHERE from_agent = ?
+      ORDER BY created_at ASC
+    `).all(fromAgent) as PendingAsk[];
+  }
+
+  /**
+   * Get count of pending asks by target agent
+   */
+  getPendingAskCounts(fromAgent: string): Map<string, number> {
+    const rows = this.db.prepare(`
+      SELECT to_agent, COUNT(*) as count
+      FROM pending_asks
+      WHERE from_agent = ?
+      GROUP BY to_agent
+    `).all(fromAgent) as Array<{ to_agent: string; count: number }>;
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      counts.set(row.to_agent, row.count);
+    }
+    return counts;
+  }
+
+  /**
+   * Clear all pending asks for an agent
+   */
+  clearPendingAsks(fromAgent: string): number {
+    const result = this.db.prepare('DELETE FROM pending_asks WHERE from_agent = ?').run(fromAgent);
+    return result.changes;
+  }
+
+  /**
+   * Clear all pending asks (fresh start)
+   */
+  clearAllPendingAsks(): number {
+    const result = this.db.prepare('DELETE FROM pending_asks').run();
+    return result.changes;
+  }
+
+  /**
+   * Get database instance (for stale cleaner and deadlock detector)
+   */
+  getDatabase(): Database.Database {
+    return this.db;
+  }
+
+  /**
+   * Get all pending asks (for deadlock detection)
+   */
+  getAllPendingAsks(): PendingAsk[] {
+    return this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      ORDER BY created_at ASC
+    `).all() as PendingAsk[];
+  }
+
+  /**
+   * Get a pending ask by msg_id (for deadlock detection)
+   */
+  getPendingAskByMsgId(msgId: string): PendingAsk | undefined {
+    return this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      WHERE msg_id = ?
+    `).get(msgId) as PendingAsk | undefined;
+  }
+
+  /**
+   * Clear a specific pending ask by ID
+   */
+  clearPendingAsk(id: number): void {
+    this.db.prepare('DELETE FROM pending_asks WHERE id = ?').run(id);
+  }
 }
+
+// Export stale message cleaner
+export {
+  StaleMessageCleaner,
+  type StaleMessageConfig,
+  type StaleMessage,
+  DEFAULT_STALE_CONFIG
+} from './stale-cleaner.ts';
+
+// Export deadlock detector
+export {
+  DeadlockDetector,
+  type DeadlockConfig,
+  type CycleInfo,
+  DEFAULT_DEADLOCK_CONFIG
+} from './deadlock-detector.ts';

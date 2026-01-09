@@ -17,15 +17,6 @@ import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 
 /**
- * Pending ask tracking for parity gate
- * Tracks outbound asks by msg-id to ensure workers wait for responses
- */
-interface PendingAsk {
-  to: string;        // Target agent
-  timestamp: number; // When ask was sent
-}
-
-/**
  * Event emitted when task-complete is rejected due to pending asks
  */
 export interface ParityReminderEvent {
@@ -58,12 +49,10 @@ export class MessageConsumer extends EventEmitter {
   private running = false;
   private meshesDir: string;
   private meshEntryPoints: Map<string, string> = new Map();
-  // Parity gate: track pending asks per agent by msg-id
-  // Map<agentId, Map<msgId, PendingAsk>>
-  private pendingAsks: Map<string, Map<string, PendingAsk>> = new Map();
-  // Parity gate fallback: count-based tracking per target agent
-  // Map<fromAgent, Map<toAgent, count>> - used when msg-id doesn't match
-  private pendingAskCounts: Map<string, Map<string, number>> = new Map();
+  // Command routing: maps slash commands to their handling mesh
+  // e.g., "/know:add" → "brain", "/know:plan" → "brain"
+  private commandToMesh: Map<string, string> = new Map();
+  // Parity gate: pending asks are now persisted in SQLite via this.queue
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -93,12 +82,27 @@ export class MessageConsumer extends EventEmitter {
       const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
       const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
 
+      const loadConfig = (config: Record<string, unknown>) => {
+        const meshName = config.mesh as string;
+        const entryPoint = (config.entry_point as string) || 'worker';
+        this.meshEntryPoints.set(meshName, entryPoint);
+
+        // Extract slash commands from intents.commands
+        const intents = config.intents as { commands?: Record<string, string> } | undefined;
+        if (intents?.commands) {
+          for (const slashCmd of Object.values(intents.commands)) {
+            // Map the slash command to this mesh
+            // e.g., "/know:add" → "brain"
+            this.commandToMesh.set(slashCmd, meshName);
+          }
+        }
+      };
+
       if (yamlConfig) {
         try {
           const content = fs.readFileSync(path.join(dir, yamlConfig.name), 'utf-8');
           const config = YAML.parse(content);
-          const entryPoint = config.entry_point || 'worker';
-          this.meshEntryPoints.set(config.mesh, entryPoint);
+          loadConfig(config);
         } catch {
           // Skip invalid configs
         }
@@ -106,8 +110,7 @@ export class MessageConsumer extends EventEmitter {
         try {
           const content = fs.readFileSync(path.join(dir, 'config.json'), 'utf-8');
           const config = JSON.parse(content);
-          const entryPoint = config.entry_point || 'worker';
-          this.meshEntryPoints.set(config.mesh, entryPoint);
+          loadConfig(config);
         } catch {
           // Skip invalid configs
         }
@@ -129,21 +132,41 @@ export class MessageConsumer extends EventEmitter {
    */
   subscribeToDispatcher(dispatcher: EventEmitter): void {
     dispatcher.on('session-start', ({ agentId }: { agentId: string }) => {
-      if (this.pendingAsks.has(agentId)) {
-        const pendingCount = this.pendingAsks.get(agentId)!.size;
-        if (pendingCount > 0) {
-          log.info('consumer', `Clearing ${pendingCount} stale pending asks on session start`, {
-            agentId,
-            msgIds: Array.from(this.pendingAsks.get(agentId)!.keys()),
-          });
-        }
-        this.pendingAsks.delete(agentId);
-      }
-      // Also clear count-based fallback tracking
-      if (this.pendingAskCounts.has(agentId)) {
-        this.pendingAskCounts.delete(agentId);
+      const pending = this.queue.getPendingAsks(agentId);
+      if (pending.length > 0) {
+        log.info('consumer', `Clearing ${pending.length} stale pending asks on session start`, {
+          agentId,
+          msgIds: pending.map(p => p.msg_id),
+        });
+        this.queue.clearPendingAsks(agentId);
       }
     });
+  }
+
+  /**
+   * Write error message to core for command routing issues
+   */
+  private writeErrorToCore(body: string, refMsgId: string): void {
+    const timestamp = Date.now();
+    const msgId = `error-${timestamp}`;
+    const filename = `${timestamp}-error-system--core-core-${msgId}.md`;
+    const filepath = path.join(this.watchDir, filename);
+
+    const message = `---
+to: core/core
+from: system/consumer
+type: error
+msg-id: ${msgId}
+ref-msg-id: ${refMsgId}
+headline: Command routing error
+timestamp: ${new Date().toISOString()}
+---
+
+${body}
+`;
+
+    fs.writeFileSync(filepath, message);
+    log.info('consumer', 'Wrote command routing error to core', { msgId, refMsgId });
   }
 
   /**
@@ -217,6 +240,32 @@ export class MessageConsumer extends EventEmitter {
 
       // Resolve mesh routing: to: dev → to: dev/worker
       const toAgent = this.resolveToAgent(parsed.frontmatter.to);
+      const targetMesh = toAgent.split('/')[0];
+
+      // Command validation: check if target mesh handles this command
+      const command = parsed.frontmatter.command;
+      if (command && this.commandToMesh.size > 0) {
+        // Extract base command (e.g., "/know:add foo" → "/know:add")
+        const baseCommand = command.split(' ')[0];
+        const correctMesh = this.commandToMesh.get(baseCommand);
+
+        if (correctMesh && correctMesh !== targetMesh) {
+          log.warn('consumer', `Command routing error: ${baseCommand} should go to ${correctMesh}, not ${targetMesh}`, {
+            command,
+            targetMesh,
+            correctMesh,
+            file: filename
+          });
+
+          // Write error message back to core
+          this.writeErrorToCore(
+            `Command \`${baseCommand}\` should be routed to \`${correctMesh}\`, not \`${targetMesh}\`.\n\n` +
+            `Correct routing:\n\`\`\`yaml\nto: ${correctMesh}/${this.meshEntryPoints.get(correctMesh) || 'worker'}\ncommand: ${command}\n\`\`\``,
+            parsed.frontmatter['msg-id'] || filename
+          );
+          return;
+        }
+      }
 
       // For revisions, emit revision-message event for interrupt handling
       // before attempting to insert (which may fail due to duplicate constraint)
@@ -298,31 +347,17 @@ export class MessageConsumer extends EventEmitter {
           file: filename
         });
 
-        // Parity gate: track pending ask by msg-id
+        // Parity gate: track pending ask in SQLite (survives restarts)
         if (msgId) {
-          if (!this.pendingAsks.has(fromAgent)) {
-            this.pendingAsks.set(fromAgent, new Map());
-          }
-          this.pendingAsks.get(fromAgent)!.set(msgId, {
+          this.queue.trackPendingAsk(fromAgent, toAgent, msgId);
+          const counts = this.queue.getPendingAskCounts(fromAgent);
+          log.info('consumer', `Parity gate: tracking ask`, {
+            fromAgent,
+            msgId,
             to: toAgent,
-            timestamp: Date.now(),
+            pendingCount: counts.get(toAgent) || 1,
           });
         }
-
-        // Parity gate fallback: also track by count per target agent
-        if (!this.pendingAskCounts.has(fromAgent)) {
-          this.pendingAskCounts.set(fromAgent, new Map());
-        }
-        const targetCounts = this.pendingAskCounts.get(fromAgent)!;
-        targetCounts.set(toAgent, (targetCounts.get(toAgent) || 0) + 1);
-
-        log.info('consumer', `Parity gate: tracking ask`, {
-          fromAgent,
-          msgId,
-          to: toAgent,
-          pendingByMsgId: this.pendingAsks.get(fromAgent)?.size || 0,
-          pendingByCount: targetCounts.get(toAgent),
-        });
 
         this.emit('ask-message', {
           id,
@@ -347,64 +382,38 @@ export class MessageConsumer extends EventEmitter {
           file: filename
         });
 
-        // Parity gate: remove from pending asks by msg-id (primary) or count (fallback)
+        // Parity gate: progressive matching - msg-id first, then agent fallback
         // The response is TO the agent who originally sent the ask
-        const agentPendingAsks = this.pendingAsks.get(toAgent);
-        const agentPendingCounts = this.pendingAskCounts.get(toAgent);
-        let resolvedByMsgId = false;
-        let targetAgent: string | null = null;
+        const result = this.queue.resolvePendingAsk(respondingAgent, toAgent, msgId);
 
-        // Primary: try to match by msg-id
-        if (msgId && agentPendingAsks && agentPendingAsks.has(msgId)) {
-          targetAgent = agentPendingAsks.get(msgId)!.to;
-          agentPendingAsks.delete(msgId);
-          resolvedByMsgId = true;
-          log.info('consumer', `Parity gate: resolved ask by msg-id`, {
-            agentId: toAgent,
-            msgId,
-            from: respondingAgent,
-            remainingPendingByMsgId: agentPendingAsks.size,
-          });
-          // Clean up empty maps
-          if (agentPendingAsks.size === 0) {
-            this.pendingAsks.delete(toAgent);
-          }
-        }
-
-        // Decrement count for responding agent (always, if we have counts)
-        if (agentPendingCounts) {
-          const currentCount = agentPendingCounts.get(respondingAgent) || 0;
-          if (currentCount > 0) {
-            agentPendingCounts.set(respondingAgent, currentCount - 1);
-            // Clean up zero counts
-            if (currentCount - 1 === 0) {
-              agentPendingCounts.delete(respondingAgent);
-            }
-            // Clean up empty maps
-            if (agentPendingCounts.size === 0) {
-              this.pendingAskCounts.delete(toAgent);
-            }
-
-            // Fallback warning: if we didn't match by msg-id but did match by count
-            if (!resolvedByMsgId) {
-              log.warn('consumer', `Parity gate: FALLBACK - resolved ask by count (msg-id mismatch)`, {
-                agentId: toAgent,
-                msgId,
-                from: respondingAgent,
-                expectedMsgIds: agentPendingAsks ? Array.from(agentPendingAsks.keys()) : [],
-                remainingCountForResponder: currentCount - 1,
-              });
-            }
-          } else if (!resolvedByMsgId) {
-            // Neither msg-id nor count matched - truly unknown
-            log.warn('consumer', `Parity gate: ask-response for unknown ask`, {
+        if (result.resolved) {
+          if (result.matchType === 'msg-id') {
+            log.info('consumer', `Parity gate: resolved ask by msg-id`, {
               agentId: toAgent,
               msgId,
               from: respondingAgent,
-              knownMsgIds: agentPendingAsks ? Array.from(agentPendingAsks.keys()) : [],
-              knownTargets: agentPendingCounts ? Array.from(agentPendingCounts.keys()) : [],
+              originalMsgId: result.ask?.msg_id,
+            });
+          } else {
+            // Agent fallback - msg-id didn't match but found pending ask to this agent
+            log.warn('consumer', `Parity gate: resolved ask by agent (msg-id mismatch)`, {
+              agentId: toAgent,
+              responseMsgId: msgId,
+              originalMsgId: result.ask?.msg_id,
+              from: respondingAgent,
             });
           }
+        } else {
+          // No match found - truly unknown response
+          const pending = this.queue.getPendingAsks(toAgent);
+          const counts = this.queue.getPendingAskCounts(toAgent);
+          log.warn('consumer', `Parity gate: ask-response for unknown ask`, {
+            agentId: toAgent,
+            msgId,
+            from: respondingAgent,
+            knownMsgIds: pending.map(p => p.msg_id),
+            knownTargets: Array.from(counts.keys()),
+          });
         }
 
         this.emit('ask-response-message', {
@@ -419,41 +428,21 @@ export class MessageConsumer extends EventEmitter {
       }
 
       if (toAgent === 'core/core') {
-        // Parity gate: check if task-complete has pending asks (count-based is source of truth)
+        // Parity gate: check if task-complete has pending asks
         if (messageType === 'task-complete') {
           const fromAgent = parsed.frontmatter.from;
-          const agentPendingCounts = this.pendingAskCounts.get(fromAgent);
-          const agentPendingAsks = this.pendingAsks.get(fromAgent);
+          const pending = this.queue.getPendingAsks(fromAgent);
 
-          // Count total pending across all targets
-          let totalPendingCount = 0;
-          const pendingByTarget: Array<{ target: string; count: number }> = [];
-          if (agentPendingCounts) {
-            for (const [target, count] of agentPendingCounts) {
-              if (count > 0) {
-                totalPendingCount += count;
-                pendingByTarget.push({ target, count });
-              }
-            }
-          }
-
-          if (totalPendingCount > 0) {
-            // Build pending asks list for reminder (use msg-id info if available, otherwise count)
-            const pendingAsksList = agentPendingAsks
-              ? Array.from(agentPendingAsks.entries()).map(([msgId, ask]) => ({
-                  msgId,
-                  to: ask.to,
-                }))
-              : pendingByTarget.map(({ target, count }) => ({
-                  msgId: `(${count} pending by count)`,
-                  to: target,
-                }));
+          if (pending.length > 0) {
+            const pendingAsksList = pending.map(p => ({
+              msgId: p.msg_id,
+              to: p.to_agent,
+            }));
 
             log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
               fromAgent,
               pendingAsks: pendingAsksList,
-              pendingByTarget,
-              totalPendingCount,
+              totalPendingCount: pending.length,
               file: filename,
             });
 
@@ -490,41 +479,21 @@ export class MessageConsumer extends EventEmitter {
           event
         });
       } else {
-        // Parity gate: check if task-complete TO another worker has pending asks (count-based is source of truth)
+        // Parity gate: check if task-complete TO another worker has pending asks
         if (messageType === 'task-complete') {
           const fromAgent = parsed.frontmatter.from;
-          const agentPendingCounts = this.pendingAskCounts.get(fromAgent);
-          const agentPendingAsks = this.pendingAsks.get(fromAgent);
+          const pending = this.queue.getPendingAsks(fromAgent);
 
-          // Count total pending across all targets
-          let totalPendingCount = 0;
-          const pendingByTarget: Array<{ target: string; count: number }> = [];
-          if (agentPendingCounts) {
-            for (const [target, count] of agentPendingCounts) {
-              if (count > 0) {
-                totalPendingCount += count;
-                pendingByTarget.push({ target, count });
-              }
-            }
-          }
-
-          if (totalPendingCount > 0) {
-            // Build pending asks list for reminder (use msg-id info if available, otherwise count)
-            const pendingAsksList = agentPendingAsks
-              ? Array.from(agentPendingAsks.entries()).map(([msgId, ask]) => ({
-                  msgId,
-                  to: ask.to,
-                }))
-              : pendingByTarget.map(({ target, count }) => ({
-                  msgId: `(${count} pending by count)`,
-                  to: target,
-                }));
+          if (pending.length > 0) {
+            const pendingAsksList = pending.map(p => ({
+              msgId: p.msg_id,
+              to: p.to_agent,
+            }));
 
             log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
               fromAgent,
               pendingAsks: pendingAsksList,
-              pendingByTarget,
-              totalPendingCount,
+              totalPendingCount: pending.length,
               file: filename,
             });
 

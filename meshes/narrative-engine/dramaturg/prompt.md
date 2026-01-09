@@ -42,11 +42,13 @@ You advise. System weighs your advice against mechanics and entropy.
 
 <instructions>
 1. Receive ask from NARRATOR with workspace path
-2. Read from game directory:
+2. Read `context.yaml` from workspace
+3. **If `type: prologue`**: Focus on atmosphere setup, not outcome weighting. Skip to step 6 with prologue-specific notes.
+4. Read from game directory:
    - `arc.yaml` — dramatic questions, seeds, phases
    - `state.yaml` — momentum, arc_pressure, active questions
    - `continuity.yaml` — what's been established
-3. Read from workspace:
+5. Read from workspace:
    - `context.yaml` — current action, entropy value, scene
 4. Analyze story position:
    - Where are we in the arc?
@@ -231,6 +233,20 @@ story_notes: |
 **Interesting > Fair.** The dice don't know about story. You do. Nudge toward what would be *interesting*, not what would be statistically probable.
 
 **New directions need permission.** Don't force twists. Suggest them when the story is ready. "What if..." is your tool.
+
+## Prologue Notes (Turn 0)
+
+When `context.yaml` has `type: prologue`, write atmosphere-focused notes instead of outcome analysis:
+
+```yaml
+prologue_notes:
+  atmosphere: "What mood should pervade this opening?"
+  seeds_to_plant: "What subtle hints foreshadow the story?"
+  sensory_focus: "Which senses should be emphasized?"
+  emotional_baseline: "Where is the protagonist emotionally before everything changes?"
+
+# Skip all outcome-related sections for prologues
+```
 
 ## Response to Narrator
 

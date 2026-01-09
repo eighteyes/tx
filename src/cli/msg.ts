@@ -15,6 +15,42 @@ import { watch, type FSWatcher } from 'chokidar';
 import { colors } from '../shared/colors.ts';
 import { formatTime, parseTimeFilter } from '../shared/time.ts';
 
+/**
+ * Word wrap text to fit terminal width
+ * Preserves existing line breaks, wraps long lines at word boundaries
+ */
+function wrapText(text: string, width?: number): string[] {
+  const termWidth = width || process.stdout.columns || 80;
+  const maxWidth = Math.max(40, termWidth - 4); // Leave some margin
+
+  const lines: string[] = [];
+
+  for (const paragraph of text.split('\n')) {
+    if (paragraph.length <= maxWidth) {
+      lines.push(paragraph);
+      continue;
+    }
+
+    // Wrap long lines at word boundaries
+    let remaining = paragraph;
+    while (remaining.length > maxWidth) {
+      // Find last space before maxWidth
+      let breakPoint = remaining.lastIndexOf(' ', maxWidth);
+      if (breakPoint <= 0) {
+        // No space found, hard break
+        breakPoint = maxWidth;
+      }
+      lines.push(remaining.slice(0, breakPoint));
+      remaining = remaining.slice(breakPoint).trimStart();
+    }
+    if (remaining) {
+      lines.push(remaining);
+    }
+  }
+
+  return lines;
+}
+
 // Message type colors
 const typeColors: Record<string, string> = {
   'task': colors.cyan,
@@ -552,9 +588,9 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(colors.dim + '─'.repeat(80) + colors.reset);
     console.log();
 
-    // Content (scrollable)
+    // Content (scrollable, word-wrapped)
     const content = msg.content || colors.dim + 'No content' + colors.reset;
-    const contentLines = content.split('\n');
+    const contentLines = wrapText(content);
     const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 20);
     const maxScroll = Math.max(0, contentLines.length - viewportHeight);
 
@@ -605,9 +641,9 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(colors.dim + '─'.repeat(80) + colors.reset);
     console.log();
 
-    // Content (scrollable)
+    // Content (scrollable, word-wrapped)
     const content = msg.content || colors.dim + 'No content' + colors.reset;
-    const contentLines = content.split('\n');
+    const contentLines = wrapText(content);
     const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 20);
     const maxScroll = Math.max(0, contentLines.length - viewportHeight);
 
@@ -639,9 +675,9 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(colors.dim + '═'.repeat(80) + colors.reset);
     console.log();
 
-    // Build the injected prompt
+    // Build the injected prompt (word-wrapped)
     const prompt = buildInjectedPrompt(msg, logDir);
-    const promptLines = prompt.split('\n');
+    const promptLines = wrapText(prompt);
     const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 15);
     const maxScroll = Math.max(0, promptLines.length - viewportHeight);
 
@@ -673,8 +709,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(colors.dim + '─'.repeat(80) + colors.reset);
     console.log();
 
-    // Content (scrollable)
-    const contentLines = sess.content.split('\n');
+    // Content (scrollable, word-wrapped)
+    const contentLines = wrapText(sess.content);
     const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 12);
     const maxScroll = Math.max(0, contentLines.length - viewportHeight);
 
@@ -775,7 +811,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
       // Prompt view navigation
       const msg = messages[selectedIndex];
       const prompt = buildInjectedPrompt(msg, logDir);
-      const promptLines = prompt.split('\n');
+      const promptLines = wrapText(prompt);
       const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 15);
       const halfPage = Math.floor(viewportHeight / 2);
       const maxScroll = Math.max(0, promptLines.length - viewportHeight);
@@ -804,11 +840,11 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
       // Detail view navigation (messages, sessions, or system)
       let contentLines: string[];
       if (viewMode === 'sessions' && sessions[sessionSelectedIndex]) {
-        contentLines = sessions[sessionSelectedIndex].content.split('\n');
+        contentLines = wrapText(sessions[sessionSelectedIndex].content);
       } else if (viewMode === 'system' && systemMessages[systemSelectedIndex]) {
-        contentLines = (systemMessages[systemSelectedIndex].content || '').split('\n');
+        contentLines = wrapText(systemMessages[systemSelectedIndex].content || '');
       } else if (messages[selectedIndex]) {
-        contentLines = (messages[selectedIndex].content || '').split('\n');
+        contentLines = wrapText(messages[selectedIndex].content || '');
       } else {
         contentLines = [];
       }

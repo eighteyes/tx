@@ -25,6 +25,7 @@ import {
   QualityExhaustedError,
   type HookContext,
 } from './hooks.ts';
+import { StuckAgentDetector, type StuckAgentConfig, type ActiveWorkerInfo } from './stuck-detector.ts';
 import { MeshValidator } from './mesh-validator.ts';
 import {
   type GradedConfig,
@@ -104,6 +105,7 @@ interface MeshConfig {
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
+  completion_agent?: string;  // Agent that sends task-complete to core
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
   continuation?: boolean | string[];  // true = all, array = specific agents, omit = none
@@ -179,6 +181,19 @@ interface ActiveWorker {
   startedAt: number;
   hookContext: HookContext;  // Lifecycle hook context (includes quality state)
   startedPromise?: Promise<void>;  // Resolves when FSM 'start' transition completes
+  lastOutputAt?: number;  // Timestamp of last output (for stuck detection)
+}
+
+/**
+ * Suspended session state (worker killed, awaiting resume)
+ */
+interface SuspendedSession {
+  sessionId: string;
+  reason: 'ask-human';
+  suspendedAt: number;
+  targetAgent: string;  // Who the ask-human was sent to (e.g., "core/core")
+  meshName: string;
+  agentConfig: AgentConfig;
 }
 
 export class WorkerDispatcher extends EventEmitter {
@@ -197,8 +212,10 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
+  private suspendedSessions: Map<string, SuspendedSession> = new Map();
+  private stuckDetector: StuckAgentDetector;
 
-  constructor(config: DispatcherConfig, queue: MessageQueue) {
+  constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
     this.config = config;
     this.queue = queue;
@@ -206,6 +223,18 @@ export class WorkerDispatcher extends EventEmitter {
     this.workspaceManager = new WorkspaceManager(config.workDir);
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
+    this.stuckDetector = new StuckAgentDetector(stuckConfig);
+
+    // Wire stuck detector events to dispatcher
+    this.stuckDetector.on('agent:nudged', (data) => {
+      this.emit('agent:nudged', data);
+    });
+    this.stuckDetector.on('agent:escalated', (data) => {
+      // Clean up active worker on escalation
+      this.activeWorkers.delete(data.agentId);
+      this.writeWorkerState();
+      this.emit('agent:escalated', data);
+    });
   }
 
   private writeWorkerState(): void {
@@ -293,6 +322,26 @@ export class WorkerDispatcher extends EventEmitter {
       };
       consumer.on('parity-reminder', this.boundParityReminderHandler);
     }
+
+    // Start stuck agent detector
+    this.stuckDetector.start(() => this.getActiveWorkersForDetector());
+  }
+
+  /**
+   * Get active workers in format needed by stuck detector
+   */
+  private getActiveWorkersForDetector(): Map<string, ActiveWorkerInfo> {
+    const result = new Map<string, ActiveWorkerInfo>();
+    for (const [agentId, worker] of this.activeWorkers) {
+      result.set(agentId, {
+        runner: worker.runner,
+        machine: worker.machine,
+        startedAt: worker.startedAt,
+        hookContext: worker.hookContext,
+        lastOutputAt: worker.lastOutputAt,
+      });
+    }
+    return result;
   }
 
   /**
@@ -519,46 +568,60 @@ export class WorkerDispatcher extends EventEmitter {
           type: messageType,
         });
 
-        // For ask-human messages: interrupt worker and inject steering
-        // This prevents the worker from continuing and writing task-complete
+        // For ask-human messages: KILL the worker immediately
+        // Worker will be resumed when human responds (FSM handles this)
         if (messageType === 'ask-human') {
-          log.info('dispatcher', `Interrupting worker for ask-human`, {
+          log.info('dispatcher', `Killing worker for ask-human (will resume on response)`, {
             from: senderAgentId,
             sessionId: sessionId.slice(0, 8),
           });
 
           try {
-            // Interrupt the current query
-            await runner.interrupt();
+            // Extract mesh and agent info for later resume
+            const [meshName, agentName] = senderAgentId.split('/');
+            const meshConfig = this.meshConfigs.get(meshName);
+            const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
 
-            this.emit('worker:interrupt', {
+            if (!agentConfig) {
+              log.error('dispatcher', `Cannot suspend: agent config not found`, {
+                from: senderAgentId,
+                meshName,
+                agentName,
+              });
+              return;
+            }
+
+            // Store session for later resume
+            this.suspendedSessions.set(senderAgentId, {
+              sessionId,
+              reason: 'ask-human',
+              suspendedAt: Date.now(),
+              targetAgent: targetAgentId,
+              meshName,
+              agentConfig,
+            });
+
+            // Kill the worker - no steering, no resume, just stop
+            runner.kill();
+
+            this.emit('worker:suspended', {
               agentId: senderAgentId,
               sessionId,
               reason: 'ask-human',
+              targetAgent: targetAgentId,
             });
 
-            // Resume with steering prompt that blocks further work
-            const steeringPrompt = this.buildAskHumanSteeringPrompt();
+            // Remove from active workers
+            this.activeWorkers.delete(senderAgentId);
 
-            log.info('dispatcher', `Resuming with ask-human steering`, {
+            log.info('dispatcher', `Worker killed and suspended`, {
               from: senderAgentId,
               sessionId: sessionId.slice(0, 8),
             });
-
-            // Resume the session with steering - this will complete when human responds
-            // The 'complete' event will fire but FSM guard will block it if still awaiting
-            const result = await runner.resume(sessionId, steeringPrompt);
-
-            if (!result.success) {
-              log.warn('dispatcher', `Ask-human steering resume returned error`, {
-                from: senderAgentId,
-                error: result.error,
-              });
-            }
-          } catch (interruptError) {
-            log.error('dispatcher', `Failed to interrupt/steer ask-human`, {
+          } catch (killError) {
+            log.error('dispatcher', `Failed to kill worker for ask-human`, {
               from: senderAgentId,
-              error: (interruptError as Error).message,
+              error: (killError as Error).message,
             });
           }
         }
@@ -598,6 +661,135 @@ The system will resume your session when the human responds.`;
   }
 
   /**
+   * Resume a suspended session with human response
+   * Creates a new runner and resumes the stored session
+   */
+  private async resumeSuspendedSession(
+    agentId: string,
+    suspended: SuspendedSession,
+    responseContent: string,
+    headline?: string
+  ): Promise<void> {
+    const { sessionId, meshName, agentConfig } = suspended;
+
+    log.info('dispatcher', `Resuming suspended session`, {
+      agentId,
+      sessionId: sessionId.slice(0, 8),
+      meshName,
+      suspendedFor: Date.now() - suspended.suspendedAt,
+    });
+
+    try {
+      // Remove from suspended
+      this.suspendedSessions.delete(agentId);
+
+      // Build the resume prompt with human response
+      const resumePrompt = headline
+        ? `## Human Response: ${headline}\n\n${responseContent}`
+        : `## Human Response\n\n${responseContent}`;
+
+      // Create new runner config (minimal - session has system prompt)
+      const runnerConfig: SdkRunnerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        systemPrompt: '',  // Not needed for resume - session has it
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+        sessionId,  // Resume existing session
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      // Create a new FSM for the resumed worker
+      const meshConfig = this.meshConfigs.get(meshName);
+      const isCompletionAgent = agentConfig.name === meshConfig?.completion_agent;
+      const workerConfig: WorkerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        prompt: agentConfig.prompt,
+        workDir: this.config.workDir,
+      };
+      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agentConfig.name, 300000, isCompletionAgent);
+
+      // Create hook context
+      const meshInstance = `${meshName}-${Date.now()}`;
+      const hookContext: HookContext = {
+        meshInstance,
+        meshName,
+        agentName: agentConfig.name,
+        workDir: this.config.workDir,
+        agentId,
+        agentConfig,
+        taskId: `${agentId}-resume-${Date.now()}`,
+        taskBody: resumePrompt,
+        msgsDir: this.config.msgsDir,
+      };
+
+      // Set up minimal event handlers
+      runner.on('complete', async (data) => {
+        log.info('dispatcher', `Resumed worker completed`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+        });
+        this.activeWorkers.delete(agentId);
+        await machine.complete(data);
+        this.emit('worker:complete', {
+          ...data,
+          transitionName: 'complete',
+        });
+        this.writeWorkerState();
+      });
+
+      runner.on('error', (error) => {
+        log.error('dispatcher', `Resumed worker error`, {
+          agentId,
+          error: error.message,
+        });
+        this.activeWorkers.delete(agentId);
+        this.emit('worker:error', { id: agentId, error: error.message });
+        this.writeWorkerState();
+      });
+
+      // Store in active workers
+      this.activeWorkers.set(agentId, {
+        runner,
+        machine,
+        startedAt: Date.now(),
+        hookContext,
+      });
+
+      // Start the FSM (use process.pid as the runner pid)
+      await machine.start(process.pid);
+
+      this.emit('worker:resumed', {
+        agentId,
+        sessionId,
+        suspendedFor: Date.now() - suspended.suspendedAt,
+      });
+
+      // Resume the session with human response
+      const result = await runner.resume(sessionId, resumePrompt);
+
+      if (!result.success) {
+        log.error('dispatcher', `Resume failed`, {
+          agentId,
+          error: result.error,
+        });
+      }
+
+      this.writeWorkerState();
+    } catch (error) {
+      log.error('dispatcher', `Failed to resume suspended session`, {
+        agentId,
+        error: (error as Error).message,
+      });
+      // Clean up on failure
+      this.suspendedSessions.delete(agentId);
+      this.activeWorkers.delete(agentId);
+    }
+  }
+
+  /**
    * Handle ask-response message - resume awaiting worker
    * When an agent responds to an ask:
    * 1. Find the worker that's awaiting this response (by to field)
@@ -606,6 +798,21 @@ The system will resume your session when the human responds.`;
    */
   private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content } = event;
+
+    // Check for suspended session (killed due to ask-human)
+    const suspended = this.suspendedSessions.get(awaitingAgentId);
+    if (suspended && respondingAgentId === 'core/core') {
+      log.info('dispatcher', `Human response received for suspended session`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        sessionId: suspended.sessionId.slice(0, 8),
+        suspendedFor: Date.now() - suspended.suspendedAt,
+      });
+
+      // Resume the suspended session with human response
+      await this.resumeSuspendedSession(awaitingAgentId, suspended, content, event.headline);
+      return;
+    }
 
     const activeWorker = this.activeWorkers.get(awaitingAgentId);
     if (!activeWorker) {
@@ -907,6 +1114,9 @@ The system will resume your session when the human responds.`;
       consumer.off('parity-reminder', this.boundParityReminderHandler);
       this.boundParityReminderHandler = null;
     }
+
+    // Stop stuck agent detector
+    this.stuckDetector.stop();
 
     // Kill all active workers
     for (const [_id, { runner }] of this.activeWorkers) {
@@ -1228,6 +1438,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       worker.on('output', (data) => {
+        // Track last output time for stuck detection
+        const activeWorker = this.activeWorkers.get(agentId);
+        if (activeWorker) {
+          activeWorker.lastOutputAt = Date.now();
+        }
         this.emit('worker:output', data);
       });
 
@@ -1461,6 +1676,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.activeWorkers.delete(agentId);
+        this.stuckDetector.clearNudgeTracking(agentId);
         this.writeWorkerState();
 
         // Check if mesh session is complete

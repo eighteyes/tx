@@ -13,45 +13,46 @@ agents:
     # Does NOT do creative work
 
   - name: dramaturg
-    model: haiku
+    model: sonnet
     prompt: dramaturg/prompt.md
-    # Story-aware outcome suggestions
+    # phase 1 - Story-aware outcome suggestions
     # Reads arc context, suggests weight adjustments
+
+  - name: scene-crafter
+    model: sonnet
+    prompt: scene-crafter/prompt.md
+    # phase 1 - Scene structure, beats, transitions, pacing
+    # Identifies decision points for player agency
 
   - name: system
     model: sonnet
     prompt: system/prompt.md
-    # Mechanics engine, outcome tables, trait tracking
+    # phase 2 - Mechanics engine, outcome tables, trait tracking
     # Accepts dramaturg notes for story-aware weighting
 
   - name: cast
-    model: sonnet
+    model: opus
     prompt: cast/prompt.md
-    # NPC voices, reactions, character consistency
-
-  - name: scene-crafter
-    model: haiku
-    prompt: scene-crafter/prompt.md
-    # Scene structure, beats, transitions, pacing
-    # Identifies decision points for player agency
+    # phase 2 - NPC voices, reactions, character consistency
 
   - name: narrator
     model: opus
     prompt: narrator/prompt.md
-    # Prose rendering with staged build (1.5-2k words)
+    # phase 2,3 - Prose rendering with staged build (1.5-2k words)
     # Orchestrates dramaturg, system, cast, scene-crafter
     # Handles mid-turn player decisions
 
-  - name: oracle
-    model: haiku
-    prompt: oracle/prompt.md
-    # Continuity validation against established facts
 
   - name: editor
-    model: sonnet
+    model: opus
     prompt: editor/prompt.md
     # Adversarial prose review against author.yaml
-    # Only fires if oracle passes
+    # Works with narrator in phase 3
+
+  - name: oracle
+    model: sonnet
+    prompt: oracle/prompt.md
+    # Continuity validation against established facts
 
   - name: scribe
     model: haiku
@@ -113,6 +114,8 @@ routing:
       narrator: "Scene outline complete"
 
   oracle:
+    ask:
+      narrator: "fix violations"
     ask-response:
       coordinator: "Continuity validation complete"
 
