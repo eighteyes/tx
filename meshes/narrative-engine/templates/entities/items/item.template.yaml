@@ -1,0 +1,68 @@
+# Item Entity Template
+# Copy to: .ai/games/{game-id}/entities/items/{item-id}.yaml
+# For objects with narrative weight - not inventory clutter
+
+id: item-id
+type: item
+name: "Item Name"
+
+# ============================================
+# TRAITS - What this item IS
+# ============================================
+traits:
+  # Properties - inherent qualities
+  properties: []
+    # Examples: [silver, enchanted, fragile, ancient, ornate, mundane]
+
+  # Origin - where it came from
+  origin: ""
+    # Examples:
+    # "Forged in the Sundering"
+    # "Family heirloom, three generations"
+    # "Mass-produced, but this one was in her pocket when she died"
+
+  # Restrictions - conditions on use
+  restrictions: ""
+    # Examples:
+    # "Only cuts what wielder believes is evil"
+    # "Burns anyone not of royal blood"
+    # "Only works during new moon"
+
+  # Physical description for VISUAL blocks
+  visual:
+    size: ""                    # "palm-sized", "two-handed", "pocket-sized"
+    material: ""                # "tarnished silver", "black iron", "yellowed paper"
+    distinguishing: []          # ["crack along the blade", "faded inscription"]
+
+# ============================================
+# EPISODES - What has happened to this item
+# ============================================
+episodes: []
+  # - turn: 5
+  #   event: "First blood drawn against the shadow creature"
+  #   state_change:
+  #     bond: awakening
+  # - turn: 12
+  #   event: "Cracked against iron gate while forcing entry"
+  #   state_change:
+  #     condition: damaged
+  # - turn: 15
+  #   event: "Passed from protagonist to the innkeeper for safekeeping"
+  #   state_change:
+  #     holder: innkeeper
+
+# ============================================
+# CURRENT_STATE - Item's present condition
+# ============================================
+current_state:
+  holder: null                  # character-id or null (lost/hidden)
+  location: null                # location-id if not held by anyone
+  condition: pristine           # pristine | worn | damaged | broken | destroyed
+  bond_level: 0                 # 0-5 for bonded/enchanted items
+  activated: false              # for items with active/dormant states
+
+# Secrets - hidden aspects
+secrets:
+  true_nature: null             # "Actually a key to the vault"
+  hidden_power: null            # "Glows near the undead"
+  curse: null                   # "Slowly drains holder's vitality"

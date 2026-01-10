@@ -1,0 +1,70 @@
+# Location Entity Template
+# Copy to: .ai/games/{game-id}/entities/locations/{location-id}.yaml
+
+id: location-id
+type: location
+name: "Location Name"
+
+# ============================================
+# TRAITS - What this place IS
+# ============================================
+traits:
+  # Atmosphere - sensory/emotional quality
+  atmosphere: []
+    # Examples: [dim, oppressive, ancient, peaceful, bustling, foreboding]
+
+  # Features - notable physical elements
+  features: []
+    # Examples: [hidden door, crumbling walls, roaring fireplace, narrow stairs]
+
+  # Constraints - access or behavior restrictions
+  constraints: ""
+    # Examples:
+    # "Only accessible at low tide"
+    # "Sound echoes - whispers carry"
+    # "No weapons allowed past the threshold"
+
+  # Connections - how it links to other locations
+  connections: []
+    # - to: main-square
+    #   via: "narrow alley"
+    #   visibility: hidden
+    # - to: cellar
+    #   via: "trapdoor behind the bar"
+    #   visibility: secret
+
+  # Visual details for image generation
+  visual:
+    lighting: ""                # "candlelit", "harsh daylight", "dim blue glow"
+    scale: ""                   # "cramped", "cavernous", "intimate"
+    materials: []               # [rough stone, polished wood, rusted iron]
+    notable_objects: []         # [ancient tapestry, cracked mirror, empty throne]
+
+# ============================================
+# EPISODES - What has happened here
+# ============================================
+episodes: []
+  # - turn: 3
+  #   event: "Hidden door discovered behind tapestry"
+  #   state_change:
+  #     secret_revealed: "hidden_door"
+  # - turn: 8
+  #   event: "Fire damaged the eastern wing"
+  #   state_change:
+  #     condition: damaged
+  #     features_lost: [tapestry, wooden_stairs]
+
+# ============================================
+# CURRENT_STATE - Location's present condition
+# ============================================
+current_state:
+  access: open                  # open | restricted | blocked | destroyed
+  condition: pristine           # pristine | worn | damaged | destroyed
+  occupants: []                 # [character-ids currently present]
+  atmosphere_modifier: null     # temporary mood shift: [tense, festive, mourning]
+
+# Secrets - things hidden here
+secrets:
+  hidden_features: []           # ["trapdoor under the rug", "hollow wall panel"]
+  buried_items: []              # ["letter hidden in floorboards"]
+  witnessed_events: []          # ["This is where the elder was murdered"]

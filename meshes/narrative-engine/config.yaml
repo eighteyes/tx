@@ -52,13 +52,72 @@ agents:
   - name: oracle
     model: sonnet
     prompt: oracle/prompt.md
-    # Continuity validation against established facts
+    # Continuity validation + knowledge queries for entity data
 
   - name: scribe
     model: haiku
     prompt: scribe/prompt.md
     # Context compression, state management, game canon promotion
     # Only fires if editor passes (or max iterations)
+
+  # ==========================================
+  # LINT LADDER - Parallel mechanical linters
+  # ==========================================
+
+  - name: lint-coordinator
+    model: haiku
+    prompt: linters/lint-coordinator.md
+    # Orchestrates parallel dispatch to all linters
+    # Aggregates violations into violations.yaml
+    # Forwards to editor for holistic review
+
+  - name: lint-forbidden-words
+    model: haiku
+    prompt: linters/forbidden-words.md
+    # Mechanical: "suddenly", "seemed", "very", etc.
+    # Concordance overuse detection
+
+  - name: lint-patterns
+    model: sonnet
+    prompt: linters/patterns.md
+    # Creative: "She realized", "Fear washed over", etc.
+    # Patterns that need narrator rewrite
+
+  - name: lint-ai-tells
+    model: haiku
+    prompt: linters/ai-tells.md
+    # Mechanical: "amidst", "whilst", "orbs", etc.
+    # Simple word swaps
+
+  - name: lint-cadence
+    model: sonnet
+    prompt: linters/cadence.md
+    # Creative: Sentence length distribution
+    # Rhythm analysis
+
+  - name: lint-dialogue
+    model: haiku
+    prompt: linters/dialogue.md
+    # Mechanical: Tags, adverbs
+    # Coherence check
+
+  - name: lint-litotes
+    model: sonnet
+    prompt: linters/litotes.md
+    # Creative: "not X, but Y" patterns
+    # Budget: 1-2 per scene
+
+  - name: lint-metaphor
+    model: sonnet
+    prompt: linters/metaphor.md
+    # Creative: Repeated sensory channels
+    # One peak expression per channel per scene
+
+  - name: lint-body-first
+    model: sonnet
+    prompt: linters/body-first.md
+    # Creative: Scene opening physical grounding
+    # Body before thought
 
 entry_point: coordinator
 completion_agent: coordinator
@@ -70,14 +129,27 @@ continuation:
 # Phase-based routing with direct agent communication
 # Phase 1: DRAMATURG + SCENE-CRAFTER (prep)
 # Phase 2: NARRATOR + SYSTEM + CAST (render)
-# Phase 3: EDITOR + NARRATOR (review loop - editor leads)
+# Phase 3: LINT-COORDINATOR → 8 LINTERS (parallel) → EDITOR → NARRATOR (review loop)
 # Coordinator kicks off each phase, agents communicate directly within phase
+#
+# Lint Ladder Flow:
+#   Coordinator → lint-coordinator
+#                 ↓
+#       [8 linters in parallel]
+#                 ↓
+#       lint-coordinator aggregates → violations.yaml
+#                 ↓
+#              Editor (holistic review)
+#                 ↓
+#       Editor ↔ Narrator (revision loop, up to 3 iterations)
+#                 ↓
+#       Editor → Coordinator (CLEAN or MAX_ITERATIONS)
 
 routing:
   coordinator:
     ask:
       narrator: "Render prose (phase 2)"
-      editor: "Review prose (phase 3 - editor leads revision loop)"
+      lint-coordinator: "Lint prose (phase 3 - parallel linters)"
       oracle: "Validate continuity"
       scribe: "Compress turn state"
     ask-human:
@@ -91,6 +163,7 @@ routing:
       system: "Need mechanical resolution"
       cast: "Need character reactions"
       scene-crafter: "Outline scene structure"
+      oracle: "Knowledge query"              # NEW: Query entity data during prose generation
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
@@ -118,6 +191,60 @@ routing:
       narrator: "fix violations"
     ask-response:
       coordinator: "Continuity validation complete"
+      narrator: "Knowledge query response"     # NEW: Return entity data to narrator
+
+  # ==========================================
+  # LINT LADDER ROUTING
+  # ==========================================
+
+  lint-coordinator:
+    ask:
+      lint-forbidden-words: "Check forbidden words"
+      lint-patterns: "Check patterns"
+      lint-ai-tells: "Check AI tells"
+      lint-cadence: "Check cadence"
+      lint-dialogue: "Check dialogue"
+      lint-litotes: "Check litotes"
+      lint-metaphor: "Check metaphor"
+      lint-body-first: "Check body-first"
+    ask-response:
+      editor: "Violations aggregated"
+
+  lint-forbidden-words:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-patterns:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-ai-tells:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-cadence:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-dialogue:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-litotes:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-metaphor:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-body-first:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  # ==========================================
+  # EDITOR (now receives from lint-coordinator)
+  # ==========================================
 
   editor:
     ask:

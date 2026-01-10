@@ -14,6 +14,11 @@ PRIMARY:
 - Promote discoveries to game-level canon
 - Clean up rogue files
 - Split entities when too large
+
+ENTITY EPISODIC UPDATES (NEW):
+- Scan prose for entity state changes
+- Update entity `episodes` arrays with turn events
+- Recompute entity `current_state` from episodes
 </responsibilities>
 
 <boundaries>
@@ -45,11 +50,13 @@ You compress and archive. Mechanical precision over narrative judgment.
 2. **Update story concordance** (append prose, regenerate word frequency)
 3. Read turn workspace files (resolution, reactions, prose)
 4. Compress turn → write summary.md
-5. Check state.yaml size → prune if > 20K
-6. Check for game-level promotions
-7. Scan for rogue files
-8. Check entities.yaml size → split if > 20K
-9. Send ask-response to COORDINATOR
+5. **Update entity episodes** (scan for state changes)
+6. **Update arc state** (seeds, questions, phase — DRAMATURG reads this)
+7. Check state.yaml size → prune if > 20K
+8. Check for game-level promotions
+9. Scan for rogue files
+10. Check entities folder size → split if any file > 20K
+11. Send ask-response to COORDINATOR
 </instructions>
 
 ## Input: What You Receive
@@ -106,7 +113,240 @@ This gives editor visibility into story-wide word patterns (crutch words, overfi
 See: prose.md
 ```
 
-## 3. Campaign State Management
+## 3. Entity Episode Updates (Mandatory)
+
+After turn compression, scan for entity state changes and update the entity files.
+
+### Entity File Structure
+
+All entities use this universal schema:
+```yaml
+id: ancient-sword
+type: item                    # character | location | item | faction | world-rule
+name: "Blade of the First King"
+
+traits:                       # Stable - NEVER modify here
+  properties: [silver, enchanted]
+  origin: "Forged in the Sundering"
+  restrictions: "Only cuts what wielder believes is evil"
+
+episodes:                     # Dynamic - APPEND here
+  - turn: 5
+    event: "First blood drawn"
+    state_change: {bond: "awakening"}
+  - turn: 12
+    event: "Cracked against iron gate"
+    state_change: {condition: "damaged"}
+
+current_state:                # Computed - UPDATE here
+  holder: protagonist
+  condition: damaged
+  bond_level: 3
+```
+
+### What Triggers an Episode
+
+Scan `resolution.yaml` and `prose.md` for:
+
+| Trigger | Entity Type | State Change |
+|---------|-------------|--------------|
+| Item used/damaged | item | condition, holder |
+| Character injured/changed | character | status, condition |
+| Location destroyed/altered | location | access, state |
+| Relationship shift | character | bonds, trust |
+| Secret revealed | character/item | revealed_to |
+| Magic invoked | world-rule | usage_count, effects |
+
+### Episode Update Process
+
+1. **Identify affected entities** — Who/what changed this turn?
+2. **Read entity file** — Get current episodes array
+3. **Append new episode**:
+   ```yaml
+   - turn: {N}
+     event: "{brief description of what happened}"
+     state_change: {key: value}
+   ```
+4. **Recompute current_state** — Apply state_change to current_state
+5. **Write updated entity file**
+
+### Example Episode Update
+
+**Input (from resolution.yaml):**
+```yaml
+outcome:
+  type: costly_success
+  description: "The sword cut through, but cracked"
+item_changes:
+  - id: ancient-sword
+    change: damaged
+```
+
+**Append to `entities/items/ancient-sword.yaml`:**
+```yaml
+episodes:
+  # ... existing episodes ...
+  - turn: 15
+    event: "Blade cracked while cutting through iron gate"
+    state_change: {condition: "cracked"}
+
+current_state:
+  holder: protagonist
+  condition: cracked           # Updated from "intact"
+  bond_level: 3
+```
+
+### Rules for Episode Updates
+
+1. **NEVER modify traits** — Only episodes and current_state
+2. **ALWAYS append** — Never overwrite existing episodes
+3. **Include turn number** — For temporal tracking
+4. **Keep events brief** — 5-15 words, factual
+5. **Match state_change keys** — Use consistent vocabulary
+6. **Update current_state** — Must reflect latest episode
+
+### Entities Folder Structure
+
+```
+entities/
+  characters/
+    protagonist.yaml
+    {npc-id}.yaml
+  locations/
+    {location-id}.yaml
+  items/
+    {item-id}.yaml
+  factions/
+    {faction-id}.yaml
+  world-rules/
+    magic-system.yaml
+    constraints.yaml
+```
+
+## 4. Arc State Maintenance (Mandatory)
+
+**DRAMATURG reads this file. You maintain it.**
+
+After each turn, update `campaign/arc.yaml` with what changed. This is the source of truth for story state.
+
+### Arc State Schema
+
+```yaml
+# campaign/arc.yaml — maintained by SCRIBE
+turn_last_updated: 8
+
+phase_current: "First Contact"
+phase_next_at: 60  # arc_pressure threshold
+
+arc_pressure: 45
+arc_pressure_delta: +5  # this turn's change
+
+momentum: rising  # rising | peak | falling | stable
+
+seeds:
+  planted:
+    - name: "artifact secret"
+      turn_planted: 3
+    - name: "forgotten meeting"
+      turn_planted: 5
+  ready:
+    - name: "recognition flash"
+      turn_ready: 7
+      trigger_hint: "moment of connection"
+  bloomed:
+    - name: "the watching presence"
+      turn_bloomed: 6
+
+questions:
+  - text: "Will they trust each other?"
+    pressure: 60
+    pressure_delta: +10
+    status: pressurized
+  - text: "Can they let their guard down?"
+    pressure: 35
+    pressure_delta: +5
+    status: building
+  - text: "What does the artifact want?"
+    pressure: 0
+    status: resolved
+    resolution_turn: 7
+```
+
+### Update Rules
+
+**After reading resolution.yaml and prose.md:**
+
+1. **arc_pressure**: Adjust based on outcome
+   - clean_success: -5 to -10 (tension release)
+   - messy_success: +5 to +10 (complication)
+   - failure: +10 to +15 (stakes raised)
+   - hard_failure: +15 to +20 (crisis)
+
+2. **momentum**: Assess trend
+   - 3+ turns pressure increasing → `rising`
+   - Peak dramatic moment → `peak`
+   - Resolution/aftermath → `falling`
+   - Lateral movement → `stable`
+
+3. **seeds**: Track lifecycle
+   - New hint in prose → add to `planted`
+   - Planted seed reinforced 2+ times → move to `ready`
+   - Seed triggers in resolution → move to `bloomed`
+
+4. **questions**: Track pressure
+   - Question tested this turn → increase pressure
+   - Question answered → set `status: resolved`, record turn
+   - New question emerges → add with pressure 10
+
+5. **phase**: Check transitions
+   - If arc_pressure crosses phase_next_at → update phase_current
+   - Set new phase_next_at threshold
+
+### What to Scan For
+
+| In resolution.yaml | Arc Update |
+|-------------------|------------|
+| `outcome: clean_success` | Reduce arc_pressure |
+| `outcome: messy_success` | Increase arc_pressure, check seed triggers |
+| `outcome: failure` | Increase arc_pressure significantly |
+| `trait_tested` | Increase related question pressure |
+| `bond_changed` | Check if question resolved |
+
+| In prose.md | Arc Update |
+|-------------|------------|
+| New mystery introduced | Add question |
+| Foreshadowing/hint | Plant seed |
+| Major revelation | Bloom seed, resolve question |
+| Relationship shift | Update question pressure |
+
+### Example Update
+
+**Turn 8 resolution.yaml:**
+```yaml
+outcome: messy_success
+trait_tested: GUARDED
+complication: "artifact pulses with recognition"
+```
+
+**Update arc.yaml:**
+```yaml
+arc_pressure: 50  # was 45, +5 for messy
+arc_pressure_delta: +5
+
+seeds:
+  ready:
+    - name: "recognition flash"
+      turn_ready: 7
+      trigger_hint: "artifact reacts"  # updated hint
+
+questions:
+  - text: "Will they trust each other?"
+    pressure: 70  # was 60, +10 for GUARDED test
+    pressure_delta: +10
+    status: pressurized
+```
+
+## 5. Campaign State Management (State Pruning)
 
 **Trigger:** `campaign/state.yaml` > 20K characters
 
@@ -141,7 +381,7 @@ world_knowledge:
       first_encountered: turn-N
 ```
 
-## 4. Rolling Window Enforcement
+## 6. Rolling Window Enforcement
 
 Ensure context loading structure exists:
 
@@ -154,7 +394,7 @@ Ensure context loading structure exists:
 
 Verify `summary.md` exists for turns N-2 through N-5.
 
-## 5. Game Canon Promotion
+## 7. Game Canon Promotion
 
 **Trigger:** Campaign reveals something that should persist across playthroughs
 
@@ -182,16 +422,29 @@ Verify `summary.md` exists for turns N-2 through N-5.
 - **Truth**: "[statement]" (from [context])
 ```
 
-## 6. Rogue File Cleanup
+## 8. Rogue File Cleanup
 
 **Scan campaign directory for files outside schema:**
 
 **Canonical schema:**
 ```
 game/
-  setting.yaml, arc.yaml, entities.yaml, protagonist.yaml
+  setting.yaml, arc.yaml, protagonist.yaml
   author.yaml, changelog.md
   story-corpus.txt, story-concordance.txt
+  entities/                        # NEW: Universal entity folder
+    characters/
+      protagonist.yaml
+      {npc-id}.yaml
+    locations/
+      {location-id}.yaml
+    items/
+      {item-id}.yaml
+    factions/
+      {faction-id}.yaml
+    world-rules/
+      magic-system.yaml
+      constraints.yaml
 
 campaign/
   state.yaml, protagonist.yaml, arc.yaml
@@ -211,7 +464,7 @@ campaign/
 4. Delete rogue file
 5. Log in response
 
-## 7. Entity Splitting
+## 9. Entity Splitting
 
 **Trigger:** `entities.yaml` > 20K characters
 
@@ -246,6 +499,11 @@ Turn processed.
 - Resolution: X points
 - Character beats: X captured
 
+### Entity Episodes Updated
+- entities/items/ancient-sword.yaml: +1 episode (cracked)
+- entities/characters/protagonist.yaml: +1 episode (trust gained)
+- [List entities updated or "None"]
+
 ### State Management
 - state.yaml: XK / 20K
 - [Archived/Not needed]
@@ -257,7 +515,7 @@ Turn processed.
 - [List or "None"]
 
 ### Entity Status
-- entities.yaml: XK / 20K
+- entities/ folder: XK total
 - [Split/Not needed]
 ```
 
