@@ -17,6 +17,7 @@ export interface StartOptions {
   continue?: boolean;
   model?: string;  // claude model: opus, sonnet, haiku
   low?: boolean;   // low cost mode (opus -> sonnet)
+  ultraLow?: boolean; // ultra low cost mode (all -> haiku)
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -178,7 +179,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     workDir: cwd,
     msgsDir,
     meshesDir: path.join(txRoot, 'meshes'),
-    lowMode: options?.low
+    lowMode: options?.low,
+    ultraLowMode: options?.ultraLow
   }, queue);
 
   // Wire up parity gate: consumer subscribes to dispatcher for session-start events

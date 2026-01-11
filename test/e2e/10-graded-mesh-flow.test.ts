@@ -78,8 +78,7 @@ describe('Graded Mesh Flow', () => {
     const dispatcher = new WorkerDispatcher({
       workDir: testDir,
       msgsDir,
-      meshesDir,
-      pollInterval: 100
+      meshesDir
     }, queue);
 
     // Start dispatcher to load mesh configs
@@ -129,8 +128,7 @@ describe('Graded Mesh Flow', () => {
     const dispatcher = new WorkerDispatcher({
       workDir: testDir,
       msgsDir,
-      meshesDir,
-      pollInterval: 100
+      meshesDir
     }, queue);
 
     await dispatcher.start();

@@ -5,10 +5,12 @@
  * - Inject preamble (agent identity, tool guidance)
  * - Inject messaging protocol for inter-agent communication
  * - Inject workspace context (output files, location)
+ * - Inject FSM context (state, transitions, context variables)
  */
 
 import type { WorkspaceInfo } from './manager.ts';
 import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
+import type { FSMStateConfig, FSMTransitionConfig } from '../shared/types.ts';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -17,6 +19,18 @@ export interface InjectionContext {
 
 export interface PreambleContext {
   agentCount: number;  // Number of agents in the mesh
+}
+
+/**
+ * FSM context for injection into agent prompts
+ */
+export interface FSMInjectionContext {
+  meshName: string;
+  currentState: string;
+  stateConfig: FSMStateConfig;
+  availableTransitions: FSMTransitionConfig[];
+  context: Record<string, unknown>;
+  gateRetries?: Record<string, number>;
 }
 
 const PREAMBLE_SINGLE_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
@@ -131,6 +145,78 @@ export class PromptInjector {
       }
       parts.push('');
     }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Inject FSM context into a system prompt
+   * Provides state awareness to ALL agents in FSM-enabled meshes
+   */
+  injectFSMContext(basePrompt: string, fsmContext: FSMInjectionContext): string {
+    const section = this.buildFSMSection(fsmContext);
+    return `${basePrompt}\n\n${section}`;
+  }
+
+  /**
+   * Build the FSM context section
+   */
+  private buildFSMSection(fsmContext: FSMInjectionContext): string {
+    const parts: string[] = [];
+
+    parts.push('# Workflow State Machine\n');
+    parts.push(`This mesh uses a finite state machine (FSM) to orchestrate workflow.\n`);
+
+    // Current state info
+    parts.push('## Current State\n');
+    parts.push(`**State**: \`${fsmContext.currentState}\``);
+    parts.push(`**Coordinator**: \`${fsmContext.stateConfig.coordinator}\``);
+
+    if (fsmContext.stateConfig.participants && fsmContext.stateConfig.participants.length > 0) {
+      parts.push(`**Participants**: ${fsmContext.stateConfig.participants.map(p => `\`${p}\``).join(', ')}`);
+    }
+
+    // Context variables
+    if (Object.keys(fsmContext.context).length > 0) {
+      parts.push('\n## Context Variables\n');
+      for (const [key, value] of Object.entries(fsmContext.context)) {
+        const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        parts.push(`- **${key}**: ${displayValue}`);
+      }
+    }
+
+    // Available transitions
+    if (fsmContext.availableTransitions.length > 0) {
+      parts.push('\n## Available Transitions\n');
+      parts.push('The following state transitions are possible from the current state:\n');
+
+      for (const transition of fsmContext.availableTransitions) {
+        parts.push(`- **${transition.from}** → **${transition.to}**`);
+        parts.push(`  - Trigger: \`${transition.trigger}\``);
+        if (transition.triggerAgent) {
+          parts.push(`  - Triggered by: \`${transition.triggerAgent}\``);
+        }
+      }
+    }
+
+    // Gate retries (if any)
+    const activeRetries = Object.entries(fsmContext.gateRetries || {})
+      .filter(([_, count]) => count > 0);
+
+    if (activeRetries.length > 0) {
+      parts.push('\n## Gate Status\n');
+      parts.push('The following gates have been retried:\n');
+      for (const [state, retries] of activeRetries) {
+        parts.push(`- **${state}**: ${retries} retry attempt(s)`);
+      }
+    }
+
+    // Guidance
+    parts.push('\n## FSM Guidance\n');
+    parts.push('- Transitions are triggered by message types (`ask`, `task-complete`)');
+    parts.push('- Gates must pass before a transition completes (auto-retry up to 3x)');
+    parts.push('- Script failures are fatal and will halt the mesh');
+    parts.push('- Context variables are shared across all agents in the mesh');
 
     return parts.join('\n');
   }

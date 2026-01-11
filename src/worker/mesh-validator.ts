@@ -164,6 +164,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   graded: { type: 'boolean' },  // Special validation accepts boolean | string[]
   // Iteration config for graded meshes
   iteration: { type: 'object' },  // { maxIterations?: number, onFail?: 'loop' | 'halt' }
+  // FSM (Finite State Machine) configuration for workflow orchestration
+  fsm: { type: 'object' },  // FSMConfig: { initialState, states, transitions, context }
 };
 
 /**
@@ -241,6 +243,11 @@ export class MeshValidator {
     // Validate rearmatter if present
     if (cfg.rearmatter) {
       this.validateRearmatter(cfg.rearmatter, errors, warnings, context);
+    }
+
+    // Validate FSM if present
+    if (cfg.fsm && Array.isArray(cfg.agents)) {
+      this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
     }
 
     // Check for unknown fields
@@ -560,6 +567,232 @@ export class MeshValidator {
     for (const field of Object.keys(rm)) {
       if (!knownRearmatterFields.includes(field)) {
         warnings.push(`Unknown rearmatter field '${field}'${context}`);
+      }
+    }
+  }
+
+  /**
+   * Validate FSM configuration
+   */
+  private static validateFSM(
+    fsm: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof fsm !== 'object' || fsm === null) {
+      errors.push(`fsm must be an object${context}`);
+      return;
+    }
+
+    const fsmObj = fsm as Record<string, unknown>;
+
+    // Validate required fields
+    if (!fsmObj.initialState) {
+      errors.push(`fsm.initialState is required${context}`);
+    } else if (typeof fsmObj.initialState !== 'string') {
+      errors.push(`fsm.initialState must be a string${context}`);
+    }
+
+    if (!fsmObj.states) {
+      errors.push(`fsm.states is required${context}`);
+    } else if (!Array.isArray(fsmObj.states)) {
+      errors.push(`fsm.states must be an array${context}`);
+    } else if (fsmObj.states.length === 0) {
+      errors.push(`fsm.states cannot be empty${context}`);
+    }
+
+    if (!fsmObj.transitions) {
+      errors.push(`fsm.transitions is required${context}`);
+    } else if (!Array.isArray(fsmObj.transitions)) {
+      errors.push(`fsm.transitions must be an array${context}`);
+    }
+
+    // Get agent names for reference validation
+    const agentNames = new Set(
+      agents
+        .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+        .map(a => a.name as string)
+    );
+
+    // Validate states
+    const stateNames = new Set<string>();
+    if (Array.isArray(fsmObj.states)) {
+      for (let i = 0; i < fsmObj.states.length; i++) {
+        const state = fsmObj.states[i];
+        const prefix = `fsm.states[${i}]`;
+
+        if (!state || typeof state !== 'object') {
+          errors.push(`${prefix} must be an object${context}`);
+          continue;
+        }
+
+        const stateObj = state as Record<string, unknown>;
+
+        // Validate state name
+        if (!stateObj.name) {
+          errors.push(`${prefix}.name is required${context}`);
+        } else if (typeof stateObj.name !== 'string') {
+          errors.push(`${prefix}.name must be a string${context}`);
+        } else {
+          if (stateNames.has(stateObj.name)) {
+            errors.push(`${prefix}: duplicate state name '${stateObj.name}'${context}`);
+          }
+          stateNames.add(stateObj.name);
+        }
+
+        // Validate coordinator
+        if (!stateObj.coordinator) {
+          errors.push(`${prefix}.coordinator is required${context}`);
+        } else if (typeof stateObj.coordinator !== 'string') {
+          errors.push(`${prefix}.coordinator must be a string${context}`);
+        } else if (!agentNames.has(stateObj.coordinator)) {
+          warnings.push(`${prefix}.coordinator '${stateObj.coordinator}' not found in agents${context}`);
+        }
+
+        // Validate participants if present
+        if (stateObj.participants !== undefined) {
+          if (!Array.isArray(stateObj.participants)) {
+            errors.push(`${prefix}.participants must be an array${context}`);
+          } else {
+            for (const participant of stateObj.participants) {
+              if (typeof participant !== 'string') {
+                errors.push(`${prefix}.participants must contain strings${context}`);
+              } else if (!agentNames.has(participant)) {
+                warnings.push(`${prefix}.participants: '${participant}' not found in agents${context}`);
+              }
+            }
+          }
+        }
+
+        // Validate gates if present
+        if (stateObj.gates !== undefined) {
+          if (!Array.isArray(stateObj.gates)) {
+            errors.push(`${prefix}.gates must be an array${context}`);
+          } else {
+            for (let j = 0; j < stateObj.gates.length; j++) {
+              const gate = stateObj.gates[j];
+              const gatePrefix = `${prefix}.gates[${j}]`;
+
+              if (!gate || typeof gate !== 'object') {
+                errors.push(`${gatePrefix} must be an object${context}`);
+                continue;
+              }
+
+              const gateObj = gate as Record<string, unknown>;
+
+              if (!gateObj.type) {
+                errors.push(`${gatePrefix}.type is required${context}`);
+              } else if (!['script', 'agent-complete', 'all-complete'].includes(gateObj.type as string)) {
+                errors.push(`${gatePrefix}.type must be 'script', 'agent-complete', or 'all-complete'${context}`);
+              }
+
+              // Script type requires script field
+              if (gateObj.type === 'script' && !gateObj.script) {
+                errors.push(`${gatePrefix}.script is required for script gate${context}`);
+              }
+
+              // Agent-complete type requires agent field
+              if (gateObj.type === 'agent-complete' && !gateObj.agent) {
+                errors.push(`${gatePrefix}.agent is required for agent-complete gate${context}`);
+              }
+
+              // Validate maxRetries if present
+              if (gateObj.maxRetries !== undefined) {
+                if (typeof gateObj.maxRetries !== 'number') {
+                  errors.push(`${gatePrefix}.maxRetries must be a number${context}`);
+                } else if (gateObj.maxRetries < 0) {
+                  errors.push(`${gatePrefix}.maxRetries must be >= 0${context}`);
+                }
+              }
+            }
+          }
+        }
+
+        // Validate scripts if present
+        if (stateObj.onEnter !== undefined && typeof stateObj.onEnter !== 'string') {
+          errors.push(`${prefix}.onEnter must be a string${context}`);
+        }
+        if (stateObj.onExit !== undefined && typeof stateObj.onExit !== 'string') {
+          errors.push(`${prefix}.onExit must be a string${context}`);
+        }
+      }
+    }
+
+    // Validate initialState references a valid state
+    if (typeof fsmObj.initialState === 'string' && stateNames.size > 0) {
+      if (!stateNames.has(fsmObj.initialState)) {
+        errors.push(`fsm.initialState '${fsmObj.initialState}' not found in states${context}`);
+      }
+    }
+
+    // Validate transitions
+    if (Array.isArray(fsmObj.transitions)) {
+      for (let i = 0; i < fsmObj.transitions.length; i++) {
+        const transition = fsmObj.transitions[i];
+        const prefix = `fsm.transitions[${i}]`;
+
+        if (!transition || typeof transition !== 'object') {
+          errors.push(`${prefix} must be an object${context}`);
+          continue;
+        }
+
+        const transObj = transition as Record<string, unknown>;
+
+        // Validate from
+        if (!transObj.from) {
+          errors.push(`${prefix}.from is required${context}`);
+        } else if (typeof transObj.from !== 'string') {
+          errors.push(`${prefix}.from must be a string${context}`);
+        } else if (stateNames.size > 0 && !stateNames.has(transObj.from)) {
+          errors.push(`${prefix}.from '${transObj.from}' not found in states${context}`);
+        }
+
+        // Validate to
+        if (!transObj.to) {
+          errors.push(`${prefix}.to is required${context}`);
+        } else if (typeof transObj.to !== 'string') {
+          errors.push(`${prefix}.to must be a string${context}`);
+        } else if (stateNames.size > 0 && !stateNames.has(transObj.to)) {
+          errors.push(`${prefix}.to '${transObj.to}' not found in states${context}`);
+        }
+
+        // Validate trigger
+        if (!transObj.trigger) {
+          errors.push(`${prefix}.trigger is required${context}`);
+        } else if (!['ask', 'task-complete', 'manual'].includes(transObj.trigger as string)) {
+          errors.push(`${prefix}.trigger must be 'ask', 'task-complete', or 'manual'${context}`);
+        }
+
+        // Validate triggerAgent if present
+        if (transObj.triggerAgent !== undefined) {
+          if (typeof transObj.triggerAgent !== 'string') {
+            errors.push(`${prefix}.triggerAgent must be a string${context}`);
+          } else if (!agentNames.has(transObj.triggerAgent)) {
+            warnings.push(`${prefix}.triggerAgent '${transObj.triggerAgent}' not found in agents${context}`);
+          }
+        }
+
+        // Validate script if present
+        if (transObj.script !== undefined && typeof transObj.script !== 'string') {
+          errors.push(`${prefix}.script must be a string${context}`);
+        }
+      }
+    }
+
+    // Validate context if present
+    if (fsmObj.context !== undefined) {
+      if (typeof fsmObj.context !== 'object' || fsmObj.context === null || Array.isArray(fsmObj.context)) {
+        errors.push(`fsm.context must be an object${context}`);
+      }
+    }
+
+    // Check for unknown fsm fields
+    const knownFSMFields = ['initialState', 'states', 'transitions', 'context'];
+    for (const field of Object.keys(fsmObj)) {
+      if (!knownFSMFields.includes(field)) {
+        warnings.push(`Unknown fsm field '${field}'${context}`);
       }
     }
   }

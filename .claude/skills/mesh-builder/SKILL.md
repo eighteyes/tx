@@ -80,6 +80,8 @@ See `docs/mesh-config.md` for full routing reference.
 
 **FSM state tracking**: `fsm:` block for system-managed state
 
+**Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
+
 ## FSM (State Tracking)
 
 Add `fsm:` block to track state and provide context to agents.
@@ -117,7 +119,7 @@ turn: 5
 workspace: /path/to/turn-5
 ```
 
-See `.ai/docs/mesh-fsm-config.md` for full documentation.
+See `docs/mesh-fsm-config.md` for full documentation.
 
 ## Debugging
 

@@ -137,3 +137,48 @@ export interface SessionMetrics {
   startedAt: number;
   completedAt?: number;
 }
+
+// FSM (Finite State Machine) types
+
+/**
+ * FSM gate configuration
+ */
+export interface FSMGateConfig {
+  type: 'script' | 'agent-complete' | 'all-complete';
+  script?: string;  // Path to gate script (for script type)
+  agent?: string;   // Agent to check (for agent-complete type)
+  maxRetries?: number;  // Override default 3 retries
+}
+
+/**
+ * FSM state configuration
+ */
+export interface FSMStateConfig {
+  name: string;
+  coordinator: string;  // Agent that coordinates this state
+  participants?: string[];  // Other agents that participate
+  gates?: FSMGateConfig[];  // Gates to check before transition
+  onEnter?: string;  // Script to run on state entry
+  onExit?: string;   // Script to run on state exit
+}
+
+/**
+ * FSM transition configuration
+ */
+export interface FSMTransitionConfig {
+  from: string;
+  to: string;
+  trigger: 'ask' | 'task-complete' | 'manual';
+  triggerAgent?: string;  // Agent that triggers this transition
+  script?: string;  // Transition script
+}
+
+/**
+ * Full FSM configuration for mesh config
+ */
+export interface FSMConfig {
+  initialState: string;
+  states: FSMStateConfig[];
+  transitions: FSMTransitionConfig[];
+  context?: Record<string, unknown>;  // Initial context variables
+}

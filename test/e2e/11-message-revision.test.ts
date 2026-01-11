@@ -32,7 +32,7 @@ describe('Message Revision Flow', () => {
 
   describe('Consumer Revision Detection', () => {
     it('should emit worker-message event for new messages with event type', async () => {
-      let receivedEvent: { event?: string; agentId?: string } | null = null;
+      let receivedEvent: any = null;
 
       consumer.on('worker-message', (event) => {
         receivedEvent = event;
@@ -55,12 +55,7 @@ describe('Message Revision Flow', () => {
     });
 
     it('should emit revision-message event when file is edited', async () => {
-      let revisionEvent: {
-        filepath?: string;
-        agentId?: string;
-        content?: string;
-        headline?: string;
-      } | null = null;
+      let revisionEvent: any = null;
 
       consumer.on('revision-message', (event) => {
         revisionEvent = event;
@@ -200,7 +195,7 @@ Revised response.
 
   describe('Consumer Event Types', () => {
     it('should include event type in core-message events', async () => {
-      let coreEvent: { event?: string } | null = null;
+      let coreEvent: any = null;
 
       consumer.on('core-message', (event) => {
         coreEvent = event;

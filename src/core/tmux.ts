@@ -363,8 +363,25 @@ export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
   }
 
   // Send the prompt using literal mode for accuracy
-  tmux.sendLiteral(prompt);
-  tmux.sendEnter();
+  const sent = tmux.sendLiteral(prompt);
+  if (!sent) {
+    log.warn('injector', 'Failed to send literal text');
+    return false;
+  }
+
+  // Pause 500ms before sending Enter to allow tmux to process
+  try {
+    execSync('sleep 0.5', { stdio: 'pipe' });
+  } catch {
+    log.warn('injector', 'Sleep failed (non-fatal)');
+  }
+
+  const entered = tmux.sendEnter();
+  if (!entered) {
+    log.warn('injector', 'Failed to send Enter key');
+    return false;
+  }
+
   return true;
 }
 

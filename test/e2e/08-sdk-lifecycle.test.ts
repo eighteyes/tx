@@ -162,7 +162,7 @@ describe('V4 SDK Lifecycle Tests', () => {
       };
 
       const runner = new SdkRunner(config, queue);
-      let startEventData: { id: string } | null = null;
+      let startEventData: any = null;
 
       runner.on('start', (data) => {
         startEventData = data;
@@ -185,12 +185,7 @@ describe('V4 SDK Lifecycle Tests', () => {
       };
 
       const runner = new SdkRunner(config, queue);
-      let completeEventData: {
-        id: string;
-        messagesProcessed: number;
-        sessionId?: string;
-        output?: string;
-      } | null = null;
+      let completeEventData: any = null;
 
       runner.on('complete', (data) => {
         completeEventData = data;

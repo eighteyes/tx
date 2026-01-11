@@ -1,0 +1,100 @@
+# dev-haiku/config.yaml
+# FSM Test Mesh - Demonstrates state tracking with haiku agents
+# Inspired by narrative-engine coordinator pattern
+
+mesh: dev-haiku
+description: "FSM state tracking validation with haiku agents. Tests deterministic state transitions, gate validation, and context injection."
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    # FSM coordinator - manages state, routing, and completion
+
+  - name: worker
+    model: haiku
+    prompt: worker/prompt.md
+    # Task executor - exploration and implementation work
+
+  - name: reviewer
+    model: haiku
+    prompt: reviewer/prompt.md
+    # Quality reviewer - validates work
+
+entry_point: coordinator
+completion_agent: coordinator
+continuation: [coordinator]
+
+# Inject original task message into downstream agent prompts
+injectOriginalMessage: true
+
+# FSM Configuration - System-managed state machine
+fsm:
+  initialState: init
+
+  context:
+    iteration: 0
+    files_explored: 0
+    lines_written: 0
+    review_score: 0
+
+  states:
+    - name: init
+      coordinator: coordinator
+      onEnter: scripts/init.sh
+
+    - name: explore
+      coordinator: worker
+      gates:
+        - type: script
+          script: scripts/exploration-ready.sh
+      onExit: scripts/increment-iteration.sh
+
+    - name: plan
+      coordinator: coordinator
+      gates:
+        - type: script
+          script: scripts/plan-ready.sh
+
+    - name: implement
+      coordinator: worker
+      gates:
+        - type: script
+          script: scripts/code-ready.sh
+      onExit: scripts/increment-iteration.sh
+
+    - name: review
+      coordinator: reviewer
+      gates:
+        - type: script
+          script: scripts/review-passed.sh
+          maxRetries: 2
+
+    - name: complete
+      coordinator: coordinator
+
+  transitions:
+    - from: init
+      to: explore
+      trigger: ask
+      triggerAgent: coordinator
+
+    - from: explore
+      to: plan
+      trigger: task-complete
+      triggerAgent: worker
+
+    - from: plan
+      to: implement
+      trigger: ask
+      triggerAgent: coordinator
+
+    - from: implement
+      to: review
+      trigger: task-complete
+      triggerAgent: worker
+
+    - from: review
+      to: complete
+      trigger: task-complete
+      triggerAgent: reviewer

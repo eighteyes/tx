@@ -134,7 +134,8 @@ Usage: tx start [options]
 Options:
   -c, --continue     Resume previous Claude session
   --model <model>    Model to use (e.g., opus, sonnet)
-  --low              Use cost-effective models (replaces opus with sonnet)`,
+  --low              Use cost-effective models (replaces opus with sonnet)
+  --ultra-low        Use ultra low cost mode (forces haiku for everything)`,
 
   msg: `tx msg - View messages
 
@@ -238,7 +239,8 @@ async function main() {
       await start(undefined, {
         continue: Boolean(flags.c || flags.continue),
         model: flags.model as string | undefined,
-        low: Boolean(flags.low)
+        low: Boolean(flags.low),
+        ultraLow: Boolean(flags.ultraLow)
       });
       break;
 

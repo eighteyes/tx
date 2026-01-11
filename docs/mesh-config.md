@@ -385,6 +385,43 @@ rearmatter:
 
 ---
 
+## Context Propagation
+
+### `injectOriginalMessage`
+- **Type**: `boolean`
+- **Default**: `false`
+- **Behavior**: Injects the original task message (frontmatter + body) into downstream agent prompts in multi-agent workflows. Enables downstream agents to validate their work against original requirements without parsing upstream agent output.
+
+**Use case**: In a `dev-haiku` mesh, the sonnet validator can reference the original task to verify haiku's implementation matches the spec.
+
+**Injection format**: Appears as `## Original Task Message` section before upstream agent output.
+
+```yaml
+mesh: dev-haiku
+description: "Fast dev with validation"
+injectOriginalMessage: true  # Sonnet sees original task
+
+agents:
+  - name: haiku
+    model: haiku
+    prompt: haiku/prompt.md
+  - name: sonnet
+    model: sonnet
+    prompt: sonnet/prompt.md
+
+entry_point: haiku
+completion_agent: sonnet
+
+routing:
+  haiku:
+    complete:
+      sonnet: "Ready for validation"
+```
+
+**Note**: The entry point agent does NOT receive injection (it IS processing the original). Only downstream agents see the injected original message.
+
+---
+
 ## System & Type Fields
 
 ### `type`

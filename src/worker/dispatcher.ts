@@ -13,11 +13,11 @@ import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { MessageQueue } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type { SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics } from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
-import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
+import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
 import {
   LifecycleHooks,
   QualityIterationError,
@@ -33,6 +33,7 @@ import {
 } from '../quality/index.ts';
 import type { ParityReminderEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -117,6 +118,7 @@ interface MeshConfig {
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
   graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
   iteration?: IterationConfig;  // Iteration config for graded meshes
+  fsm?: FSMConfig;  // FSM config for workflow orchestration
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -133,6 +135,7 @@ export interface DispatcherConfig {
   msgsDir: string;
   meshesDir: string;
   lowMode?: boolean;
+  ultraLowMode?: boolean;
 }
 
 /**
@@ -203,6 +206,7 @@ export class WorkerDispatcher extends EventEmitter {
   private running = false;
   private activeWorkers: Map<string, ActiveWorker> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
+  private meshFSMs: Map<string, MeshFSM> = new Map();  // mesh name -> FSM instance
   private stateFile: string;
   private workspaceManager: WorkspaceManager;
   private promptInjector: PromptInjector;
@@ -501,6 +505,52 @@ export class WorkerDispatcher extends EventEmitter {
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
+
+    // Check for FSM transition (eager on first ask)
+    const [meshName, agentName] = senderAgentId.split('/');
+    if (meshName) {
+      const fsm = this.meshFSMs.get(meshName);
+      if (fsm && fsm.isInitialized()) {
+        try {
+          // Build frontmatter from event for FSM context
+          const messageFrontmatter: Record<string, unknown> = {
+            from: senderAgentId,
+            to: targetAgentId,
+            type: messageType,
+            'msg-id': event.msgId,
+            headline: event.headline,
+          };
+
+          const transitioned = await fsm.handleMessage(
+            senderAgentId,
+            targetAgentId,
+            messageType,
+            messageFrontmatter
+          );
+
+          if (transitioned) {
+            log.info('dispatcher', 'FSM transition triggered by ask message', {
+              meshName,
+              from: senderAgentId,
+              to: targetAgentId,
+              messageType,
+              newState: fsm.getCurrentState(),
+            });
+          }
+        } catch (error) {
+          // Script failures are fatal - halt the mesh
+          log.error('dispatcher', 'FSM transition failed fatally', {
+            meshName,
+            error: (error as Error).message,
+          });
+          this.emit('mesh:halt', {
+            meshName,
+            reason: 'FSM script failure',
+            error: (error as Error).message,
+          });
+        }
+      }
+    }
 
     const activeWorker = this.activeWorkers.get(senderAgentId);
     if (!activeWorker) {
@@ -1273,6 +1323,28 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
+      // Inject FSM context if mesh has FSM config
+      const fsm = this.meshFSMs.get(meshName);
+      if (fsm && fsm.isInitialized()) {
+        const currentStateConfig = fsm.getCurrentStateConfig();
+        if (currentStateConfig) {
+          const status = fsm.getStatus();
+          const fsmContext: FSMInjectionContext = {
+            meshName,
+            currentState: status.currentState,
+            stateConfig: currentStateConfig,
+            availableTransitions: status.availableTransitions,
+            context: status.context,
+            gateRetries: status.gateRetries,
+          };
+          systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
+          log.debug('dispatcher', 'Injected FSM context into prompt', {
+            agentId,
+            currentState: status.currentState,
+          });
+        }
+      }
+
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 
@@ -1288,7 +1360,10 @@ The system will resume your session when the human responds.`;
 
       // Create worker config
       let model = agent.model;
-      if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
+      if (this.config.ultraLowMode) {
+        model = 'haiku' as SemanticModel;
+        log.info('dispatcher', `[ULTRA-LOW MODE] Forced model for ${agentId}`, {from: agent.model, to: model});
+      } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
         model = (model as string).replace('opus', 'sonnet') as SemanticModel;
         log.info('dispatcher', `[LOW MODE] Demoted model for ${agentId}`, {from: agent.model, to: model});
       }
@@ -1831,12 +1906,86 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       for (const { dir: meshRoot, isGlobal } of meshRoots) {
         this.scanMeshDir(meshRoot, isGlobal, 0);
       }
+
+      // Initialize FSMs for meshes that have fsm config
+      this.initializeFSMs();
     } catch (error) {
       log.error('dispatcher', 'Failed to load mesh configs', {
         error: (error as Error).message,
         stack: (error as Error).stack
       });
       this.emit('error', { error: `Failed to load mesh configs: ${(error as Error).message}` });
+    }
+  }
+
+  /**
+   * Initialize FSM instances for meshes with fsm config
+   */
+  private initializeFSMs(): void {
+    for (const [meshName, config] of this.meshConfigs) {
+      if (!config.fsm) continue;
+
+      try {
+        const fsm = new MeshFSM(
+          meshName,
+          config.fsm,
+          this.queue.getDatabase(),
+          this.config.workDir
+        );
+
+        // Wire FSM events for observability
+        fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
+          log.info('fsm', 'State transition', {
+            meshName: event.meshName,
+            from: event.from,
+            to: event.to,
+            trigger: event.trigger,
+            triggerAgent: event.triggerAgent,
+          });
+          this.emit('fsm:transition', event);
+        });
+
+        fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
+          log.debug('fsm', 'Gate check', {
+            meshName: event.meshName,
+            state: event.state,
+            passed: event.passed,
+            retryCount: event.retryCount,
+          });
+          this.emit('fsm:gate-check', event);
+        });
+
+        fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
+          if (!event.success) {
+            log.error('fsm', 'Script failed', {
+              meshName: event.meshName,
+              scriptType: event.scriptType,
+              scriptPath: event.scriptPath,
+              error: event.error,
+            });
+          }
+          this.emit('fsm:script-run', event);
+        });
+
+        // Initialize the FSM (loads or creates state)
+        fsm.initialize().catch(error => {
+          log.error('fsm', 'Failed to initialize FSM', {
+            meshName,
+            error: (error as Error).message,
+          });
+        });
+
+        this.meshFSMs.set(meshName, fsm);
+        log.info('dispatcher', `Initialized FSM for mesh: ${meshName}`, {
+          initialState: config.fsm.initialState,
+          stateCount: config.fsm.states.length,
+          transitionCount: config.fsm.transitions.length,
+        });
+      } catch (error) {
+        log.error('dispatcher', `Failed to create FSM for mesh: ${meshName}`, {
+          error: (error as Error).message,
+        });
+      }
     }
   }
 

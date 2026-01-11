@@ -283,6 +283,14 @@ export class MessageQueue {
   }
 
   /**
+   * Get the underlying database instance
+   * Used by FSM persistence layer to share database connection
+   */
+  getDb(): Database.Database {
+    return this.db;
+  }
+
+  /**
    * Get stored conversation ID for an agent (for --resume)
    */
   getConversationId(agentId: string): string | null {
@@ -595,3 +603,6 @@ export {
   type CycleInfo,
   DEFAULT_DEADLOCK_CONFIG
 } from './deadlock-detector.ts';
+
+// Re-export FSM persistence for convenience
+export { FSMPersistence, type FSMStateData, type FSMStateBackup } from '../mesh/fsm-persistence.ts';
