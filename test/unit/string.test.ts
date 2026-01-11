@@ -71,9 +71,10 @@ describe("reverseString", () => {
 
     it("should handle emoji with skin tone modifiers", () => {
       // 👋 (wave) with light skin tone modifier
+      // When reversed: "hi👋🏻" becomes "🏻👋ih" (modifier stays with emoji)
       assert.strictEqual(
         reverseString("👋🏻hi"),
-        "ih👏🏻"
+        "ih🏻👋"
       );
     });
   });

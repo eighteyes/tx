@@ -11,6 +11,9 @@
 import type { WorkspaceInfo } from './manager.ts';
 import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 import type { FSMStateConfig, FSMTransitionConfig } from '../shared/types.ts';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { log } from '../shared/logger.ts';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -219,5 +222,71 @@ export class PromptInjector {
     parts.push('- Context variables are shared across all agents in the mesh');
 
     return parts.join('\n');
+  }
+
+  /**
+   * Save built prompt to .ai/prompts/{mesh}/{agent}.md
+   * Includes system prompt, user prompt, and metadata
+   */
+  async savePrompt(
+    meshName: string,
+    agentId: string,
+    systemPrompt: string,
+    userPrompt: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      // Create directory structure
+      const promptDir = join(process.cwd(), '.ai', 'prompts', meshName);
+      await mkdir(promptDir, { recursive: true });
+
+      // Build prompt file with metadata header
+      const timestamp = new Date().toISOString();
+      const parts: string[] = [];
+
+      // Metadata header
+      parts.push('---');
+      parts.push('metadata:');
+      parts.push(`  mesh: ${meshName}`);
+      parts.push(`  agent: ${agentId}`);
+      parts.push(`  timestamp: ${timestamp}`);
+      for (const [key, value] of Object.entries(metadata)) {
+        const displayValue = typeof value === 'object'
+          ? JSON.stringify(value).slice(0, 100)
+          : String(value).slice(0, 100);
+        parts.push(`  ${key}: ${displayValue}`);
+      }
+      parts.push('---\n');
+
+      // System Prompt
+      parts.push('# System Prompt\n');
+      parts.push(systemPrompt);
+      parts.push('\n');
+
+      // User Prompt (if provided)
+      if (userPrompt && userPrompt.trim()) {
+        parts.push('# User Prompt\n');
+        parts.push(userPrompt);
+        parts.push('\n');
+      }
+
+      // Write to file
+      const filePath = join(promptDir, `${agentId}.md`);
+      await writeFile(filePath, parts.join('\n'), 'utf-8');
+
+      log.debug('injector', 'Saved prompt', {
+        mesh: meshName,
+        agent: agentId,
+        filePath,
+        size: parts.join('\n').length,
+      });
+    } catch (error) {
+      // Log error but don't fail - prompt saving is optional
+      log.warn('injector', 'Failed to save prompt', {
+        mesh: meshName,
+        agent: agentId,
+        error: String(error),
+      });
+    }
   }
 }

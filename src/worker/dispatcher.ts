@@ -1441,6 +1441,38 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
+      // Save constructed prompt to .ai/prompts/{mesh}/{agent}.md
+      const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
+      const promptMetadata: Record<string, unknown> = {
+        taskId,
+        agentName: agent.name,
+        timestamp: new Date().toISOString(),
+      };
+      if (featureName) {
+        promptMetadata.featureName = featureName;
+      }
+      if (fsmState) {
+        promptMetadata.fsmState = fsmState;
+      }
+      if (hookContext.worktreePath) {
+        promptMetadata.worktreePath = hookContext.worktreePath;
+      }
+
+      try {
+        await this.promptInjector.savePrompt(
+          meshName,
+          agent.name,
+          systemPrompt,
+          '', // userPrompt (empty for now, could be populated from message if needed)
+          promptMetadata
+        );
+      } catch (error) {
+        log.warn('dispatcher', 'Failed to save prompt (non-fatal)', {
+          agentId,
+          error: String(error),
+        });
+      }
+
       // Load MCP environment variables if agent has MCP servers
       let mcpServers = agent.mcpServers;
       if (mcpServers && Object.keys(mcpServers).length > 0) {
