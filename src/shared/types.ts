@@ -138,6 +138,62 @@ export interface SessionMetrics {
   completedAt?: number;
 }
 
+// Ralph Loops types
+
+/**
+ * Resource limits for a single iteration
+ */
+export interface RalphIterationLimits {
+  time_ms: number;      // Max milliseconds per iteration
+  tokens: number;       // Max tokens per iteration
+  cost_usd: number;     // Max cost per iteration
+}
+
+/**
+ * Ralph loop configuration for a specific agent
+ */
+export interface RalphLoopAgentConfig {
+  name: string;                       // Agent name to apply loops to
+  max_iterations: number;             // Maximum number of iterations
+  iteration_limits: RalphIterationLimits;  // Resource limits per iteration
+  success_patterns: string[];         // Patterns indicating success (case-sensitive)
+}
+
+/**
+ * Ralph loops configuration in mesh config
+ */
+export interface RalphLoopConfig {
+  enabled: boolean;
+  agents: RalphLoopAgentConfig[];
+}
+
+/**
+ * Result from a Ralph loop execution
+ */
+export interface RalphLoopResult {
+  output: string;                     // Final output
+  iterations_completed: number;       // Actual iterations run
+  total_tokens: number;               // Sum of tokens across iterations
+  total_cost_usd: number;             // Sum of costs across iterations
+  total_time_ms: number;              // Sum of time across iterations
+  success: boolean;                   // Whether success pattern matched
+  final_pattern_matched?: string;     // Which pattern matched (if any)
+  limit_hit?: 'iterations' | 'time' | 'tokens' | 'cost';  // Which limit stopped execution
+}
+
+/**
+ * Metadata emitted in message frontmatter after Ralph loop execution
+ */
+export interface RalphLoopMetadata {
+  iterations_completed: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  total_time_ms: number;
+  success: boolean;
+  final_pattern_matched?: string;
+  limit_hit?: 'iterations' | 'time' | 'tokens' | 'cost';
+}
+
 // FSM (Finite State Machine) types
 
 /**

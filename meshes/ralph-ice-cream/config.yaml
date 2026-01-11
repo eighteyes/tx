@@ -1,0 +1,51 @@
+mesh: ralph-ice-cream
+description: "Iterative refinement with resource limits and layered evaluation (haiku → sonnet → opus)"
+
+agents:
+  - name: ralph-haiku
+    model: haiku
+    prompt: ralph-haiku.md
+  - name: sonnet-reviewer
+    model: sonnet
+    prompt: sonnet-reviewer.md
+  - name: opus-reviewer
+    model: opus
+    prompt: opus-reviewer.md
+
+entry_point: ralph-haiku
+
+# Ralph Loops configuration: Iterative refinement with hard resource limits
+ralph_loops:
+  enabled: true
+  agents:
+    - name: ralph-haiku
+      max_iterations: 3
+      iteration_limits:
+        time_ms: 30000      # 30 seconds max per iteration
+        tokens: 50000       # 50k tokens max per iteration
+        cost_usd: 0.10      # $0.10 max per iteration
+      success_patterns:
+        - "✓ DONE"
+        - "✓ SUCCESS"
+        - "✓ COMPLETE"
+
+# Routing: done → sonnet → opus → core (with rejection loops)
+routing:
+  ralph-haiku:
+    done:
+      sonnet-reviewer: "Ralph haiku complete, ready for review"
+    limit:
+      core: "Ralph hit resource limit without success"
+  sonnet-reviewer:
+    approved:
+      opus-reviewer: "Sonnet approved, final check by opus"
+    rejected:
+      ralph-haiku: "Sonnet rejected haiku work, refine again"
+  opus-reviewer:
+    approved:
+      core: "Work complete and approved by all layers"
+    rejected:
+      ralph-haiku: "Opus wants refinement, back to haiku"
+
+workspace:
+  path: ".ai/output/{task-id}/"

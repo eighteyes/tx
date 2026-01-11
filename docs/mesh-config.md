@@ -310,6 +310,98 @@ worktree: true
 
 ---
 
+## Ralph Loops (Iterative Refinement)
+
+### `ralph_loops`
+- **Type**: `object` (RalphLoopConfig)
+- **Required**: No
+- **Behavior**: Enables iterative agent refinement with hard resource limits and success pattern detection. Agents loop until they signal success or hit resource limits.
+
+#### `ralph_loops.enabled`
+- **Type**: `boolean`
+- **Required**: Yes
+- **Behavior**: Enables/disables Ralph Loops for this mesh
+
+#### `ralph_loops.agents`
+- **Type**: `array` of `RalphLoopAgentConfig`
+- **Required**: Yes (if enabled)
+- **Behavior**: Defines which agents use loops and their limits
+
+**RalphLoopAgentConfig fields**:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Agent name (must match an agent in `agents` array) |
+| `max_iterations` | number | Yes | Maximum number of iterations (must be > 0) |
+| `iteration_limits` | object | Yes | Resource limits per iteration |
+| `success_patterns` | string[] | Yes | String patterns indicating success (case-sensitive) |
+
+**iteration_limits fields**:
+| Field | Type | Description |
+|-------|------|-------------|
+| `time_ms` | number | Max milliseconds per iteration (hard cutoff) |
+| `tokens` | number | Max tokens per iteration (hard cutoff) |
+| `cost_usd` | number | Max cost per iteration (hard cutoff) |
+
+```yaml
+ralph_loops:
+  enabled: true
+  agents:
+    - name: ralph-haiku
+      max_iterations: 3
+      iteration_limits:
+        time_ms: 30000      # 30 seconds max per iteration
+        tokens: 50000       # 50k tokens max per iteration
+        cost_usd: 0.10      # $0.10 max per iteration
+      success_patterns:
+        - "✓ DONE"
+        - "✓ SUCCESS"
+        - "✓ COMPLETE"
+```
+
+**Metadata emission**: After loop completion, metadata is added to message frontmatter:
+```yaml
+ralph_loop_metadata:
+  iterations_completed: 3
+  total_tokens: 45000
+  total_cost_usd: 0.08
+  total_time_ms: 50000
+  success: true
+  final_pattern_matched: "✓ DONE"
+  limit_hit: null  # or 'iterations' | 'time' | 'tokens' | 'cost'
+```
+
+**Layered evaluation pattern**: Combine with routing to create evaluation chains:
+```yaml
+ralph_loops:
+  enabled: true
+  agents:
+    - name: haiku-worker
+      max_iterations: 3
+      iteration_limits:
+        time_ms: 30000
+        tokens: 50000
+        cost_usd: 0.10
+      success_patterns:
+        - "✓ DONE"
+
+routing:
+  haiku-worker:
+    done:
+      sonnet-reviewer: "Haiku complete, ready for review"
+  sonnet-reviewer:
+    approved:
+      opus-reviewer: "Sonnet approved, final check"
+    rejected:
+      haiku-worker: "Sonnet rejected, refine again"
+  opus-reviewer:
+    approved:
+      core: "All layers approved"
+    rejected:
+      haiku-worker: "Opus wants refinement"
+```
+
+---
+
 ## Agent Capabilities
 
 ### `toolRestriction`

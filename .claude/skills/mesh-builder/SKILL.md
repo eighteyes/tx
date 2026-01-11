@@ -82,6 +82,8 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 
+**Ralph Loops (iterative refinement)**: `ralph_loops:` block for agent iteration with resource limits and success patterns
+
 ## FSM (State Tracking)
 
 Add `fsm:` block to track state and provide context to agents.

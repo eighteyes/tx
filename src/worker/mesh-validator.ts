@@ -17,7 +17,7 @@
  * ```
  */
 
-import type { SemanticModel } from '../shared/types.ts';
+import type { SemanticModel, RalphLoopConfig } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 /**
@@ -92,6 +92,7 @@ export interface MeshConfigSchema {
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
   'clear-before'?: boolean;
+  ralph_loops?: RalphLoopConfig;
 }
 
 /**
@@ -163,9 +164,11 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Type is 'boolean' but array is also accepted (validated specially in validateFieldTypes)
   graded: { type: 'boolean' },  // Special validation accepts boolean | string[]
   // Iteration config for graded meshes
-  iteration: { type: 'object' },  // { maxIterations?: number, onFail?: 'loop' | 'halt' }
+  iteration: { type: 'object' },  // { maxIterations?: number, onMaxReached?: string }
   // FSM (Finite State Machine) configuration for workflow orchestration
   fsm: { type: 'object' },  // FSMConfig: { initialState, states, transitions, context }
+  // Ralph Loops (iterative refinement with resource limits)
+  ralph_loops: { type: 'object' },  // RalphLoopConfig: { enabled, agents }
 };
 
 /**
@@ -248,6 +251,11 @@ export class MeshValidator {
     // Validate FSM if present
     if (cfg.fsm && Array.isArray(cfg.agents)) {
       this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate ralph_loops if present
+    if (cfg.ralph_loops && Array.isArray(cfg.agents)) {
+      this.validateRalphLoops(cfg.ralph_loops, cfg.agents, errors, warnings, context);
     }
 
     // Check for unknown fields
@@ -793,6 +801,154 @@ export class MeshValidator {
     for (const field of Object.keys(fsmObj)) {
       if (!knownFSMFields.includes(field)) {
         warnings.push(`Unknown fsm field '${field}'${context}`);
+      }
+    }
+  }
+
+  /**
+   * Validate ralph_loops configuration
+   */
+  private static validateRalphLoops(
+    ralphLoops: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof ralphLoops !== 'object' || ralphLoops === null) {
+      errors.push(`ralph_loops must be an object${context}`);
+      return;
+    }
+
+    const rl = ralphLoops as Record<string, unknown>;
+
+    // Validate enabled field
+    if (rl.enabled === undefined) {
+      errors.push(`ralph_loops.enabled is required${context}`);
+    } else if (typeof rl.enabled !== 'boolean') {
+      errors.push(`ralph_loops.enabled must be a boolean${context}`);
+    }
+
+    // Validate agents array
+    if (rl.agents === undefined) {
+      errors.push(`ralph_loops.agents is required${context}`);
+    } else if (!Array.isArray(rl.agents)) {
+      errors.push(`ralph_loops.agents must be an array${context}`);
+    } else if (rl.agents.length === 0) {
+      errors.push(`ralph_loops.agents cannot be empty${context}`);
+    } else {
+      // Get mesh agent names for reference validation
+      const agentNames = new Set(
+        agents
+          .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+          .map(a => a.name as string)
+      );
+
+      // Validate each Ralph loop agent config
+      for (let i = 0; i < rl.agents.length; i++) {
+        const agent = rl.agents[i];
+        const prefix = `ralph_loops.agents[${i}]`;
+
+        if (!agent || typeof agent !== 'object') {
+          errors.push(`${prefix} must be an object${context}`);
+          continue;
+        }
+
+        const agentObj = agent as Record<string, unknown>;
+
+        // Validate name
+        if (!agentObj.name) {
+          errors.push(`${prefix}.name is required${context}`);
+        } else if (typeof agentObj.name !== 'string') {
+          errors.push(`${prefix}.name must be a string${context}`);
+        } else if (!agentNames.has(agentObj.name)) {
+          errors.push(`${prefix}.name '${agentObj.name}' not found in mesh agents${context}`);
+        }
+
+        // Validate max_iterations
+        if (agentObj.max_iterations === undefined) {
+          errors.push(`${prefix}.max_iterations is required${context}`);
+        } else if (typeof agentObj.max_iterations !== 'number') {
+          errors.push(`${prefix}.max_iterations must be a number${context}`);
+        } else if (agentObj.max_iterations <= 0) {
+          errors.push(`${prefix}.max_iterations must be > 0${context}`);
+        }
+
+        // Validate iteration_limits
+        if (!agentObj.iteration_limits) {
+          errors.push(`${prefix}.iteration_limits is required${context}`);
+        } else if (typeof agentObj.iteration_limits !== 'object' || agentObj.iteration_limits === null) {
+          errors.push(`${prefix}.iteration_limits must be an object${context}`);
+        } else {
+          const limits = agentObj.iteration_limits as Record<string, unknown>;
+
+          // Validate time_ms
+          if (limits.time_ms === undefined) {
+            errors.push(`${prefix}.iteration_limits.time_ms is required${context}`);
+          } else if (typeof limits.time_ms !== 'number') {
+            errors.push(`${prefix}.iteration_limits.time_ms must be a number${context}`);
+          } else if (limits.time_ms <= 0) {
+            errors.push(`${prefix}.iteration_limits.time_ms must be > 0${context}`);
+          }
+
+          // Validate tokens
+          if (limits.tokens === undefined) {
+            errors.push(`${prefix}.iteration_limits.tokens is required${context}`);
+          } else if (typeof limits.tokens !== 'number') {
+            errors.push(`${prefix}.iteration_limits.tokens must be a number${context}`);
+          } else if (limits.tokens <= 0) {
+            errors.push(`${prefix}.iteration_limits.tokens must be > 0${context}`);
+          }
+
+          // Validate cost_usd
+          if (limits.cost_usd === undefined) {
+            errors.push(`${prefix}.iteration_limits.cost_usd is required${context}`);
+          } else if (typeof limits.cost_usd !== 'number') {
+            errors.push(`${prefix}.iteration_limits.cost_usd must be a number${context}`);
+          } else if (limits.cost_usd <= 0) {
+            errors.push(`${prefix}.iteration_limits.cost_usd must be > 0${context}`);
+          }
+
+          // Check for unknown limit fields
+          const knownLimitFields = ['time_ms', 'tokens', 'cost_usd'];
+          for (const field of Object.keys(limits)) {
+            if (!knownLimitFields.includes(field)) {
+              warnings.push(`${prefix}.iteration_limits: unknown field '${field}'${context}`);
+            }
+          }
+        }
+
+        // Validate success_patterns
+        if (!agentObj.success_patterns) {
+          errors.push(`${prefix}.success_patterns is required${context}`);
+        } else if (!Array.isArray(agentObj.success_patterns)) {
+          errors.push(`${prefix}.success_patterns must be an array${context}`);
+        } else if (agentObj.success_patterns.length === 0) {
+          errors.push(`${prefix}.success_patterns cannot be empty${context}`);
+        } else {
+          for (let j = 0; j < agentObj.success_patterns.length; j++) {
+            const pattern = agentObj.success_patterns[j];
+            if (typeof pattern !== 'string') {
+              errors.push(`${prefix}.success_patterns[${j}] must be a string${context}`);
+            }
+          }
+        }
+
+        // Check for unknown agent config fields
+        const knownAgentFields = ['name', 'max_iterations', 'iteration_limits', 'success_patterns'];
+        for (const field of Object.keys(agentObj)) {
+          if (!knownAgentFields.includes(field)) {
+            warnings.push(`${prefix}: unknown field '${field}'${context}`);
+          }
+        }
+      }
+    }
+
+    // Check for unknown ralph_loops fields
+    const knownRalphLoopsFields = ['enabled', 'agents'];
+    for (const field of Object.keys(rl)) {
+      if (!knownRalphLoopsFields.includes(field)) {
+        warnings.push(`ralph_loops: unknown field '${field}'${context}`);
       }
     }
   }
