@@ -182,3 +182,71 @@ export interface FSMConfig {
   transitions: FSMTransitionConfig[];
   context?: Record<string, unknown>;  // Initial context variables
 }
+
+// Ensemble types
+
+/**
+ * Ensemble configuration: multiple agents run on same task, aggregate results
+ */
+export interface EnsembleConfig {
+  agents: string[];              // Agent names to run in parallel
+  aggregation_strategy: 'concat' | 'deduplicate' | 'voting' | 'consensus' | 'custom';
+  aggregation_prompt?: string;   // Path to custom aggregation prompt (for 'custom' strategy)
+  timeout_ms?: number;           // Timeout per agent (defaults to 120000)
+  allow_partial_failure?: boolean; // Continue if some agents fail (default: false)
+  fault_tolerance?: {
+    min_success_count?: number;  // Minimum agents that must succeed
+    retry_failed?: boolean;      // Retry failed agents
+  };
+}
+
+/**
+ * Aggregation result from ensemble execution
+ */
+export interface AggregationResult {
+  strategy: string;
+  source_count: number;
+  successful_agents: string[];
+  failed_agents: string[];
+  aggregated_content: string;
+  metadata?: Record<string, unknown>;
+}
+
+// Task distribution types
+
+/**
+ * Task distribution configuration: spawner splits task into subtasks, subagents process, reviewer synthesizes
+ */
+export interface TaskDistributionConfig {
+  spawner: string;               // Agent that splits task
+  subagents: string[];           // Agents that process subtasks
+  reviewer: string;              // Agent that synthesizes results
+  distribution_strategy: 'equal' | 'weighted' | 'adaptive' | 'custom';
+  distribution_prompt?: string;  // Path to custom distribution prompt
+  review_prompt?: string;        // Path to custom review prompt
+  subtask_count?: number;        // For 'equal' strategy (defaults to subagents.length)
+  timeout_ms?: number;           // Timeout per subtask (defaults to 120000)
+  allow_partial_failure?: boolean; // Continue if some subtasks fail (default: false)
+}
+
+/**
+ * Task distribution result
+ */
+export interface DistributionResult {
+  spawner: string;
+  subtask_count: number;
+  subtasks: Array<{
+    id: string;
+    description: string;
+    assigned_agent: string;
+  }>;
+  results: Array<{
+    subtask_id: string;
+    agent: string;
+    result: string;
+    success: boolean;
+    error?: string;
+  }>;
+  synthesized_result: string;
+  metadata?: Record<string, unknown>;
+}

@@ -13,7 +13,7 @@ import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { MessageQueue } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig} from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig, TaskDistributionConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
@@ -119,6 +119,8 @@ interface MeshConfig {
   graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
   iteration?: IterationConfig;  // Iteration config for graded meshes
   fsm?: FSMConfig;  // FSM config for workflow orchestration
+  ensemble?: EnsembleConfig;  // Ensemble pattern: multiple agents on same task with aggregation
+  task_distribution?: TaskDistributionConfig;  // Task distribution pattern: spawner → subtasks → reviewer
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -2109,7 +2111,33 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         graded: config.graded,
         worktree: config.worktree,
         hasLifecycle: !!config.lifecycle,
+        hasEnsemble: !!config.ensemble,
+        hasTaskDistribution: !!config.task_distribution,
       });
+
+      // Log ensemble pattern detection
+      if (config.ensemble) {
+        log.info('dispatcher', `[Ensemble] Pattern detected in mesh '${config.mesh}'`, {
+          agents: config.ensemble.agents.join(', '),
+          strategy: config.ensemble.aggregation_strategy,
+          timeout_ms: config.ensemble.timeout_ms || 120000,
+          allow_partial_failure: config.ensemble.allow_partial_failure || false
+        });
+      }
+
+      // Log task distribution pattern detection
+      if (config.task_distribution) {
+        log.info('dispatcher', `[TaskDistribution] Pattern detected in mesh '${config.mesh}'`, {
+          spawner: config.task_distribution.spawner,
+          subagents: config.task_distribution.subagents.join(', '),
+          reviewer: config.task_distribution.reviewer,
+          strategy: config.task_distribution.distribution_strategy,
+          subtask_count: config.task_distribution.subtask_count || config.task_distribution.subagents.length,
+          timeout_ms: config.task_distribution.timeout_ms || 120000,
+          allow_partial_failure: config.task_distribution.allow_partial_failure || false
+        });
+      }
+
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
     } catch (error) {
       log.error('dispatcher', `Failed to parse mesh config: ${filename}`, {

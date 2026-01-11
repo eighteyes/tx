@@ -17,7 +17,7 @@
  * ```
  */
 
-import type { SemanticModel } from '../shared/types.ts';
+import type { SemanticModel, EnsembleConfig, TaskDistributionConfig } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 /**
@@ -92,6 +92,8 @@ export interface MeshConfigSchema {
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
   'clear-before'?: boolean;
+  ensemble?: EnsembleConfig;
+  task_distribution?: TaskDistributionConfig;
 }
 
 /**
@@ -166,6 +168,10 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   iteration: { type: 'object' },  // { maxIterations?: number, onFail?: 'loop' | 'halt' }
   // FSM (Finite State Machine) configuration for workflow orchestration
   fsm: { type: 'object' },  // FSMConfig: { initialState, states, transitions, context }
+  // Ensemble configuration: multiple agents on same task with result aggregation
+  ensemble: { type: 'object' },  // EnsembleConfig: { agents, aggregation_strategy, timeout_ms, ... }
+  // Task distribution configuration: spawner splits task into subtasks
+  task_distribution: { type: 'object' },  // TaskDistributionConfig: { spawner, subagents, reviewer, distribution_strategy, ... }
 };
 
 /**
@@ -248,6 +254,16 @@ export class MeshValidator {
     // Validate FSM if present
     if (cfg.fsm && Array.isArray(cfg.agents)) {
       this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate ensemble if present
+    if (cfg.ensemble && Array.isArray(cfg.agents)) {
+      this.validateEnsemble(cfg.ensemble, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate task_distribution if present
+    if (cfg.task_distribution && Array.isArray(cfg.agents)) {
+      this.validateTaskDistribution(cfg.task_distribution, cfg.agents, errors, warnings, context);
     }
 
     // Check for unknown fields
@@ -861,5 +877,162 @@ export class MeshValidator {
       totalErrors,
       totalWarnings
     };
+  }
+
+  /**
+   * Validate ensemble configuration
+   */
+  private static validateEnsemble(
+    config: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (!config || typeof config !== 'object') {
+      errors.push(`Invalid ensemble config${context}: must be a JSON object`);
+      return;
+    }
+
+    const ensemble = config as Record<string, unknown>;
+    const agentNames = (agents as Record<string, unknown>[]).map(a => a.name);
+
+    // Validate agents array exists and is non-empty
+    if (!ensemble.agents || !Array.isArray(ensemble.agents) || ensemble.agents.length === 0) {
+      errors.push(`Ensemble config${context}: 'agents' must be a non-empty array`);
+      return;
+    }
+
+    // Validate all agents exist in mesh
+    for (const agent of ensemble.agents as string[]) {
+      if (!agentNames.includes(agent)) {
+        errors.push(`Ensemble agent '${agent}' not found in mesh agents${context}`);
+      }
+    }
+
+    // Validate aggregation_strategy
+    const validStrategies = ['concat', 'deduplicate', 'voting', 'consensus', 'custom'];
+    if (!ensemble.aggregation_strategy || !validStrategies.includes(ensemble.aggregation_strategy as string)) {
+      errors.push(`Ensemble config${context}: 'aggregation_strategy' must be one of: ${validStrategies.join(', ')}`);
+    }
+
+    // For custom strategy, aggregation_prompt must be provided
+    if (ensemble.aggregation_strategy === 'custom' && !ensemble.aggregation_prompt) {
+      errors.push(`Ensemble config${context}: custom aggregation strategy requires 'aggregation_prompt'`);
+    }
+
+    // Validate timeout_ms if present
+    if (ensemble.timeout_ms !== undefined) {
+      const timeout = ensemble.timeout_ms as number;
+      if (typeof timeout !== 'number' || timeout < 100 || timeout > 600000) {
+        errors.push(`Ensemble config${context}: 'timeout_ms' must be between 100 and 600000`);
+      }
+    }
+
+    // Validate allow_partial_failure if present
+    if (ensemble.allow_partial_failure !== undefined && typeof ensemble.allow_partial_failure !== 'boolean') {
+      errors.push(`Ensemble config${context}: 'allow_partial_failure' must be a boolean`);
+    }
+
+    // Validate fault_tolerance if present
+    if (ensemble.fault_tolerance && typeof ensemble.fault_tolerance === 'object') {
+      const ft = ensemble.fault_tolerance as Record<string, unknown>;
+
+      if (ft.min_success_count !== undefined) {
+        const minCount = ft.min_success_count as number;
+        const agentCount = (ensemble.agents as string[]).length;
+        if (typeof minCount !== 'number' || minCount < 1 || minCount > agentCount) {
+          errors.push(`Ensemble config${context}: 'fault_tolerance.min_success_count' must be between 1 and ${agentCount}`);
+        }
+      }
+
+      if (ft.retry_failed !== undefined && typeof ft.retry_failed !== 'boolean') {
+        errors.push(`Ensemble config${context}: 'fault_tolerance.retry_failed' must be a boolean`);
+      }
+    }
+  }
+
+  /**
+   * Validate task distribution configuration
+   */
+  private static validateTaskDistribution(
+    config: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (!config || typeof config !== 'object') {
+      errors.push(`Invalid task_distribution config${context}: must be a JSON object`);
+      return;
+    }
+
+    const distribution = config as Record<string, unknown>;
+    const agentNames = (agents as Record<string, unknown>[]).map(a => a.name);
+
+    // Validate spawner exists
+    if (!distribution.spawner || typeof distribution.spawner !== 'string') {
+      errors.push(`Task distribution config${context}: 'spawner' is required and must be a string`);
+      return;
+    }
+
+    if (!agentNames.includes(distribution.spawner as string)) {
+      errors.push(`Task distribution spawner '${distribution.spawner}' not found in mesh agents${context}`);
+    }
+
+    // Validate reviewer exists
+    if (!distribution.reviewer || typeof distribution.reviewer !== 'string') {
+      errors.push(`Task distribution config${context}: 'reviewer' is required and must be a string`);
+      return;
+    }
+
+    if (!agentNames.includes(distribution.reviewer as string)) {
+      errors.push(`Task distribution reviewer '${distribution.reviewer}' not found in mesh agents${context}`);
+    }
+
+    // Validate subagents array
+    if (!distribution.subagents || !Array.isArray(distribution.subagents) || distribution.subagents.length === 0) {
+      errors.push(`Task distribution config${context}: 'subagents' must be a non-empty array`);
+      return;
+    }
+
+    // Validate all subagents exist
+    for (const agent of distribution.subagents as string[]) {
+      if (!agentNames.includes(agent)) {
+        errors.push(`Task distribution subagent '${agent}' not found in mesh agents${context}`);
+      }
+    }
+
+    // Validate distribution_strategy
+    const validStrategies = ['equal', 'weighted', 'adaptive', 'custom'];
+    if (!distribution.distribution_strategy || !validStrategies.includes(distribution.distribution_strategy as string)) {
+      errors.push(`Task distribution config${context}: 'distribution_strategy' must be one of: ${validStrategies.join(', ')}`);
+    }
+
+    // For custom strategy, distribution_prompt must be provided
+    if (distribution.distribution_strategy === 'custom' && !distribution.distribution_prompt) {
+      errors.push(`Task distribution config${context}: custom distribution strategy requires 'distribution_prompt'`);
+    }
+
+    // Validate subtask_count if present
+    if (distribution.subtask_count !== undefined) {
+      const count = distribution.subtask_count as number;
+      if (typeof count !== 'number' || count < 1) {
+        errors.push(`Task distribution config${context}: 'subtask_count' must be >= 1`);
+      }
+    }
+
+    // Validate timeout_ms if present
+    if (distribution.timeout_ms !== undefined) {
+      const timeout = distribution.timeout_ms as number;
+      if (typeof timeout !== 'number' || timeout < 100 || timeout > 600000) {
+        errors.push(`Task distribution config${context}: 'timeout_ms' must be between 100 and 600000`);
+      }
+    }
+
+    // Validate allow_partial_failure if present
+    if (distribution.allow_partial_failure !== undefined && typeof distribution.allow_partial_failure !== 'boolean') {
+      errors.push(`Task distribution config${context}: 'allow_partial_failure' must be a boolean`);
+    }
   }
 }

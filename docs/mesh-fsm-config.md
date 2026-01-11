@@ -149,15 +149,82 @@ scripts:
 
 All scripts receive:
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `$turn` | number | Context: turn number |
-| `$game_path` | string | Context: game directory path |
-| `$workspace` | string | Context: workspace path |
-| `$entropy` | array | Context: entropy values (JSON) |
-| `$state` | string | FSM: current state name |
-| `$payload` | JSON | Message: body content |
-| `$from` | string | Message: sender agent name |
+| Variable | Type | Scope | Description |
+|----------|------|-------|-------------|
+| `$turn` | number | context | Turn number |
+| `$game_path` | string | context | Game directory path |
+| `$workspace` | string | context | Workspace path |
+| `$entropy` | array | context | Entropy values (JSON) |
+| `$state` | string | fsm | Current state name |
+| `$payload` | JSON | message | Body content |
+| `$from` | string | message | Sender agent name |
+| `$SDK_STATS` | JSON | exit only | SDK execution metrics (see below) |
+| `$REARMATTER` | YAML | exit only | Agent self-assessment fields (see below) |
+
+#### SDK Stats (`$SDK_STATS`)
+
+Available in exit gates after agent execution. Contains Claude SDK metrics:
+
+```json
+{
+  "model": "claude-3-5-sonnet-20241022",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 1542,
+    "output_tokens": 324,
+    "cache_read_tokens": 892,
+    "cache_creation_tokens": 0
+  },
+  "cost_usd": 0.00567,
+  "duration_ms": 2340,
+  "num_turns": 1
+}
+```
+
+**Usage in gates:**
+```bash
+tokens=$(echo "$SDK_STATS" | jq '.usage.output_tokens')
+[[ $tokens -le 50000 ]] || {
+  echo "Token limit exceeded: $tokens > 50000" >&2
+  exit 1
+}
+```
+
+**Usage in context.set:**
+```yaml
+exit:
+  set:
+    narrator_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
+    total_cost: "$(echo \"scale=5; $total_cost + $(echo '$SDK_STATS' | jq '.cost_usd')\" | bc)"
+```
+
+#### Rearmatter (`$REARMATTER`)
+
+Available in exit gates when agent includes rearmatter in output message. Contains agent self-assessment:
+
+```yaml
+success_signal: PASS       # PASS | REFINE | BLOCKED
+confidence: 0.85           # 0.0-1.0 float
+reasoning: "Draft covers all requirements"
+iteration_number: 2
+```
+
+**Usage in gates:**
+```bash
+confidence=$(echo "$REARMATTER" | yq '.confidence // 0')
+if (( $(echo "$confidence < 0.8" | bc -l) )); then
+  echo "Confidence too low: $confidence" >&2
+  exit 1
+fi
+```
+
+**Usage in context.set:**
+```yaml
+exit:
+  set:
+    haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+    haiku_confidence: "$(echo '$REARMATTER' | yq '.confidence')"
+```
 
 **Output handling:**
 - Entry scripts: stdout → sets `context.{script_name}`
@@ -475,6 +542,109 @@ The mesh validator checks:
 4. **Observable** - state transitions logged, queryable via CLI
 5. **Resumable** - state persists across worker spawns
 
+## Example: Token/Cost Tracking with SDK Stats
+
+Track cumulative token usage and cost across mesh execution:
+
+```yaml
+fsm:
+  initial: ralph_haiku_loop
+
+  context:
+    haiku_iteration: 0
+    sonnet_iteration: 0
+    total_tokens: 0
+    total_cost: 0.00
+    token_budget: 100000
+    cost_limit: 5.00
+
+  states:
+    ralph_haiku_loop:
+      agents: [ralph-haiku]
+      entry:
+        set:
+          haiku_iteration: "$((haiku_iteration + 1))"
+      exit:
+        gates:
+          ralph-haiku:
+            - check_haiku_max_iterations
+            - check_token_budget
+            - check_cost_limit
+        set:
+          haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+          haiku_confidence: "$(echo '$REARMATTER' | yq '.confidence')"
+          haiku_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
+          haiku_cost: "$(echo '$SDK_STATS' | jq '.cost_usd')"
+          total_tokens: "$((total_tokens + haiku_tokens))"
+          total_cost: "$(echo \"scale=5; $total_cost + $haiku_cost\" | bc)"
+      transitions:
+        sonnet-reviewer: sonnet_review_loop
+        ralph-haiku: ralph_haiku_loop
+
+    sonnet_review_loop:
+      agents: [sonnet-reviewer]
+      entry:
+        set:
+          sonnet_iteration: "$((sonnet_iteration + 1))"
+      exit:
+        gates:
+          sonnet-reviewer:
+            - check_sonnet_max_iterations
+            - check_token_budget
+            - check_cost_limit
+        set:
+          sonnet_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+          sonnet_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
+          sonnet_cost: "$(echo '$SDK_STATS' | jq '.cost_usd')"
+          total_tokens: "$((total_tokens + sonnet_tokens))"
+          total_cost: "$(echo \"scale=5; $total_cost + $sonnet_cost\" | bc)"
+      transitions:
+        core: complete
+        sonnet-reviewer: sonnet_review_loop
+
+    complete:
+      agents: [core]
+
+  scripts:
+    check_haiku_max_iterations: |
+      [[ $haiku_iteration -le 5 ]] || {
+        echo "Haiku max iterations (5) reached" >&2
+        exit 1
+      }
+
+    check_sonnet_max_iterations: |
+      [[ $sonnet_iteration -le 3 ]] || {
+        echo "Sonnet max iterations (3) reached" >&2
+        exit 1
+      }
+
+    check_token_budget: |
+      if [[ -n "$SDK_STATS" ]]; then
+        tokens=$(echo "$SDK_STATS" | jq '.usage.output_tokens')
+        new_total=$((total_tokens + tokens))
+        if [[ $new_total -gt $token_budget ]]; then
+          echo "Token budget exceeded: $new_total > $token_budget" >&2
+          exit 1
+        fi
+      fi
+
+    check_cost_limit: |
+      if [[ -n "$SDK_STATS" ]]; then
+        cost=$(echo "$SDK_STATS" | jq '.cost_usd')
+        new_total=$(echo "scale=5; $total_cost + $cost" | bc)
+        if (( $(echo "$new_total > $cost_limit" | bc -l) )); then
+          echo "Cost limit exceeded: \$$new_total > \$$cost_limit" >&2
+          exit 1
+        fi
+      fi
+```
+
+**Key patterns:**
+- `$SDK_STATS` available after agent execution in exit gates
+- `$REARMATTER` available when agent emits structured output
+- Gate scripts check limits before allowing transition
+- Context.set accumulates totals across iterations
+
 ## Anti-patterns
 
 **Don't use FSM for:**
@@ -486,3 +656,5 @@ The mesh validator checks:
 - Tracking pipeline state (init → prep → render → review → complete)
 - Providing turn context (workspace paths, entropy, counters)
 - Running lifecycle scripts (workspace creation, post-processing)
+- Token/cost budget enforcement (via exit gates with $SDK_STATS)
+- Quality signal routing (via rearmatter success_signal)
