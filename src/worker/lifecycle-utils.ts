@@ -20,7 +20,7 @@ export interface LifecycleResolvableConfig {
   graded?: GradedConfig;
   worktree?: boolean;
   iteration?: {
-    onFail?: 'stop' | 'retry';
+    onFail?: 'stop' | 'retry' | 'loop' | 'halt';
     maxIterations?: number;
   };
 }

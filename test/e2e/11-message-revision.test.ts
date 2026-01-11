@@ -94,7 +94,7 @@ Revised content with updated instructions.
 
       await sleep(300);
 
-      assert.ok(revisionEvent, 'Should receive revision-message event');
+      if (!revisionEvent) throw new Error('Should receive revision-message event');
       assert.strictEqual(revisionEvent.agentId, 'test/worker', 'Should have correct agentId');
       assert.strictEqual(revisionEvent.headline, 'Revised headline', 'Should have revised headline');
       assert.ok(
@@ -216,7 +216,7 @@ Revised response.
 
       await sleep(300);
 
-      assert.ok(coreEvent, 'Should receive core-message event');
+      if (!coreEvent) throw new Error('Should receive core-message event');
       assert.strictEqual(coreEvent.event, 'new', 'Should have event type');
     });
   });

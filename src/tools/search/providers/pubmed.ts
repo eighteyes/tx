@@ -17,20 +17,22 @@ interface PubMedSearchResponse {
   };
 }
 
+interface PubMedArticle {
+  uid: string;
+  pubdate: string;
+  title: string;
+  authors: Array<{name: string; authtype: string}>;
+  source: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  sortfirstauthor?: string;
+}
+
 interface PubMedSummaryResponse {
   result: {
-    [key: string]: {
-      uid: string;
-      pubdate: string;
-      title: string;
-      authors: Array<{ name: string; authtype: string }>;
-      source: string;
-      volume?: string;
-      issue?: string;
-      pages?: string;
-      sortfirstauthor?: string;
-    };
     uids: string[];
+    [key: string]: PubMedArticle | string[];
   };
 }
 
@@ -124,7 +126,7 @@ export class PubMedProvider extends BaseSearchProvider {
    * Map API response to SearchResult
    */
   private mapResult(id: string, summaryData: PubMedSummaryResponse): SearchResult {
-    const article = summaryData.result?.[id];
+    const article = summaryData.result?.[id] as PubMedArticle | undefined;
 
     if (!article) {
       return {
@@ -157,7 +159,7 @@ export class PubMedProvider extends BaseSearchProvider {
   /**
    * Format article content for display
    */
-  private formatContent(id: string, article: PubMedSummaryResponse['result'][string]): string {
+  private formatContent(id: string, article: PubMedArticle): string {
     const lines: string[] = [
       `# ${article.title || 'PubMed Article'}`,
       ''

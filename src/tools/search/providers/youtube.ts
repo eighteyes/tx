@@ -9,13 +9,7 @@
 
 import { BaseSearchProvider, SearchResult, SearchOptions } from '../base-provider.ts';
 import { log } from '../../../shared/logger.ts';
-import {
-  fetchTranscript,
-  YoutubeTranscriptDisabledError,
-  YoutubeTranscriptNotAvailableError,
-  YoutubeTranscriptVideoUnavailableError,
-  YoutubeTranscriptNotAvailableLanguageError
-} from 'youtube-transcript-plus';
+import {fetchTranscript} from 'youtube-transcript-plus';
 
 interface YouTubeVideo {
   id: {
@@ -265,13 +259,13 @@ export class YouTubeProvider extends BaseSearchProvider {
 
       // Provide helpful error messages based on error type
       let userMessage = message;
-      if (error instanceof YoutubeTranscriptDisabledError) {
+      if (message.includes('disabled')) {
         userMessage = 'Transcripts are disabled for this video';
-      } else if (error instanceof YoutubeTranscriptVideoUnavailableError) {
+      } else if (message.includes('unavailable') || message.includes('private')) {
         userMessage = 'Video is unavailable or private';
-      } else if (error instanceof YoutubeTranscriptNotAvailableError) {
+      } else if (message.includes('not available')) {
         userMessage = 'No transcript available for this video';
-      } else if (error instanceof YoutubeTranscriptNotAvailableLanguageError) {
+      } else if (message.includes('language') && message.includes('not available')) {
         userMessage = `Requested language not available. ${message}`;
       }
 

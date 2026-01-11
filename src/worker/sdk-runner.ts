@@ -189,10 +189,20 @@ export class SdkRunner extends EventEmitter {
         for await (const msg of this.currentQuery) {
           switch (msg.type) {
             case 'assistant':
-              const textContent = msg.message.content
-                .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-                .map(block => block.text)
-                .join('\n');
+              const content = msg.message.content;
+              let textContent = '';
+              let toolUses: {type: 'tool_use'; name: string}[] = [];
+
+              if (typeof content === 'string') {
+                textContent = content;
+              } else if (Array.isArray(content)) {
+                textContent = content
+                  .filter((block: any) => block.type === 'text')
+                  .map((block: any) => block.text)
+                  .join('\n');
+
+                toolUses = (content as any[]).filter((block: any) => block.type === 'tool_use');
+              }
 
               if (textContent) {
                 sessionOutput.push(textContent);
@@ -200,9 +210,8 @@ export class SdkRunner extends EventEmitter {
                 log.activity('output', workerId, textContent);
               }
 
-              const toolUses = msg.message.content.filter((block): block is { type: 'tool_use'; name: string } => block.type === 'tool_use');
               if (toolUses.length > 0) {
-                const toolNames = toolUses.map(t => t.name).join(', ');
+                const toolNames = toolUses.map((t: any) => t.name).join(', ');
                 log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
                 log.activity('tools', workerId, toolNames);
                 sessionOutput.push(`[Tools: ${toolNames}]`);
@@ -483,8 +492,8 @@ export class SdkRunner extends EventEmitter {
         switch (msg.type) {
           case 'assistant':
             const textContent = msg.message.content
-              .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-              .map(block => block.text)
+              .filter((block: any) => block.type === 'text')
+              .map((block: any) => block.text)
               .join('\n');
 
             if (textContent) {
@@ -493,9 +502,9 @@ export class SdkRunner extends EventEmitter {
               log.activity('output', workerId, textContent);
             }
 
-            const toolUses = msg.message.content.filter((block): block is { type: 'tool_use'; name: string } => block.type === 'tool_use');
+            const toolUses = msg.message.content.filter((block: any) => block.type === 'tool_use');
             if (toolUses.length > 0) {
-              const toolNames = toolUses.map(t => t.name).join(', ');
+              const toolNames = toolUses.map((t: any) => t.name).join(', ');
               log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
               log.activity('tools', workerId, toolNames);
               sessionOutput.push(`[Tools: ${toolNames}]`);

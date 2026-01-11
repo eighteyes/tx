@@ -71,13 +71,15 @@ describe('V4 Write Messaging Integration Test', () => {
     assert.strictEqual(msg.type, 'task', 'type should be task');
 
     // Verify payload contains body
-    assert.ok(msg.payload.body, 'Payload should contain body');
-    assert.ok(msg.payload.body.includes('written by an agent'), 'Body content should be preserved');
+    const body = msg.payload.body as string;
+    assert.ok(body, 'Payload should contain body');
+    assert.ok(body.includes('written by an agent'), 'Body content should be preserved');
 
     // Verify rearmatter is included
     assert.ok(msg.payload.rearmatter, 'Payload should contain rearmatter');
-    assert.strictEqual(msg.payload.rearmatter.grade, 'A', 'Rearmatter grade should be A');
-    assert.strictEqual(msg.payload.rearmatter.confidence, 0.95, 'Rearmatter confidence should be 0.95');
+    const rearmatter = msg.payload.rearmatter as any;
+    assert.strictEqual(rearmatter.grade, 'A', 'Rearmatter grade should be A');
+    assert.strictEqual(rearmatter.confidence, 0.95, 'Rearmatter confidence should be 0.95');
   });
 
   it('message includes filepath in payload for traceability', async () => {

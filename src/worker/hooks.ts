@@ -63,6 +63,7 @@ export interface HookContext {
   workDir: string;
   worktreePath?: string;   // Set by worktree:create hook
   worktreeBranch?: string; // Set by worktree:create hook
+  featureName?: string;    // Feature name for worktree
 
   // Quality context (set by quality:preflight, used by quality:evaluate)
   qualityPreflight?: PreflightOutput;

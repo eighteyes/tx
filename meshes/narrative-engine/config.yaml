@@ -31,7 +31,7 @@ agents:
     # Accepts dramaturg notes for story-aware weighting
 
   - name: cast
-    model: opus
+    model: sonnet
     prompt: cast/prompt.md
     # phase 2 - NPC voices, reactions, character consistency
 

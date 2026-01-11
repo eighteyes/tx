@@ -21,6 +21,7 @@ tx prompt dev --raw                   # Raw output, no metadata
 | Topic | Location |
 |-------|----------|
 | Config fields | `docs/mesh-config.md` |
+| FSM (state tracking) | `.ai/docs/mesh-fsm-config.md` |
 | Available meshes | `docs/meshes.md` |
 | Message format | `docs/message-format.md` |
 
@@ -76,6 +77,47 @@ See `docs/mesh-config.md` for full routing reference.
 **MCP tools only**: `toolRestriction: mcp-only`
 
 **Quality evaluation**: `graded: true` or `graded: [checklist, rubric]`
+
+**FSM state tracking**: `fsm:` block for system-managed state
+
+## FSM (State Tracking)
+
+Add `fsm:` block to track state and provide context to agents.
+
+```yaml
+fsm:
+  initial: init
+
+  context:
+    turn: 0
+    workspace: null
+
+  states:
+    init:
+      agents: [coordinator]
+      entry: [turn, workspace]
+      transitions:
+        worker: awaiting_work
+
+    awaiting_work:
+      agents: [worker]
+      transitions:
+        coordinator: complete
+
+  scripts:
+    turn: "echo $((turn + 1))"
+    workspace: "echo \"/path/to/turn-$turn\""
+```
+
+**Agents receive injected context:**
+```markdown
+## FSM Context
+state: awaiting_work
+turn: 5
+workspace: /path/to/turn-5
+```
+
+See `.ai/docs/mesh-fsm-config.md` for full documentation.
 
 ## Debugging
 

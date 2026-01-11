@@ -132,6 +132,7 @@ export interface DispatcherConfig {
   workDir: string;
   msgsDir: string;
   meshesDir: string;
+  lowMode?: boolean;
 }
 
 /**
@@ -1286,9 +1287,15 @@ The system will resume your session when the human responds.`;
       }
 
       // Create worker config
+      let model = agent.model;
+      if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
+        model = (model as string).replace('opus', 'sonnet') as SemanticModel;
+        log.info('dispatcher', `[LOW MODE] Demoted model for ${agentId}`, {from: agent.model, to: model});
+      }
+
       const workerConfig: WorkerConfig = {
         id: agentId,
-        model: agent.model,
+        model: model as SemanticModel,
         prompt: systemPrompt
       };
 

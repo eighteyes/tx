@@ -111,8 +111,9 @@ describe('V4 Consumer Test', () => {
 
     assert.ok(msg, 'Should find the message');
     assert.ok(msg.payload.rearmatter, 'Should have rearmatter in payload');
-    assert.strictEqual(msg.payload.rearmatter.grade, 'B');
-    assert.strictEqual(msg.payload.rearmatter.confidence, 0.8);
+    const rearmatter = msg.payload.rearmatter as any;
+    assert.strictEqual(rearmatter.grade, 'B');
+    assert.strictEqual(rearmatter.confidence, 0.8);
   });
 
   it('should extract command frontmatter', async () => {

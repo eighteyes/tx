@@ -16,6 +16,7 @@ import { log } from '../shared/logger.ts';
 export interface StartOptions {
   continue?: boolean;
   model?: string;  // claude model: opus, sonnet, haiku
+  low?: boolean;   // low cost mode (opus -> sonnet)
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -176,7 +177,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,
     msgsDir,
-    meshesDir: path.join(txRoot, 'meshes')
+    meshesDir: path.join(txRoot, 'meshes'),
+    lowMode: options?.low
   }, queue);
 
   // Wire up parity gate: consumer subscribes to dispatcher for session-start events

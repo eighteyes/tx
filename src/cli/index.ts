@@ -133,7 +133,8 @@ Usage: tx start [options]
 
 Options:
   -c, --continue     Resume previous Claude session
-  --model <model>    Model to use (e.g., opus, sonnet)`,
+  --model <model>    Model to use (e.g., opus, sonnet)
+  --low              Use cost-effective models (replaces opus with sonnet)`,
 
   msg: `tx msg - View messages
 
@@ -236,7 +237,8 @@ async function main() {
       if (wantsHelp) { showHelp('start'); break; }
       await start(undefined, {
         continue: Boolean(flags.c || flags.continue),
-        model: flags.model as string | undefined
+        model: flags.model as string | undefined,
+        low: Boolean(flags.low)
       });
       break;
 
@@ -286,7 +288,6 @@ async function main() {
         since: flags.since as string,
         before: flags.before as string,
         limit: flags.n as string || flags.limit as string,
-        follow: Boolean(flags.f || flags.follow),
         json: Boolean(flags.json),
         interactive: !flags.noInteractive,
         verbose: Boolean(flags.v || flags.verbose),
