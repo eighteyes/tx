@@ -49,7 +49,7 @@ describe('Message Revision Flow', () => {
 
       await sleep(300);
 
-      assert.ok(receivedEvent, 'Should receive worker-message event');
+      if (!receivedEvent) throw new Error('Should receive worker-message event');
       assert.strictEqual(receivedEvent.event, 'new', 'Should have event type "new"');
       assert.strictEqual(receivedEvent.agentId, 'test/worker', 'Should have correct agentId');
     });

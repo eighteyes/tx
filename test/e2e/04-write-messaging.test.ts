@@ -100,7 +100,8 @@ describe('V4 Write Messaging Integration Test', () => {
 
     assert.ok(msg, 'Should find the trace test message');
     assert.ok(msg.payload.filepath, 'Payload should include filepath');
-    assert.ok(msg.payload.filepath.includes('trace.md'), 'Filepath should reference the message file');
+    const filepath = msg.payload.filepath as string;
+    assert.ok(filepath.includes('trace.md'), 'Filepath should reference the message file');
   });
 
   it('consumer handles rapid sequential writes', async () => {
