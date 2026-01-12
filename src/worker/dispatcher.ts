@@ -1986,7 +1986,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           meshName,
           config.fsm,
           this.queue.getDatabase(),
-          this.config.workDir
+          config._basePath || this.config.workDir  // Use mesh directory for script resolution
         );
 
         // Wire FSM events for observability
