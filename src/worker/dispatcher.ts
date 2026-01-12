@@ -11,10 +11,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
-import { MessageQueue } from '../queue/index.ts';
+import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig} from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
@@ -119,6 +120,7 @@ interface MeshConfig {
   graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
   iteration?: IterationConfig;  // Iteration config for graded meshes
   fsm?: FSMConfig;  // FSM config for workflow orchestration
+  ensemble?: EnsembleConfig;  // Ensemble execution config
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -219,6 +221,7 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
   private stuckDetector: StuckAgentDetector;
+  private ensembleCoordinator: EnsembleCoordinator;
 
   constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
@@ -229,6 +232,7 @@ export class WorkerDispatcher extends EventEmitter {
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.stuckDetector = new StuckAgentDetector(stuckConfig);
+    this.ensembleCoordinator = new EnsembleCoordinator();
 
     // Wire stuck detector events to dispatcher
     this.stuckDetector.on('agent:nudged', (data) => {
@@ -351,6 +355,7 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Handle incoming worker message - spawn worker if not already running
+   * Checks for ensemble pattern first, then falls back to single worker spawn
    */
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
@@ -372,6 +377,25 @@ export class WorkerDispatcher extends EventEmitter {
     if (!meshConfig) {
       log.error('dispatcher', `Mesh not found`, { meshName, agentId });
       return;
+    }
+
+    // Check for ensemble pattern
+    if (meshConfig.ensemble) {
+      const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
+      // Only trigger ensemble if message is for entry point agent
+      if (agentName === entryAgent) {
+        log.info('dispatcher', 'Ensemble pattern detected', {
+          mesh: meshName,
+          agents: meshConfig.ensemble.agents.length,
+        });
+        this.handleEnsemblePattern(meshName, meshConfig).catch(error => {
+          log.error('dispatcher', 'Ensemble execution failed', {
+            meshName,
+            error: (error as Error).message,
+          });
+        });
+        return;
+      }
     }
 
     const agent = meshConfig.agents.find(a => a.name === agentName);
@@ -2307,5 +2331,187 @@ ${output}
       // Cleanup
       this.sessionMetrics.delete(meshInstance);
     }
+  }
+
+  /**
+   * Handle ensemble pattern - spawn all agents in parallel
+   */
+  private async handleEnsemblePattern(meshName: string, meshConfig: MeshConfig): Promise<void> {
+    if (!meshConfig.ensemble) return;
+
+    const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
+    const agentId = `${meshName}/${entryAgent}`;
+
+    // Get the task message from queue
+    const task = this.queue.peekOne(agentId);
+    if (!task) {
+      log.warn('dispatcher', 'No task found for ensemble', { meshName, agentId });
+      return;
+    }
+
+    log.info('dispatcher', 'Starting ensemble execution', {
+      mesh: meshName,
+      agents: meshConfig.ensemble.agents.length,
+      strategy: meshConfig.ensemble.aggregation_strategy,
+    });
+
+    // Start ensemble
+    const ensembleId = this.ensembleCoordinator.startEnsemble(
+      meshName,
+      meshConfig.ensemble,
+      task
+    );
+
+    // Consume the task so it's not processed again
+    this.queue.pollOne(agentId);
+
+    // Spawn all ensemble agents in parallel
+    const agentPromises = meshConfig.ensemble.agents.map(agentName =>
+      this.spawnEnsembleAgent(meshName, agentName, task, ensembleId, meshConfig)
+    );
+
+    // Wait for all agents (don't fail if one fails)
+    await Promise.allSettled(agentPromises);
+
+    // Check if ensemble is complete and aggregate
+    await this.checkEnsembleCompletion(meshName, ensembleId);
+  }
+
+  /**
+   * Spawn single ensemble agent
+   */
+  private async spawnEnsembleAgent(
+    meshName: string,
+    agentName: string,
+    task: Message,
+    ensembleId: string,
+    meshConfig: MeshConfig
+  ): Promise<void> {
+    const agentConfig = meshConfig.agents.find(a => a.name === agentName);
+    if (!agentConfig) {
+      log.error('dispatcher', 'Agent not found', { agentName, meshName });
+      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, '', 'Agent not found');
+      return;
+    }
+
+    const timeout = meshConfig.ensemble?.timeout_ms || 120000;
+    const agentId = `${meshName}/${agentName}`;
+
+    try {
+      log.info('dispatcher', 'Spawning ensemble agent', { agentId, ensembleId });
+
+      // Register agent start time for timing metrics
+      this.ensembleCoordinator.registerAgentStart(ensembleId, agentName);
+
+      // Build the system prompt for this agent
+      const promptPath = agentConfig.prompt.startsWith('/')
+        ? agentConfig.prompt
+        : path.join(meshConfig._basePath || this.config.workDir, agentConfig.prompt);
+
+      if (!fs.existsSync(promptPath)) {
+        throw new Error(`Prompt not found: ${promptPath}`);
+      }
+
+      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+
+      // Inject preamble
+      const agentCount = meshConfig.agents?.length ?? 1;
+      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
+
+      // Create runner config
+      const runnerConfig: SdkRunnerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        systemPrompt,
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      // Track result collection
+      let result = '';
+      let error: string | undefined;
+
+      runner.on('output', (data) => {
+        result += data.output || '';
+      });
+
+      runner.on('error', (data) => {
+        error = data.error;
+      });
+
+      // Run with timeout
+      await Promise.race([
+        runner.run(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+        ),
+      ]);
+
+      // Record result
+      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, result, error);
+      log.debug('dispatcher', 'Ensemble agent completed', { agentName, ensembleId });
+    } catch (err) {
+      const errorMsg = (err as Error).message;
+      this.ensembleCoordinator.recordAgentResult(
+        ensembleId,
+        agentName,
+        '',
+        errorMsg
+      );
+      log.warn('dispatcher', 'Ensemble agent failed', { agentName, error: errorMsg });
+    }
+  }
+
+  /**
+   * Check if ensemble is complete and aggregate
+   */
+  private async checkEnsembleCompletion(meshName: string, ensembleId: string): Promise<void> {
+    if (!this.ensembleCoordinator.isComplete(ensembleId)) {
+      log.debug('dispatcher', 'Ensemble not yet complete', { ensembleId });
+      return;
+    }
+
+    log.info('dispatcher', 'Ensemble complete, aggregating results', { ensembleId });
+
+    const result = await this.ensembleCoordinator.getAggregatedResult(ensembleId);
+    if (!result) {
+      log.error('dispatcher', 'Failed to get aggregated result', { ensembleId });
+      return;
+    }
+
+    // Write result message to queue
+    const timestamp = new Date().toISOString();
+    const msgId = `ensemble-${Date.now()}`;
+
+    await this.queue.insert({
+      from_agent: `${meshName}/ensemble`,
+      to_agent: 'core/core',
+      type: 'task-complete',
+      payload: {
+        'msg-id': msgId,
+        ensemble_id: ensembleId,
+        headline: `Ensemble execution complete: ${meshName}`,
+        body: result.output,
+        timestamp,
+        ...result.metadata,
+      },
+    });
+
+    log.info('dispatcher', 'Ensemble result written to queue', {
+      ensembleId,
+      success: result.metadata.success,
+    });
+
+    // Cleanup
+    this.ensembleCoordinator.completeEnsemble(ensembleId);
+
+    // Emit event
+    this.emit('ensemble:complete', {
+      meshName,
+      ensembleId,
+      success: result.metadata.success,
+    });
   }
 }
