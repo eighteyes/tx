@@ -229,7 +229,8 @@ export class MeshValidator {
       this.validateAgents(cfg.agents, errors, warnings, context);
     }
 
-    // Auto-default for single-agent meshes: set entry_point and completion_agent to the single agent
+    // Auto-default for single-agent meshes: set entry_point to the single agent
+    // Note: completion_agent is NOT auto-set to allow routing-based exit patterns
     if (Array.isArray(cfg.agents) && cfg.agents.length === 1) {
       const singleAgent = cfg.agents[0] as Record<string, unknown>;
       const agentName = singleAgent.name as string;
@@ -237,11 +238,6 @@ export class MeshValidator {
       if (!cfg.entry_point && agentName) {
         cfg.entry_point = agentName;
         log.debug('mesh-validator', `Auto-set entry_point to '${agentName}' for single-agent mesh${context}`);
-      }
-
-      if (!cfg.completion_agent && agentName) {
-        cfg.completion_agent = agentName;
-        log.debug('mesh-validator', `Auto-set completion_agent to '${agentName}' for single-agent mesh${context}`);
       }
     }
 

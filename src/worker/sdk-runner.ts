@@ -121,6 +121,13 @@ export class SdkRunner extends EventEmitter {
         totalProcessed++;
         log.info('sdk-runner', `Processing message`, { workerId, messageId: taskMessage.id, type: taskMessage.type });
 
+        // Emit processing event for FSM transition (idle → running)
+        this.emit('message:processing', {
+          id: workerId,
+          messageId: taskMessage.id,
+          type: taskMessage.type
+        });
+
         const userPrompt = this.buildUserPrompt(taskMessage);
 
         // Determine tool configuration based on restriction policy

@@ -504,55 +504,12 @@ export class WorkerDispatcher extends EventEmitter {
    * 2. Transition it to awaiting state
    * 3. For ask-human: interrupt the worker and inject steering prompt
    * 4. Set up timeout for await
+   *
+   * Note: FSM transitions are now handled via exit-based routing (evaluateExitRouting)
+   * rather than the old transitions table mechanism.
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
-
-    // Check for FSM transition (eager on first ask)
-    const [meshName, agentName] = senderAgentId.split('/');
-    if (meshName) {
-      const fsm = this.meshFSMs.get(meshName);
-      if (fsm && fsm.isInitialized()) {
-        try {
-          // Build frontmatter from event for FSM context
-          const messageFrontmatter: Record<string, unknown> = {
-            from: senderAgentId,
-            to: targetAgentId,
-            type: messageType,
-            'msg-id': event.msgId,
-            headline: event.headline,
-          };
-
-          const transitioned = await fsm.handleMessage(
-            senderAgentId,
-            targetAgentId,
-            messageType,
-            messageFrontmatter
-          );
-
-          if (transitioned) {
-            log.info('dispatcher', 'FSM transition triggered by ask message', {
-              meshName,
-              from: senderAgentId,
-              to: targetAgentId,
-              messageType,
-              newState: fsm.getCurrentState(),
-            });
-          }
-        } catch (error) {
-          // Script failures are fatal - halt the mesh
-          log.error('dispatcher', 'FSM transition failed fatally', {
-            meshName,
-            error: (error as Error).message,
-          });
-          this.emit('mesh:halt', {
-            meshName,
-            reason: 'FSM script failure',
-            error: (error as Error).message,
-          });
-        }
-      }
-    }
 
     const activeWorker = this.activeWorkers.get(senderAgentId);
     if (!activeWorker) {
@@ -1335,7 +1292,6 @@ The system will resume your session when the human responds.`;
             meshName,
             currentState: status.currentState,
             stateConfig: currentStateConfig,
-            availableTransitions: status.availableTransitions,
             context: status.context,
             gateRetries: status.gateRetries,
           };
@@ -1591,7 +1547,24 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         this.emit('worker:init', data);
       });
 
-      // Transition on message processing
+      // Transition when starting to process a message
+      worker.on('message:processing', async (data) => {
+        try {
+          // Transition idle → running when worker starts processing next message
+          if (machine.currentState.status === 'idle') {
+            await machine.processNext();
+            this.emit('worker:processing', data);
+          }
+        } catch (error) {
+          log.error('dispatcher', `Failed to resume worker from idle`, {
+            agentId,
+            error: (error as Error).message,
+            currentState: machine.currentState.status
+          });
+        }
+      });
+
+      // Transition on message completion
       worker.on('message:idle', async (data) => {
         try {
           // Only transition to idle if currently running
@@ -1844,6 +1817,18 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         // Create exit message to core based on routing configuration
         // This handles meshes like dev-worktree that have routing config but no completion_agent
         const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
+
+        log.info('dispatcher', 'Exit routing extraction', {
+          agentId,
+          meshName,
+          agentName: agent.name,
+          hasRouting: !!routing,
+          routingKeys: routing ? Object.keys(routing) : [],
+          hasCompleteRoute: !!routing?.complete,
+          hasCompletionAgent: !!meshConfig?.completion_agent,
+          completionAgent: meshConfig?.completion_agent,
+        });
+
         if (routing?.complete && !meshConfig?.completion_agent) {
           const exitRoute = routing.complete;
           const targetAgent = exitRoute.to;

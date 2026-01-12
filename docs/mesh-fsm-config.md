@@ -58,6 +58,10 @@ awaiting_narrator:
 ### `entry`
 Executed when entering this state. Optional.
 
+**Entry processing order:**
+1. **`entry.set`** - Context assignments
+2. **`entry.run`** - Side effect scripts
+
 ```yaml
 init:
   entry:
@@ -73,14 +77,22 @@ init:
 - Commands: `$(yq '.field' $file)`
 - String interpolation: `"$game_path/turns/turn-$turn"`
 
-**`entry.run`**: Script names to execute (side effects like mkdir, logging)
+**`entry.run`**: Script names or inline scripts to execute (side effects like mkdir, logging)
 
 ### `exit`
 Executed when exiting this state. Determines next state. Optional but critical for routing.
 
-#### Exit.Gates: Output Validation
+**Exit processing order (strict sequence):**
+1. **`exit.gates`** - Validate outputs (stop if fail)
+2. **`exit.set`** - Extract values
+3. **`exit.when`** - Evaluate conditions
+4. **`exit.run`** - Determine next state
+5. **`exit.default`** - Fallback if no route
+6. **Transition** to next state
 
-Validate agent outputs **before routing decision**:
+#### Exit.Gates: Output Validation (Step 1)
+
+Validate agent outputs **before any routing decision**:
 
 ```yaml
 awaiting_narrator:
@@ -96,7 +108,7 @@ awaiting_narrator:
 
 If gate fails, transition blocked, stay in current state.
 
-#### Exit.Set: Data Extraction
+#### Exit.Set: Data Extraction (Step 2)
 
 Extract data from agent outputs **before routing decision**:
 
@@ -110,30 +122,7 @@ awaiting_narrator:
 
 Extracted values are available to `when` conditions and `run` scripts.
 
-#### Exit.Run: Imperative Routing
-
-State name OR script that outputs state name (for complex routing logic):
-
-```yaml
-ralph_haiku_loop:
-  exit:
-    run: |
-      signal="$HAIKU_SUCCESS_SIGNAL"
-      if [ "$signal" = "PASS" ]; then
-        echo "sonnet_review_loop"
-      elif [ "$signal" = "REFINE" ]; then
-        echo "ralph_haiku_loop"
-      else
-        echo "blocked_state"
-      fi
-```
-
-- **Literal state name**: `run: sonnet_review_loop` → use that state
-- **Script**: Script outputs state name to stdout → use that state
-
-If run outputs a state name, use it and skip `when` clauses.
-
-#### Exit.When: Declarative Routing
+#### Exit.When: Declarative Routing (Step 3)
 
 Conditions that determine next state (evaluated top-to-bottom):
 
@@ -155,11 +144,34 @@ ralph_haiku_loop:
 | `==` | `signal == "PASS"` | String equality |
 | `!=` | `signal != "BLOCKED"` | String inequality |
 
-First matching condition wins. If no match, use `default`.
+First matching condition wins. If no match, continue to Step 4.
 
-#### Exit.Default: Fallback Route
+#### Exit.Run: Determine Next State (Step 4)
 
-**Required.** Used if no `when` condition matches:
+State name OR script that outputs state name (for complex routing logic):
+
+```yaml
+ralph_haiku_loop:
+  exit:
+    run: |
+      signal="$haiku_success_signal"
+      if [ "$signal" = "PASS" ]; then
+        echo "sonnet_review_loop"
+      elif [ "$signal" = "REFINE" ]; then
+        echo "ralph_haiku_loop"
+      else
+        echo "blocked_state"
+      fi
+```
+
+- **Literal state name**: `run: sonnet_review_loop` → echoed to stdout, state is used
+- **Script**: Script echoes state name to stdout → that state is used
+
+If `run` outputs a valid state name, use it. If `run` is empty or undefined, continue to Step 5.
+
+#### Exit.Default: Fallback Route (Step 5)
+
+**Required.** Used if no `when` condition matches and no `run` output:
 
 ```yaml
 ralph_haiku_loop:
@@ -168,24 +180,6 @@ ralph_haiku_loop:
 ```
 
 Prevents silent failures when routing cannot be determined.
-
-### Exit Routing Evaluation Priority
-
-1. **`exit.run` scripts** (if present)
-   - Execute for side effects
-   - If outputs `next_state=<value>`, use that and stop
-   - Otherwise continue to step 2
-
-2. **`exit.when` clauses** (if present and no run-set next_state)
-   - Evaluate top-to-bottom
-   - First matching condition's target is used
-   - If no match, continue to step 3
-
-3. **`exit.default`** (required)
-   - If no when condition matched
-   - Must be present to prevent silent failures
-
-4. **Error** if still no next_state (log warning, stay in current state)
 
 ## Scripts
 
@@ -285,9 +279,9 @@ exit:
 4. **FSM exit processing** → runs in order:
    - Run `exit.gates` for validation
    - Run `exit.set` to extract values
-   - Run `exit.run` scripts (may set next_state)
-   - Evaluate `exit.when` clauses if no run-set next_state
-   - Use `exit.default` if no when match
+   - Evaluate `exit.when` clauses (first match wins)
+   - Run `exit.run` script (outputs state name)
+   - Use `exit.default` if no route found
 
 5. **FSM transitions** → changes to next_state
 

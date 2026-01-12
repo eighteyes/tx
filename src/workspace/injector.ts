@@ -10,7 +10,7 @@
 
 import type { WorkspaceInfo } from './manager.ts';
 import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
-import type { FSMStateConfig, FSMTransitionConfig } from '../shared/types.ts';
+import type { FSMStateConfig } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { log } from '../shared/logger.ts';
@@ -31,7 +31,6 @@ export interface FSMInjectionContext {
   meshName: string;
   currentState: string;
   stateConfig: FSMStateConfig;
-  availableTransitions: FSMTransitionConfig[];
   context: Record<string, unknown>;
   gateRetries?: Record<string, number>;
 }
@@ -188,20 +187,6 @@ export class PromptInjector {
       }
     }
 
-    // Available transitions
-    if (fsmContext.availableTransitions.length > 0) {
-      parts.push('\n## Available Transitions\n');
-      parts.push('The following state transitions are possible from the current state:\n');
-
-      for (const transition of fsmContext.availableTransitions) {
-        parts.push(`- **${transition.from}** → **${transition.to}**`);
-        parts.push(`  - Trigger: \`${transition.trigger}\``);
-        if (transition.triggerAgent) {
-          parts.push(`  - Triggered by: \`${transition.triggerAgent}\``);
-        }
-      }
-    }
-
     // Gate retries (if any)
     const activeRetries = Object.entries(fsmContext.gateRetries || {})
       .filter(([_, count]) => count > 0);
@@ -216,7 +201,7 @@ export class PromptInjector {
 
     // Guidance
     parts.push('\n## FSM Guidance\n');
-    parts.push('- Transitions are triggered by message types (`ask`, `task-complete`)');
+    parts.push('- Transitions are determined by exit-based routing (run → when → default)');
     parts.push('- Gates must pass before a transition completes (auto-retry up to 3x)');
     parts.push('- Script failures are fatal and will halt the mesh');
     parts.push('- Context variables are shared across all agents in the mesh');

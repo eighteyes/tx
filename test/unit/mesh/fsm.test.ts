@@ -9,7 +9,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import { MeshFSM, type FSMConfig, type FSMTransitionEvent, type FSMGateEvent } from '../../../src/mesh/index.ts';
+import { MeshFSM, type FSMConfig } from '../../../src/mesh/index.ts';
 import { createTestEnv, type TestEnv } from '../../helpers/test-env.ts';
 
 describe('MeshFSM', () => {
@@ -126,75 +126,9 @@ describe('MeshFSM', () => {
 
       assert.strictEqual(status.meshName, 'status-test');
       assert.strictEqual(status.currentState, 'planning');
-      assert.ok(Array.isArray(status.availableTransitions));
-      assert.strictEqual(status.availableTransitions.length, 1);
-      assert.strictEqual(status.availableTransitions[0].to, 'implementation');
-    });
-  });
-
-  describe('message handling', () => {
-    it('should not transition if FSM not initialized', async () => {
-      const fsm = new MeshFSM('uninit', basicConfig, db, env.rootDir);
-      // Don't call initialize()
-
-      const result = await fsm.handleMessage('planner', 'developer', 'ask');
-      assert.strictEqual(result, false);
-    });
-
-    it('should transition on matching ask message', async () => {
-      const fsm = new MeshFSM('ask-test', basicConfig, db, env.rootDir);
-      await fsm.initialize();
-
-      let transitionEvent: any = null;
-      fsm.on('fsm:transition', (e: FSMTransitionEvent) => { transitionEvent = e; });
-
-      const result = await fsm.handleMessage('planner', 'developer', 'ask');
-
-      assert.strictEqual(result, true);
-      assert.strictEqual(fsm.getCurrentState(), 'implementation');
-      assert.ok(transitionEvent !== null, 'Transition event should be emitted');
-      const event = transitionEvent as FSMTransitionEvent;
-      assert.strictEqual(event.from, 'planning');
-      assert.strictEqual(event.to, 'implementation');
-    });
-
-    it('should not transition on non-matching trigger', async () => {
-      const fsm = new MeshFSM('no-match', basicConfig, db, env.rootDir);
-      await fsm.initialize();
-
-      // 'task-complete' is not valid trigger from planning
-      const result = await fsm.handleMessage('planner', 'developer', 'task-complete');
-
-      assert.strictEqual(result, false);
-      assert.strictEqual(fsm.getCurrentState(), 'planning');
-    });
-
-    it('should not transition on non-matching agent', async () => {
-      const fsm = new MeshFSM('wrong-agent', basicConfig, db, env.rootDir);
-      await fsm.initialize();
-
-      // 'developer' is not the trigger agent for planning->implementation
-      const result = await fsm.handleMessage('developer', 'reviewer', 'ask');
-
-      assert.strictEqual(result, false);
-      assert.strictEqual(fsm.getCurrentState(), 'planning');
-    });
-
-    it('should chain transitions correctly', async () => {
-      const fsm = new MeshFSM('chain-test', basicConfig, db, env.rootDir);
-      await fsm.initialize();
-
-      // planning -> implementation
-      await fsm.handleMessage('planner', 'developer', 'ask');
-      assert.strictEqual(fsm.getCurrentState(), 'implementation');
-
-      // implementation -> review
-      await fsm.handleMessage('developer', 'reviewer', 'task-complete');
-      assert.strictEqual(fsm.getCurrentState(), 'review');
-
-      // review -> complete
-      await fsm.handleMessage('reviewer', 'planner', 'task-complete');
-      assert.strictEqual(fsm.getCurrentState(), 'complete');
+      assert.ok(typeof status.context === 'object');
+      assert.ok(typeof status.gateRetries === 'object');
+      assert.ok(typeof status.lastTransitionAt === 'number');
     });
   });
 
@@ -230,8 +164,8 @@ describe('MeshFSM', () => {
       const fsm = new MeshFSM('reset-test', configWithContext, db, env.rootDir);
       await fsm.initialize();
 
-      // Transition to a different state
-      await fsm.handleMessage('planner', 'developer', 'ask');
+      // Force transition to a different state
+      await fsm.forceTransition('implementation', 'test setup');
       fsm.updateContext({ added: 'value' });
 
       // Reset
@@ -258,9 +192,7 @@ exit 0
           { name: 'start', coordinator: 'starter' },
           { name: 'next', coordinator: 'runner', onEnter: enterScript },
         ],
-        transitions: [
-          { from: 'start', to: 'next', trigger: 'ask' },
-        ],
+        transitions: [],
       };
 
       const fsm = new MeshFSM('enter-script', configWithScript, db, env.rootDir);
@@ -269,7 +201,8 @@ exit 0
       let scriptEvent = false;
       fsm.on('fsm:script-run', () => { scriptEvent = true; });
 
-      await fsm.handleMessage('starter', 'runner', 'ask');
+      // Use forceTransition to trigger onEnter script
+      await fsm.forceTransition('next', 'test');
 
       assert.strictEqual(fsm.getCurrentState(), 'next');
       assert.strictEqual(scriptEvent, true);
@@ -288,9 +221,7 @@ exit 1
           { name: 'start', coordinator: 'starter' },
           { name: 'next', coordinator: 'runner', onEnter: failScript },
         ],
-        transitions: [
-          { from: 'start', to: 'next', trigger: 'ask' },
-        ],
+        transitions: [],
       };
 
       const fsm = new MeshFSM('fail-script', configWithFailScript, db, env.rootDir);
@@ -298,7 +229,7 @@ exit 1
 
       // Script failure should throw
       await assert.rejects(
-        () => fsm.handleMessage('starter', 'runner', 'ask'),
+        () => fsm.forceTransition('next', 'test'),
         /FSM script failed/
       );
 
@@ -307,76 +238,6 @@ exit 1
     });
   });
 
-  describe('gates with retries', () => {
-    it('should block transition when gate fails', async () => {
-      const gateScript = path.join(scriptsDir, 'gate-fail.sh');
-      fs.writeFileSync(gateScript, `#!/bin/bash
-exit 1
-`, { mode: 0o755 });
-
-      const configWithGate: FSMConfig = {
-        initialState: 'start',
-        states: [
-          { name: 'start', coordinator: 'starter' },
-          {
-            name: 'guarded',
-            coordinator: 'runner',
-            gates: [{ type: 'script', script: gateScript, maxRetries: 2 }],
-          },
-        ],
-        transitions: [
-          { from: 'start', to: 'guarded', trigger: 'ask' },
-        ],
-      };
-
-      const fsm = new MeshFSM('gate-block', configWithGate, db, env.rootDir);
-      await fsm.initialize();
-
-      let gateEvent: any = null;
-      fsm.on('fsm:gate-check', (e: FSMGateEvent) => { gateEvent = e; });
-
-      const result = await fsm.handleMessage('starter', 'runner', 'ask');
-
-      assert.strictEqual(result, false);
-      assert.strictEqual(fsm.getCurrentState(), 'start');
-      assert.ok(gateEvent !== null);
-      assert.strictEqual(gateEvent!.passed, false);
-      assert.strictEqual(gateEvent!.retryCount, 0);
-    });
-
-    it('should allow transition after max retries', async () => {
-      const gateScript = path.join(scriptsDir, 'gate-always-fail.sh');
-      fs.writeFileSync(gateScript, `#!/bin/bash
-exit 1
-`, { mode: 0o755 });
-
-      const configWithGate: FSMConfig = {
-        initialState: 'start',
-        states: [
-          { name: 'start', coordinator: 'starter' },
-          {
-            name: 'guarded',
-            coordinator: 'runner',
-            gates: [{ type: 'script', script: gateScript, maxRetries: 1 }],
-          },
-        ],
-        transitions: [
-          { from: 'start', to: 'guarded', trigger: 'ask' },
-        ],
-      };
-
-      const fsm = new MeshFSM('gate-exhaust', configWithGate, db, env.rootDir);
-      await fsm.initialize();
-
-      // First attempt - blocked, retry count = 1
-      let result = await fsm.handleMessage('starter', 'runner', 'ask');
-      assert.strictEqual(result, false);
-      assert.strictEqual(fsm.getCurrentState(), 'start');
-
-      // Second attempt - max retries exceeded, allow through
-      result = await fsm.handleMessage('starter', 'runner', 'ask');
-      assert.strictEqual(result, true);
-      assert.strictEqual(fsm.getCurrentState(), 'guarded');
-    });
-  });
+  // Note: Gate tests were removed as they relied on the old transitions-based
+  // handleMessage() mechanism. Gates are now handled via exit-based routing.
 });

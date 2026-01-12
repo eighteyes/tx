@@ -29,6 +29,11 @@ iteration:
   maxIterations: 3
   onMaxReached: core
 
+lifecycle:
+  post:
+    - commit:auto
+    - brain-update
+
 routing:
   worker:
     complete:
