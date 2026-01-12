@@ -229,6 +229,22 @@ export class MeshValidator {
       this.validateAgents(cfg.agents, errors, warnings, context);
     }
 
+    // Auto-default for single-agent meshes: set entry_point and completion_agent to the single agent
+    if (Array.isArray(cfg.agents) && cfg.agents.length === 1) {
+      const singleAgent = cfg.agents[0] as Record<string, unknown>;
+      const agentName = singleAgent.name as string;
+
+      if (!cfg.entry_point && agentName) {
+        cfg.entry_point = agentName;
+        log.debug('mesh-validator', `Auto-set entry_point to '${agentName}' for single-agent mesh${context}`);
+      }
+
+      if (!cfg.completion_agent && agentName) {
+        cfg.completion_agent = agentName;
+        log.debug('mesh-validator', `Auto-set completion_agent to '${agentName}' for single-agent mesh${context}`);
+      }
+    }
+
     // Validate entry_point if present
     if (cfg.entry_point && Array.isArray(cfg.agents)) {
       this.validateEntryPoint(cfg.entry_point as string, cfg.agents, errors, warnings, context);

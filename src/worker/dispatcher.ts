@@ -1841,6 +1841,28 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           });
         }
 
+        // Create exit message to core based on routing configuration
+        // This handles meshes like dev-worktree that have routing config but no completion_agent
+        const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
+        if (routing?.complete && !meshConfig?.completion_agent) {
+          const exitRoute = routing.complete;
+          const targetAgent = exitRoute.to;
+
+          log.info('dispatcher', 'Creating exit message based on routing config', {
+            agentId,
+            targetAgent,
+            reason: exitRoute.reason,
+          });
+
+          // Write exit message to msgs directory
+          await this.writeExitMessage(
+            agentId,
+            targetAgent,
+            exitRoute.reason,
+            workerHookContext
+          );
+        }
+
         this.emit('worker:complete', {
           ...data,
           transitionName: 'complete',
@@ -2286,6 +2308,51 @@ ${output}
     // Only return if we have any routes
     return Object.keys(result).length > 0 ? result : undefined;
   }
+
+  /**
+   * Write exit message to msgs directory based on routing configuration
+   * Called after worker completion when routing config exists but no completion_agent
+   */
+  private async writeExitMessage(
+    fromAgent: string,
+    toAgent: string,
+    reason: string,
+    hookContext: HookContext
+  ): Promise<void> {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `exit-${hookContext.taskId || Date.now()}`;
+    const filename = `${timestamp}-task-complete-${fromAgent.replace('/', '-')}--${toAgent.replace('/', '-')}-${msgId}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    const content = `---
+to: ${toAgent}
+from: ${fromAgent}
+type: task-complete
+msg-id: ${msgId}
+headline: ${reason}
+timestamp: ${new Date().toISOString()}
+status: complete
+---
+
+${reason}
+
+---
+
+**Worker**: ${fromAgent}
+**Completed**: ${new Date().toISOString()}
+${hookContext.worktreeBranch ? `**Branch**: ${hookContext.worktreeBranch}` : ''}
+${hookContext.worktreePath ? `**Worktree**: ${hookContext.worktreePath}` : ''}
+`;
+
+    fs.writeFileSync(filepath, content);
+    log.info('dispatcher', 'Wrote exit message', {
+      fromAgent,
+      toAgent,
+      msgId,
+      filepath,
+    });
+  }
+
 
   /**
    * Get active worker count
