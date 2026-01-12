@@ -20,8 +20,6 @@ agents:
     model: opus
     prompt: reviewer/prompt.md
 
-injectOriginalMessage: true
-
 entry_point: worker
 
 workspace:
