@@ -162,29 +162,7 @@ export interface FaultToleranceConfig {
   min_success_count?: number;  // Minimum agents that must succeed
 }
 
-/**
- * Ensemble configuration in mesh config
- */
-export interface EnsembleConfig {
-  agents: string[];                          // Agent names to run in parallel
-  aggregation_strategy: AggregationStrategy;  // How to combine results
-  timeout_ms?: number;                       // Per-agent timeout (default: 120000)
-  fault_tolerance?: FaultToleranceConfig;    // Fault tolerance settings
-  aggregation_prompt?: string;               // Custom aggregation prompt (optional)
-}
-
-/**
- * Result from aggregation engine
- */
-export interface AggregationResult {
-  aggregated_content: string;
-  metadata: {
-    strategy: AggregationStrategy;
-    agent_count: number;
-    custom_prompt_used?: boolean;
-    [key: string]: unknown;
-  };
-}
+// Note: EnsembleConfig and AggregationResult are defined below in "Ensemble types" section
 
 // FSM (Finite State Machine) types
 
@@ -235,9 +213,18 @@ export interface FSMConfig {
 
 /**
  * Ensemble configuration: multiple agents run on same task, aggregate results
+ *
+ * Execution flow:
+ * 1. coordinator runs first with original task
+ * 2. coordinator outputs SUBTASK markers (SUBTASK 1:, SUBTASK 2:, etc.)
+ * 3. subtasks are parsed and enqueued to parallel agents
+ * 4. agents process their subtasks in parallel
+ * 5. reviewer (optional) synthesizes results
  */
 export interface EnsembleConfig {
+  coordinator?: string;          // Agent that runs FIRST to decompose task (outputs SUBTASK markers)
   agents: string[];              // Agent names to run in parallel
+  reviewer?: string;             // Agent that synthesizes results AFTER parallel execution
   aggregation_strategy: 'concat' | 'deduplicate' | 'voting' | 'consensus' | 'custom';
   aggregation_prompt?: string;   // Path to custom aggregation prompt (for 'custom' strategy)
   timeout_ms?: number;           // Timeout per agent (defaults to 120000)
@@ -252,12 +239,13 @@ export interface EnsembleConfig {
  * Aggregation result from ensemble execution
  */
 export interface AggregationResult {
-  strategy: string;
-  source_count: number;
-  successful_agents: string[];
-  failed_agents: string[];
   aggregated_content: string;
-  metadata?: Record<string, unknown>;
+  metadata: {
+    strategy: AggregationStrategy;
+    agent_count: number;
+    custom_prompt_used?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 // Task distribution types

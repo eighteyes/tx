@@ -332,12 +332,12 @@ Analyze these changes and document in your workspace:
         // Insert task message for brain mesh
         const timestamp = Math.floor(Date.now() / 1000);
         const msgId = `brain-update-${context.taskId || Date.now()}`;
-        const filename = `${timestamp}-task-hooks-brain-update--brain-brain-${msgId}.md`;
+        const filename = `${timestamp}-task-core-core--brain-brain-${msgId}.md`;
         const filepath = path.join(context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs'), filename);
 
         const content = `---
 to: brain/brain
-from: hooks/brain-update
+from: core/core
 type: task
 msg-id: ${msgId}
 headline: Analyze completed work - ${context.meshName}/${context.agentName}

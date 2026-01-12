@@ -2334,7 +2334,16 @@ ${output}
   }
 
   /**
-   * Handle ensemble pattern - spawn all agents in parallel
+   * Handle ensemble pattern - run coordinator first, then spawn parallel agents
+   *
+   * Execution flow:
+   * 1. Run coordinator agent (if configured) with original task
+   * 2. Coordinator outputs SUBTASK markers (SUBTASK 1:, SUBTASK 2:, etc.)
+   * 3. Parse coordinator output for SUBTASK markers
+   * 4. Create and enqueue subtask messages to queue (one per parallel agent)
+   * 5. Spawn parallel agents who poll queue for their subtasks
+   * 6. Wait for all agents to complete
+   * 7. (Optional) Run reviewer agent to synthesize results
    */
   private async handleEnsemblePattern(meshName: string, meshConfig: MeshConfig): Promise<void> {
     if (!meshConfig.ensemble) return;
@@ -2351,11 +2360,13 @@ ${output}
 
     log.info('dispatcher', 'Starting ensemble execution', {
       mesh: meshName,
+      coordinator: meshConfig.ensemble.coordinator,
       agents: meshConfig.ensemble.agents.length,
+      reviewer: meshConfig.ensemble.reviewer,
       strategy: meshConfig.ensemble.aggregation_strategy,
     });
 
-    // Start ensemble
+    // Start ensemble tracking
     const ensembleId = this.ensembleCoordinator.startEnsemble(
       meshName,
       meshConfig.ensemble,
@@ -2365,7 +2376,98 @@ ${output}
     // Consume the task so it's not processed again
     this.queue.pollOne(agentId);
 
-    // Spawn all ensemble agents in parallel
+    // STEP 1: Run coordinator FIRST (if configured)
+    let subtasks: Array<{ id: string; content: string; assignedAgent: string }> = [];
+
+    if (meshConfig.ensemble.coordinator) {
+      const coordinatorOutput = await this.runEnsembleCoordinator(
+        meshName,
+        meshConfig.ensemble.coordinator,
+        task,
+        meshConfig
+      );
+
+      if (!coordinatorOutput) {
+        log.error('dispatcher', 'Coordinator failed to produce output', {
+          meshName,
+          ensembleId,
+          coordinator: meshConfig.ensemble.coordinator,
+        });
+
+        // Emit failure and return
+        this.emit('ensemble:complete', {
+          meshName,
+          ensembleId,
+          success: false,
+          error: 'Coordinator failed to produce output',
+        });
+        this.ensembleCoordinator.completeEnsemble(ensembleId);
+        return;
+      }
+
+      // STEP 2: Parse SUBTASK markers from coordinator output
+      subtasks = this.parseSubtaskMarkers(coordinatorOutput, meshConfig.ensemble.agents);
+
+      if (subtasks.length === 0) {
+        log.warn('dispatcher', 'Coordinator did not produce SUBTASK markers, using original task', {
+          meshName,
+          ensembleId,
+          outputLength: coordinatorOutput.length,
+        });
+
+        // Fall back to original task for all agents
+        subtasks = meshConfig.ensemble.agents.map((agentName, idx) => ({
+          id: `subtask-${idx + 1}`,
+          content: task.payload.body as string || '',
+          assignedAgent: agentName,
+        }));
+      }
+
+      log.info('dispatcher', 'Coordinator produced subtasks', {
+        meshName,
+        ensembleId,
+        subtaskCount: subtasks.length,
+        assignedAgents: subtasks.map(s => s.assignedAgent),
+      });
+    } else {
+      // No coordinator - all agents get the original task
+      subtasks = meshConfig.ensemble.agents.map((agentName, idx) => ({
+        id: `subtask-${idx + 1}`,
+        content: task.payload.body as string || '',
+        assignedAgent: agentName,
+      }));
+    }
+
+    // STEP 3: Enqueue subtask messages for each parallel agent
+    const timestamp = Date.now();
+    for (const subtask of subtasks) {
+      const subtaskAgentId = `${meshName}/${subtask.assignedAgent}`;
+      const subtaskMsgId = `ensemble-${ensembleId}-subtask-${subtask.id}`;
+
+      await this.queue.insert({
+        from_agent: meshConfig.ensemble.coordinator
+          ? `${meshName}/${meshConfig.ensemble.coordinator}`
+          : `${meshName}/ensemble`,
+        to_agent: subtaskAgentId,
+        type: 'task',
+        payload: {
+          'msg-id': subtaskMsgId,
+          headline: `Ensemble subtask ${subtask.id}`,
+          body: subtask.content,
+          timestamp: new Date(timestamp).toISOString(),
+          ensemble_id: ensembleId,
+          subtask_id: subtask.id,
+        },
+      });
+
+      log.debug('dispatcher', 'Enqueued subtask message', {
+        ensembleId,
+        subtaskId: subtask.id,
+        toAgent: subtaskAgentId,
+      });
+    }
+
+    // STEP 4: Spawn all ensemble agents in parallel
     const agentPromises = meshConfig.ensemble.agents.map(agentName =>
       this.spawnEnsembleAgent(meshName, agentName, task, ensembleId, meshConfig)
     );
@@ -2373,8 +2475,150 @@ ${output}
     // Wait for all agents (don't fail if one fails)
     await Promise.allSettled(agentPromises);
 
-    // Check if ensemble is complete and aggregate
+    // STEP 5: Check if ensemble is complete and aggregate
     await this.checkEnsembleCompletion(meshName, ensembleId);
+  }
+
+  /**
+   * Run the ensemble coordinator agent and capture its output
+   * Returns the coordinator's output (should contain SUBTASK markers)
+   */
+  private async runEnsembleCoordinator(
+    meshName: string,
+    coordinatorName: string,
+    task: Message,
+    meshConfig: MeshConfig
+  ): Promise<string | null> {
+    const coordinatorId = `${meshName}/${coordinatorName}`;
+    const agentConfig = meshConfig.agents.find(a => a.name === coordinatorName);
+
+    if (!agentConfig) {
+      log.error('dispatcher', 'Coordinator agent not found in mesh config', {
+        meshName,
+        coordinatorName,
+        availableAgents: meshConfig.agents.map(a => a.name),
+      });
+      return null;
+    }
+
+    const timeout = meshConfig.ensemble?.timeout_ms || 120000;
+
+    log.info('dispatcher', 'Starting ensemble coordinator', {
+      coordinatorId,
+      model: agentConfig.model,
+      timeout,
+    });
+
+    try {
+      // Build the system prompt for coordinator
+      const promptPath = agentConfig.prompt.startsWith('/')
+        ? agentConfig.prompt
+        : path.join(meshConfig._basePath || this.config.workDir, agentConfig.prompt);
+
+      if (!fs.existsSync(promptPath)) {
+        throw new Error(`Coordinator prompt not found: ${promptPath}`);
+      }
+
+      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+
+      // Inject preamble
+      const agentCount = meshConfig.agents?.length ?? 1;
+      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
+
+      // Create runner config for coordinator
+      const runnerConfig: SdkRunnerConfig = {
+        id: coordinatorId,
+        model: agentConfig.model,
+        systemPrompt,
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      // Capture coordinator output
+      let coordinatorOutput = '';
+
+      runner.on('output', (data) => {
+        coordinatorOutput += data.output || '';
+      });
+
+      runner.on('error', (data) => {
+        log.error('dispatcher', 'Coordinator error', {
+          coordinatorId,
+          error: data.error,
+        });
+      });
+
+      // Enqueue the original task for the coordinator
+      await this.queue.insert({
+        from_agent: task.from_agent,
+        to_agent: coordinatorId,
+        type: 'task',
+        payload: {
+          ...task.payload,
+          'msg-id': `coordinator-task-${Date.now()}`,
+        },
+      });
+
+      // Run coordinator with timeout
+      await Promise.race([
+        runner.run(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`Coordinator timeout after ${timeout}ms`)), timeout)
+        ),
+      ]);
+
+      log.info('dispatcher', 'Coordinator completed', {
+        coordinatorId,
+        outputLength: coordinatorOutput.length,
+      });
+
+      return coordinatorOutput;
+    } catch (err) {
+      const errorMsg = (err as Error).message;
+      log.error('dispatcher', 'Coordinator execution failed', {
+        coordinatorId,
+        error: errorMsg,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Parse SUBTASK markers from coordinator output
+   * Format: SUBTASK 1: ... SUBTASK 2: ... etc.
+   *
+   * @param output - Coordinator output containing SUBTASK markers
+   * @param agents - List of agent names to assign subtasks to
+   * @returns Array of parsed subtasks with assigned agents
+   */
+  private parseSubtaskMarkers(
+    output: string,
+    agents: string[]
+  ): Array<{ id: string; content: string; assignedAgent: string }> {
+    const subtasks: Array<{ id: string; content: string; assignedAgent: string }> = [];
+
+    // Match SUBTASK N: followed by content until next SUBTASK or end
+    const subtaskRegex = /SUBTASK\s+(\d+):([\s\S]*?)(?=SUBTASK\s+\d+:|$)/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = subtaskRegex.exec(output)) !== null) {
+      const subtaskNum = parseInt(match[1], 10);
+      const content = match[2].trim();
+
+      // Assign to agent (round-robin if more subtasks than agents)
+      const agentIndex = (subtaskNum - 1) % agents.length;
+      const assignedAgent = agents[agentIndex];
+
+      subtasks.push({
+        id: `subtask-${subtaskNum}`,
+        content,
+        assignedAgent,
+      });
+    }
+
+    return subtasks;
   }
 
   /**
