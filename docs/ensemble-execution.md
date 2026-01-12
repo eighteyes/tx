@@ -5,10 +5,14 @@ Ensemble execution enables parallel processing of a single task by multiple agen
 ## How It Works
 
 1. **Detection**: Dispatcher detects `ensemble` field in mesh config
-2. **Spawn**: All ensemble agents spawned in parallel (not sequentially)
-3. **Execution**: Agents run with timeout (default 2 minutes)
-4. **Aggregation**: Results collected and aggregated per strategy
-5. **Return**: Single aggregated result written back to requester
+2. **Coordinator Runs**: Entry coordinator agent runs with original task
+3. **Output Parsing**: Coordinator produces SUBTASK blocks (one per parallel agent)
+4. **Subtask Enqueueing**: Each SUBTASK enqueued to message queue for its agent
+5. **Parallel Spawn**: All ensemble agents spawned in parallel to process subtasks
+6. **Execution**: Agents run with timeout (default 2 minutes)
+7. **Aggregation**: Results collected and aggregated per strategy
+8. **Review**: Aggregated results passed to reviewer agent for synthesis
+9. **Return**: Final result written back to requester
 
 ## Architecture
 
@@ -25,22 +29,37 @@ Ensemble execution enables parallel processing of a single task by multiple agen
 │   ensemble)     │
 └────────┬────────┘
          │
-    ┌────┴────┐
-    │         │
-    ▼         ▼         ▼
+         ▼
+   ┌──────────────┐
+   │ Coordinator  │  ← Runs FIRST, produces SUBTASK output
+   │    Agent     │
+   └──────┬───────┘
+          │ SUBTASK 1:, SUBTASK 2:, SUBTASK 3:
+          │ (parsed and enqueued)
+          │
+     ┌────┴────┐
+     │         │
+     ▼         ▼         ▼
 ┌────────┐ ┌────────┐ ┌────────┐
-│Agent 1 │ │Agent 2 │ │Agent 3 │
+│Agent 1 │ │Agent 2 │ │Agent 3 │  ← Run in PARALLEL
 │(haiku) │ │(sonnet)│ │(haiku) │
 └───┬────┘ └───┬────┘ └───┬────┘
     │          │          │
     └────┬─────┴─────┬────┘
+         │           │
          ▼           │
     ┌─────────────────────┐
-    │ EnsembleCoordinator │
+    │ EnsembleCoordinator │  ← Aggregates results
     │   (aggregates)      │
     └──────────┬──────────┘
                │
                ▼
+         ┌──────────┐
+         │ Reviewer │  ← Synthesizes final output
+         │  Agent   │
+         └────┬─────┘
+              │
+              ▼
          ┌──────────┐
          │  Result  │
          │ Message  │
@@ -55,6 +74,9 @@ Add an `ensemble` field to your mesh config:
 mesh: code-review
 description: Parallel code review by multiple specialized agents
 agents:
+  - name: entry
+    model: haiku
+    prompt: entry-coordinator.md
   - name: security
     model: sonnet
     prompt: security-reviewer.md
@@ -64,19 +86,48 @@ agents:
   - name: logic
     model: sonnet
     prompt: logic-analyzer.md
+  - name: synthesizer
+    model: sonnet
+    prompt: synthesizer.md
 
-entry_point: security  # Entry point triggers ensemble
+entry_point: entry  # Entry point triggers ensemble
 
 ensemble:
+  coordinator: entry                 # REQUIRED: Runs first, produces SUBTASK output
   agents:
     - security
     - style
     - logic
-  aggregation_strategy: concat      # concat, deduplicate, voting, consensus, custom
+  reviewer: synthesizer              # REQUIRED: Receives aggregated results
+  aggregation_strategy: concat       # concat, deduplicate, voting, consensus, custom
   timeout_ms: 120000                 # Per-agent timeout (default: 120000 = 2 minutes)
   fault_tolerance:
     min_success_count: 2             # Minimum agents that must succeed (default: all)
 ```
+
+## Required Fields
+
+- **`coordinator`**: Agent that runs FIRST with the original task. Must produce SUBTASK output.
+- **`agents`**: List of agents that run IN PARALLEL. Each receives one SUBTASK from coordinator.
+- **`reviewer`**: Agent that receives AGGREGATED results and synthesizes final output.
+- **`aggregation_strategy`**: How parallel results are combined before reviewer receives them.
+
+## Coordinator Output Format
+
+The coordinator agent MUST produce output with SUBTASK markers:
+
+```
+SUBTASK 1:
+[Content for first parallel agent]
+
+SUBTASK 2:
+[Content for second parallel agent]
+
+SUBTASK 3:
+[Content for third parallel agent]
+```
+
+Each SUBTASK block is parsed and sent to the corresponding agent in the `agents` list (order matters).
 
 ## Aggregation Strategies
 
