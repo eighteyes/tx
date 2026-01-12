@@ -97,7 +97,8 @@ export class DistributionEngine {
 
   /**
    * Weighted strategy: Distribute based on agent capabilities
-   * Currently defaults to equal distribution; Phase 2 will use capability matching
+   * Phase 3: Will use capability matching and performance history
+   * For Phase 2, defaults to equal distribution
    */
   private static weighted(
     task: string,
@@ -111,7 +112,8 @@ export class DistributionEngine {
 
   /**
    * Adaptive strategy: Use spawner agent to suggest optimal split
-   * Currently defaults to equal distribution; Phase 2 will invoke spawner
+   * Phase 3: Will invoke spawner agent to analyze task complexity
+   * For Phase 2, defaults to equal distribution
    */
   private static adaptive(
     task: string,
@@ -125,8 +127,9 @@ export class DistributionEngine {
   }
 
   /**
-   * Custom strategy placeholder: Use provided prompt to guide decomposition
-   * Currently defaults to equal distribution; Phase 2 will invoke Claude
+   * Custom strategy: Use provided prompt to guide decomposition
+   * Phase 3: Will invoke Claude with custom prompt to decompose task
+   * For Phase 2, defaults to equal distribution
    */
   private static customPlaceholder(
     task: string,

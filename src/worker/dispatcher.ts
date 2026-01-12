@@ -34,6 +34,8 @@ import {
 import type { ParityReminderEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
+import { TaskDistributionCoordinator, type Subtask } from './task-distribution-coordinator.ts';
+import { parseSpawnerOutput, formatSubtaskResults } from './subtask-parser.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -221,6 +223,7 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
   private stuckDetector: StuckAgentDetector;
+  private taskDistributionCoordinator: TaskDistributionCoordinator;
 
   constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
@@ -231,6 +234,7 @@ export class WorkerDispatcher extends EventEmitter {
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.stuckDetector = new StuckAgentDetector(stuckConfig);
+    this.taskDistributionCoordinator = new TaskDistributionCoordinator();
 
     // Wire stuck detector events to dispatcher
     this.stuckDetector.on('agent:nudged', (data) => {
@@ -241,6 +245,14 @@ export class WorkerDispatcher extends EventEmitter {
       this.activeWorkers.delete(data.agentId);
       this.writeWorkerState();
       this.emit('agent:escalated', data);
+    });
+
+    // Wire task distribution coordinator events to dispatcher
+    this.taskDistributionCoordinator.on('batch:complete', (event) => {
+      this.handleBatchComplete(event);
+    });
+    this.taskDistributionCoordinator.on('batch:timeout', (event) => {
+      this.emit('task-distribution:timeout', event);
     });
   }
 
@@ -1775,6 +1787,59 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           throw completeError;
         }
 
+        // Task Distribution Pattern: Handle spawner and subagent completion
+        if (meshConfig?.task_distribution) {
+          const taskDist = meshConfig.task_distribution;
+          const [meshNamePart, agentNamePart] = agentId.split('/');
+
+          // Check if this is the spawner agent completing
+          if (agentNamePart === taskDist.spawner && data.output) {
+            // Peek at the current message to get parent task ID
+            const currentMsg = this.queue.peekOne(agentId);
+            const parentTaskId = currentMsg?.id != null ? String(currentMsg.id) : `${agentId}-${Date.now()}`;
+
+            log.info('task-distribution', 'Spawner agent complete, processing output', {
+              spawner: agentId,
+              parentTaskId,
+              outputLength: data.output.length,
+            });
+
+            // Parse spawner output and create subtasks
+            await this.handleSpawnerComplete(
+              agentId,
+              data.output,
+              parentTaskId,
+              meshNamePart,
+              meshConfig
+            );
+          }
+
+          // Check if this is a subagent completing a subtask
+          if (taskDist.subagents.includes(agentNamePart)) {
+            // Extract subtask info from the message that was processed
+            const processedMsg = this.queue.peekOne(agentId);
+            const subtaskId = processedMsg?.payload?.subtask_id as string | undefined;
+            const parentTaskId = processedMsg?.payload?.parent_task_id as string | undefined;
+
+            if (subtaskId && parentTaskId && data.output) {
+              log.info('task-distribution', 'Subagent complete, recording result', {
+                subagent: agentId,
+                subtaskId,
+                parentTaskId,
+              });
+
+              this.handleSubagentComplete(
+                agentId,
+                subtaskId,
+                parentTaskId,
+                data.output,
+                true, // success
+                undefined // no error
+              );
+            }
+          }
+        }
+
         // Accumulate worker metrics into session metrics
         if (data.metrics && workerHookContext.meshInstance) {
           const session = this.sessionMetrics.get(workerHookContext.meshInstance);
@@ -2306,6 +2371,206 @@ ${output}
    */
   getWorkspaceManager(): WorkspaceManager {
     return this.workspaceManager;
+  }
+
+  /**
+   * Handle spawner completion for task distribution pattern
+   * Parse spawner output, create subtask messages, and spawn subagents
+   */
+  private async handleSpawnerComplete(
+    spawnerAgentId: string,
+    spawnerOutput: string,
+    parentTaskId: string,
+    meshName: string,
+    meshConfig: MeshConfig
+  ): Promise<void> {
+    const taskDist = meshConfig.task_distribution;
+    if (!taskDist) return;
+
+    log.info('task-distribution', 'Processing spawner output', {
+      spawner: spawnerAgentId,
+      parentTaskId,
+      meshName,
+    });
+
+    // Parse spawner output to extract subtasks
+    const parseResult = parseSpawnerOutput(spawnerOutput);
+
+    if (!parseResult.success) {
+      log.error('task-distribution', 'Failed to parse spawner output', {
+        spawner: spawnerAgentId,
+        error: parseResult.error,
+      });
+      this.emit('task-distribution:error', {
+        spawner: spawnerAgentId,
+        parentTaskId,
+        error: parseResult.error,
+      });
+      return;
+    }
+
+    if (parseResult.warnings) {
+      log.warn('task-distribution', 'Spawner output parse warnings', {
+        spawner: spawnerAgentId,
+        warnings: parseResult.warnings,
+      });
+    }
+
+    const parsedSubtasks = parseResult.subtasks;
+    log.info('task-distribution', `Parsed ${parsedSubtasks.length} subtasks`, {
+      spawner: spawnerAgentId,
+      subtaskCount: parsedSubtasks.length,
+    });
+
+    // Map parsed subtasks to coordinator format with agent assignment
+    const subtasks: Subtask[] = parsedSubtasks.map((st, idx) => ({
+      id: st.id,
+      description: st.description,
+      assigned_agent: taskDist.subagents[idx % taskDist.subagents.length], // Round-robin
+    }));
+
+    // Register batch with coordinator
+    this.taskDistributionCoordinator.registerBatch(
+      parentTaskId,
+      spawnerAgentId,
+      `${meshName}/${taskDist.reviewer}`,
+      subtasks,
+      {
+        timeout_ms: taskDist.timeout_ms,
+        allow_partial_failure: taskDist.allow_partial_failure,
+      }
+    );
+
+    // Create and enqueue subtask messages
+    for (const subtask of subtasks) {
+      const subagentId = `${meshName}/${subtask.assigned_agent}`;
+
+      const message = {
+        from_agent: spawnerAgentId,
+        to_agent: subagentId,
+        type: 'task' as const,
+        payload: {
+          headline: `Subtask: ${subtask.id}`,
+          body: subtask.description,
+          'msg-id': `${parentTaskId}-${subtask.id}`,
+          subtask_id: subtask.id,
+          parent_task_id: parentTaskId,
+        },
+      };
+
+      const msgId = this.queue.insert(message);
+      log.info('task-distribution', 'Enqueued subtask', {
+        subtaskId: subtask.id,
+        subagent: subtask.assigned_agent,
+        msgId,
+      });
+
+      this.emit('task-distribution:subtask-enqueued', {
+        parentTaskId,
+        subtaskId: subtask.id,
+        subagent: subagentId,
+        msgId,
+      });
+    }
+  }
+
+  /**
+   * Handle subagent completion for task distribution pattern
+   * Record result in coordinator
+   */
+  private handleSubagentComplete(
+    subagentId: string,
+    subtaskId: string,
+    parentTaskId: string,
+    output: string,
+    success: boolean,
+    error?: string
+  ): void {
+    log.info('task-distribution', 'Subagent completed subtask', {
+      subagent: subagentId,
+      subtaskId,
+      parentTaskId,
+      success,
+    });
+
+    const allComplete = this.taskDistributionCoordinator.recordResult(
+      parentTaskId,
+      subtaskId,
+      subagentId,
+      output,
+      success,
+      error
+    );
+
+    if (allComplete) {
+      log.info('task-distribution', 'All subtasks complete', {
+        parentTaskId,
+      });
+    }
+  }
+
+  /**
+   * Handle batch completion - route aggregated results to reviewer
+   */
+  private async handleBatchComplete(event: {
+    parent_task_id: string;
+    spawner_agent: string;
+    reviewer_agent: string;
+    subtask_count: number;
+    successful_count: number;
+    failed_count: number;
+    results: Array<{
+      subtask_id: string;
+      agent: string;
+      output: string;
+      success: boolean;
+      error?: string;
+    }>;
+    duration_ms: number;
+  }): Promise<void> {
+    log.info('task-distribution', 'Batch complete, routing to reviewer', {
+      parentTaskId: event.parent_task_id,
+      reviewer: event.reviewer_agent,
+      subtaskCount: event.subtask_count,
+      successfulCount: event.successful_count,
+      failedCount: event.failed_count,
+      durationMs: event.duration_ms,
+    });
+
+    // Format subtask results for reviewer
+    const formattedResults = formatSubtaskResults(event.results);
+
+    // Create reviewer task message
+    const message = {
+      from_agent: event.spawner_agent,
+      to_agent: event.reviewer_agent,
+      type: 'task' as const,
+      payload: {
+        headline: `Review ${event.subtask_count} subtask results`,
+        body: formattedResults,
+        'msg-id': `${event.parent_task_id}-review`,
+        parent_task_id: event.parent_task_id,
+        subtask_count: event.subtask_count,
+        successful_count: event.successful_count,
+        failed_count: event.failed_count,
+      },
+    };
+
+    const msgId = this.queue.insert(message);
+
+    log.info('task-distribution', 'Enqueued reviewer task', {
+      reviewer: event.reviewer_agent,
+      msgId,
+      parentTaskId: event.parent_task_id,
+    });
+
+    this.emit('task-distribution:batch-complete', {
+      ...event,
+      reviewer_msg_id: msgId,
+    });
+
+    // Cleanup batch from coordinator
+    this.taskDistributionCoordinator.cleanupBatch(event.parent_task_id);
   }
 
   /**
