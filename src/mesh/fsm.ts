@@ -15,54 +15,25 @@ import { EventEmitter } from 'node:events';
 import type Database from 'better-sqlite3';
 import { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
 import { ScriptExecutor, type ScriptContext, type ScriptResult } from './fsm-scripts.ts';
+import { ConditionEvaluator } from './fsm-evaluator.ts';
 import { log } from '../shared/logger.ts';
+import type { FSMExitConfig } from '../shared/types.ts';
 
 // Re-export for convenience
 export { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
 export { ScriptExecutor, type ScriptContext, type ScriptResult } from './fsm-scripts.ts';
+export { ConditionEvaluator } from './fsm-evaluator.ts';
 
-/**
- * FSM state configuration (from mesh config)
- */
-export interface FSMStateConfig {
-  name: string;
-  coordinator: string;  // Agent that coordinates this state
-  participants?: string[];  // Other agents that participate
-  gates?: FSMGateConfig[];  // Gates to check before transition
-  onEnter?: string;  // Script to run on state entry
-  onExit?: string;   // Script to run on state exit
-}
+// Import types from shared (keep local types for re-export compatibility)
+import type {
+  FSMConfig,
+  FSMStateConfig,
+  FSMGateConfig,
+  FSMTransitionConfig,
+} from '../shared/types.ts';
 
-/**
- * Gate configuration
- */
-export interface FSMGateConfig {
-  type: 'script' | 'agent-complete' | 'all-complete';
-  script?: string;  // Path to gate script (for script type)
-  agent?: string;   // Agent to check (for agent-complete type)
-  maxRetries?: number;  // Override default 3 retries
-}
-
-/**
- * Transition configuration
- */
-export interface FSMTransitionConfig {
-  from: string;
-  to: string;
-  trigger: 'ask' | 'task-complete' | 'manual';
-  triggerAgent?: string;  // Agent that triggers this transition
-  script?: string;  // Transition script
-}
-
-/**
- * Full FSM configuration (from mesh config)
- */
-export interface FSMConfig {
-  initialState: string;
-  states: FSMStateConfig[];
-  transitions: FSMTransitionConfig[];
-  context?: Record<string, unknown>;  // Initial context variables
-}
+// Re-export types for backward compatibility
+export type { FSMConfig, FSMStateConfig, FSMGateConfig, FSMTransitionConfig } from '../shared/types.ts';
 
 /**
  * Transition event data
@@ -110,6 +81,7 @@ export class MeshFSM extends EventEmitter {
   private config: FSMConfig;
   private persistence: FSMPersistence;
   private scriptExecutor: ScriptExecutor;
+  private conditionEvaluator: ConditionEvaluator;
   private stateData: FSMStateData | null = null;
   private stateMap: Map<string, FSMStateConfig>;
   private transitionMap: Map<string, FSMTransitionConfig[]>;  // from -> transitions
@@ -126,6 +98,7 @@ export class MeshFSM extends EventEmitter {
     this.config = config;
     this.persistence = new FSMPersistence(db);
     this.scriptExecutor = new ScriptExecutor({ workDir });
+    this.conditionEvaluator = new ConditionEvaluator();
 
     // Build state lookup map
     this.stateMap = new Map();
@@ -207,7 +180,131 @@ export class MeshFSM extends EventEmitter {
     return { ...this.stateData?.context };
   }
 
+  /**
+   * Evaluate exit routing for a state based on exit configuration
+   * Determines next state using run, when clauses, or default ONLY
+   *
+   * Evaluation order:
+   * 1. exit.run (literal state name OR script that echoes state)
+   * 2. When clauses (first match wins)
+   * 3. Default target
+   * 4. null (no valid route - error)
+   *
+   * NOTE: Transitions table is NOT used for exit routing (deprecated).
+   * Exit routing uses ONLY run, when clauses, and default fallback.
+   *
+   * @param exit - Exit configuration from state
+   * @param context - FSM context variables
+   * @returns Next state name, or null if no route found
+   */
+  async evaluateExitRouting(
+    exit: FSMExitConfig,
+    context: Record<string, unknown>
+  ): Promise<string | null> {
+    // 1. Check exit.run
+    if (exit.run) {
+      const trimmed = exit.run.trim();
 
+      // Check if it's a literal state name
+      if (this.stateMap.has(trimmed)) {
+        log.debug('fsm', 'Exit routing: run literal state', {
+          meshName: this.meshName,
+          target: trimmed,
+        });
+        return trimmed;
+      }
+
+      // Otherwise treat as script (inline)
+      try {
+        const scriptContext = this.buildScriptContext(context);
+        const result = await this.scriptExecutor.executeInline(exit.run, scriptContext);
+
+        if (result.success) {
+          const output = result.stdout.trim();
+
+          // Validate output is a valid state
+          if (this.stateMap.has(output)) {
+            log.debug('fsm', 'Exit routing: run script output', {
+              meshName: this.meshName,
+              target: output,
+              scriptOutput: result.stdout,
+            });
+            return output;
+          } else {
+            log.error('fsm', 'Exit routing: run script output invalid state', {
+              meshName: this.meshName,
+              output,
+              validStates: Array.from(this.stateMap.keys()),
+            });
+          }
+        } else {
+          log.error('fsm', 'Exit routing: run script failed', {
+            meshName: this.meshName,
+            exitCode: result.exitCode,
+            stderr: result.stderr,
+          });
+        }
+      } catch (error) {
+        log.error('fsm', 'Exit routing: run script exception', {
+          meshName: this.meshName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // 2. Check when clauses (first match wins)
+    if (exit.when && exit.when.length > 0) {
+      for (const clause of exit.when) {
+        const matches = this.conditionEvaluator.evaluate(clause.condition, context);
+
+        if (matches) {
+          log.debug('fsm', 'Exit routing: when clause matched', {
+            meshName: this.meshName,
+            condition: clause.condition,
+            target: clause.target,
+          });
+          return clause.target;
+        }
+      }
+
+      log.debug('fsm', 'Exit routing: no when clause matched', {
+        meshName: this.meshName,
+        whenClauseCount: exit.when.length,
+      });
+    }
+
+    // 3. Check default
+    if (exit.default) {
+      log.debug('fsm', 'Exit routing: using default', {
+        meshName: this.meshName,
+        target: exit.default,
+      });
+      return exit.default;
+    }
+
+    // 4. No route found - error condition
+    log.warn('fsm', 'Exit routing: no route found', {
+      meshName: this.meshName,
+      hasRun: !!exit.run,
+      hasWhen: !!exit.when,
+      hasDefault: !!exit.default,
+    });
+
+    return null;
+  }
+
+  /**
+   * Build script context from FSM context
+   * Converts context variables to ScriptContext format
+   */
+  private buildScriptContext(context: Record<string, unknown>): ScriptContext {
+    const scriptContext: ScriptContext = {
+      fsmState: this.getCurrentState(),
+      fsmMeshName: this.meshName,
+      ...context,
+    };
+    return scriptContext;
+  }
 
   /**
    * Update FSM context variables

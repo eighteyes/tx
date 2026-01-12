@@ -151,6 +151,35 @@ export interface FSMGateConfig {
 }
 
 /**
+ * FSM exit when clause for conditional routing
+ */
+export interface ExitWhenClause {
+  condition: string;  // "var == value" or "var != value"
+  target: string;     // Target state name
+}
+
+/**
+ * FSM exit configuration for state transitions
+ */
+export interface FSMExitConfig {
+  // Gate validation
+  gates?: Record<string, string[]>;
+
+  // Context variable updates
+  set?: Record<string, string>;
+
+  // Direct routing (literal state name OR script that echoes state)
+  run?: string;
+
+  // Conditional routing (new)
+  when?: ExitWhenClause[];
+  default?: string;
+
+  // Static transitions (backward compat)
+  transitions?: Record<string, string>;
+}
+
+/**
  * FSM state configuration
  */
 export interface FSMStateConfig {
@@ -160,6 +189,7 @@ export interface FSMStateConfig {
   gates?: FSMGateConfig[];  // Gates to check before transition
   onEnter?: string;  // Script to run on state entry
   onExit?: string;   // Script to run on state exit
+  exit?: FSMExitConfig;  // Exit configuration with conditional routing
 }
 
 /**

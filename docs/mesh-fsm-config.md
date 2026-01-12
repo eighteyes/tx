@@ -120,6 +120,141 @@ init:
 
 Coordinator decides who to ask, FSM looks up transition in current state's map.
 
+### `exit.run` - Direct Routing (New)
+
+Direct routing specification using either a literal state name or a script that outputs the target state.
+
+```yaml
+# Literal state name
+simple_state:
+  exit:
+    run: next_state  # Directly specify target state
+
+# Script that echoes state (dynamic routing)
+conditional_state:
+  exit:
+    run: |
+      signal="$FSM_CTX_SUCCESS_SIGNAL"
+      if [ "$signal" = "PASS" ]; then
+        echo "sonnet_review_loop"
+      else
+        echo "ralph_haiku_loop"
+      fi
+    set:
+      success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+```
+
+**Script requirements:**
+- Must output a valid state name to stdout (single line, trimmed)
+- Has access to all FSM context variables via `$FSM_CTX_*` env vars
+- Exit code 0 = success, non-zero = fail and fall through to `when` or `default`
+- Invalid state output falls through to `when` or `default`
+
+### `exit.when` - Conditional Routing (New)
+
+Declarative routing based on context variable conditions. Enables self-loop patterns and dynamic state transitions based on agent output signals.
+
+```yaml
+ralph_haiku_loop:
+  exit:
+    when:
+      - condition: "haiku_success_signal == PASS"
+        target: sonnet_review_loop
+      - condition: "haiku_success_signal == REFINE"
+        target: ralph_haiku_loop  # Self-loop
+      - condition: "haiku_success_signal == BLOCKED"
+        target: error_state
+    default: ralph_haiku_loop  # Fallback if no condition matches
+    set:
+      haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+```
+
+**Evaluation order (exit-only routing):**
+1. `run` (literal state or script output)
+2. `when` clauses (first match wins)
+3. `default` target
+4. Error (no route found - mesh halts)
+
+**Supported operators (Phase 1):**
+- `==` : String equality
+- `!=` : String inequality
+
+**Syntax:**
+```
+variable_name == "value"
+variable_name != "value"
+```
+
+**Notes:**
+- Variables are evaluated from FSM context
+- Comparison is case-sensitive
+- Values can be quoted or unquoted
+- First matching condition determines next state
+- Missing variables evaluate to empty string ("")
+
+**Common patterns:**
+
+**Self-loops with exit.run (script-based):**
+```yaml
+layer_loop:
+  exit:
+    set:
+      signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+    run: |
+      if [ "$FSM_CTX_SIGNAL" = "PASS" ]; then
+        echo "next_layer"
+      elif [ "$FSM_CTX_SIGNAL" = "REFINE" ]; then
+        echo "layer_loop"
+      else
+        echo "blocked_state"
+      fi
+```
+
+**Self-loops with when clauses (declarative):**
+```yaml
+layer_loop:
+  exit:
+    set:
+      signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+    when:
+      - condition: "signal == PASS"
+        target: next_layer
+      - condition: "signal == REFINE"
+        target: layer_loop  # Retry current layer
+    default: blocked_state
+```
+
+**Multi-layer routing (ralph-ice-cream pattern):**
+```yaml
+haiku_layer:
+  exit:
+    when:
+      - condition: "haiku_signal == PASS"
+        target: sonnet_layer
+      - condition: "haiku_signal == REFINE"
+        target: haiku_layer
+    default: error_state
+
+sonnet_layer:
+  exit:
+    when:
+      - condition: "sonnet_signal == PASS"
+        target: opus_layer
+      - condition: "sonnet_signal == REFINE"
+        target: sonnet_layer
+    default: haiku_layer  # Cascade back
+```
+
+**Error routing:**
+```yaml
+validation:
+  exit:
+    when:
+      - condition: "validation_result != OK"
+        target: error_handler
+    default: next_state
+```
+
 ## Scripts
 
 All scripts run as bash. Context variables available as env vars.
