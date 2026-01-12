@@ -1,12 +1,13 @@
 /**
- * Mesh FSM Module
+ * Mesh Module
  *
- * Provides finite state machine functionality for mesh workflow orchestration.
+ * Provides mesh functionality including FSM workflow orchestration and ensemble aggregation.
  *
  * Components:
  * - MeshFSM: Core FSM class for state tracking and transitions
  * - FSMPersistence: SQLite persistence layer with backup/restore
  * - ScriptExecutor: Bash script runner with timeout and env injection
+ * - AggregationEngine: Result aggregation for ensemble execution
  */
 
 export {
@@ -32,3 +33,9 @@ export {
   type ScriptResult,
   type ScriptExecutorConfig,
 } from './fsm-scripts.ts';
+
+export {
+  AggregationEngine,
+  type AgentResult,
+  type AggregationOptions,
+} from './aggregation.ts';

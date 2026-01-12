@@ -11,10 +11,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
-import { MessageQueue } from '../queue/index.ts';
+import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig, TaskDistributionConfig} from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
@@ -119,8 +120,7 @@ interface MeshConfig {
   graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
   iteration?: IterationConfig;  // Iteration config for graded meshes
   fsm?: FSMConfig;  // FSM config for workflow orchestration
-  ensemble?: EnsembleConfig;  // Ensemble pattern: multiple agents on same task with aggregation
-  task_distribution?: TaskDistributionConfig;  // Task distribution pattern: spawner → subtasks → reviewer
+  ensemble?: EnsembleConfig;  // Ensemble execution config
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -221,6 +221,7 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
   private stuckDetector: StuckAgentDetector;
+  private ensembleCoordinator: EnsembleCoordinator;
 
   constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
@@ -231,6 +232,7 @@ export class WorkerDispatcher extends EventEmitter {
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.stuckDetector = new StuckAgentDetector(stuckConfig);
+    this.ensembleCoordinator = new EnsembleCoordinator();
 
     // Wire stuck detector events to dispatcher
     this.stuckDetector.on('agent:nudged', (data) => {
@@ -353,6 +355,7 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Handle incoming worker message - spawn worker if not already running
+   * Checks for ensemble pattern first, then falls back to single worker spawn
    */
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
@@ -374,6 +377,25 @@ export class WorkerDispatcher extends EventEmitter {
     if (!meshConfig) {
       log.error('dispatcher', `Mesh not found`, { meshName, agentId });
       return;
+    }
+
+    // Check for ensemble pattern
+    if (meshConfig.ensemble) {
+      const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
+      // Only trigger ensemble if message is for entry point agent
+      if (agentName === entryAgent) {
+        log.info('dispatcher', 'Ensemble pattern detected', {
+          mesh: meshName,
+          agents: meshConfig.ensemble.agents.length,
+        });
+        this.handleEnsemblePattern(meshName, meshConfig).catch(error => {
+          log.error('dispatcher', 'Ensemble execution failed', {
+            meshName,
+            error: (error as Error).message,
+          });
+        });
+        return;
+      }
     }
 
     const agent = meshConfig.agents.find(a => a.name === agentName);
@@ -504,12 +526,55 @@ export class WorkerDispatcher extends EventEmitter {
    * 2. Transition it to awaiting state
    * 3. For ask-human: interrupt the worker and inject steering prompt
    * 4. Set up timeout for await
-   *
-   * Note: FSM transitions are now handled via exit-based routing (evaluateExitRouting)
-   * rather than the old transitions table mechanism.
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
+
+    // Check for FSM transition (eager on first ask)
+    const [meshName, agentName] = senderAgentId.split('/');
+    if (meshName) {
+      const fsm = this.meshFSMs.get(meshName);
+      if (fsm && fsm.isInitialized()) {
+        try {
+          // Build frontmatter from event for FSM context
+          const messageFrontmatter: Record<string, unknown> = {
+            from: senderAgentId,
+            to: targetAgentId,
+            type: messageType,
+            'msg-id': event.msgId,
+            headline: event.headline,
+          };
+
+          const transitioned = await fsm.handleMessage(
+            senderAgentId,
+            targetAgentId,
+            messageType,
+            messageFrontmatter
+          );
+
+          if (transitioned) {
+            log.info('dispatcher', 'FSM transition triggered by ask message', {
+              meshName,
+              from: senderAgentId,
+              to: targetAgentId,
+              messageType,
+              newState: fsm.getCurrentState(),
+            });
+          }
+        } catch (error) {
+          // Script failures are fatal - halt the mesh
+          log.error('dispatcher', 'FSM transition failed fatally', {
+            meshName,
+            error: (error as Error).message,
+          });
+          this.emit('mesh:halt', {
+            meshName,
+            reason: 'FSM script failure',
+            error: (error as Error).message,
+          });
+        }
+      }
+    }
 
     const activeWorker = this.activeWorkers.get(senderAgentId);
     if (!activeWorker) {
@@ -1292,6 +1357,7 @@ The system will resume your session when the human responds.`;
             meshName,
             currentState: status.currentState,
             stateConfig: currentStateConfig,
+            availableTransitions: status.availableTransitions,
             context: status.context,
             gateRetries: status.gateRetries,
           };
@@ -1331,31 +1397,6 @@ The system will resume your session when the human responds.`;
         model: model as SemanticModel,
         prompt: systemPrompt
       };
-
-      // Save built prompt for debugging/inspection
-      try {
-        const aiDir = path.dirname(this.config.msgsDir);
-        const promptsDir = path.join(aiDir, 'prompts');
-        if (!fs.existsSync(promptsDir)) {
-          fs.mkdirSync(promptsDir, {recursive: true});
-        }
-        // Sanitize agentId for filename (mesh/agent -> mesh_agent)
-        const safeAgentId = agentId.replace(/\//g, '_');
-        const promptFile = path.join(promptsDir, `${safeAgentId}.md`);
-
-        // Add header
-        const promptContent = `---
-agent: ${agentId}
-model: ${model}
-timestamp: ${new Date().toISOString()}
----
-
-${systemPrompt}`;
-
-        fs.writeFileSync(promptFile, promptContent);
-      } catch (err) {
-        log.warn('dispatcher', 'Failed to save prompt', {error: err});
-      }
 
       // Check if this is the completion agent (parity gates only apply to completion agent)
       const isCompletionAgent = agent.name === meshConfig?.completion_agent;
@@ -1547,24 +1588,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         this.emit('worker:init', data);
       });
 
-      // Transition when starting to process a message
-      worker.on('message:processing', async (data) => {
-        try {
-          // Transition idle → running when worker starts processing next message
-          if (machine.currentState.status === 'idle') {
-            await machine.processNext();
-            this.emit('worker:processing', data);
-          }
-        } catch (error) {
-          log.error('dispatcher', `Failed to resume worker from idle`, {
-            agentId,
-            error: (error as Error).message,
-            currentState: machine.currentState.status
-          });
-        }
-      });
-
-      // Transition on message completion
+      // Transition on message processing
       worker.on('message:idle', async (data) => {
         try {
           // Only transition to idle if currently running
@@ -1812,40 +1836,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             taskId: workerHookContext.taskId,
             iterations: workerHookContext.qualityIteration || 1,
           });
-        }
-
-        // Create exit message to core based on routing configuration
-        // This handles meshes like dev-worktree that have routing config but no completion_agent
-        const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
-
-        log.info('dispatcher', 'Exit routing extraction', {
-          agentId,
-          meshName,
-          agentName: agent.name,
-          hasRouting: !!routing,
-          routingKeys: routing ? Object.keys(routing) : [],
-          hasCompleteRoute: !!routing?.complete,
-          hasCompletionAgent: !!meshConfig?.completion_agent,
-          completionAgent: meshConfig?.completion_agent,
-        });
-
-        if (routing?.complete && !meshConfig?.completion_agent) {
-          const exitRoute = routing.complete;
-          const targetAgent = exitRoute.to;
-
-          log.info('dispatcher', 'Creating exit message based on routing config', {
-            agentId,
-            targetAgent,
-            reason: exitRoute.reason,
-          });
-
-          // Write exit message to msgs directory
-          await this.writeExitMessage(
-            agentId,
-            targetAgent,
-            exitRoute.reason,
-            workerHookContext
-          );
         }
 
         this.emit('worker:complete', {
@@ -2143,33 +2133,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         graded: config.graded,
         worktree: config.worktree,
         hasLifecycle: !!config.lifecycle,
-        hasEnsemble: !!config.ensemble,
-        hasTaskDistribution: !!config.task_distribution,
       });
-
-      // Log ensemble pattern detection
-      if (config.ensemble) {
-        log.info('dispatcher', `[Ensemble] Pattern detected in mesh '${config.mesh}'`, {
-          agents: config.ensemble.agents.join(', '),
-          strategy: config.ensemble.aggregation_strategy,
-          timeout_ms: config.ensemble.timeout_ms || 120000,
-          allow_partial_failure: config.ensemble.allow_partial_failure || false
-        });
-      }
-
-      // Log task distribution pattern detection
-      if (config.task_distribution) {
-        log.info('dispatcher', `[TaskDistribution] Pattern detected in mesh '${config.mesh}'`, {
-          spawner: config.task_distribution.spawner,
-          subagents: config.task_distribution.subagents.join(', '),
-          reviewer: config.task_distribution.reviewer,
-          strategy: config.task_distribution.distribution_strategy,
-          subtask_count: config.task_distribution.subtask_count || config.task_distribution.subagents.length,
-          timeout_ms: config.task_distribution.timeout_ms || 120000,
-          allow_partial_failure: config.task_distribution.allow_partial_failure || false
-        });
-      }
-
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
     } catch (error) {
       log.error('dispatcher', `Failed to parse mesh config: ${filename}`, {
@@ -2295,51 +2259,6 @@ ${output}
   }
 
   /**
-   * Write exit message to msgs directory based on routing configuration
-   * Called after worker completion when routing config exists but no completion_agent
-   */
-  private async writeExitMessage(
-    fromAgent: string,
-    toAgent: string,
-    reason: string,
-    hookContext: HookContext
-  ): Promise<void> {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `exit-${hookContext.taskId || Date.now()}`;
-    const filename = `${timestamp}-task-complete-${fromAgent.replace('/', '-')}--${toAgent.replace('/', '-')}-${msgId}.md`;
-    const filepath = path.join(this.config.msgsDir, filename);
-
-    const content = `---
-to: ${toAgent}
-from: ${fromAgent}
-type: task-complete
-msg-id: ${msgId}
-headline: ${reason}
-timestamp: ${new Date().toISOString()}
-status: complete
----
-
-${reason}
-
----
-
-**Worker**: ${fromAgent}
-**Completed**: ${new Date().toISOString()}
-${hookContext.worktreeBranch ? `**Branch**: ${hookContext.worktreeBranch}` : ''}
-${hookContext.worktreePath ? `**Worktree**: ${hookContext.worktreePath}` : ''}
-`;
-
-    fs.writeFileSync(filepath, content);
-    log.info('dispatcher', 'Wrote exit message', {
-      fromAgent,
-      toAgent,
-      msgId,
-      filepath,
-    });
-  }
-
-
-  /**
    * Get active worker count
    */
   getActiveWorkerCount(): number {
@@ -2412,5 +2331,187 @@ ${hookContext.worktreePath ? `**Worktree**: ${hookContext.worktreePath}` : ''}
       // Cleanup
       this.sessionMetrics.delete(meshInstance);
     }
+  }
+
+  /**
+   * Handle ensemble pattern - spawn all agents in parallel
+   */
+  private async handleEnsemblePattern(meshName: string, meshConfig: MeshConfig): Promise<void> {
+    if (!meshConfig.ensemble) return;
+
+    const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
+    const agentId = `${meshName}/${entryAgent}`;
+
+    // Get the task message from queue
+    const task = this.queue.peekOne(agentId);
+    if (!task) {
+      log.warn('dispatcher', 'No task found for ensemble', { meshName, agentId });
+      return;
+    }
+
+    log.info('dispatcher', 'Starting ensemble execution', {
+      mesh: meshName,
+      agents: meshConfig.ensemble.agents.length,
+      strategy: meshConfig.ensemble.aggregation_strategy,
+    });
+
+    // Start ensemble
+    const ensembleId = this.ensembleCoordinator.startEnsemble(
+      meshName,
+      meshConfig.ensemble,
+      task
+    );
+
+    // Consume the task so it's not processed again
+    this.queue.pollOne(agentId);
+
+    // Spawn all ensemble agents in parallel
+    const agentPromises = meshConfig.ensemble.agents.map(agentName =>
+      this.spawnEnsembleAgent(meshName, agentName, task, ensembleId, meshConfig)
+    );
+
+    // Wait for all agents (don't fail if one fails)
+    await Promise.allSettled(agentPromises);
+
+    // Check if ensemble is complete and aggregate
+    await this.checkEnsembleCompletion(meshName, ensembleId);
+  }
+
+  /**
+   * Spawn single ensemble agent
+   */
+  private async spawnEnsembleAgent(
+    meshName: string,
+    agentName: string,
+    task: Message,
+    ensembleId: string,
+    meshConfig: MeshConfig
+  ): Promise<void> {
+    const agentConfig = meshConfig.agents.find(a => a.name === agentName);
+    if (!agentConfig) {
+      log.error('dispatcher', 'Agent not found', { agentName, meshName });
+      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, '', 'Agent not found');
+      return;
+    }
+
+    const timeout = meshConfig.ensemble?.timeout_ms || 120000;
+    const agentId = `${meshName}/${agentName}`;
+
+    try {
+      log.info('dispatcher', 'Spawning ensemble agent', { agentId, ensembleId });
+
+      // Register agent start time for timing metrics
+      this.ensembleCoordinator.registerAgentStart(ensembleId, agentName);
+
+      // Build the system prompt for this agent
+      const promptPath = agentConfig.prompt.startsWith('/')
+        ? agentConfig.prompt
+        : path.join(meshConfig._basePath || this.config.workDir, agentConfig.prompt);
+
+      if (!fs.existsSync(promptPath)) {
+        throw new Error(`Prompt not found: ${promptPath}`);
+      }
+
+      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+
+      // Inject preamble
+      const agentCount = meshConfig.agents?.length ?? 1;
+      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
+
+      // Create runner config
+      const runnerConfig: SdkRunnerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        systemPrompt,
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      // Track result collection
+      let result = '';
+      let error: string | undefined;
+
+      runner.on('output', (data) => {
+        result += data.output || '';
+      });
+
+      runner.on('error', (data) => {
+        error = data.error;
+      });
+
+      // Run with timeout
+      await Promise.race([
+        runner.run(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+        ),
+      ]);
+
+      // Record result
+      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, result, error);
+      log.debug('dispatcher', 'Ensemble agent completed', { agentName, ensembleId });
+    } catch (err) {
+      const errorMsg = (err as Error).message;
+      this.ensembleCoordinator.recordAgentResult(
+        ensembleId,
+        agentName,
+        '',
+        errorMsg
+      );
+      log.warn('dispatcher', 'Ensemble agent failed', { agentName, error: errorMsg });
+    }
+  }
+
+  /**
+   * Check if ensemble is complete and aggregate
+   */
+  private async checkEnsembleCompletion(meshName: string, ensembleId: string): Promise<void> {
+    if (!this.ensembleCoordinator.isComplete(ensembleId)) {
+      log.debug('dispatcher', 'Ensemble not yet complete', { ensembleId });
+      return;
+    }
+
+    log.info('dispatcher', 'Ensemble complete, aggregating results', { ensembleId });
+
+    const result = await this.ensembleCoordinator.getAggregatedResult(ensembleId);
+    if (!result) {
+      log.error('dispatcher', 'Failed to get aggregated result', { ensembleId });
+      return;
+    }
+
+    // Write result message to queue
+    const timestamp = new Date().toISOString();
+    const msgId = `ensemble-${Date.now()}`;
+
+    await this.queue.insert({
+      from_agent: `${meshName}/ensemble`,
+      to_agent: 'core/core',
+      type: 'task-complete',
+      payload: {
+        'msg-id': msgId,
+        ensemble_id: ensembleId,
+        headline: `Ensemble execution complete: ${meshName}`,
+        body: result.output,
+        timestamp,
+        ...result.metadata,
+      },
+    });
+
+    log.info('dispatcher', 'Ensemble result written to queue', {
+      ensembleId,
+      success: result.metadata.success,
+    });
+
+    // Cleanup
+    this.ensembleCoordinator.completeEnsemble(ensembleId);
+
+    // Emit event
+    this.emit('ensemble:complete', {
+      meshName,
+      ensembleId,
+      success: result.metadata.success,
+    });
   }
 }

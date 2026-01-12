@@ -32,6 +32,11 @@ export interface MessagePayload {
   timestamp?: string;
   grade?: string;
   confidence?: number;
+  // Ensemble execution fields
+  ensemble_id?: string;                  // Track which ensemble execution this belongs to
+  custom_aggregation_prompt?: string;    // Custom aggregation prompt for ensemble
+  custom_distribution_prompt?: string;   // Custom task distribution prompt (Phase 2+)
+  subtask_id?: string;                   // Subtask ID for distributed tasks (Phase 2+)
   [key: string]: unknown;
 }
 
@@ -136,6 +141,49 @@ export interface SessionMetrics {
   workerCount: number;
   startedAt: number;
   completedAt?: number;
+}
+
+// Ensemble types
+
+/**
+ * Aggregation strategy for ensemble results
+ */
+export type AggregationStrategy =
+  | 'concat'       // Concatenate all results
+  | 'deduplicate'  // Remove duplicates
+  | 'voting'       // Vote on best result
+  | 'consensus'    // Find consensus
+  | 'custom';      // Custom aggregation via prompt
+
+/**
+ * Fault tolerance configuration for ensembles
+ */
+export interface FaultToleranceConfig {
+  min_success_count?: number;  // Minimum agents that must succeed
+}
+
+/**
+ * Ensemble configuration in mesh config
+ */
+export interface EnsembleConfig {
+  agents: string[];                          // Agent names to run in parallel
+  aggregation_strategy: AggregationStrategy;  // How to combine results
+  timeout_ms?: number;                       // Per-agent timeout (default: 120000)
+  fault_tolerance?: FaultToleranceConfig;    // Fault tolerance settings
+  aggregation_prompt?: string;               // Custom aggregation prompt (optional)
+}
+
+/**
+ * Result from aggregation engine
+ */
+export interface AggregationResult {
+  aggregated_content: string;
+  metadata: {
+    strategy: AggregationStrategy;
+    agent_count: number;
+    custom_prompt_used?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 // FSM (Finite State Machine) types
