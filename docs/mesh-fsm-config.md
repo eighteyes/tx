@@ -68,7 +68,7 @@ init:
 ```
 
 **`entry.set`**: Context assignments using bash syntax
-- Variables: `$workspace`, `$turn`, `$REARMATTER`, `$FSM_CTX_*`
+- Variables: `$workspace`, `$turn`, `$rearmatter`, `$variable_name`
 - Arithmetic: `$((turn + 1))`
 - Commands: `$(yq '.field' $file)`
 - String interpolation: `"$game_path/turns/turn-$turn"`
@@ -105,31 +105,33 @@ awaiting_narrator:
   exit:
     set:
       word_count: "$(wc -w < $workspace/prose-draft.md)"
-      haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+      haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
 ```
 
 Extracted values are available to `when` conditions and `run` scripts.
 
 #### Exit.Run: Imperative Routing
 
-Scripts that set `next_state` variable for complex routing logic:
+State name OR script that outputs state name (for complex routing logic):
 
 ```yaml
 ralph_haiku_loop:
   exit:
-    run:
-      - script: |
-          signal="$FSM_CTX_HAIKU_SUCCESS_SIGNAL"
-          if [ "$signal" = "PASS" ]; then
-            echo "next_state=sonnet_review_loop"
-          elif [ "$signal" = "REFINE" ]; then
-            echo "next_state=ralph_haiku_loop"
-          else
-            echo "next_state=blocked_state"
-          fi
+    run: |
+      signal="$HAIKU_SUCCESS_SIGNAL"
+      if [ "$signal" = "PASS" ]; then
+        echo "sonnet_review_loop"
+      elif [ "$signal" = "REFINE" ]; then
+        echo "ralph_haiku_loop"
+      else
+        echo "blocked_state"
+      fi
 ```
 
-If script outputs `next_state=<value>`, use that and skip `when` clauses.
+- **Literal state name**: `run: sonnet_review_loop` → use that state
+- **Script**: Script outputs state name to stdout → use that state
+
+If run outputs a state name, use it and skip `when` clauses.
 
 #### Exit.When: Declarative Routing
 
@@ -218,9 +220,9 @@ All scripts receive:
 | `$game_path` | string | context | Game directory path |
 | `$workspace` | string | context | Workspace path |
 | `$state` | string | fsm | Current state name |
-| `$FSM_CTX_*` | string | context | Any context var: `$FSM_CTX_counter` |
+| `$variable_name` | string | context | Any context var: `$success_signal`, `$iteration` |
 | `$SDK_STATS` | JSON | exit only | SDK execution metrics |
-| `$REARMATTER` | YAML | exit only | Agent self-assessment fields |
+| `$rearmatter` | YAML | exit only | Agent self-assessment fields |
 
 #### SDK Stats (`$SDK_STATS`)
 
@@ -248,7 +250,7 @@ tokens=$(echo "$SDK_STATS" | jq '.usage.output_tokens')
 }
 ```
 
-#### Rearmatter (`$REARMATTER`)
+#### Rearmatter (`$rearmatter`)
 
 Available in exit when agent includes self-assessment YAML:
 
@@ -322,7 +324,7 @@ fsm:
           ralph-haiku:
             - check_haiku_max_iterations
         set:
-          haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+          haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
         when:
           - condition: haiku_success_signal == "PASS"
             target: sonnet_review_loop
@@ -342,7 +344,7 @@ fsm:
           sonnet-reviewer:
             - check_sonnet_max_iterations
         set:
-          sonnet_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+          sonnet_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
         when:
           - condition: sonnet_success_signal == "PASS"
             target: opus_review_loop
@@ -362,7 +364,7 @@ fsm:
           opus-reviewer:
             - check_opus_max_iterations
         set:
-          opus_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+          opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
         when:
           - condition: opus_success_signal == "PASS"
             target: complete
