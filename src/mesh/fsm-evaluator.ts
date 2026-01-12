@@ -60,13 +60,11 @@ export class ConditionEvaluator {
       throw new Error(`Invalid operator: "${operator}". Only == and != are supported.`);
     }
 
-    // Remove surrounding quotes from value if present
-    const cleanValue = value.replace(/^"(.*)"$/, '$1');
-
+    // Note: value is already clean - the regex pattern [^"]* excludes quotes
     return {
       variable: variable.trim(),
       operator: operator as '==' | '!=',
-      value: cleanValue,
+      value: value,
     };
   }
 
