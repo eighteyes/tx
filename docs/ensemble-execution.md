@@ -90,7 +90,7 @@ agents:
     model: sonnet
     prompt: synthesizer.md
 
-entry_point: entry  # Entry point triggers ensemble
+entry_point: entry  # Entry point defines which agent's queue receives initial task
 
 ensemble:
   coordinator: entry                 # REQUIRED: Runs first, produces SUBTASK output
