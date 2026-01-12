@@ -1376,6 +1376,31 @@ The system will resume your session when the human responds.`;
         prompt: systemPrompt
       };
 
+      // Save built prompt for debugging/inspection
+      try {
+        const aiDir = path.dirname(this.config.msgsDir);
+        const promptsDir = path.join(aiDir, 'prompts');
+        if (!fs.existsSync(promptsDir)) {
+          fs.mkdirSync(promptsDir, {recursive: true});
+        }
+        // Sanitize agentId for filename (mesh/agent -> mesh_agent)
+        const safeAgentId = agentId.replace(/\//g, '_');
+        const promptFile = path.join(promptsDir, `${safeAgentId}.md`);
+
+        // Add header
+        const promptContent = `---
+agent: ${agentId}
+model: ${model}
+timestamp: ${new Date().toISOString()}
+---
+
+${systemPrompt}`;
+
+        fs.writeFileSync(promptFile, promptContent);
+      } catch (err) {
+        log.warn('dispatcher', 'Failed to save prompt', {error: err});
+      }
+
       // Check if this is the completion agent (parity gates only apply to completion agent)
       const isCompletionAgent = agent.name === meshConfig?.completion_agent;
 

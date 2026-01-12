@@ -85,6 +85,15 @@ interface ParsedSession {
   content: string;
 }
 
+interface ParsedPrompt {
+  filepath: string;
+  filename: string;
+  agentId: string;
+  model: string;
+  timestamp: string;
+  content: string;
+}
+
 interface MsgOptions {
   type?: string;
   agent?: string;
@@ -276,6 +285,50 @@ async function getAllSessions(sessionsDir: string): Promise<ParsedSession[]> {
 }
 
 /**
+ * Get all prompts from .ai/tx/prompts/
+ */
+async function getAllPrompts(promptsDir: string): Promise<ParsedPrompt[]> {
+  if (!fs.existsSync(promptsDir)) return [];
+
+  const prompts: ParsedPrompt[] = [];
+  const files = fs.readdirSync(promptsDir);
+
+  for (const file of files) {
+    if (!file.endsWith('.md')) continue;
+
+    const filepath = path.join(promptsDir, file);
+    try {
+      const content = fs.readFileSync(filepath, 'utf-8');
+      const parts = content.split(/^---$/m);
+
+      let frontmatter: Record<string, string> = {};
+      let body = content;
+
+      if (parts.length >= 3) {
+        frontmatter = parseFrontmatter(parts[1].trim());
+        body = parts.slice(2).join('---').trim();
+      }
+
+      // Filename is mesh_agent.md -> mesh/agent
+      const agentId = frontmatter.agent || file.replace('.md', '').replace('_', '/');
+
+      prompts.push({
+        filepath,
+        filename: file,
+        agentId,
+        model: frontmatter.model || 'unknown',
+        timestamp: frontmatter.timestamp || new Date().toISOString(),
+        content: body
+      });
+    } catch {
+      // Ignore
+    }
+  }
+
+  return prompts.sort((a, b) => a.agentId.localeCompare(b.agentId));
+}
+
+/**
  * Check if message matches filters
  */
 function matchesFilter(msg: ParsedMessage, options: MsgOptions): boolean {
@@ -385,21 +438,30 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
   systemMessages = systemMessages.filter(msg => matchesFilter(msg, options));
   systemMessages = systemMessages.slice(-limit);
 
-  if (messages.length === 0 && sessions.length === 0 && systemMessages.length === 0) {
-    console.log(`${colors.dim}No messages, sessions, or system messages found matching filters.${colors.reset}\n`);
+  // Load built prompts
+  const promptsDir = path.join(path.dirname(logDir), 'prompts');
+  let prompts = await getAllPrompts(promptsDir);
+  if (options.agent) {
+    prompts = prompts.filter(p => p.agentId.toLowerCase().includes(options.agent!.toLowerCase()));
+  }
+
+  if (messages.length === 0 && sessions.length === 0 && systemMessages.length === 0 && prompts.length === 0) {
+    console.log(`${colors.dim}No messages, sessions, system messages, or prompts found matching filters.${colors.reset}\n`);
     return;
   }
 
-  // View modes: 'messages' | 'sessions' | 'system'
-  let viewMode: 'messages' | 'sessions' | 'system' = 'messages';
+  // View modes: 'messages' | 'sessions' | 'system' | 'prompts'
+  let viewMode: 'messages' | 'sessions' | 'system' | 'prompts' = 'messages';
   let selectedIndex = messages.length > 0 ? messages.length - 1 : 0;
   let sessionSelectedIndex = sessions.length > 0 ? 0 : 0;
   let systemSelectedIndex = systemMessages.length > 0 ? systemMessages.length - 1 : 0;
+  let promptSelectedIndex = 0;
   let viewingDetail = false;
   let viewingPrompt = false;
   let detailScrollOffset = 0;
   let watcher: FSWatcher | null = null;
   let sysWatcher: FSWatcher | null = null;
+  let promptsWatcher: FSWatcher | null = null;
 
   function clearScreen(): void {
     console.clear();
@@ -418,7 +480,10 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     const sysTab = viewMode === 'system'
       ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
       : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
-    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+    const promptTab = viewMode === 'prompts'
+      ? `${colors.bright}${colors.magenta}[🤖 Prompts (${prompts.length})]${colors.reset}`
+      : `${colors.dim}🤖 Prompts (${prompts.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${promptTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
     const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  p prompt  q quit${colors.reset}`;
     console.log(`${controls}\n`);
@@ -468,7 +533,10 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     const sysTab = viewMode === 'system'
       ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
       : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
-    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+    const promptTab = viewMode === 'prompts'
+      ? `${colors.bright}${colors.magenta}[🤖 Prompts (${prompts.length})]${colors.reset}`
+      : `${colors.dim}🤖 Prompts (${prompts.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${promptTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
     const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  q quit${colors.reset}`;
     console.log(`${controls}\n`);
@@ -515,7 +583,10 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     const sysTab = viewMode === 'system'
       ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}`
       : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
-    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+    const promptTab = viewMode === 'prompts'
+      ? `${colors.bright}${colors.magenta}[🤖 Prompts (${prompts.length})]${colors.reset}`
+      : `${colors.dim}🤖 Prompts (${prompts.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${promptTab}  ${colors.dim}Tab/s switch${colors.reset}`);
 
     const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  q quit${colors.reset}`;
     console.log(`${controls}\n`);
@@ -748,6 +819,81 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     }
   }
 
+  function displayPromptList(): void {
+    clearScreen();
+
+    // Tab bar
+    const msgTab = viewMode === 'messages' ? `${colors.bright}${colors.cyan}[📨 Messages (${messages.length})]${colors.reset}` : `${colors.dim}📨 Messages (${messages.length})${colors.reset}`;
+    const sessTab = viewMode === 'sessions' ? `${colors.bright}${colors.green}[📋 Sessions (${sessions.length})]${colors.reset}` : `${colors.dim}📋 Sessions (${sessions.length})${colors.reset}`;
+    const sysTab = viewMode === 'system' ? `${colors.bright}${colors.yellow}[📢 System (${systemMessages.length})]${colors.reset}` : `${colors.dim}📢 System (${systemMessages.length})${colors.reset}`;
+    const promptTab = viewMode === 'prompts' ? `${colors.bright}${colors.magenta}[🤖 Prompts (${prompts.length})]${colors.reset}` : `${colors.dim}🤖 Prompts (${prompts.length})${colors.reset}`;
+    console.log(`\n${msgTab}  ${sessTab}  ${sysTab}  ${promptTab}  ${colors.dim}Tab/s switch${colors.reset}`);
+
+    const controls = `${colors.dim}↑↓/jk nav  Enter/→/l view  q quit${colors.reset}`;
+    console.log(`${controls}\n`);
+
+    if (prompts.length === 0) {
+      console.log(colors.dim + 'No built prompts found.' + colors.reset);
+      console.log(colors.dim + 'Prompts are saved when workers are initialized.' + colors.reset);
+      return;
+    }
+
+    const visibleStart = Math.max(0, promptSelectedIndex - 15);
+    const visibleEnd = Math.min(prompts.length, promptSelectedIndex + 10);
+
+    for (let i = visibleStart; i < visibleEnd; i++) {
+      const prompt = prompts[i];
+      const isSelected = i === promptSelectedIndex;
+
+      if (isSelected) {
+        process.stdout.write(`${colors.bright}${colors.magenta}▶ ${colors.reset}`);
+      } else {
+        process.stdout.write('  ');
+      }
+
+      const time = formatTime(prompt.timestamp);
+      const agent = prompt.agentId.padEnd(30);
+      const model = prompt.model.padEnd(15);
+
+      console.log(`${colors.dim}${time}${colors.reset} ${colors.magenta}${agent}${colors.reset} ${colors.cyan}${model}${colors.reset}`);
+    }
+    console.log();
+  }
+
+  function displayPromptDetail(): void {
+    clearScreen();
+
+    const prompt = prompts[promptSelectedIndex];
+    console.log(`\n${colors.bright}${colors.magenta}🤖 Built Prompt${colors.reset} ${colors.dim}(${promptSelectedIndex + 1}/${prompts.length})${colors.reset}`);
+    console.log(colors.dim + '↑↓/jk scroll  ←/h/Esc/q back' + colors.reset + '\n');
+
+    // Metadata
+    console.log(`${colors.dim}Agent:${colors.reset}    ${colors.magenta}${prompt.agentId}${colors.reset}`);
+    console.log(`${colors.dim}Model:${colors.reset}    ${colors.cyan}${prompt.model}${colors.reset}`);
+    console.log(`${colors.dim}Time:${colors.reset}     ${formatTime(prompt.timestamp)}`);
+    console.log(`${colors.dim}File:${colors.reset}     ${prompt.filepath}`);
+
+    console.log();
+    console.log(colors.dim + '─'.repeat(80) + colors.reset);
+    console.log();
+
+    // Content
+    const contentLines = wrapText(prompt.content);
+    const viewportHeight = Math.max(10, (process.stdout.rows || 40) - 13);
+    const maxScroll = Math.max(0, contentLines.length - viewportHeight);
+
+    detailScrollOffset = Math.max(0, Math.min(detailScrollOffset, maxScroll));
+
+    const visibleLines = contentLines.slice(detailScrollOffset, detailScrollOffset + viewportHeight);
+    visibleLines.forEach(line => console.log(line));
+
+    if (contentLines.length > viewportHeight) {
+      const scrollPercent = maxScroll > 0 ? Math.round((detailScrollOffset / maxScroll) * 100) : 0;
+      console.log();
+      console.log(`${colors.dim}[${scrollPercent}%] Line ${detailScrollOffset + 1}-${Math.min(detailScrollOffset + viewportHeight, contentLines.length)} of ${contentLines.length}${colors.reset}`);
+    }
+  }
+
   function setupWatcher(): void {
     if (watcher) return;
 
@@ -788,6 +934,27 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
         systemSelectedIndex = systemMessages.length - 1;
         if (!viewingDetail) display();
       }
+    });
+  }
+
+  function setupPromptsWatcher(): void {
+    if (promptsWatcher) return;
+    if (!fs.existsSync(promptsDir)) return;
+
+    promptsWatcher = watch(promptsDir, {
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: {stabilityThreshold: 100, pollInterval: 50}
+    });
+
+    promptsWatcher.on('add', async (filepath: string) => {
+      if (!filepath.endsWith('.md')) return;
+      // Re-read all prompts to ensure correct order
+      prompts = await getAllPrompts(promptsDir);
+      if (options.agent) {
+        prompts = prompts.filter(p => p.agentId.toLowerCase().includes(options.agent!.toLowerCase()));
+      }
+      if (!viewingDetail) display();
     });
   }
 
