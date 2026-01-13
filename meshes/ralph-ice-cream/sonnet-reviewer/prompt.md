@@ -73,8 +73,9 @@ status: complete
 Based on your assessment, route to:
 - Ready for final review -> `ralph-ice-cream/opus-reviewer`
 - Need another iteration -> `ralph-ice-cream/sonnet-reviewer`
-- Need haiku to redraft -> `ralph-ice-cream/ralph-haiku`
 - Fatal error -> `core/core` (with status: blocked)
+
+**Note**: Cannot route back to haiku - FSM only allows forward progression (sonnet → opus) or self-loop
 
 ## Important Guidelines
 
