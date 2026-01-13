@@ -45,6 +45,8 @@ routing:
     complete:
       core: "Plan complete, returning to core"
       ralph-plan: "Needs refinement, iterating"
+    ask:
+      core: "Need human input for requirements definition"
     blocked:
       core: "Fatal error - cannot proceed"
 

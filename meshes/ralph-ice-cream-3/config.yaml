@@ -73,6 +73,8 @@ routing:
     complete:
       sonnet-plan: "Quality threshold met, ready for sonnet review"
       haiku-plan: "Below threshold, refining draft"
+    ask:
+      core: "Need human input for requirements definition"
     blocked:
       core: "Fatal error - cannot proceed"
 
