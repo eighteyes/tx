@@ -123,8 +123,7 @@ export async function prompt(options: PromptOptions) {
       agentName,
       promptPath,
       agentConfig.model || 'sonnet',
-      taskMessage,
-      meshDir
+      taskMessage
     );
 
     // Output

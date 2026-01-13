@@ -563,7 +563,7 @@ export class WorkerDispatcher extends EventEmitter {
           );
 
           if (transitioned) {
-            log.info('dispatcher', 'FSM transition triggered by ask message', {
+            log.debug('dispatcher', 'FSM transition triggered by ask message', {
               meshName,
               from: senderAgentId,
               to: targetAgentId,
@@ -631,7 +631,7 @@ export class WorkerDispatcher extends EventEmitter {
         await machine.addAwaitTarget(targetAgentId);
       } else if (currentStatus === 'running' || currentStatus === 'idle') {
         // Enter awaiting state
-        log.info('dispatcher', `Worker entering await state`, {
+        log.debug('dispatcher', `Worker entering await state`, {
           from: senderAgentId,
           to: targetAgentId,
           type: messageType,
@@ -1357,11 +1357,6 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
-      // Inject operational guide (AGENTS.md) if present in mesh directory
-      if (meshConfig?._basePath) {
-        systemPrompt = await this.promptInjector.injectOperationalGuide(systemPrompt, meshConfig._basePath);
-      }
-
       // Inject FSM context if mesh has FSM config
       const fsm = this.meshFSMs.get(meshName);
       if (fsm && fsm.isInitialized()) {
@@ -2084,7 +2079,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Wire FSM events (same as initializeFSMs)
       fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-        log.info('fsm', 'State transition', {
+        log.debug('fsm', 'State transition', {
           meshName: event.meshName,
           from: event.from,
           to: event.to,
@@ -2125,7 +2120,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       this.meshFSMs.set(meshName, fsm);
-      log.info('dispatcher', 'Initialized FSM (JIT)', { meshName });
     } catch (error) {
       log.error('dispatcher', 'Failed to create FSM (JIT)', {
         meshName,
@@ -2203,7 +2197,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Wire FSM events for observability
         fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-          log.info('fsm', 'State transition', {
+          log.debug('fsm', 'State transition', {
             meshName: event.meshName,
             from: event.from,
             to: event.to,
@@ -2315,14 +2309,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         return;
       }
 
-      // Log warnings but still load the config
-      if (validation.warnings.length > 0) {
-        log.warn('dispatcher', `Mesh config warnings: ${rawConfig.mesh || filename}`, {
-          mesh: rawConfig.mesh,
-          warnings: validation.warnings
-        });
-      }
-
+      // Validation passed (warnings are silent unless there are errors)
       const config = validation.config as MeshConfig;
 
       // Don't override project configs with global ones
@@ -2403,18 +2390,23 @@ ${output}
    */
   private injectRoutingInstructions(
     systemPrompt: string,
-    routing: AgentRouting,
+    routing: Record<string, Record<string, string>>,
     meshName: string
   ): string {
     const lines: string[] = [];
     lines.push('\n\n## Message Routing\n');
     lines.push('When you complete your work, route your response message based on the outcome:\n');
 
-    for (const [status, dest] of Object.entries(routing)) {
-      const targetAgent = dest.to === 'core' ? 'core/core' : dest.to;
+    for (const [status, destinations] of Object.entries(routing)) {
       lines.push(`\n**Status: \`${status}\`**`);
-      lines.push(`- Send message to: \`${targetAgent}\``);
-      lines.push(`- Reason: ${dest.reason}`);
+      
+      for (const [destination, reason] of Object.entries(destinations)) {
+        const targetAgent = destination === 'core' ? 'core/core' : 
+                           destination.includes('/') ? destination : 
+                           `${meshName}/${destination}`;
+        lines.push(`- Send message to: \`${targetAgent}\``);
+        lines.push(`  Reason: ${reason}`);
+      }
     }
 
     lines.push('\n\nSet the `to` field in your message frontmatter based on which status applies.');
@@ -2424,43 +2416,20 @@ ${output}
 
   /**
    * Extract routing config for a specific agent from mesh config
-   * Transforms mesh format: { status: { destination: "reason" } }
-   * To runner format: { status: { to: destination, reason: "reason" } }
+   * Returns routing in format: { status: { destination: "reason" } }
    */
   private extractAgentRouting(
     meshName: string,
     agentName: string,
     meshConfig?: MeshConfig
-  ): AgentRouting | undefined {
+  ): Record<string, Record<string, string>> | undefined {
     if (!meshConfig?.routing) return undefined;
 
     const agentRouting = meshConfig.routing[agentName];
     if (!agentRouting) return undefined;
 
-    // Transform mesh config format to SdkRunner format
-    const result: AgentRouting = {};
-
-    for (const [status, destinations] of Object.entries(agentRouting)) {
-      // Each status maps to { destination_agent: "reason" }
-      // Take the first (usually only) destination
-      const entries = Object.entries(destinations);
-      if (entries.length === 0) continue;
-
-      const [destination, reason] = entries[0];
-
-      // Build full agent path if not already qualified
-      // "core" -> "core/core", "sourcer" -> "research/sourcer"
-      const to = destination.includes('/')
-        ? destination
-        : destination === 'core'
-          ? 'core/core'
-          : `${meshName}/${destination}`;
-
-      result[status] = { to, reason };
-    }
-
-    // Only return if we have any routes
-    return Object.keys(result).length > 0 ? result : undefined;
+    // Return raw routing config (status -> destination -> reason)
+    return Object.keys(agentRouting).length > 0 ? agentRouting : undefined;
   }
 
   /**

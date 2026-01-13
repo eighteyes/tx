@@ -62,8 +62,16 @@ export async function spy(options: SpyOptions): Promise<void> {
   const mode = options.output ? 'output' : options.messages ? 'messages' : 'all';
   console.log(chalk.cyan(`🔍 Spying on TX activity [${mode}]... (Ctrl+C to exit)\n`));
 
-  let lastMessageId = queue.getLatestMessageId();
+  let lastMessageId = 0;
   let lastActivityLine = 0;
+  let dbErrorCount = 0;
+
+  // Try to get initial message ID
+  try {
+    lastMessageId = queue.getLatestMessageId();
+  } catch {
+    console.log(chalk.yellow('⚠️  Waiting for TX to start...\n'));
+  }
 
   // Count existing activity lines and show recent activity
   if (fs.existsSync(activityFile)) {
@@ -90,16 +98,20 @@ export async function spy(options: SpyOptions): Promise<void> {
 
   // Show recent messages (unless output-only mode)
   if (!options.output) {
-    const recent = queue.queryMessages({
-      limit: 10,
-      ...(options.agent ? { from_agent: options.agent } : {})
-    });
+    try {
+      const recent = queue.queryMessages({
+        limit: 10,
+        ...(options.agent ? { from_agent: options.agent } : {})
+      });
 
-    if (recent.length > 0) {
-      console.log(chalk.dim('--- Recent messages ---'));
-      for (const msg of recent.reverse()) {
-        printMessage(msg, options.json);
+      if (recent.length > 0) {
+        console.log(chalk.dim('--- Recent messages ---'));
+        for (const msg of recent.reverse()) {
+          printMessage(msg, options.json);
+        }
       }
+    } catch {
+      // Database not ready yet
     }
   }
 
@@ -110,36 +122,69 @@ export async function spy(options: SpyOptions): Promise<void> {
     while (true) {
       // Check for new messages (unless output-only mode)
       if (!options.output) {
-        const newMessages = queue.queryMessages({
-          since_id: lastMessageId,
-          ...(options.agent ? { from_agent: options.agent } : {})
-        });
-
-        for (const msg of newMessages.reverse()) {
-          printMessage(msg, options.json);
-          if (msg.id && msg.id > lastMessageId) {
-            lastMessageId = msg.id;
+        try {
+          // Detect if database was reset (message IDs went backwards)
+          const currentLatest = queue.getLatestMessageId();
+          if (currentLatest < lastMessageId) {
+            console.log(chalk.yellow('\n⚠️  Database reset detected, reconnecting...\n'));
+            lastMessageId = 0;
+            dbErrorCount = 0;
           }
+
+          const newMessages = queue.queryMessages({
+            since_id: lastMessageId,
+            ...(options.agent ? { from_agent: options.agent } : {})
+          });
+
+          // Show reconnection success if recovering from errors
+          if (dbErrorCount > 0) {
+            console.log(chalk.green('✅ Reconnected to TX\n'));
+          }
+
+          for (const msg of newMessages.reverse()) {
+            printMessage(msg, options.json);
+            if (msg.id && msg.id > lastMessageId) {
+              lastMessageId = msg.id;
+            }
+          }
+
+          dbErrorCount = 0; // Reset error count on success
+        } catch (error) {
+          dbErrorCount++;
+          if (dbErrorCount === 1) {
+            console.log(chalk.yellow('\n⚠️  Database connection lost, waiting for TX to restart...\n'));
+          }
+          // Continue polling, don't exit
         }
       }
 
       // Check for new activity (agent output)
       if (!options.messages && fs.existsSync(activityFile)) {
-        const content = fs.readFileSync(activityFile, 'utf-8');
-        const lines = content.split('\n').filter(l => l.trim());
+        try {
+          const content = fs.readFileSync(activityFile, 'utf-8');
+          const lines = content.split('\n').filter(l => l.trim());
 
-        if (lines.length > lastActivityLine) {
-          const newLines = lines.slice(lastActivityLine);
-          for (const line of newLines) {
-            try {
-              const entry = JSON.parse(line) as ActivityEntry;
-              if (options.agent && !entry.agentId.includes(options.agent)) continue;
-              printActivity(entry, options.json, options.full);
-            } catch {
-              // Skip invalid lines
-            }
+          // Detect if activity file was reset (shrunk)
+          if (lines.length < lastActivityLine) {
+            console.log(chalk.yellow('\n⚠️  Activity file reset detected\n'));
+            lastActivityLine = 0;
           }
-          lastActivityLine = lines.length;
+
+          if (lines.length > lastActivityLine) {
+            const newLines = lines.slice(lastActivityLine);
+            for (const line of newLines) {
+              try {
+                const entry = JSON.parse(line) as ActivityEntry;
+                if (options.agent && !entry.agentId.includes(options.agent)) continue;
+                printActivity(entry, options.json, options.full);
+              } catch {
+                // Skip invalid lines
+              }
+            }
+            lastActivityLine = lines.length;
+          }
+        } catch {
+          // File might be being written, skip this iteration
         }
       }
 

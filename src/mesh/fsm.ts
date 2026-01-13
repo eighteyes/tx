@@ -152,7 +152,7 @@ export class MeshFSM extends EventEmitter {
       };
       this.persistence.saveState(this.stateData);
 
-      log.info('fsm', 'Created initial FSM state', {
+      log.debug('fsm', 'Created initial FSM state', {
         meshName: this.meshName,
         initialState: this._initialState,
       });
@@ -160,7 +160,7 @@ export class MeshFSM extends EventEmitter {
       // Execute onEnter for initial state
       await this.executeOnEnter(this._initialState);
     } else {
-      log.info('fsm', 'Loaded existing FSM state', {
+      log.debug('fsm', 'Loaded existing FSM state', {
         meshName: this.meshName,
         currentState: this.stateData.currentState,
         lastTransitionAt: new Date(this.stateData.lastTransitionAt).toISOString(),
@@ -504,7 +504,7 @@ export class MeshFSM extends EventEmitter {
     this.stateData.updatedAt = Date.now();
     this.persistence.saveState(this.stateData);
 
-    log.info('fsm', 'FSM reset to initial state', {
+    log.debug('fsm', 'FSM reset to initial state', {
       meshName: this.meshName,
       previousState,
       initialState: this._initialState,
