@@ -172,6 +172,14 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   ensemble: { type: 'object' },  // EnsembleConfig: { agents, aggregation_strategy, timeout_ms, ... }
   // Task distribution configuration: spawner splits task into subtasks
   task_distribution: { type: 'object' },  // TaskDistributionConfig: { spawner, subagents, reviewer, distribution_strategy, ... }
+  // Session continuation: persist context across messages
+  continuation: { type: 'boolean' },  // true | [agent1, agent2]  (also accepts array, validated specially)
+  // Inject original task message into downstream agents
+  injectOriginalMessage: { type: 'boolean' },
+  // Tool restriction policy
+  toolRestriction: { type: 'string', enum: ['unrestricted', 'mcp-only'] },
+  // Turn workspace (custom workspace template for turn-based games)
+  turn_workspace: { type: 'object' },
 };
 
 /**
@@ -227,6 +235,18 @@ export class MeshValidator {
     // Validate agents array
     if (Array.isArray(cfg.agents)) {
       this.validateAgents(cfg.agents, errors, warnings, context);
+    }
+
+    // Auto-default for single-agent meshes: set entry_point to the single agent
+    // Note: completion_agent is NOT auto-set to allow routing-based exit patterns
+    if (Array.isArray(cfg.agents) && cfg.agents.length === 1) {
+      const singleAgent = cfg.agents[0] as Record<string, unknown>;
+      const agentName = singleAgent.name as string;
+
+      if (!cfg.entry_point && agentName) {
+        cfg.entry_point = agentName;
+        log.debug('mesh-validator', `Auto-set entry_point to '${agentName}' for single-agent mesh${context}`);
+      }
     }
 
     // Validate entry_point if present
@@ -588,7 +608,8 @@ export class MeshValidator {
   }
 
   /**
-   * Validate FSM configuration
+   * Validate FSM configuration (exit-based routing schema)
+   * Schema: docs/mesh-fsm-config.md
    */
   private static validateFSM(
     fsm: unknown,
@@ -605,24 +626,24 @@ export class MeshValidator {
     const fsmObj = fsm as Record<string, unknown>;
 
     // Validate required fields
-    if (!fsmObj.initialState) {
-      errors.push(`fsm.initialState is required${context}`);
-    } else if (typeof fsmObj.initialState !== 'string') {
-      errors.push(`fsm.initialState must be a string${context}`);
+    if (!fsmObj.initial) {
+      errors.push(`fsm.initial is required${context}`);
+    } else if (typeof fsmObj.initial !== 'string') {
+      errors.push(`fsm.initial must be a string${context}`);
     }
 
     if (!fsmObj.states) {
       errors.push(`fsm.states is required${context}`);
-    } else if (!Array.isArray(fsmObj.states)) {
-      errors.push(`fsm.states must be an array${context}`);
-    } else if (fsmObj.states.length === 0) {
+    } else if (typeof fsmObj.states !== 'object' || Array.isArray(fsmObj.states) || fsmObj.states === null) {
+      errors.push(`fsm.states must be an object (not array)${context}`);
+    } else if (Object.keys(fsmObj.states).length === 0) {
       errors.push(`fsm.states cannot be empty${context}`);
     }
 
-    if (!fsmObj.transitions) {
-      errors.push(`fsm.transitions is required${context}`);
-    } else if (!Array.isArray(fsmObj.transitions)) {
-      errors.push(`fsm.transitions must be an array${context}`);
+    if (!fsmObj.scripts) {
+      errors.push(`fsm.scripts is required${context}`);
+    } else if (typeof fsmObj.scripts !== 'object' || Array.isArray(fsmObj.scripts) || fsmObj.scripts === null) {
+      errors.push(`fsm.scripts must be an object${context}`);
     }
 
     // Get agent names for reference validation
@@ -632,168 +653,107 @@ export class MeshValidator {
         .map(a => a.name as string)
     );
 
-    // Validate states
+    // Validate states (object/map, not array)
     const stateNames = new Set<string>();
-    if (Array.isArray(fsmObj.states)) {
-      for (let i = 0; i < fsmObj.states.length; i++) {
-        const state = fsmObj.states[i];
-        const prefix = `fsm.states[${i}]`;
+    if (typeof fsmObj.states === 'object' && fsmObj.states !== null && !Array.isArray(fsmObj.states)) {
+      const statesObj = fsmObj.states as Record<string, unknown>;
 
-        if (!state || typeof state !== 'object') {
+      for (const [stateName, stateValue] of Object.entries(statesObj)) {
+        stateNames.add(stateName);
+        const prefix = `fsm.states.${stateName}`;
+
+        if (!stateValue || typeof stateValue !== 'object' || Array.isArray(stateValue)) {
           errors.push(`${prefix} must be an object${context}`);
           continue;
         }
 
-        const stateObj = state as Record<string, unknown>;
+        const state = stateValue as Record<string, unknown>;
 
-        // Validate state name
-        if (!stateObj.name) {
-          errors.push(`${prefix}.name is required${context}`);
-        } else if (typeof stateObj.name !== 'string') {
-          errors.push(`${prefix}.name must be a string${context}`);
-        } else {
-          if (stateNames.has(stateObj.name)) {
-            errors.push(`${prefix}: duplicate state name '${stateObj.name}'${context}`);
-          }
-          stateNames.add(stateObj.name);
-        }
-
-        // Validate coordinator
-        if (!stateObj.coordinator) {
-          errors.push(`${prefix}.coordinator is required${context}`);
-        } else if (typeof stateObj.coordinator !== 'string') {
-          errors.push(`${prefix}.coordinator must be a string${context}`);
-        } else if (!agentNames.has(stateObj.coordinator)) {
-          warnings.push(`${prefix}.coordinator '${stateObj.coordinator}' not found in agents${context}`);
-        }
-
-        // Validate participants if present
-        if (stateObj.participants !== undefined) {
-          if (!Array.isArray(stateObj.participants)) {
-            errors.push(`${prefix}.participants must be an array${context}`);
+        // Validate agents field (optional array)
+        if (state.agents !== undefined) {
+          if (!Array.isArray(state.agents)) {
+            errors.push(`${prefix}.agents must be an array${context}`);
           } else {
-            for (const participant of stateObj.participants) {
-              if (typeof participant !== 'string') {
-                errors.push(`${prefix}.participants must contain strings${context}`);
-              } else if (!agentNames.has(participant)) {
-                warnings.push(`${prefix}.participants: '${participant}' not found in agents${context}`);
+            for (const agent of state.agents) {
+              if (typeof agent !== 'string') {
+                errors.push(`${prefix}.agents must contain strings${context}`);
+              } else if (!agentNames.has(agent)) {
+                warnings.push(`${prefix}.agents: '${agent}' not found in mesh agents${context}`);
               }
             }
           }
         }
 
-        // Validate gates if present
-        if (stateObj.gates !== undefined) {
-          if (!Array.isArray(stateObj.gates)) {
-            errors.push(`${prefix}.gates must be an array${context}`);
+        // Validate exit block (optional, but critical for routing)
+        if (state.exit !== undefined) {
+          if (typeof state.exit !== 'object' || state.exit === null || Array.isArray(state.exit)) {
+            errors.push(`${prefix}.exit must be an object${context}`);
           } else {
-            for (let j = 0; j < stateObj.gates.length; j++) {
-              const gate = stateObj.gates[j];
-              const gatePrefix = `${prefix}.gates[${j}]`;
+            const exit = state.exit as Record<string, unknown>;
 
-              if (!gate || typeof gate !== 'object') {
-                errors.push(`${gatePrefix} must be an object${context}`);
-                continue;
-              }
-
-              const gateObj = gate as Record<string, unknown>;
-
-              if (!gateObj.type) {
-                errors.push(`${gatePrefix}.type is required${context}`);
-              } else if (!['script', 'agent-complete', 'all-complete'].includes(gateObj.type as string)) {
-                errors.push(`${gatePrefix}.type must be 'script', 'agent-complete', or 'all-complete'${context}`);
-              }
-
-              // Script type requires script field
-              if (gateObj.type === 'script' && !gateObj.script) {
-                errors.push(`${gatePrefix}.script is required for script gate${context}`);
-              }
-
-              // Agent-complete type requires agent field
-              if (gateObj.type === 'agent-complete' && !gateObj.agent) {
-                errors.push(`${gatePrefix}.agent is required for agent-complete gate${context}`);
-              }
-
-              // Validate maxRetries if present
-              if (gateObj.maxRetries !== undefined) {
-                if (typeof gateObj.maxRetries !== 'number') {
-                  errors.push(`${gatePrefix}.maxRetries must be a number${context}`);
-                } else if (gateObj.maxRetries < 0) {
-                  errors.push(`${gatePrefix}.maxRetries must be >= 0${context}`);
+            // Validate exit.when (array of condition/target pairs)
+            if (exit.when !== undefined) {
+              if (!Array.isArray(exit.when)) {
+                errors.push(`${prefix}.exit.when must be an array${context}`);
+              } else {
+                for (let i = 0; i < exit.when.length; i++) {
+                  const whenClause = exit.when[i];
+                  if (typeof whenClause !== 'object' || whenClause === null) {
+                    errors.push(`${prefix}.exit.when[${i}] must be an object${context}`);
+                    continue;
+                  }
+                  const clause = whenClause as Record<string, unknown>;
+                  if (!clause.condition) {
+                    errors.push(`${prefix}.exit.when[${i}].condition is required${context}`);
+                  }
+                  if (!clause.target) {
+                    errors.push(`${prefix}.exit.when[${i}].target is required${context}`);
+                  } else if (typeof clause.target === 'string' && stateNames.size > 0) {
+                    // Will validate target state exists after all states are processed
+                  }
                 }
               }
             }
+
+            // Validate exit.default (fallback state name)
+            if (exit.default !== undefined) {
+              if (typeof exit.default !== 'string') {
+                errors.push(`${prefix}.exit.default must be a string${context}`);
+              }
+            }
           }
         }
+      }
 
-        // Validate scripts if present
-        if (stateObj.onEnter !== undefined && typeof stateObj.onEnter !== 'string') {
-          errors.push(`${prefix}.onEnter must be a string${context}`);
-        }
-        if (stateObj.onExit !== undefined && typeof stateObj.onExit !== 'string') {
-          errors.push(`${prefix}.onExit must be a string${context}`);
+      // Validate when clause targets and defaults reference valid states
+      for (const [stateName, stateValue] of Object.entries(statesObj)) {
+        if (!stateValue || typeof stateValue !== 'object') continue;
+        const state = stateValue as Record<string, unknown>;
+        const prefix = `fsm.states.${stateName}`;
+
+        if (state.exit && typeof state.exit === 'object') {
+          const exit = state.exit as Record<string, unknown>;
+
+          if (Array.isArray(exit.when)) {
+            for (let i = 0; i < exit.when.length; i++) {
+              const clause = exit.when[i] as Record<string, unknown>;
+              if (typeof clause.target === 'string' && !stateNames.has(clause.target)) {
+                errors.push(`${prefix}.exit.when[${i}].target '${clause.target}' not found in states${context}`);
+              }
+            }
+          }
+
+          if (typeof exit.default === 'string' && !stateNames.has(exit.default)) {
+            errors.push(`${prefix}.exit.default '${exit.default}' not found in states${context}`);
+          }
         }
       }
     }
 
-    // Validate initialState references a valid state
-    if (typeof fsmObj.initialState === 'string' && stateNames.size > 0) {
-      if (!stateNames.has(fsmObj.initialState)) {
-        errors.push(`fsm.initialState '${fsmObj.initialState}' not found in states${context}`);
-      }
-    }
-
-    // Validate transitions
-    if (Array.isArray(fsmObj.transitions)) {
-      for (let i = 0; i < fsmObj.transitions.length; i++) {
-        const transition = fsmObj.transitions[i];
-        const prefix = `fsm.transitions[${i}]`;
-
-        if (!transition || typeof transition !== 'object') {
-          errors.push(`${prefix} must be an object${context}`);
-          continue;
-        }
-
-        const transObj = transition as Record<string, unknown>;
-
-        // Validate from
-        if (!transObj.from) {
-          errors.push(`${prefix}.from is required${context}`);
-        } else if (typeof transObj.from !== 'string') {
-          errors.push(`${prefix}.from must be a string${context}`);
-        } else if (stateNames.size > 0 && !stateNames.has(transObj.from)) {
-          errors.push(`${prefix}.from '${transObj.from}' not found in states${context}`);
-        }
-
-        // Validate to
-        if (!transObj.to) {
-          errors.push(`${prefix}.to is required${context}`);
-        } else if (typeof transObj.to !== 'string') {
-          errors.push(`${prefix}.to must be a string${context}`);
-        } else if (stateNames.size > 0 && !stateNames.has(transObj.to)) {
-          errors.push(`${prefix}.to '${transObj.to}' not found in states${context}`);
-        }
-
-        // Validate trigger
-        if (!transObj.trigger) {
-          errors.push(`${prefix}.trigger is required${context}`);
-        } else if (!['ask', 'task-complete', 'manual'].includes(transObj.trigger as string)) {
-          errors.push(`${prefix}.trigger must be 'ask', 'task-complete', or 'manual'${context}`);
-        }
-
-        // Validate triggerAgent if present
-        if (transObj.triggerAgent !== undefined) {
-          if (typeof transObj.triggerAgent !== 'string') {
-            errors.push(`${prefix}.triggerAgent must be a string${context}`);
-          } else if (!agentNames.has(transObj.triggerAgent)) {
-            warnings.push(`${prefix}.triggerAgent '${transObj.triggerAgent}' not found in agents${context}`);
-          }
-        }
-
-        // Validate script if present
-        if (transObj.script !== undefined && typeof transObj.script !== 'string') {
-          errors.push(`${prefix}.script must be a string${context}`);
-        }
+    // Validate initial references a valid state
+    if (typeof fsmObj.initial === 'string' && stateNames.size > 0) {
+      if (!stateNames.has(fsmObj.initial)) {
+        errors.push(`fsm.initial '${fsmObj.initial}' not found in states${context}`);
       }
     }
 
@@ -805,7 +765,7 @@ export class MeshValidator {
     }
 
     // Check for unknown fsm fields
-    const knownFSMFields = ['initialState', 'states', 'transitions', 'context'];
+    const knownFSMFields = ['initial', 'states', 'context', 'scripts'];
     for (const field of Object.keys(fsmObj)) {
       if (!knownFSMFields.includes(field)) {
         warnings.push(`Unknown fsm field '${field}'${context}`);

@@ -1,10 +1,14 @@
-# Mesh FSM Configuration
+# Mesh FSM Configuration - Exit-Based Routing
 
-System-managed state tracking for mesh orchestration. The FSM observes message flow and provides context to agents.
+System-managed state tracking for mesh orchestration. The FSM observes message flow, provides context to agents, and routes to next states via exit-based conditions.
 
 ## Purpose
 
-Remove state management from agent prompts. Agents decide routing using the routing table; FSM observes asks and injects context.
+Remove state management from agent prompts. FSM handles:
+- **State tracking**: Observes asks, maintains current state
+- **Context injection**: Provides turn/workspace/counters to agents
+- **Route determination**: Exit block decides next state via when/run/default
+- **Lifecycle scripts**: Entry/exit hooks for setup and validation
 
 ## Schema
 
@@ -21,16 +25,18 @@ fsm:
       entry:                    # Run on entering state
         set: {key: value}       # Context assignments
         run: [script1, ...]     # Scripts for side effects
-      exit:                     # Run on exiting state
-        gates:                  # Validate outputs
+      exit:                     # Run on exiting state, determines next_state
+        gates:                  # Validate outputs (before routing)
           agent_name:
-            - "$path/file.yaml" # File existence
-            - script_name       # Script check
-        set: {key: value}       # Extract from agent outputs
-        run: [script1, ...]     # Post-processing scripts
-      transitions:              # Recipient → next state map
-        agent_name: next_state
-        [agent1, agent2]: next_state
+            - "$path/file.yaml" # File existence check
+            - script_name       # Script check (exit 0 = pass)
+        set: {key: value}       # Extract from agent outputs (before routing)
+        run:                    # Imperative routing: scripts set next_state
+          - script: bash code
+        when:                   # Declarative routing: conditions set target
+          - condition: var == "value"
+            target: next_state_1
+        default: fallback_state # Fallback if no when match (required)
 
   scripts:                      # Required: bash scripts
     script_name: "command"
@@ -52,6 +58,10 @@ awaiting_narrator:
 ### `entry`
 Executed when entering this state. Optional.
 
+**Entry processing order:**
+1. **`entry.set`** - Context assignments
+2. **`entry.run`** - Side effect scripts
+
 ```yaml
 init:
   entry:
@@ -62,15 +72,27 @@ init:
 ```
 
 **`entry.set`**: Context assignments using bash syntax
-- Variables: `$workspace`, `$turn`
+- Variables: `$workspace`, `$turn`, `$rearmatter`, `$variable_name`
 - Arithmetic: `$((turn + 1))`
 - Commands: `$(yq '.field' $file)`
 - String interpolation: `"$game_path/turns/turn-$turn"`
 
-**`entry.run`**: Script names to execute (side effects like mkdir, logging)
+**`entry.run`**: Script names or inline scripts to execute (side effects like mkdir, logging)
 
 ### `exit`
-Executed when exiting this state. Optional.
+Executed when exiting this state. Determines next state. Optional but critical for routing.
+
+**Exit processing order (strict sequence):**
+1. **`exit.gates`** - Validate outputs (stop if fail)
+2. **`exit.set`** - Extract values
+3. **`exit.when`** - Evaluate conditions
+4. **`exit.run`** - Determine next state
+5. **`exit.default`** - Fallback if no route
+6. **Transition** to next state
+
+#### Exit.Gates: Output Validation (Step 1)
+
+Validate agent outputs **before any routing decision**:
 
 ```yaml
 awaiting_narrator:
@@ -79,46 +101,85 @@ awaiting_narrator:
       narrator:
         - "$workspace/prose-draft.md"
         - check_min_word_count
-    set:
-      word_count: "$(wc -w < $workspace/prose-draft.md)"
-    run: [generate_concordance, extract_dialogue]
 ```
 
-**`exit.gates`**: Validate agent outputs before allowing transition
-- File paths: `"$workspace/file.yaml"` (must exist)
-- Scripts: `check_min_word_count` (exit 0 = pass, non-zero = fail with stderr message)
+- **File paths**: `"$workspace/file.yaml"` (must exist)
+- **Scripts**: `check_min_word_count` (exit 0 = pass, non-zero = fail with stderr message)
 
-Gate results injected into coordinator prompt:
-```markdown
-## Gate Results
-state: awaiting_narrator
-agent: narrator
-passed: true|false
-failures:
-  - check_min_word_count: "Expected 800+ words, found 654"
-```
+If gate fails, transition blocked, stay in current state.
 
-**`exit.set`**: Extract data from agent outputs (files they wrote)
+#### Exit.Set: Data Extraction (Step 2)
 
-**`exit.run`**: Post-processing scripts
-
-### `transitions`
-Map of message recipients → next state.
+Extract data from agent outputs **before routing decision**:
 
 ```yaml
-init:
-  transitions:
-    narrator: game_creation                   # Single recipient
-    [dramaturg, scene-crafter]: awaiting_prep # Multiple recipients
+awaiting_narrator:
+  exit:
+    set:
+      word_count: "$(wc -w < $workspace/prose-draft.md)"
+      haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
 ```
 
-**Key formats:**
-- Single agent: `agent_name`
-- Multiple agents: `[agent1, agent2]` (exact match, order matters)
+Extracted values are available to `when` conditions and `run` scripts.
 
-**Value**: Target state name
+#### Exit.When: Declarative Routing (Step 3)
 
-Coordinator decides who to ask, FSM looks up transition in current state's map.
+Conditions that determine next state (evaluated top-to-bottom):
+
+```yaml
+ralph_haiku_loop:
+  exit:
+    when:
+      - condition: haiku_success_signal == "PASS"
+        target: sonnet_review_loop
+      - condition: haiku_success_signal == "REFINE"
+        target: ralph_haiku_loop
+      - condition: haiku_success_signal == "BLOCKED"
+        target: blocked_state
+```
+
+**Phase 1 Operators:**
+| Operator | Example | Behavior |
+|----------|---------|----------|
+| `==` | `signal == "PASS"` | String equality |
+| `!=` | `signal != "BLOCKED"` | String inequality |
+
+First matching condition wins. If no match, continue to Step 4.
+
+#### Exit.Run: Determine Next State (Step 4)
+
+State name OR script that outputs state name (for complex routing logic):
+
+```yaml
+ralph_haiku_loop:
+  exit:
+    run: |
+      signal="$haiku_success_signal"
+      if [ "$signal" = "PASS" ]; then
+        echo "sonnet_review_loop"
+      elif [ "$signal" = "REFINE" ]; then
+        echo "ralph_haiku_loop"
+      else
+        echo "blocked_state"
+      fi
+```
+
+- **Literal state name**: `run: sonnet_review_loop` → echoed to stdout, state is used
+- **Script**: Script echoes state name to stdout → that state is used
+
+If `run` outputs a valid state name, use it. If `run` is empty or undefined, continue to Step 5.
+
+#### Exit.Default: Fallback Route (Step 5)
+
+**Required.** Used if no `when` condition matches and no `run` output:
+
+```yaml
+ralph_haiku_loop:
+  exit:
+    default: ralph_haiku_loop
+```
+
+Prevents silent failures when routing cannot be determined.
 
 ### `exit.run` - Direct Routing (New)
 
@@ -274,10 +335,8 @@ scripts:
   extract_game_paths: |
     game_id=$(jq -r '.game_id' <<< "$payload")
     campaign_id=$(jq -r '.campaign_id' <<< "$payload")
-    game_path=$(jq -r '.game_path' <<< "$payload")
     echo "game_id=$game_id"
     echo "campaign_id=$campaign_id"
-    echo "game_path=$game_path"
 ```
 
 ### Script Environment
@@ -289,30 +348,25 @@ All scripts receive:
 | `$turn` | number | context | Turn number |
 | `$game_path` | string | context | Game directory path |
 | `$workspace` | string | context | Workspace path |
-| `$entropy` | array | context | Entropy values (JSON) |
 | `$state` | string | fsm | Current state name |
-| `$payload` | JSON | message | Body content |
-| `$from` | string | message | Sender agent name |
-| `$SDK_STATS` | JSON | exit only | SDK execution metrics (see below) |
-| `$REARMATTER` | YAML | exit only | Agent self-assessment fields (see below) |
+| `$variable_name` | string | context | Any context var: `$success_signal`, `$iteration` |
+| `$SDK_STATS` | JSON | exit only | SDK execution metrics |
+| `$rearmatter` | YAML | exit only | Agent self-assessment fields |
 
 #### SDK Stats (`$SDK_STATS`)
 
-Available in exit gates after agent execution. Contains Claude SDK metrics:
+Available in exit gates after agent execution:
 
 ```json
 {
   "model": "claude-3-5-sonnet-20241022",
-  "stop_reason": "end_turn",
   "usage": {
     "input_tokens": 1542,
     "output_tokens": 324,
-    "cache_read_tokens": 892,
-    "cache_creation_tokens": 0
+    "cache_read_tokens": 892
   },
   "cost_usd": 0.00567,
-  "duration_ms": 2340,
-  "num_turns": 1
+  "duration_ms": 2340
 }
 ```
 
@@ -325,361 +379,56 @@ tokens=$(echo "$SDK_STATS" | jq '.usage.output_tokens')
 }
 ```
 
-**Usage in context.set:**
-```yaml
-exit:
-  set:
-    narrator_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
-    total_cost: "$(echo \"scale=5; $total_cost + $(echo '$SDK_STATS' | jq '.cost_usd')\" | bc)"
-```
+#### Rearmatter (`$rearmatter`)
 
-#### Rearmatter (`$REARMATTER`)
-
-Available in exit gates when agent includes rearmatter in output message. Contains agent self-assessment:
+Available in exit when agent includes self-assessment YAML:
 
 ```yaml
 success_signal: PASS       # PASS | REFINE | BLOCKED
 confidence: 0.85           # 0.0-1.0 float
-reasoning: "Draft covers all requirements"
-iteration_number: 2
+reasoning: "Task complete"
 ```
 
-**Usage in gates:**
-```bash
-confidence=$(echo "$REARMATTER" | yq '.confidence // 0')
-if (( $(echo "$confidence < 0.8" | bc -l) )); then
-  echo "Confidence too low: $confidence" >&2
-  exit 1
-fi
-```
-
-**Usage in context.set:**
+**Usage in when conditions:**
 ```yaml
 exit:
-  set:
-    haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
-    haiku_confidence: "$(echo '$REARMATTER' | yq '.confidence')"
-```
-
-**Output handling:**
-- Entry scripts: stdout → sets `context.{script_name}`
-- Exit scripts: stdout → sets `context.{script_name}`
-- Multi-line output: `key=value` pairs, one per line
-
-Example multi-value output:
-```bash
-echo "game_id=$game_id"
-echo "campaign_id=$campaign_id"
-echo "game_path=$game_path"
+  when:
+    - condition: haiku_success_signal == "PASS"
+      target: sonnet_review_loop
 ```
 
 ## Execution Flow
 
-1. **Agent spawns** → receives injected FSM context in prompt:
+1. **Agent spawns** → receives injected FSM context:
    ```markdown
    ## FSM Context
    state: init
    turn: 5
    workspace: /path/to/turns/turn-5
-   entropy: [23, 89, 12, ...]
    ```
 
-2. **Agent decides routing** → writes ask to recipients (using routing table)
+2. **Agent completes** → emits response (possibly with rearmatter)
 
-3. **Dispatcher observes ask** → extracts recipients from message
+3. **Dispatcher observes** → receives agent message
 
-4. **FSM looks up transition** → checks `current_state.transitions[recipients]`
+4. **FSM exit processing** → runs in order:
+   - Run `exit.gates` for validation
+   - Run `exit.set` to extract values
+   - Evaluate `exit.when` clauses (first match wins)
+   - Run `exit.run` script (outputs state name)
+   - Use `exit.default` if no route found
 
-5. **FSM runs exit scripts** → executes current state's exit scripts (if any)
+5. **FSM transitions** → changes to next_state
 
-6. **FSM transitions** → changes to new state
+6. **FSM entry processing** → runs in order:
+   - Run `entry.set` assignments
+   - Run `entry.run` scripts
 
-7. **FSM runs entry scripts** → executes new state's entry scripts, updates context
+7. **FSM persists** → saves state + context to SQLite
 
-8. **FSM persists** → saves state + context to SQLite
+## Example: Ralph Ice Cream (FSM-Driven Loops)
 
-9. **Dispatcher injects** → adds updated FSM context to ask before sending
-
-## Example: narrative-engine (complete)
-
-```yaml
-fsm:
-  initial: init
-
-  context:
-    turn: 0
-    game_id: null
-    campaign_id: null
-    game_path: null
-    workspace: null
-    entropy: []
-    revision_count: 0
-    max_revisions: 3
-
-  states:
-    init:
-      agents: [coordinator]
-      entry:
-        set:
-          turn: "$((turn + 1))"
-          workspace: "$game_path/campaigns/$campaign_id/turns/turn-$turn"
-          revision_count: 0
-        run: [generate_entropy, mkdir_workspace]
-      exit:
-        gates:
-          coordinator:
-            - "$workspace"
-      transitions:
-        narrator: game_creation
-        [dramaturg, scene-crafter]: awaiting_prep
-
-    game_creation:
-      agents: [narrator]
-      entry:
-        set:
-          turn: 0
-      exit:
-        gates:
-          narrator:
-            - check_game_created
-        set:
-          game_id: "$(yq '.game_id' $workspace/game-spec.yaml)"
-          campaign_id: "$(yq '.campaign_id' $workspace/game-spec.yaml)"
-          game_path: "$(yq '.game_path' $workspace/game-spec.yaml)"
-      transitions:
-        coordinator: prologue
-
-    prologue:
-      agents: [coordinator]
-      entry:
-        set:
-          workspace: "$game_path/campaigns/$campaign_id/turns/turn-0"
-        run: [generate_entropy, mkdir_workspace]
-      exit:
-        gates:
-          coordinator:
-            - "$workspace/context.yaml"
-      transitions:
-        [dramaturg, scene-crafter]: awaiting_prep
-
-    awaiting_prep:
-      agents: [dramaturg, scene-crafter]
-      exit:
-        gates:
-          dramaturg:
-            - "$workspace/dramaturg-notes.yaml"
-            - check_dramaturg_valid
-          scene-crafter:
-            - "$workspace/scene-outline.yaml"
-            - check_scene_valid
-      transitions:
-        narrator: awaiting_narrator
-
-    awaiting_narrator:
-      agents: [narrator]
-      exit:
-        gates:
-          narrator:
-            - "$workspace/prose-draft.md"
-            - check_min_word_count
-        run: [generate_concordance, extract_dialogue]
-        set:
-          word_count: "$(wc -w < $workspace/prose-draft.md)"
-      transitions:
-        core: awaiting_hitl
-        editor: awaiting_editor
-
-    awaiting_hitl:
-      agents: [core]
-      exit:
-        set:
-          user_input: "$(yq '.response' $workspace/hitl-response.yaml)"
-      transitions:
-        narrator: awaiting_narrator
-
-    awaiting_editor:
-      agents: [editor]
-      entry:
-        set:
-          revision_count: "$((revision_count + 1))"
-      exit:
-        gates:
-          editor:
-            - "$workspace/review.yaml"
-            - check_max_revisions
-        set:
-          verdict: "$(yq '.verdict' $workspace/review.yaml)"
-          violations_count: "$(yq '.violations | length' $workspace/review.yaml)"
-        run: [log_revision]
-      transitions:
-        narrator: awaiting_narrator
-        oracle: awaiting_oracle
-
-    awaiting_oracle:
-      agents: [oracle]
-      entry:
-        run: [rename_prose_final]
-      exit:
-        gates:
-          oracle:
-            - "$workspace/oracle-verdict.yaml"
-        set:
-          approved: "$(yq '.approved' $workspace/oracle-verdict.yaml)"
-          lore_violations: "$(yq '.violations | length' $workspace/oracle-verdict.yaml)"
-      transitions:
-        narrator: awaiting_narrator
-        scribe: awaiting_scribe
-
-    awaiting_scribe:
-      agents: [scribe]
-      exit:
-        gates:
-          scribe:
-            - "$workspace/summary.md"
-            - "$workspace/entities-updated.yaml"
-        run: [update_story_concordance]
-      transitions:
-        coordinator: complete
-
-    complete:
-      agents: [coordinator]
-      entry:
-        set:
-          revision_count: 0
-      exit:
-        gates:
-          coordinator:
-            - check_coordinator_ready
-      transitions:
-        [dramaturg, scene-crafter]: awaiting_prep
-
-  scripts:
-    generate_entropy: |
-      shuf -i 1-100 -n 10 | jq -c -s '.' > $workspace/entropy.json
-      cat $workspace/entropy.json
-
-    mkdir_workspace: |
-      mkdir -p $workspace
-
-    check_game_created: |
-      [[ -f $workspace/game-spec.yaml ]] && \
-      yq -e '.game_path' $workspace/game-spec.yaml > /dev/null
-
-    check_dramaturg_valid: |
-      yq -e '.beats | length >= 3' $workspace/dramaturg-notes.yaml
-
-    check_scene_valid: |
-      yq -e '.scenes | length >= 1' $workspace/scene-outline.yaml
-
-    check_min_word_count: |
-      count=$(wc -w < $workspace/prose-draft.md)
-      [[ $count -ge 800 ]] || {
-        echo "Expected 800+ words, found $count" >&2
-        exit 1
-      }
-
-    check_max_revisions: |
-      [[ $revision_count -le $max_revisions ]] || {
-        echo "Max revisions ($max_revisions) reached" >&2
-        exit 1
-      }
-
-    check_coordinator_ready: |
-      ./scripts/coordinator-ready.sh $workspace
-
-    generate_concordance: |
-      tr '[:upper:]' '[:lower:]' < $workspace/prose-draft.md | \
-      tr -cs '[:alpha:]' '\n' | \
-      sort | uniq -c | sort -rn > $workspace/concordance.txt
-
-    extract_dialogue: |
-      ./meshes/narrative-engine/extract-dialogue.sh \
-        $workspace/prose-draft.md \
-        $workspace/dialogue-pairs.txt
-
-    rename_prose_final: |
-      mv $workspace/prose-draft.md $workspace/prose.md
-
-    update_story_concordance: |
-      cat $workspace/concordance.txt >> $game_path/story-concordance.txt
-      sort $game_path/story-concordance.txt | \
-      uniq -c | sort -rn > $game_path/story-concordance-sorted.txt
-      mv $game_path/story-concordance-sorted.txt $game_path/story-concordance.txt
-
-    log_revision: |
-      echo "Turn $turn revision $revision_count: verdict=$verdict, violations=$violations_count" \
-        >> $workspace/revision.log
-```
-
-## Key Patterns Shown
-
-**Agent-created values:**
-```yaml
-game_creation:
-  exit:
-    set:
-      game_id: "$(yq '.game_id' $workspace/game-spec.yaml)"
-      game_path: "$(yq '.game_path' $workspace/game-spec.yaml)"
-```
-Narrator writes game-spec.yaml, FSM extracts paths from it.
-
-**Iteration tracking:**
-```yaml
-awaiting_editor:
-  entry:
-    set:
-      revision_count: "$((revision_count + 1))"
-  exit:
-    gates:
-      editor:
-        - check_max_revisions
-```
-Counter increments on each loop, gate enforces limit.
-
-**Gate validation with error messages:**
-```yaml
-scripts:
-  check_min_word_count: |
-    count=$(wc -w < $workspace/prose-draft.md)
-    [[ $count -ge 800 ]] || {
-      echo "Expected 800+ words, found $count" >&2
-      exit 1
-    }
-```
-Coordinator sees gate failure with message in injected context.
-
-**Parallel agents:**
-```yaml
-awaiting_prep:
-  agents: [dramaturg, scene-crafter]
-  exit:
-    gates:
-      dramaturg: [...]
-      scene-crafter: [...]
-```
-Both must respond and pass gates before coordinator can transition.
-
-## Validation
-
-The mesh validator checks:
-
-1. **Initial state exists** in states map
-2. **Transition targets exist** in states map
-3. **Agent names** in `agents` field match mesh agents
-4. **Transition keys** match mesh routing config
-5. **Script syntax** (bash -n validation)
-
-## Benefits
-
-1. **Agents focus on decisions** - routing logic in agent prompts
-2. **FSM provides context** - turn, workspace, entropy available
-3. **Deterministic state** - no LLM inference, system tracks state
-4. **Observable** - state transitions logged, queryable via CLI
-5. **Resumable** - state persists across worker spawns
-
-## Example: Token/Cost Tracking with SDK Stats
-
-Track cumulative token usage and cost across mesh execution:
+Three-layer evaluation with self-loops via FSM:
 
 ```yaml
 fsm:
@@ -688,10 +437,10 @@ fsm:
   context:
     haiku_iteration: 0
     sonnet_iteration: 0
-    total_tokens: 0
-    total_cost: 0.00
-    token_budget: 100000
-    cost_limit: 5.00
+    opus_iteration: 0
+    max_haiku_iterations: 5
+    max_sonnet_iterations: 3
+    max_opus_iterations: 2
 
   states:
     ralph_haiku_loop:
@@ -703,18 +452,16 @@ fsm:
         gates:
           ralph-haiku:
             - check_haiku_max_iterations
-            - check_token_budget
-            - check_cost_limit
         set:
-          haiku_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
-          haiku_confidence: "$(echo '$REARMATTER' | yq '.confidence')"
-          haiku_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
-          haiku_cost: "$(echo '$SDK_STATS' | jq '.cost_usd')"
-          total_tokens: "$((total_tokens + haiku_tokens))"
-          total_cost: "$(echo \"scale=5; $total_cost + $haiku_cost\" | bc)"
-      transitions:
-        sonnet-reviewer: sonnet_review_loop
-        ralph-haiku: ralph_haiku_loop
+          haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: haiku_success_signal == "PASS"
+            target: sonnet_review_loop
+          - condition: haiku_success_signal == "REFINE"
+            target: ralph_haiku_loop
+          - condition: haiku_success_signal == "BLOCKED"
+            target: blocked_state
+        default: ralph_haiku_loop
 
     sonnet_review_loop:
       agents: [sonnet-reviewer]
@@ -725,71 +472,150 @@ fsm:
         gates:
           sonnet-reviewer:
             - check_sonnet_max_iterations
-            - check_token_budget
-            - check_cost_limit
         set:
-          sonnet_success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
-          sonnet_tokens: "$(echo '$SDK_STATS' | jq '.usage.output_tokens')"
-          sonnet_cost: "$(echo '$SDK_STATS' | jq '.cost_usd')"
-          total_tokens: "$((total_tokens + sonnet_tokens))"
-          total_cost: "$(echo \"scale=5; $total_cost + $sonnet_cost\" | bc)"
-      transitions:
-        core: complete
-        sonnet-reviewer: sonnet_review_loop
+          sonnet_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: sonnet_success_signal == "PASS"
+            target: opus_review_loop
+          - condition: sonnet_success_signal == "REFINE"
+            target: sonnet_review_loop
+          - condition: sonnet_success_signal == "BLOCKED"
+            target: blocked_state
+        default: sonnet_review_loop
+
+    opus_review_loop:
+      agents: [opus-reviewer]
+      entry:
+        set:
+          opus_iteration: "$((opus_iteration + 1))"
+      exit:
+        gates:
+          opus-reviewer:
+            - check_opus_max_iterations
+        set:
+          opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: opus_success_signal == "PASS"
+            target: complete
+          - condition: opus_success_signal == "REFINE"
+            target: opus_review_loop
+          - condition: opus_success_signal == "BLOCKED"
+            target: blocked_state
+        default: opus_review_loop
+
+    blocked_state:
+      agents: [core]
+      exit:
+        default: error_state
+
+    error_state:
+      agents: [core]
 
     complete:
       agents: [core]
 
   scripts:
     check_haiku_max_iterations: |
-      [[ $haiku_iteration -le 5 ]] || {
-        echo "Haiku max iterations (5) reached" >&2
+      [[ $haiku_iteration -le $max_haiku_iterations ]] || {
+        echo "Max haiku iterations ($max_haiku_iterations) reached" >&2
         exit 1
       }
 
     check_sonnet_max_iterations: |
-      [[ $sonnet_iteration -le 3 ]] || {
-        echo "Sonnet max iterations (3) reached" >&2
+      [[ $sonnet_iteration -le $max_sonnet_iterations ]] || {
+        echo "Max sonnet iterations ($max_sonnet_iterations) reached" >&2
         exit 1
       }
 
-    check_token_budget: |
-      if [[ -n "$SDK_STATS" ]]; then
-        tokens=$(echo "$SDK_STATS" | jq '.usage.output_tokens')
-        new_total=$((total_tokens + tokens))
-        if [[ $new_total -gt $token_budget ]]; then
-          echo "Token budget exceeded: $new_total > $token_budget" >&2
-          exit 1
-        fi
-      fi
-
-    check_cost_limit: |
-      if [[ -n "$SDK_STATS" ]]; then
-        cost=$(echo "$SDK_STATS" | jq '.cost_usd')
-        new_total=$(echo "scale=5; $total_cost + $cost" | bc)
-        if (( $(echo "$new_total > $cost_limit" | bc -l) )); then
-          echo "Cost limit exceeded: \$$new_total > \$$cost_limit" >&2
-          exit 1
-        fi
-      fi
+    check_opus_max_iterations: |
+      [[ $opus_iteration -le $max_opus_iterations ]] || {
+        echo "Max opus iterations ($max_opus_iterations) reached" >&2
+        exit 1
+      }
 ```
 
 **Key patterns:**
-- `$SDK_STATS` available after agent execution in exit gates
-- `$REARMATTER` available when agent emits structured output
-- Gate scripts check limits before allowing transition
-- Context.set accumulates totals across iterations
+- **Self-loop**: `condition: haiku_success_signal == "REFINE"` → `target: ralph_haiku_loop`
+- **Forward progress**: `condition: haiku_success_signal == "PASS"` → `target: sonnet_review_loop`
+- **Error escalation**: `condition: haiku_success_signal == "BLOCKED"` → `target: blocked_state`
+- **Iteration tracking**: `entry.set.haiku_iteration: "$((haiku_iteration + 1))"`
+- **Limit enforcement**: `exit.gates` validates `check_haiku_max_iterations`
+
+## Key Patterns
+
+### Agent-created values:
+```yaml
+exit:
+  set:
+    game_id: "$(yq '.game_id' $workspace/game-spec.yaml)"
+```
+Agent writes file, FSM extracts value.
+
+### Iteration tracking with self-loops:
+```yaml
+entry:
+  set:
+    iteration: "$((iteration + 1))"
+exit:
+  gates:
+    - check_max_iterations
+  when:
+    - condition: success_signal == "REFINE"
+      target: same_state      # Self-loop
+    - condition: success_signal == "PASS"
+      target: next_state
+  default: same_state
+```
+Counter increments each loop, gate enforces limit, when clause handles routing.
+
+### Complex conditional routing:
+```yaml
+exit:
+  run:
+    - script: |
+        if [[ "$signal" == "PASS" && $confidence -ge 0.8 ]]; then
+          echo "next_state=approved"
+        elif [[ "$signal" == "PASS" && $confidence -lt 0.8 ]]; then
+          echo "next_state=review"
+        else
+          echo "next_state=retry"
+        fi
+```
+Multi-variable logic handled in run scripts.
+
+## Validation
+
+The mesh validator checks:
+
+1. **Initial state exists** in states map
+2. **When clause targets exist** in states map
+3. **Default targets exist** in states map
+4. **Agent names** in `agents` field match mesh agents
+5. **Script syntax** (bash -n validation)
+
+## Benefits
+
+1. **Deterministic routing** - No LLM inference, rules-based transitions
+2. **Observable state** - State transitions logged and queryable
+3. **Self-loops supported** - Agents can retry via REFINE signal
+4. **Resource enforcement** - Gates check token/cost/iteration limits
+5. **Resumable** - State persists across worker respawns
+6. **Flexible** - Both imperative (run) and declarative (when) routing
 
 ## Anti-patterns
 
 **Don't use FSM for:**
-- Controlling agent routing (agents decide that)
-- Complex conditional logic (keep in agent prompts)
-- Micro-managing agent interactions (FSM is for phase-level state)
+- Linear pipelines with no branching (just use agents + routing)
+- Real-time decision-making (FSM is phase-level, not within-agent)
+- Complex business logic (keep that in agent prompts)
 
 **Do use FSM for:**
-- Tracking pipeline state (init → prep → render → review → complete)
-- Providing turn context (workspace paths, entropy, counters)
-- Running lifecycle scripts (workspace creation, post-processing)
-- Token/cost budget enforcement (via exit gates with $SDK_STATS)
-- Quality signal routing (via rearmatter success_signal)
+- Iterative loops with resource limits (ralph pattern)
+- Conditional phase transitions (when success_signal == "PASS")
+- Tracking cumulative metrics (tokens, cost, iterations)
+- Enforcing hard resource boundaries (via gates)
+- State-dependent context injection (different info per phase)
+
+---
+
+*Updated 2026-01-12 to document exit-based routing (when/run/default)*

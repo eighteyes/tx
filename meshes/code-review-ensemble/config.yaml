@@ -1,0 +1,35 @@
+mesh: code-review-ensemble
+description: "Parallel code review using ensemble pattern - submit code to 3 reviewers, aggregate feedback"
+
+agents:
+  - name: entry
+    model: haiku
+    prompt: prompts/entry.md
+
+  - name: reviewer-security
+    model: haiku
+    prompt: prompts/reviewer-security.md
+
+  - name: reviewer-performance
+    model: haiku
+    prompt: prompts/reviewer-performance.md
+
+  - name: reviewer-style
+    model: haiku
+    prompt: prompts/reviewer-style.md
+
+  - name: synthesizer
+    model: haiku
+    prompt: prompts/synthesizer.md
+
+entry_point: entry
+
+ensemble:
+  coordinator: entry
+  agents:
+    - reviewer-security
+    - reviewer-performance
+    - reviewer-style
+  reviewer: synthesizer
+  aggregation_strategy: concat
+  timeout_ms: 120000

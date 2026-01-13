@@ -268,6 +268,7 @@ iteration:
 **Available post-hooks**:
 - `worktree:cleanup` - Remove worktree
 - `commit:auto` - Spawn haiku agent to create commit
+- `brain-update` - Analyze work and document insights (side-effects, opportunities, tech debt)
 - `quality:evaluate` - Run full quality stack (legacy)
 - `quality:checklist` - Individual checklist gate
 - `quality:rubric` - Individual rubric gate
@@ -285,6 +286,7 @@ lifecycle:
     - quality:checklist
     - quality:rubric
     - commit:auto
+    - brain-update      # Document insights after commit
     - worktree:cleanup
 ```
 

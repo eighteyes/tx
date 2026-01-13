@@ -32,6 +32,11 @@ export interface MessagePayload {
   timestamp?: string;
   grade?: string;
   confidence?: number;
+  // Ensemble execution fields
+  ensemble_id?: string;                  // Track which ensemble execution this belongs to
+  custom_aggregation_prompt?: string;    // Custom aggregation prompt for ensemble
+  custom_distribution_prompt?: string;   // Custom task distribution prompt (Phase 2+)
+  subtask_id?: string;                   // Subtask ID for distributed tasks (Phase 2+)
   [key: string]: unknown;
 }
 
@@ -138,6 +143,27 @@ export interface SessionMetrics {
   completedAt?: number;
 }
 
+// Ensemble types
+
+/**
+ * Aggregation strategy for ensemble results
+ */
+export type AggregationStrategy =
+  | 'concat'       // Concatenate all results
+  | 'deduplicate'  // Remove duplicates
+  | 'voting'       // Vote on best result
+  | 'consensus'    // Find consensus
+  | 'custom';      // Custom aggregation via prompt
+
+/**
+ * Fault tolerance configuration for ensembles
+ */
+export interface FaultToleranceConfig {
+  min_success_count?: number;  // Minimum agents that must succeed
+}
+
+// Note: EnsembleConfig and AggregationResult are defined below in "Ensemble types" section
+
 // FSM (Finite State Machine) types
 
 /**
@@ -217,9 +243,18 @@ export interface FSMConfig {
 
 /**
  * Ensemble configuration: multiple agents run on same task, aggregate results
+ *
+ * Execution flow:
+ * 1. coordinator runs first with original task
+ * 2. coordinator outputs SUBTASK markers (SUBTASK 1:, SUBTASK 2:, etc.)
+ * 3. subtasks are parsed and enqueued to parallel agents
+ * 4. agents process their subtasks in parallel
+ * 5. reviewer (optional) synthesizes results
  */
 export interface EnsembleConfig {
+  coordinator?: string;          // Agent that runs FIRST to decompose task (outputs SUBTASK markers)
   agents: string[];              // Agent names to run in parallel
+  reviewer?: string;             // Agent that synthesizes results AFTER parallel execution
   aggregation_strategy: 'concat' | 'deduplicate' | 'voting' | 'consensus' | 'custom';
   aggregation_prompt?: string;   // Path to custom aggregation prompt (for 'custom' strategy)
   timeout_ms?: number;           // Timeout per agent (defaults to 120000)
@@ -234,12 +269,13 @@ export interface EnsembleConfig {
  * Aggregation result from ensemble execution
  */
 export interface AggregationResult {
-  strategy: string;
-  source_count: number;
-  successful_agents: string[];
-  failed_agents: string[];
   aggregated_content: string;
-  metadata?: Record<string, unknown>;
+  metadata: {
+    strategy: AggregationStrategy;
+    agent_count: number;
+    custom_prompt_used?: boolean;
+    [key: string]: unknown;
+  };
 }
 
 // Task distribution types

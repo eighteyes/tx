@@ -168,12 +168,12 @@ export class StuckAgentDetector extends EventEmitter {
 
       // Check 2: In 'idle' state for too long
       if (status === 'idle') {
-        const idleDuration = now - ((machine as any).lastTransitionAt || startedAt);
+        const idleDuration = now - machine.lastTransitionAt;
         if (idleDuration > this.config.idleTimeoutMs) {
           stuck.push({
             agentId,
             reason: 'idle-timeout',
-            lastActivity: (machine as any).lastTransitionAt || startedAt,
+            lastActivity: machine.lastTransitionAt,
             duration: idleDuration,
             nudgeCount,
           });
@@ -205,7 +205,7 @@ export class StuckAgentDetector extends EventEmitter {
         stuck.push({
           agentId,
           reason: 'peers-complete',
-          lastActivity: (machine as any).lastTransitionAt || startedAt,
+          lastActivity: machine.lastTransitionAt,
           duration: now - startedAt,
           nudgeCount,
         });

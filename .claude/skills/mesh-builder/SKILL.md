@@ -82,6 +82,17 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 
+**Lifecycle hooks**: Auto-commit, brain insights, quality gates
+
+```yaml
+lifecycle:
+  post:
+    - commit:auto    # Auto-commit changes
+    - brain-update   # Document insights
+```
+
+Available hooks: `worktree:create`, `commit:auto`, `brain-update`, `quality:*`. See `docs/mesh-config.md`.
+
 ## FSM (State Tracking)
 
 Add `fsm:` block to track state and provide context to agents.

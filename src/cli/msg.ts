@@ -805,6 +805,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
         displaySessionDetail();
       } else if (viewMode === 'system') {
         displaySystemDetail();
+      } else if (viewMode === 'prompts') {
+        displayPromptDetail();
       } else {
         displayDetail();
       }
@@ -813,6 +815,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
         displaySessionList();
       } else if (viewMode === 'system') {
         displaySystemList();
+      } else if (viewMode === 'prompts') {
+        displayPromptList();
       } else {
         displayMessageList();
       }
@@ -961,6 +965,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
   // Always follow - set up watchers immediately
   setupWatcher();
   setupSysWatcher();
+  setupPromptsWatcher();
 
   // Setup keyboard
   readline.emitKeypressEvents(process.stdin);
@@ -1059,6 +1064,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
             if (sessionSelectedIndex > 0) { sessionSelectedIndex--; display(); }
           } else if (viewMode === 'system') {
             if (systemSelectedIndex > 0) { systemSelectedIndex--; display(); }
+          } else if (viewMode === 'prompts') {
+            if (promptSelectedIndex > 0) {promptSelectedIndex--; display();}
           }
           break;
         case 'down':
@@ -1069,6 +1076,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
             if (sessionSelectedIndex < sessions.length - 1) { sessionSelectedIndex++; display(); }
           } else if (viewMode === 'system') {
             if (systemSelectedIndex < systemMessages.length - 1) { systemSelectedIndex++; display(); }
+          } else if (viewMode === 'prompts') {
+            if (promptSelectedIndex < prompts.length - 1) {promptSelectedIndex++; display();}
           }
           break;
         case 'return':
@@ -1076,7 +1085,8 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
         case 'l':
           if ((viewMode === 'messages' && messages.length > 0) ||
               (viewMode === 'sessions' && sessions.length > 0) ||
-              (viewMode === 'system' && systemMessages.length > 0)) {
+            (viewMode === 'system' && systemMessages.length > 0) ||
+            (viewMode === 'prompts' && prompts.length > 0)) {
             viewingDetail = true;
             detailScrollOffset = 0;
             display();
@@ -1091,11 +1101,13 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
           break;
         case 'tab':
         case 's':
-          // Cycle through: messages -> sessions -> system -> messages
+          // Cycle through: messages -> sessions -> system -> prompts -> messages
           if (viewMode === 'messages') {
             viewMode = 'sessions';
           } else if (viewMode === 'sessions') {
             viewMode = 'system';
+          } else if (viewMode === 'system') {
+            viewMode = 'prompts';
           } else {
             viewMode = 'messages';
           }
@@ -1115,6 +1127,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     process.stdin.pause();
     if (watcher) watcher.close();
     if (sysWatcher) sysWatcher.close();
+    if (promptsWatcher) promptsWatcher.close();
     console.log(`\n${colors.dim}Exited message viewer${colors.reset}\n`);
   }
 
