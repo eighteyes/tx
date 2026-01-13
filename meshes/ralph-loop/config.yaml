@@ -15,31 +15,43 @@ description: |
 # ============================================================================
 
 agents:
-  - name: ralph
+  - name: ralph-plan
     model: sonnet
-    prompt: ralph/plan.md  # Default prompt, overridden by FSM state
+    prompt: ralph/plan.md
     description: |
-      Autonomous planning or building agent. Operates in two modes:
-      - Plan mode: Gap analysis, create IMPLEMENTATION_PLAN.md (uses ralph/plan.md)
-      - Build mode: Implement from plan, test, commit (uses ralph/build.md)
-      Routes via success_signal: PLAN_COMPLETE/BUILD_COMPLETE, REFINE, BLOCKED.
+      Planning agent. Gap analysis, create/update IMPLEMENTATION_PLAN.md.
+      Routes via success_signal: PLAN_COMPLETE, REFINE, BLOCKED.
+
+  - name: ralph-build
+    model: sonnet
+    prompt: ralph/build.md
+    description: |
+      Building agent. Implement from plan, test, commit, update learnings.
+      Routes via success_signal: BUILD_COMPLETE, REFINE, BLOCKED.
 
 # ============================================================================
 # MESH ENTRY & EXIT
 # ============================================================================
 
-entry_point: ralph
-completion_agent: ralph
+entry_point: ralph-plan
+completion_agent: ralph-plan
 
 # ============================================================================
 # MESSAGE ROUTING
 # ============================================================================
 
 routing:
-  ralph:
+  ralph-plan:
     complete:
-      core: "Work complete, returning to core"
-      ralph: "Needs refinement, iterating"
+      core: "Plan complete, returning to core"
+      ralph-plan: "Needs refinement, iterating"
+    blocked:
+      core: "Fatal error - cannot proceed"
+
+  ralph-build:
+    complete:
+      core: "Build complete, returning to core"
+      ralph-build: "Needs refinement, iterating"
     blocked:
       core: "Fatal error - cannot proceed"
 
@@ -111,18 +123,13 @@ fsm:
     # PLAN LOOP: Gap analysis, create IMPLEMENTATION_PLAN.md
     # ============================================================
     plan_loop:
-      agents: [ralph]
-      prompt_override: ralph/plan.md
+      agents: [ralph-plan]
       entry:
         set:
           plan_iteration: "$((plan_iteration + 1))"
-        inject:
-          mode: plan
-          iteration: "$plan_iteration"
-          max_iterations: "$max_plan_iterations"
       exit:
         gates:
-          ralph:
+          ralph-plan:
             - check_plan_max_iterations
         set:
           plan_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
@@ -139,18 +146,13 @@ fsm:
     # BUILD LOOP: Implement from plan, test, commit
     # ============================================================
     build_loop:
-      agents: [ralph]
-      prompt_override: ralph/build.md
+      agents: [ralph-build]
       entry:
         set:
           build_iteration: "$((build_iteration + 1))"
-        inject:
-          mode: build
-          iteration: "$build_iteration"
-          max_iterations: "$max_build_iterations"
       exit:
         gates:
-          ralph:
+          ralph-build:
             - check_build_max_iterations
         set:
           build_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
