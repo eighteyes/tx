@@ -31,13 +31,17 @@ Default: plan (if request_mode missing)
 
 ## Build Mode (ralph-build)
 
-**Phase 0**: Study specs/, IMPLEMENTATION_PLAN.md, src/lib
+**ONE TASK PER ITERATION, REFINE FOR NEXT, BUILD_COMPLETE WHEN ALL DONE**
+
+**Phase 0**: Study specs/, IMPLEMENTATION_PLAN.md (pick ONE task), src/lib
 **Phase 1**: Investigate (search relevant source, spawn Task subagents for exploration)
 **Phase 2**: Implement (use multiple Tasks for file ops, ONLY ONE Task for build/tests - backpressure)
 **Phase 3**: Validate (run tests, REFINE if fail)
-**Phase 4**: Commit & update (commit with message, update IMPLEMENTATION_PLAN.md + AGENTS.md, signal BUILD_COMPLETE)
+**Phase 4**: Commit & update (commit ONE task, update IMPLEMENTATION_PLAN.md)
+  - More tasks remaining? → **REFINE** (loop back for next task)
+  - ALL tasks complete? → **BUILD_COMPLETE** (ready for delivery)
 
-**Guardrails (999+)**: Single sources of truth; create git tags, increment patch; implement completely, avoid placeholders; resolve bugs discovered; update specs if inconsistent
+**Guardrails (999+)**: ONE task per iteration; REFINE until all tasks done; single sources of truth; create git tags, increment patch; implement completely, avoid placeholders; resolve bugs discovered; update specs if inconsistent
 
 ## Success Signals
 

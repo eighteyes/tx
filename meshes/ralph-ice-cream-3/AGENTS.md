@@ -18,10 +18,16 @@ request_mode: build  → haiku_build_loop → sonnet_build_loop → opus_build_l
 
 Default: plan chain
 
-## Tier 1: Haiku (Drafting)
+## Tier 1: Haiku (Drafting/Building)
 
-**Role**: Create solid first draft (plan or code)
-**Decision**: Early loops (1-3) can REFINE; late loops (4-5) should PASS
+**Role**: Create complete implementation - ONE task per iteration, loop until ALL done
+**Decision**: REFINE to continue to next task; PASS only when ALL tasks complete
+
+**Build Mode Loop**:
+- Pick ONE highest priority pending task
+- Implement it fully
+- More tasks remain? → **REFINE** (loop back for next task)
+- ALL tasks complete? → **PASS** (to sonnet for quality review)
 
 **Phase 0**: Check specs/ - if empty, enter Requirements Definition; if exists, study specs/IMPLEMENTATION_PLAN.md/src/lib
 **Phase 1**: Requirements Definition (IF specs/ empty in plan mode) - HITL to define JTBD, break into topics, write specs/, iterate until approved
@@ -30,33 +36,37 @@ Default: plan chain
 
 **Requirements HITL** (plan mode only): If specs/ empty, asks human about project, identifies JTBD, writes specs/ files, iterates until approved
 
-**Guardrails (999+)**: Be honest, token-aware, spawn Task subagents for heavy lifting
+**Guardrails (999+)**: ONE task per iteration; REFINE until all done; be honest, token-aware, spawn Task subagents for heavy lifting
 
-**Signals**: PASS → sonnet tier | REFINE → self-loop | BLOCKED → error
+**Signals**: PASS → sonnet tier (ONLY when all tasks complete) | REFINE → self-loop | BLOCKED → error
 
-## Tier 2: Sonnet (Review)
+## Tier 2: Sonnet (Quality Gate on Complete Work)
 
-**Role**: Review haiku's draft, add value only (not just rewording)
-**Quality Gates**: Accuracy, Completeness, Clarity, Structure
+**Role**: Review haiku's COMPLETE implementation (all tasks finished), add value only
+**Quality Gates**: Accuracy, Completeness, Clarity, Structure (across COMPLETE work)
 
-**Decision**: Can I add value AND worth iteration? → REFINE | Otherwise → PASS
+**Key Insight**: Haiku has already completed ALL tasks. You review the ENTIRE body of work, not individual tasks.
 
-**Phase 0**: Study context
-**Phases 1-4**: Review against 4 gates, refine if needed
-**Guardrails (999+)**: Trust haiku (often better than appears); max 3 iterations then PASS
+**Decision**: Issues in complete work? → REFINE | Otherwise → PASS
 
-**Signals**: PASS → opus tier | REFINE → self-loop | BLOCKED → error
+**Phase 0**: Study context - understand FULL scope of what haiku built
+**Phases 1-4**: Review COMPLETE implementation against 4 gates, refine if needed
+**Guardrails (999+)**: You review complete work; trust haiku (often better than appears); max 3 iterations then PASS
 
-## Tier 3: Opus (Final Gate)
+**Signals**: PASS → opus tier (complete work approved) | REFINE → self-loop | BLOCKED → error
 
-**Role**: Final judgment on deliverability, apply polish if needed (max 1 refinement)
-**Decision**: Customer satisfaction test → PASS or REFINE once
+## Tier 3: Opus (Final Gate on Complete Feature)
 
-**Phase 0**: Study context
-**Phases 1-4**: Final review, apply polish if needed
-**Guardrails (999+)**: You are the last line; perfectionism is enemy; max 2 iterations then ship
+**Role**: Final judgment on COMPLETE implementation, apply polish if needed (max 1 refinement)
+**Decision**: Customer satisfaction test on COMPLETE feature → PASS or REFINE once
 
-**Signals**: PASS → complete (return to core) | REFINE → self-loop | BLOCKED → error
+**Key Insight**: All tasks are complete, sonnet has reviewed. You make the final call on the ENTIRE feature.
+
+**Phase 0**: Study context - understand FULL scope of complete feature
+**Phases 1-4**: Final review of COMPLETE work, apply polish if needed
+**Guardrails (999+)**: You review complete feature; you are the last line; perfectionism is enemy; max 2 iterations then ship
+
+**Signals**: PASS → complete (return to core with complete feature) | REFINE → self-loop | BLOCKED → error
 
 ## Quality Gates by Mode
 
