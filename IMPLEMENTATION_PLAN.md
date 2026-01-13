@@ -114,7 +114,8 @@
 - **File**: `meshes/task-distribution-analysis/config.yaml`
 - **Issue**: Description references 'spawner' but agent is 'analyst'
 - **Fix**: Update description to reference correct agent name
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 311f8af, tag v0.2.3
+- **Discovery**: Updated description to "Analyst splits task into subtasks, experts analyze, synthesizer reviews" for clarity
 
 ---
 
