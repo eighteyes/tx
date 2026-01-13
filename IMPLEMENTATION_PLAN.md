@@ -12,49 +12,49 @@
 - **File**: `meshes/code-review-ensemble/config.yaml`
 - **Issue**: Missing required `aggregation_strategy` field in ensemble config
 - **Fix**: Add `aggregation_strategy: concat` to ensemble config block
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Already present in config
 
 ### Task 1.2: ensemble-research - Add coordinator and reviewer
 - **File**: `meshes/ensemble-research/config.yaml`
 - **Issue**: Missing required `coordinator` and `reviewer` fields
 - **Fix**: Add coordinator and reviewer agent definitions to ensemble config
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 021630a
 
 ### Task 1.3: dev-graded - Remove outdated worktree section
 - **File**: `meshes/dev-graded/prompt.md`
 - **Issue**: Outdated worktree instructions with non-existent template variables (lines 64-87)
 - **Fix**: Remove or replace outdated worktree section
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 021630a
 
 ### Task 1.4: ralph-ice-cream - Add rearmatter configuration
 - **File**: `meshes/ralph-ice-cream/config.yaml`
 - **Issue**: Missing rearmatter configuration (FSM reads it but not defined)
 - **Fix**: Add rearmatter configuration block with success_signal field
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 021630a
 
 ### Task 1.5: ralph-ice-cream-3 - Fix markdown formatting
 - **File**: `meshes/ralph-ice-cream-3/sonnet-reviewer/build.md`
 - **Issue**: Broken markdown (missing closing backticks)
 - **Fix**: Fix markdown code block formatting
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 021630a
 
 ### Task 1.6: task-distribution-analysis - Remove malformed directory
 - **File**: `meshes/task-distribution-analysis/{prompts}/`
 - **Issue**: Malformed empty '{prompts}/' directory exists
 - **Fix**: Remove malformed directory
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Removed in this session
 
 ### Task 1.7: test - Update timestamp formats
 - **Files**: `meshes/test/*.md` (5 instances across 4 files)
 - **Issue**: Outdated timestamp format without milliseconds
 - **Fix**: Update all timestamps to millisecond precision format
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit 225504d
 
 ### Task 1.8: brain - Remove dead /know:validate reference
 - **File**: `meshes/brain/config.yaml`
 - **Issue**: Dead reference to non-existent `/know:validate` command (lines 55-61)
-- **Fix**: Remove the /know:validate intent mapping
-- **Status**: Pending
+- **Fix**: Replace /know:validate with /know:build
+- **Status**: Complete (2026-01-13) - Fixed in commit 225504d
 
 ---
 
