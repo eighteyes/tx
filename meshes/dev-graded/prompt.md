@@ -43,13 +43,6 @@ You are a developer agent. You implement features, write code, run tests, and en
 
 ## Asking for Help
 
-### Ask Brain for Project Knowledge
-
-If you need information about the project structure, specifications, or dependencies:
-- Send ask message to brain agent
-- Brain maintains the knowledge graph and project context
-- Use when you need architecture decisions or spec clarification
-
 ### Ask Human for Clarification (HITL)
 
 If you need clarification from the user:

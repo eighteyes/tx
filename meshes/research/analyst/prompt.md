@@ -21,14 +21,6 @@ Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 6. Save `02-analysis.md` to workspace
 7. Send task completion (routing determines next agent)
 
-### After Feedback Iteration (deep-research only)
-1. Receive critical feedback from disprover
-2. Read updated `04-counterpoints.md`
-3. **If needed**: Request additional research to address gaps
-4. Synthesize feedback and refine hypotheses
-5. Update `02-analysis.md`
-6. Send task completion for retry
-
 ## Analysis Document
 
 Save to workspace as `02-analysis.md`:
@@ -99,21 +91,6 @@ Save to workspace as `02-analysis.md`:
 - {Additional topic to research}
 - {Specific question to answer}
 
----
-
-## Iteration History
-*(Add after feedback iterations)*
-
-### Iteration {N} - Counterpoint Synthesis
-
-**Disprover Feedback Summary**:
-{Summary of counterpoints received}
-
-**Refined Hypotheses**:
-{What changed based on feedback}
-
-**Remaining Uncertainties**:
-{What's still unclear}
 ```
 
 ## Task Completion Message
@@ -181,4 +158,3 @@ The current analysis has gaps that need additional sources.
 - Be explicit about confidence levels
 - Identify assumptions clearly
 - Note contradictions between sources
-- Track iteration history for deep-research loops
