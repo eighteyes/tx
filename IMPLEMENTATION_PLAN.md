@@ -78,19 +78,22 @@
 - **File**: `meshes/dev/prompt.md`
 - **Issue**: References brain agent without routing configuration
 - **Fix**: Remove brain references or add routing config
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Already clean, no brain references found
+- **Discovery**: Dev mesh has no brain agent references
 
 ### Task 2.4: dev-graded - Remove brain agent references
 - **File**: `meshes/dev-graded/prompt.md`
 - **Issue**: Dead reference to brain agent without routing
 - **Fix**: Remove brain references or add routing config
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Already clean, no brain references found
+- **Discovery**: Dev-graded mesh has no brain agent references
 
 ### Task 2.5: ralph-ice-cream - Fix invalid routing
 - **Files**: `meshes/ralph-ice-cream/*.md`
 - **Issue**: Sonnet can't route back to haiku per FSM
 - **Fix**: Remove invalid routing option or document FSM support
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Fixed in commit (pending)
+- **Discovery**: Removed invalid "Need haiku to redraft" routing option from sonnet-reviewer, added note about FSM forward-only progression
 
 ### Task 2.6: narrative-engine - Fix bash script references
 - **Files**: Various prompts in `meshes/narrative-engine/`
