@@ -123,8 +123,7 @@ entry_point: coordinator
 completion_agent: coordinator
 
 # Session persistence (only coordinator tracks state across turns)
-continuation:
-  - coordinator
+continuation: true
 
 # Phase-based routing with direct agent communication
 # Phase 1: DRAMATURG + SCENE-CRAFTER (prep)

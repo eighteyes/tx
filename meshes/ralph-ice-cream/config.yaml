@@ -115,15 +115,12 @@ fsm:
         default: opus_review_loop
 
     blocked_state:
-      agents: [core]
       exit:
         default: error_state
 
-    error_state:
-      agents: [core]
+    error_state: {}
 
-    complete:
-      agents: [core]
+    complete: {}
 
   scripts:
     check_haiku_max_iterations: |

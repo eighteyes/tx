@@ -171,16 +171,13 @@ fsm:
     # TERMINAL STATES
     # ============================================================
     blocked_state:
-      agents: [core]
       description: "Fatal error encountered, escalate to core"
       exit:
         default: error_state
 
-    error_state:
-      agents: [core]
+    error_state: {}
 
-    complete:
-      agents: [core]
+    complete: {}
 
   # ========================================================================
   # FSM VALIDATION SCRIPTS

@@ -184,15 +184,12 @@ fsm:
     # ERROR HANDLING
     # ============================================================
     blocked_state:
-      agents: [core]
       exit:
         default: error_state
 
-    error_state:
-      agents: [core]
+    error_state: {}
 
-    complete:
-      agents: [core]
+    complete: {}
 
   # ========================================================================
   # FSM VALIDATION SCRIPTS
