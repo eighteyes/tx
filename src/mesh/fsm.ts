@@ -155,6 +155,7 @@ export class MeshFSM extends EventEmitter {
       log.debug('fsm', 'Created initial FSM state', {
         meshName: this.meshName,
         initialState: this._initialState,
+        context: this.stateData.context,
       });
 
       // Execute onEnter for initial state
@@ -467,6 +468,14 @@ export class MeshFSM extends EventEmitter {
     delete this.stateData.gateRetries[toState];
     this.persistence.saveState(this.stateData);
 
+    // Log FSM context after state change
+    log.debug('fsm', 'FSM state changed', {
+      meshName: this.meshName,
+      from: fromState,
+      to: toState,
+      context: this.stateData.context,
+    });
+
     // Emit transition event
     this.emit('fsm:transition', {
       meshName: this.meshName,
@@ -509,6 +518,7 @@ export class MeshFSM extends EventEmitter {
       previousState,
       initialState: this._initialState,
       reason,
+      context: this.stateData.context,
     });
 
     // Emit reset event
@@ -570,5 +580,325 @@ export class MeshFSM extends EventEmitter {
    */
   getScriptExecutor(): ScriptExecutor {
     return this.scriptExecutor;
+  }
+
+  /**
+   * Handle a message and validate/execute FSM transitions
+   *
+   * This is the central validation point for ALL message types.
+   * Called before type-specific routing happens.
+   *
+   * Flow:
+   * 1. Get current state config
+   * 2. Merge rearmatter into context
+   * 3. Execute exit.set operations (bash variable assignments)
+   * 4. Evaluate exit routing to determine next state
+   * 5. Validate agent's routing matches FSM's next state
+   * 6. Execute state transition if valid
+   *
+   * @param from - Sender agent ID (e.g., "ralph-loop/ralph-build")
+   * @param to - Target agent ID (e.g., "ralph-loop/ralph-build" or "core/core")
+   * @param messageType - Message type (task-complete, ask, ask-human, etc.)
+   * @param frontmatter - Message frontmatter
+   * @param rearmatter - Message rearmatter (contains success_signal, etc.)
+   * @returns true if message passes validation, false if rejected
+   */
+  async handleMessage(
+    from: string,
+    to: string,
+    messageType: string,
+    frontmatter: Record<string, unknown>,
+    rearmatter?: Record<string, unknown>
+  ): Promise<boolean> {
+    if (!this.initialized || !this.stateData) {
+      log.warn('fsm', 'FSM not initialized, skipping validation', {
+        meshName: this.meshName,
+      });
+      return true; // Allow message if FSM not ready
+    }
+
+    const currentState = this.getCurrentState();
+    const stateConfig = this.stateMap.get(currentState);
+
+    if (!stateConfig) {
+      log.warn('fsm', 'No state config found for current state', {
+        meshName: this.meshName,
+        currentState,
+      });
+      return true; // Allow message if no state config
+    }
+
+    // If no exit config, allow message (state doesn't control routing)
+    if (!stateConfig.exit) {
+      log.debug('fsm', 'State has no exit config, allowing message', {
+        meshName: this.meshName,
+        currentState,
+      });
+      return true;
+    }
+
+    log.debug('fsm', 'Validating message with FSM', {
+      meshName: this.meshName,
+      currentState,
+      from,
+      to,
+      messageType,
+      hasRearmatter: !!rearmatter,
+    });
+
+    // Build context with message and rearmatter data
+    const context: Record<string, unknown> = {
+      ...this.stateData.context,
+      message: frontmatter,
+      rearmatter: rearmatter || {},
+    };
+
+    // Execute exit.set operations to extract values from rearmatter
+    if (stateConfig.exit.set) {
+      for (const [key, valueExpr] of Object.entries(stateConfig.exit.set)) {
+        try {
+          // Substitute context variables in the expression
+          let expr = valueExpr;
+
+          // Replace $rearmatter with JSON string
+          if (expr.includes('$rearmatter')) {
+            expr = expr.replace(/\$rearmatter/g, JSON.stringify(rearmatter || {}));
+          }
+
+          // Replace $message with JSON string
+          if (expr.includes('$message')) {
+            expr = expr.replace(/\$message/g, JSON.stringify(frontmatter));
+          }
+
+          // Replace context variable references like $varname
+          for (const [ctxKey, ctxValue] of Object.entries(context)) {
+            if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
+              expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+            }
+          }
+
+          // Execute the expression
+          const scriptContext: ScriptContext = {
+            fsmState: currentState,
+            fsmMeshName: this.meshName,
+            ...this.stateData.context,
+          };
+
+          // Also inject rearmatter values as individual env vars for yq access
+          if (rearmatter) {
+            for (const [rmKey, rmValue] of Object.entries(rearmatter)) {
+              if (typeof rmValue === 'string' || typeof rmValue === 'number' || typeof rmValue === 'boolean') {
+                scriptContext[`rearmatter_${rmKey}`] = rmValue;
+              }
+            }
+          }
+
+          const result = await this.scriptExecutor.executeInline(expr, scriptContext);
+
+          if (result.success) {
+            const output = result.stdout.trim();
+            context[key] = output;
+            // Also update FSM context for persistence
+            this.updateContext({ [key]: output });
+            log.debug('fsm', 'Exit.set evaluated', {
+              meshName: this.meshName,
+              key,
+              value: output,
+            });
+          } else {
+            log.warn('fsm', 'Exit.set evaluation failed', {
+              meshName: this.meshName,
+              key,
+              expr: valueExpr,
+              stderr: result.stderr,
+            });
+          }
+        } catch (error) {
+          log.error('fsm', 'Exit.set execution error', {
+            meshName: this.meshName,
+            key,
+            error: (error as Error).message,
+          });
+          // Continue with other set operations
+        }
+      }
+    }
+
+    // Execute gates before routing (if configured)
+    if (stateConfig.exit.gates) {
+      const [, agentName] = from.split('/');
+      const agentGates = stateConfig.exit.gates[agentName];
+
+      if (agentGates && agentGates.length > 0) {
+        for (const gateName of agentGates) {
+          try {
+            // Gates are scripts that must pass (exit 0) for routing to proceed
+            const gateScriptContext: ScriptContext = {
+              fsmState: currentState,
+              fsmMeshName: this.meshName,
+              ...this.stateData.context,
+            };
+
+            // TODO: Look up gate script from fsm.scripts config
+            // For now, log that gate checking is pending
+            log.debug('fsm', 'Gate check pending implementation', {
+              meshName: this.meshName,
+              gateName,
+              agentName,
+            });
+          } catch (error) {
+            log.error('fsm', 'Gate check failed', {
+              meshName: this.meshName,
+              gateName,
+              error: (error as Error).message,
+            });
+            throw error; // Gate failures are fatal
+          }
+        }
+      }
+    }
+
+    // Evaluate exit routing to determine next state
+    const nextState = await this.evaluateExitRouting(stateConfig.exit, context);
+
+    if (!nextState) {
+      log.error('fsm', 'No valid exit route found', {
+        meshName: this.meshName,
+        currentState,
+        from,
+        to,
+        messageType,
+        context: Object.fromEntries(
+          Object.entries(context).filter(([k]) => !['message', 'rearmatter'].includes(k))
+        ),
+      });
+      return false; // Reject message - no valid route
+    }
+
+    log.debug('fsm', 'FSM determined next state', {
+      meshName: this.meshName,
+      currentState,
+      nextState,
+      from,
+      to,
+    });
+
+    // Validate agent's routing matches FSM's next state
+    // Extract target mesh and agent from 'to' field
+    const [targetMesh, targetAgent] = to.split('/');
+    const nextStateConfig = this.stateMap.get(nextState);
+
+    // If routing to a different mesh (e.g., core/core), that's always allowed
+    // FSM only validates intra-mesh routing
+    if (targetMesh !== this.meshName) {
+      log.debug('fsm', 'Message routes outside mesh, executing transition', {
+        meshName: this.meshName,
+        targetMesh,
+        nextState,
+      });
+
+      // Execute transition to next state
+      const transitioned = await this.executeTransition(currentState, nextState, from, messageType);
+      return transitioned;
+    }
+
+    // Check if target agent is allowed in the next state
+    if (nextStateConfig) {
+      const allowedAgents: string[] = [];
+
+      // Get coordinator
+      if (nextStateConfig.coordinator) {
+        allowedAgents.push(nextStateConfig.coordinator);
+      }
+
+      // Get participants
+      if (nextStateConfig.participants) {
+        allowedAgents.push(...nextStateConfig.participants);
+      }
+
+      // Check if target agent is in allowed list
+      if (allowedAgents.length > 0 && !allowedAgents.includes(targetAgent)) {
+        log.error('fsm', 'Agent routing violates FSM state', {
+          meshName: this.meshName,
+          currentState,
+          nextState,
+          agentRoutedTo: targetAgent,
+          fsmAllowedAgents: allowedAgents,
+        });
+        return false; // Reject - routing violates FSM rules
+      }
+    }
+
+    // Execute transition to next state
+    const transitioned = await this.executeTransition(currentState, nextState, from, messageType);
+    return transitioned;
+  }
+
+  /**
+   * Execute state transition with proper lifecycle
+   */
+  private async executeTransition(
+    fromState: string,
+    toState: string,
+    triggerAgent: string,
+    triggerType: string
+  ): Promise<boolean> {
+    if (!this.stateData) return false;
+
+    const startTime = Date.now();
+
+    try {
+      // Execute onExit for current state
+      const fromStateConfig = this.stateMap.get(fromState);
+      if (fromStateConfig?.onExit) {
+        const scriptContext: ScriptContext = {
+          fsmState: fromState,
+          fsmMeshName: this.meshName,
+          fsmTransition: `${fromState}->${toState}`,
+          ...this.stateData.context,
+        };
+        await this.executeScript('onExit', fromStateConfig.onExit, scriptContext);
+      }
+
+      // Update state
+      this.stateData.currentState = toState;
+      this.stateData.lastTransitionAt = Date.now();
+      this.stateData.updatedAt = Date.now();
+      delete this.stateData.gateRetries[toState];
+      this.persistence.saveState(this.stateData);
+
+      // Emit transition event
+      const transitionEvent: FSMTransitionEvent = {
+        meshName: this.meshName,
+        from: fromState,
+        to: toState,
+        trigger: triggerType,
+        triggerAgent,
+        timestamp: Date.now(),
+        durationMs: Date.now() - startTime,
+      };
+      this.emit('fsm:transition', transitionEvent);
+
+      log.info('fsm', 'FSM state transitioned', {
+        meshName: this.meshName,
+        from: fromState,
+        to: toState,
+        trigger: triggerType,
+        triggerAgent,
+      });
+
+      // Execute onEnter for new state
+      await this.executeOnEnter(toState);
+
+      return true;
+    } catch (error) {
+      log.error('fsm', 'Transition failed', {
+        meshName: this.meshName,
+        from: fromState,
+        to: toState,
+        error: (error as Error).message,
+      });
+      throw error; // Re-throw for caller to handle
+    }
   }
 }

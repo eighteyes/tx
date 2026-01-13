@@ -337,6 +337,98 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
+   * Validate message against FSM rules (if mesh has FSM)
+   * Called for ALL message types before type-specific routing happens.
+   *
+   * This is the central FSM validation point. It should be called by the
+   * consumer before emitting core-message or worker-message events.
+   *
+   * @param senderAgentId - Agent that sent the message (e.g., "ralph-loop/ralph-build")
+   * @param targetAgentId - Target agent (e.g., "ralph-loop/ralph-build" or "core/core")
+   * @param messageType - Message type (task-complete, ask, ask-human, etc.)
+   * @param messageFrontmatter - Parsed frontmatter from message
+   * @param rearmatter - Parsed rearmatter (optional, contains success_signal etc.)
+   * @returns true if message passes validation, false if rejected
+   */
+  async validateMessageWithFSM(
+    senderAgentId: string,
+    targetAgentId: string,
+    messageType: string,
+    messageFrontmatter: Record<string, unknown>,
+    rearmatter?: Record<string, unknown>
+  ): Promise<boolean> {
+    const [meshName] = senderAgentId.split('/');
+    if (!meshName) {
+      // No mesh = no FSM validation needed
+      return true;
+    }
+
+    const fsm = this.meshFSMs.get(meshName);
+    if (!fsm || !fsm.isInitialized()) {
+      // No FSM = no validation needed
+      log.debug('dispatcher', 'No FSM for mesh, skipping validation', {
+        meshName,
+        from: senderAgentId,
+        to: targetAgentId,
+      });
+      return true;
+    }
+
+    try {
+      // Validate message and potentially transition FSM
+      const transitioned = await fsm.handleMessage(
+        senderAgentId,
+        targetAgentId,
+        messageType,
+        messageFrontmatter,
+        rearmatter
+      );
+
+      if (!transitioned) {
+        log.error('dispatcher', 'FSM validation rejected message', {
+          meshName,
+          from: senderAgentId,
+          to: targetAgentId,
+          type: messageType,
+        });
+
+        // Emit mesh halt event
+        this.emit('mesh:halt', {
+          meshName,
+          reason: 'FSM validation failed',
+          message: 'Agent routing violates state machine rules',
+        });
+
+        return false;
+      }
+
+      log.debug('dispatcher', 'FSM validation passed', {
+        meshName,
+        from: senderAgentId,
+        to: targetAgentId,
+        type: messageType,
+        newState: fsm.getCurrentState(),
+      });
+
+      return true;
+    } catch (error) {
+      // Script failures are fatal - halt the mesh
+      log.error('dispatcher', 'FSM validation failed fatally', {
+        meshName,
+        error: (error as Error).message,
+      });
+
+      this.emit('mesh:halt', {
+        meshName,
+        reason: 'FSM script failure',
+        error: (error as Error).message,
+      });
+
+      return false;
+    }
+  }
+
+  /**
    * Get active workers in format needed by stuck detector
    */
   private getActiveWorkersForDetector(): Map<string, ActiveWorkerInfo> {
@@ -536,55 +628,12 @@ export class WorkerDispatcher extends EventEmitter {
    * 2. Transition it to awaiting state
    * 3. For ask-human: interrupt the worker and inject steering prompt
    * 4. Set up timeout for await
+   *
+   * NOTE: FSM validation now happens centrally in validateMessageWithFSM()
+   * before this handler is called. This handler only manages worker state.
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
-
-    // Check for FSM transition (eager on first ask)
-    const [meshName, agentName] = senderAgentId.split('/');
-    if (meshName) {
-      const fsm = this.meshFSMs.get(meshName);
-      if (fsm && fsm.isInitialized()) {
-        try {
-          // Build frontmatter from event for FSM context
-          const messageFrontmatter: Record<string, unknown> = {
-            from: senderAgentId,
-            to: targetAgentId,
-            type: messageType,
-            'msg-id': event.msgId,
-            headline: event.headline,
-          };
-
-          const transitioned = await fsm.handleMessage(
-            senderAgentId,
-            targetAgentId,
-            messageType,
-            messageFrontmatter
-          );
-
-          if (transitioned) {
-            log.debug('dispatcher', 'FSM transition triggered by ask message', {
-              meshName,
-              from: senderAgentId,
-              to: targetAgentId,
-              messageType,
-              newState: fsm.getCurrentState(),
-            });
-          }
-        } catch (error) {
-          // Script failures are fatal - halt the mesh
-          log.error('dispatcher', 'FSM transition failed fatally', {
-            meshName,
-            error: (error as Error).message,
-          });
-          this.emit('mesh:halt', {
-            meshName,
-            reason: 'FSM script failure',
-            error: (error as Error).message,
-          });
-        }
-      }
-    }
 
     const activeWorker = this.activeWorkers.get(senderAgentId);
     if (!activeWorker) {
