@@ -212,7 +212,11 @@ export class LifecycleHooks {
         return;
       }
 
-      const systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+      // Load and inject messaging protocol
+      const basePrompt = fs.readFileSync(promptPath, 'utf-8');
+      const { PromptInjector } = await import('../workspace/injector.ts');
+      const injector = new PromptInjector();
+      const systemPrompt = injector.injectMessagingProtocol(basePrompt);
 
       const runnerConfig: SdkRunnerConfig = {
         id: `commit-agent-${context.meshInstance}`,
