@@ -823,6 +823,23 @@ The system will resume your session when the human responds.`;
           transitionName: 'complete',
         });
         this.writeWorkerState();
+
+        // Check for pending continuation messages (self-addressed or from other agents)
+        const pendingMsg = this.queue.peekOne(agentId);
+        if (pendingMsg && this.running) {
+          log.info('dispatcher', `Continuation message found after resumed worker completion, spawning next iteration`, {
+            agentId,
+            from: pendingMsg.from_agent,
+            type: pendingMsg.type,
+            isSelfLoop: pendingMsg.from_agent === agentId,
+          });
+
+          setTimeout(() => {
+            if (this.running && !this.activeWorkers.has(agentId)) {
+              this.spawnWorker(meshName, agentConfig);
+            }
+          }, 100);
+        }
       });
 
       runner.on('error', (error) => {
@@ -1475,6 +1492,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
+      // Inject rearmatter config if present
+      if (meshConfig?.rearmatter) {
+        systemPrompt = this.promptInjector.injectRearmatter(systemPrompt, meshConfig.rearmatter);
+        log.info('dispatcher', `Injected rearmatter instructions into system prompt`, {
+          agentId,
+          fields: meshConfig.rearmatter.fields || [],
+        });
+      }
+
       // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
       const promptMetadata: Record<string, unknown> = {
@@ -1855,6 +1881,25 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             ? { iterations: workerHookContext.qualityIteration || 1, passed: true }
             : undefined,
         });
+
+        // Check for pending continuation messages (self-addressed or from other agents)
+        // This handles the case where an agent sends a message to itself to continue iterating
+        const pendingMsg = this.queue.peekOne(agentId);
+        if (pendingMsg && this.running) {
+          log.info('dispatcher', `Continuation message found after completion, spawning next iteration`, {
+            agentId,
+            from: pendingMsg.from_agent,
+            type: pendingMsg.type,
+            isSelfLoop: pendingMsg.from_agent === agentId,
+          });
+
+          // Schedule next iteration (slight delay to allow state to settle)
+          setTimeout(() => {
+            if (this.running && !this.activeWorkers.has(agentId)) {
+              this.spawnWorker(meshName, agent);
+            }
+          }, 100);
+        }
       });
 
       // Error transition with retry logic

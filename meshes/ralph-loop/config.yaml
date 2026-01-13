@@ -69,10 +69,6 @@ workspace:
     - IMPLEMENTATION_PLAN.md: "Persistent plan (created/updated across modes)"
     - AGENTS.md: "Operational guide for this mesh"
     - src/: "Build output directory"
-  note: |
-    Deterministic operation: Each FSM iteration loads identical workspace context.
-    Agents should reference {workspace}/IMPLEMENTATION_PLAN.md for task selection.
-    Agents should reference {workspace}/AGENTS.md for operational guidance.
 
 # ============================================================================
 # REARMATTER CONFIGURATION
