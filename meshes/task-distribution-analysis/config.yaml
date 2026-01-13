@@ -1,5 +1,5 @@
 mesh: task-distribution-analysis
-description: "Spawner splits task into subtasks, experts analyze, reviewer synthesizes"
+description: "Analyst splits task into subtasks, experts analyze, synthesizer reviews"
 
 agents:
   - name: analyst
