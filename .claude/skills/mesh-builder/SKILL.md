@@ -158,7 +158,7 @@ See `docs/mesh-fsm-config.md` for full documentation.
    - Alignment with methodologies/patterns
    - Not processed by the system
 
-2. **`AGENTS.md` in mesh directory** (for agents at runtime)
+2. **`README.md` in mesh directory** (for agents at runtime)
    - Operational guidance for autonomous execution
    - HOW to operate (mandates, decision trees, quality gates)
    - Loaded by agents during execution
@@ -168,7 +168,7 @@ See `docs/mesh-fsm-config.md` for full documentation.
 ```
 meshes/ralph-ice-cream-2/
 ├── config.yaml          # includes playbook_notes
-├── AGENTS.md            # runtime operational guide
+├── README.md            # runtime operational guide
 ├── ralph-haiku/
 │   └── prompt.md
 └── sonnet-reviewer/
@@ -177,7 +177,7 @@ meshes/ralph-ice-cream-2/
 
 **When to use each:**
 - `playbook_notes`: Complex meshes with novel patterns or specific methodologies
-- `AGENTS.md`: Multi-agent meshes where agents need operational context
+- `README.md`: Multi-agent meshes where agents need operational context
 - Both: Advanced meshes like Ralph where design rationale AND runtime guidance matter
 
 ## Debugging
