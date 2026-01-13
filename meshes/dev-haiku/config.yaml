@@ -45,7 +45,7 @@ fsm:
     init:
       agents: [coordinator]
       entry:
-        run: init_state
+        run: init-state
       exit:
         when:
           - condition: "true"
@@ -60,9 +60,9 @@ fsm:
       entry:
         gates:
           worker:
-            - exploration_ready
+            - exploration-ready
       exit:
-        run: increment_iteration
+        run: increment-iteration
         when:
           - condition: "true"
             target: plan
@@ -76,7 +76,7 @@ fsm:
       entry:
         gates:
           coordinator:
-            - plan_ready
+            - plan-ready
       exit:
         when:
           - condition: "true"
@@ -91,9 +91,9 @@ fsm:
       entry:
         gates:
           worker:
-            - code_ready
+            - code-ready
       exit:
-        run: increment_iteration
+        run: increment-iteration
         when:
           - condition: "true"
             target: review
@@ -107,7 +107,7 @@ fsm:
       entry:
         gates:
           reviewer:
-            - review_passed
+            - review-passed
       exit:
         when:
           - condition: "true"
@@ -124,26 +124,26 @@ fsm:
   # FSM VALIDATION SCRIPTS
   # ========================================================================
   scripts:
-    init_state: |
+    init-state: |
       echo "Initializing FSM state"
       exit 0
 
-    increment_iteration: |
+    increment-iteration: |
       echo "Incrementing iteration"
       exit 0
 
-    exploration_ready: |
+    exploration-ready: |
       echo "Checking exploration readiness"
       exit 0
 
-    plan_ready: |
+    plan-ready: |
       echo "Checking plan readiness"
       exit 0
 
-    code_ready: |
+    code-ready: |
       echo "Checking code readiness"
       exit 0
 
-    review_passed: |
+    review-passed: |
       echo "Checking review status"
       exit 0
