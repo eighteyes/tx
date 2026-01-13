@@ -21,6 +21,11 @@ export {
   type FSMScriptEvent,
 } from './fsm.ts';
 
+export type {
+  FSMExitConfig,
+  ExitWhenClause,
+} from '../shared/types.ts';
+
 export {
   FSMPersistence,
   type FSMStateData,
@@ -33,6 +38,11 @@ export {
   type ScriptResult,
   type ScriptExecutorConfig,
 } from './fsm-scripts.ts';
+
+export {
+  ConditionEvaluator,
+  type ParsedCondition,
+} from './fsm-evaluator.ts';
 
 export {
   AggregationEngine,
