@@ -41,20 +41,3 @@ Default: plan (if request_mode missing)
 **PLAN_COMPLETE / BUILD_COMPLETE**: Work done → complete state → return to core
 **REFINE**: Needs iteration → loop to self (check max iterations)
 **BLOCKED**: Fatal error → blocked_state → error
-
-## Ralph Language Patterns
-
-- "study" (not "analyze" or "review")
-- "don't assume not implemented" (search first)
-- "using parallel subagents" / "up to N Task subagents"
-- "Ultrathink" (deep reasoning)
-- "keep it up to date"
-- "resolve them or document them"
-
-## Workspace
-
-`.ai/ralph-loop/{topic}/`
-- `specs/` - Requirements
-- `IMPLEMENTATION_PLAN.md` - Persistent plan
-- `AGENTS.md` - This guide
-- `src/` - Build output

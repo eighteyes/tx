@@ -57,19 +57,3 @@ Default: plan chain
 
 **Plan Mode**: Completeness, Feasibility, Clarity, Structure
 **Build Mode**: Accuracy, Completeness, Clarity, Structure
-
-## Ralph Language Patterns
-
-- "study" (not "analyze")
-- "don't assume not implemented"
-- "using parallel subagents" / "up to N Task subagents"
-- "Ultrathink" (deep reasoning)
-
-## Workspace
-
-`.ai/ralph-ice-cream-3/{topic}/`
-- `specs/` - Requirements
-- `IMPLEMENTATION_PLAN.md` - Plan output (created in plan mode)
-- `AGENTS.md` - This guide
-- `plan/` - Draft progression files
-- `build/` - Build output and logs

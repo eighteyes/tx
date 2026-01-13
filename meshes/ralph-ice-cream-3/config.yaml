@@ -7,8 +7,8 @@ description: |
   Plan mode: Gap analysis, create IMPLEMENTATION_PLAN.md with progressive refinement
   Build mode: Implementation with layered quality gates
 
-  Aligns with Ralph playbook: phase numbering (0a-0d, 1-4, 999+), context efficiency,
-  self-correction, deterministic FSM, autonomous operation with iteration awareness.
+  Features: Phase numbering (0a-0d, 1-4, 999+), context efficiency, self-correction,
+  deterministic FSM, autonomous operation with iteration awareness.
 
 # ============================================================================
 # AGENT CONFIGURATION
@@ -62,7 +62,7 @@ agents:
 # ============================================================================
 
 entry_point: haiku-plan
-completion_agent: opus-plan
+completion_agent: opus-build
 
 # ============================================================================
 # MESSAGE ROUTING
@@ -381,47 +381,3 @@ fsm:
         echo "Opus build max iterations ($max_opus_iterations) reached" >&2
         exit 1
       }
-
-# ============================================================================
-# PLAYBOOK ALIGNMENT
-# ============================================================================
-playbook_notes: |
-  Ralph Playbook Implementation:
-
-  Phase Numbering (All 6 Prompts):
-  - 0a: Study specs/
-  - 0b: Study IMPLEMENTATION_PLAN.md
-  - 0c: Study src/lib shared utilities
-  - 0d: Reference workspace paths
-  - 1-4: Mode and tier-specific workflow
-  - 999+: Guardrails in ascending priority
-
-  Mode Router:
-  - Reads request_mode from message frontmatter
-  - Routes to plan chain (haiku_plan→sonnet_plan→opus_plan)
-  - Or build chain (haiku_build→sonnet_build→opus_build)
-
-  Quality Gates by Mode:
-
-  Plan Mode Gates (4):
-  1. Completeness - All requirements mapped to tasks?
-  2. Feasibility - Dependencies identified correctly?
-  3. Clarity - Plan understandable and actionable?
-  4. Structure - Logical flow, phases defined?
-
-  Build Mode Gates (4):
-  1. Accuracy - Code correct, tests pass?
-  2. Completeness - All plan tasks addressed?
-  3. Clarity - Code readable, documented?
-  4. Structure - Logical organization, patterns?
-
-  Conservative Language:
-  - "study" (not "analyze" or "review")
-  - "don't assume not implemented"
-  - "using parallel subagents"
-  - "Ultrathink" for deep reasoning
-
-  Three-Tier Refinement:
-  - Haiku: Fast drafting (5 max iterations)
-  - Sonnet: Quality review (3 max iterations)
-  - Opus: Final gate (2 max iterations)

@@ -1,14 +1,14 @@
 mesh: ralph-loop
 
 description: |
-  Single-agent, dual-mode mesh implementing Ralph playbook patterns.
-  Mode router routes to plan_loop or build_loop based on request_mode in message frontmatter.
+  Dual-mode mesh with plan/build separation via mode router.
+  Routes to plan_loop or build_loop based on request_mode in message frontmatter.
 
   Plan mode: Gap analysis, create/update IMPLEMENTATION_PLAN.md, spawn Task subagents for parallel analysis
   Build mode: Implement from plan, test, commit, update learnings
 
-  Aligns with Ralph playbook: phase numbering (0a-0d, 1-4, 999+), context efficiency,
-  self-correction, deterministic FSM, autonomous operation with iteration awareness.
+  Features: Phase numbering (0a-0d, 1-4, 999+), context efficiency, self-correction,
+  deterministic FSM, autonomous operation with iteration awareness.
 
 # ============================================================================
 # AGENT CONFIGURATION
@@ -195,46 +195,3 @@ fsm:
         echo "Build max iterations ($max_build_iterations) reached" >&2
         exit 1
       }
-
-# ============================================================================
-# PLAYBOOK ALIGNMENT
-# ============================================================================
-playbook_notes: |
-  Ralph Playbook Implementation:
-
-  Phase Numbering:
-  - 0a: Study specs/ with Task subagents
-  - 0b: Study IMPLEMENTATION_PLAN.md
-  - 0c: Study src/lib shared utilities
-  - 0d: Reference workspace paths
-  - 1-4: Mode-specific workflow
-  - 999+: Guardrails in ascending priority
-
-  Context Efficiency:
-  - Prompts follow phase structure
-  - Decision trees replace narrative instruction
-  - Markdown-first, token-aware guidance
-
-  Autonomous Operation:
-  - Agent controls routing via success_signal
-  - Mode-aware prompts (plan.md vs build.md)
-  - Iteration awareness built into prompts
-
-  Backpressure:
-  - Plan mode: max 10 iterations, up to 100 Task subagents for analysis
-  - Build mode: max 5 iterations per task, 1 Task for build/test (serialized)
-
-  Task Spawning:
-  - Plan mode: Spawn up to 100 parallel Task subagents for codebase analysis
-  - Build mode: Spawn single Task for build/tests (backpressure control)
-
-  Conservative Language:
-  - "study" (not "analyze" or "review")
-  - "don't assume not implemented"
-  - "using parallel subagents"
-  - "Ultrathink" for deep reasoning
-
-  IMPLEMENTATION_PLAN.md:
-  - Required in workspace
-  - Created during plan mode
-  - Updated during build mode with discoveries
