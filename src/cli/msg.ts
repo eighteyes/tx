@@ -646,28 +646,49 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(`\n${colors.bright}${colors.yellow}📢 System Message${colors.reset} ${colors.dim}(${systemSelectedIndex + 1}/${systemMessages.length})${colors.reset}`);
     console.log(`${colors.dim}↑↓/jk scroll  ←/h/Esc/q back${colors.reset}\n`);
 
-    // Metadata
-    console.log(`${colors.dim}Time:${colors.reset}     ${formatTime(msg.timestamp)}`);
-    console.log(`${colors.dim}Type:${colors.reset}     ${msg.type}`);
-    console.log(`${colors.dim}From:${colors.reset}     ${msg.from}`);
-    console.log(`${colors.dim}To:${colors.reset}       ${msg.to}`);
-    if (msg.headline) console.log(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
-    if (msg.msgId) console.log(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+    // Two-column layout: frontmatter | rearmatter
+    const leftCol: string[] = [];
+    const rightCol: string[] = [];
 
-    // Rearmatter
-    if (msg.rearmatter) {
-      console.log();
-      console.log(`${colors.bright}${colors.yellow}Rearmatter${colors.reset}`);
+    // Frontmatter (left column)
+    leftCol.push(`${colors.dim}Time:${colors.reset}     ${formatTime(msg.timestamp)}`);
+    leftCol.push(`${colors.dim}Type:${colors.reset}     ${msg.type}`);
+    leftCol.push(`${colors.dim}From:${colors.reset}     ${msg.from}`);
+    leftCol.push(`${colors.dim}To:${colors.reset}       ${msg.to}`);
+    if (msg.headline) leftCol.push(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
+    if (msg.msgId) leftCol.push(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+
+    // Rearmatter (right column)
+    if (msg.rearmatter && Object.keys(msg.rearmatter).length > 0) {
+      rightCol.push(`${colors.bright}${colors.yellow}Rearmatter${colors.reset}`);
       if (msg.rearmatter.confidence !== undefined) {
         const conf = msg.rearmatter.confidence as number;
         const confColor = conf >= 0.9 ? colors.green : conf >= 0.7 ? colors.yellow : colors.red;
-        console.log(`${colors.dim}Confidence:${colors.reset} ${confColor}${(conf * 100).toFixed(0)}%${colors.reset}`);
+        rightCol.push(`${colors.dim}Confidence:${colors.reset} ${confColor}${(conf * 100).toFixed(0)}%${colors.reset}`);
       }
       if (msg.rearmatter.grade) {
         const grade = msg.rearmatter.grade as string;
         const gradeColor = ['A', 'B'].includes(grade) ? colors.green : ['C'].includes(grade) ? colors.yellow : colors.red;
-        console.log(`${colors.dim}Grade:${colors.reset}      ${gradeColor}${grade}${colors.reset}`);
+        rightCol.push(`${colors.dim}Grade:${colors.reset}      ${gradeColor}${grade}${colors.reset}`);
       }
+      // Display all other rearmatter fields
+      for (const [key, value] of Object.entries(msg.rearmatter)) {
+        if (key !== 'confidence' && key !== 'grade') {
+          rightCol.push(`${colors.dim}${key}:${colors.reset} ${value}`);
+        }
+      }
+    }
+
+    // Render two columns
+    const maxRows = Math.max(leftCol.length, rightCol.length);
+    const leftWidth = 40;
+    for (let i = 0; i < maxRows; i++) {
+      const left = leftCol[i] || '';
+      const right = rightCol[i] || '';
+      // Strip ANSI codes to measure actual text length
+      const leftPlain = left.replace(/\x1b\[[0-9;]*m/g, '');
+      const padding = ' '.repeat(Math.max(0, leftWidth - leftPlain.length));
+      console.log(`${left}${padding}  ${right}`);
     }
 
     console.log();
@@ -699,28 +720,49 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     console.log(`\n${colors.bright}${colors.cyan}📨 Message Detail${colors.reset} ${colors.dim}(${selectedIndex + 1}/${messages.length})${colors.reset}`);
     console.log(`${colors.dim}↑↓/jk scroll  ←/h/Esc/q back  p prompt${colors.reset}\n`);
 
-    // Metadata
-    console.log(`${colors.dim}Time:${colors.reset}     ${formatTime(msg.timestamp)}`);
-    console.log(`${colors.dim}Type:${colors.reset}     ${msg.type}`);
-    console.log(`${colors.dim}From:${colors.reset}     ${msg.from}`);
-    console.log(`${colors.dim}To:${colors.reset}       ${msg.to}`);
-    if (msg.headline) console.log(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
-    if (msg.msgId) console.log(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+    // Two-column layout: frontmatter | rearmatter
+    const leftCol: string[] = [];
+    const rightCol: string[] = [];
 
-    // Rearmatter
-    if (msg.rearmatter) {
-      console.log();
-      console.log(`${colors.bright}${colors.yellow}Rearmatter${colors.reset}`);
+    // Frontmatter (left column)
+    leftCol.push(`${colors.dim}Time:${colors.reset}     ${formatTime(msg.timestamp)}`);
+    leftCol.push(`${colors.dim}Type:${colors.reset}     ${msg.type}`);
+    leftCol.push(`${colors.dim}From:${colors.reset}     ${msg.from}`);
+    leftCol.push(`${colors.dim}To:${colors.reset}       ${msg.to}`);
+    if (msg.headline) leftCol.push(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
+    if (msg.msgId) leftCol.push(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+
+    // Rearmatter (right column)
+    if (msg.rearmatter && Object.keys(msg.rearmatter).length > 0) {
+      rightCol.push(`${colors.bright}${colors.yellow}Rearmatter${colors.reset}`);
       if (msg.rearmatter.confidence !== undefined) {
         const conf = msg.rearmatter.confidence as number;
         const confColor = conf >= 0.9 ? colors.green : conf >= 0.7 ? colors.yellow : colors.red;
-        console.log(`${colors.dim}Confidence:${colors.reset} ${confColor}${(conf * 100).toFixed(0)}%${colors.reset}`);
+        rightCol.push(`${colors.dim}Confidence:${colors.reset} ${confColor}${(conf * 100).toFixed(0)}%${colors.reset}`);
       }
       if (msg.rearmatter.grade) {
         const grade = msg.rearmatter.grade as string;
         const gradeColor = ['A', 'B'].includes(grade) ? colors.green : ['C'].includes(grade) ? colors.yellow : colors.red;
-        console.log(`${colors.dim}Grade:${colors.reset}      ${gradeColor}${grade}${colors.reset}`);
+        rightCol.push(`${colors.dim}Grade:${colors.reset}      ${gradeColor}${grade}${colors.reset}`);
       }
+      // Display all other rearmatter fields
+      for (const [key, value] of Object.entries(msg.rearmatter)) {
+        if (key !== 'confidence' && key !== 'grade') {
+          rightCol.push(`${colors.dim}${key}:${colors.reset} ${value}`);
+        }
+      }
+    }
+
+    // Render two columns
+    const maxRows = Math.max(leftCol.length, rightCol.length);
+    const leftWidth = 40;
+    for (let i = 0; i < maxRows; i++) {
+      const left = leftCol[i] || '';
+      const right = rightCol[i] || '';
+      // Strip ANSI codes to measure actual text length
+      const leftPlain = left.replace(/\x1b\[[0-9;]*m/g, '');
+      const padding = ' '.repeat(Math.max(0, leftWidth - leftPlain.length));
+      console.log(`${left}${padding}  ${right}`);
     }
 
     console.log();
@@ -1024,12 +1066,14 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
           break;
       }
     } else if (viewingDetail) {
-      // Detail view navigation (messages, sessions, or system)
+      // Detail view navigation (messages, sessions, system, or prompts)
       let contentLines: string[];
       if (viewMode === 'sessions' && sessions[sessionSelectedIndex]) {
         contentLines = wrapText(sessions[sessionSelectedIndex].content);
       } else if (viewMode === 'system' && systemMessages[systemSelectedIndex]) {
         contentLines = wrapText(systemMessages[systemSelectedIndex].content || '');
+      } else if (viewMode === 'prompts' && prompts[promptSelectedIndex]) {
+        contentLines = wrapText(prompts[promptSelectedIndex].content);
       } else if (messages[selectedIndex]) {
         contentLines = wrapText(messages[selectedIndex].content || '');
       } else {
