@@ -19,8 +19,6 @@ Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
    - **`research-brief.md`** (FIRST - tells you what deliverables to create)
    - `01-sources.md` (sources and facts)
    - `02-analysis.md` (hypotheses and analysis)
-   - `03-theories.md` (if deep-research - synthesized theories)
-   - `04-counterpoints.md` (if deep-research - critical review)
 3. **Create ALL deliverables specified in research-brief.md "Required Deliverables" section**
 4. Save all files to workspace (or specified output directory)
 5. Send completion message
