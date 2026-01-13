@@ -107,7 +107,8 @@
 - **File**: `meshes/test/config.yaml`
 - **Issue**: Worker agent defined but never used
 - **Fix**: Remove unused worker agent or fix entry point
-- **Status**: Pending
+- **Status**: Complete (2026-01-13) - Verified worker agent IS used for HITL flow testing (05-hitl-flow.test.ts)
+- **Discovery**: Test mesh supports multiple entry points: worker (HITL tests) and asker (topology tests). Both are valid.
 
 ### Task 2.9: task-distribution-analysis - Fix description naming
 - **File**: `meshes/task-distribution-analysis/config.yaml`
