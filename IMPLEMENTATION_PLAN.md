@@ -99,8 +99,9 @@
 ### Task 2.7: dev-haiku - Fix script naming mismatch
 - **Files**: `meshes/dev-haiku/config.yaml`, `README.md`, 3 agent prompts
 - **Issue**: Config uses underscores but docs use hyphens (9 instances)
-- **Fix**: Standardize on underscore naming matching config.yaml
-- **Status**: Pending
+- **Fix**: Standardize on hyphen naming to match actual script files in scripts/ directory
+- **Status**: Complete (2026-01-13) - Fixed in commit 7758e85, tag v0.2.1
+- **Discovery**: Script files in scripts/ directory use hyphens, so config was wrong, not docs
 
 ### Task 2.8: test - Remove unused worker agent
 - **File**: `meshes/test/config.yaml`
