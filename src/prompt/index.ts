@@ -26,7 +26,8 @@ export function buildMeshPrompt(
   agent: string,
   agentPromptPath: string,
   model: string = 'sonnet',
-  taskMessage?: string
+  taskMessage?: string,
+  meshBasePath?: string
 ): string {
   const context: PromptContext = {
     mesh,
@@ -34,6 +35,7 @@ export function buildMeshPrompt(
     model,
     agentPromptPath,
     taskMessage,
+    meshBasePath,
   };
 
   return buildPrompt(context);

@@ -11,7 +11,8 @@
 import type { WorkspaceInfo } from './manager.ts';
 import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 import type { FSMStateConfig } from '../shared/types.ts';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { log } from '../shared/logger.ts';
 
@@ -71,6 +72,48 @@ export class PromptInjector {
    */
   injectMessagingProtocol(basePrompt: string): string {
     return `${basePrompt}\n${MESSAGING_PROTOCOL}`;
+  }
+
+  /**
+   * Inject operational guide (AGENTS.md) into a system prompt
+   * Provides runtime guidance for agent coordination, routing, and quality gates
+   *
+   * @param basePrompt - The prompt to inject into
+   * @param meshBasePath - Path to the mesh directory containing AGENTS.md
+   * @returns The prompt with operational guide appended, or unchanged if file doesn't exist
+   */
+  async injectOperationalGuide(basePrompt: string, meshBasePath: string): Promise<string> {
+    const agentsPath = join(meshBasePath, 'AGENTS.md');
+
+    try {
+      // Check if file exists
+      await access(agentsPath, constants.R_OK);
+
+      // Read the operational guide
+      const content = await readFile(agentsPath, 'utf-8');
+
+      log.debug('injector', 'Injecting operational guide', {
+        meshBasePath,
+        contentLength: content.length,
+      });
+
+      // Append with clear section header
+      return `${basePrompt}\n\n# Operational Guide\n\n${content}`;
+    } catch (error) {
+      // File doesn't exist or can't be read - return prompt unchanged
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'ENOENT') {
+        // File doesn't exist - this is expected for meshes without AGENTS.md
+        log.debug('injector', 'No AGENTS.md found (optional)', { meshBasePath });
+      } else {
+        // Unexpected error - log warning but don't fail
+        log.warn('injector', 'Failed to read AGENTS.md', {
+          meshBasePath,
+          error: err.message,
+        });
+      }
+      return basePrompt;
+    }
   }
 
   /**
@@ -210,7 +253,7 @@ export class PromptInjector {
   }
 
   /**
-   * Save built prompt to .ai/prompts/{mesh}/{agent}.md
+   * Save built prompt to .ai/tx/prompts/{mesh}/{agent}.md
    * Includes system prompt, user prompt, and metadata
    */
   async savePrompt(
@@ -222,7 +265,7 @@ export class PromptInjector {
   ): Promise<void> {
     try {
       // Create directory structure
-      const promptDir = join(process.cwd(), '.ai', 'prompts', meshName);
+      const promptDir = join(process.cwd(), '.ai', 'tx', 'prompts', meshName);
       await mkdir(promptDir, { recursive: true });
 
       // Build prompt file with metadata header

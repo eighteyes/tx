@@ -1347,6 +1347,11 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
+      // Inject operational guide (AGENTS.md) if present in mesh directory
+      if (meshConfig?._basePath) {
+        systemPrompt = await this.promptInjector.injectOperationalGuide(systemPrompt, meshConfig._basePath);
+      }
+
       // Inject FSM context if mesh has FSM config
       const fsm = this.meshFSMs.get(meshName);
       if (fsm && fsm.isInitialized()) {
@@ -1465,7 +1470,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
-      // Save constructed prompt to .ai/prompts/{mesh}/{agent}.md
+      // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
       const promptMetadata: Record<string, unknown> = {
         taskId,

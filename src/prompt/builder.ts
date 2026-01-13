@@ -6,6 +6,7 @@
 import { PromptContext, PromptSection, BuildOptions } from './types.js';
 import { buildPreamble } from './sections/preamble.js';
 import { buildAgentPrompt } from './sections/agent-prompt.js';
+import { buildOperationalGuide } from './sections/operational-guide.js';
 import { buildTaskContext } from './sections/task-context.js';
 import { buildRearmatter } from './sections/rearmatter.js';
 
@@ -18,6 +19,7 @@ export class PromptBuilder {
     this.options = {
       includePreamble: options.includePreamble ?? true,
       includeAgentPrompt: options.includeAgentPrompt ?? true,
+      includeOperationalGuide: options.includeOperationalGuide ?? true,
       includeTaskContext: options.includeTaskContext ?? true,
       includeRearmatter: options.includeRearmatter ?? true,
     };
@@ -51,6 +53,17 @@ export class PromptBuilder {
         content: buildAgentPrompt(this.context),
         enabled: true,
       });
+    }
+
+    if (this.options.includeOperationalGuide && this.context.meshBasePath) {
+      const operationalGuide = buildOperationalGuide(this.context);
+      if (operationalGuide) {
+        sections.push({
+          name: 'operational-guide',
+          content: operationalGuide,
+          enabled: true,
+        });
+      }
     }
 
     if (this.options.includeTaskContext && this.context.taskMessage) {

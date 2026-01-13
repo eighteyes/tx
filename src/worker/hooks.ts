@@ -258,10 +258,42 @@ export class LifecycleHooks {
           } else if (nothingMatch) {
             log.info('hooks', 'Nothing to commit', { meshInstance: context.meshInstance });
           } else if (blockedMatch) {
+            const reason = blockedMatch[1];
             log.warn('hooks', 'Commit blocked', {
-              reason: blockedMatch[1],
+              reason,
               meshInstance: context.meshInstance,
             });
+
+            // Write message to core - commit failed
+            const msgsDir = context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs');
+            const timestamp = Math.floor(Date.now() / 1000);
+            const msgId = `commit-blocked-${context.meshInstance}`;
+            const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+            const filepath = path.join(msgsDir, filename);
+
+            const content = `---
+to: core/core
+from: hooks/commit
+type: update
+msg-id: ${msgId}
+headline: Commit blocked - ${context.meshName}
+timestamp: ${new Date().toISOString()}
+---
+
+# Commit Hook Blocked
+
+The commit hook was unable to create a commit for mesh instance \`${context.meshInstance}\`.
+
+**Reason**: ${reason}
+
+**Mesh**: ${context.meshName}/${context.agentName}
+**Work Directory**: ${commitWorkDir}
+
+Please review the changes and resolve the issue manually.
+`;
+
+            fs.writeFileSync(filepath, content);
+            log.info('hooks', 'Wrote commit blocked message', { filepath });
           }
         }
       } catch (error) {
@@ -269,6 +301,43 @@ export class LifecycleHooks {
           meshInstance: context.meshInstance,
           error: (error as Error).message,
         });
+
+        // Write error message to core
+        const msgsDir = context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs');
+        const timestamp = Math.floor(Date.now() / 1000);
+        const msgId = `commit-error-${context.meshInstance}`;
+        const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+        const filepath = path.join(msgsDir, filename);
+
+        const content = `---
+to: core/core
+from: hooks/commit
+type: update
+msg-id: ${msgId}
+headline: Commit hook error - ${context.meshName}
+timestamp: ${new Date().toISOString()}
+---
+
+# Commit Hook Error
+
+The commit hook encountered an error while processing mesh instance \`${context.meshInstance}\`.
+
+**Error**: ${(error as Error).message}
+
+**Mesh**: ${context.meshName}/${context.agentName}
+**Work Directory**: ${commitWorkDir}
+
+Please review the logs and handle this manually.
+`;
+
+        try {
+          fs.writeFileSync(filepath, content);
+          log.info('hooks', 'Wrote commit error message', { filepath });
+        } catch (writeErr) {
+          log.error('hooks', 'Failed to write commit error message', {
+            error: (writeErr as Error).message,
+          });
+        }
       }
     });
 

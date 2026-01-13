@@ -82,6 +82,10 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 
+**Design documentation**: `playbook_notes:` - Embed architectural rationale in config (replaces separate READMEs)
+
+**Self-assessment metadata**: `rearmatter:` - Agent outputs self-assessment fields (grade, confidence, status) for FSM routing decisions
+
 **Lifecycle hooks**: Auto-commit, brain insights, quality gates
 
 ```yaml
@@ -131,6 +135,38 @@ workspace: /path/to/turn-5
 ```
 
 See `docs/mesh-fsm-config.md` for full documentation.
+
+## Documentation Patterns
+
+**Two-layer documentation approach:**
+
+1. **`playbook_notes` in config.yaml** (for maintainers)
+   - Design rationale and architectural decisions
+   - WHY the mesh is built this way
+   - Alignment with methodologies/patterns
+   - Not processed by the system
+
+2. **`AGENTS.md` in mesh directory** (for agents at runtime)
+   - Operational guidance for autonomous execution
+   - HOW to operate (mandates, decision trees, quality gates)
+   - Loaded by agents during execution
+   - Keep brief and actionable
+
+**Example structure:**
+```
+meshes/ralph-ice-cream-2/
+├── config.yaml          # includes playbook_notes
+├── AGENTS.md            # runtime operational guide
+├── ralph-haiku/
+│   └── prompt.md
+└── sonnet-reviewer/
+    └── prompt.md
+```
+
+**When to use each:**
+- `playbook_notes`: Complex meshes with novel patterns or specific methodologies
+- `AGENTS.md`: Multi-agent meshes where agents need operational context
+- Both: Advanced meshes like Ralph where design rationale AND runtime guidance matter
 
 ## Debugging
 

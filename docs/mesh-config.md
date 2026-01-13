@@ -443,6 +443,43 @@ system: true
 
 ---
 
+## Documentation Fields
+
+### `playbook_notes`
+- **Type**: `string` (multiline)
+- **Required**: No
+- **Behavior**: Design rationale and architectural documentation embedded in the config. Explains WHY the mesh is built this way. Not processed by the system - purely for human/AI maintainers.
+
+**Purpose**: Preserve design intent, document alignment with principles/patterns, explain architectural choices.
+
+**When to use**:
+- Mesh follows specific methodology or playbook (e.g., Ralph, ensemble patterns)
+- Complex FSM or routing logic that benefits from explanation
+- Novel patterns that future maintainers should understand
+- Trade-offs or constraints that informed design decisions
+
+**Example**:
+```yaml
+playbook_notes: |
+  Ralph Playbook Implementation:
+
+  Context Efficiency:
+  - Prompts compressed from ~250 lines to ~40 lines (84% reduction)
+  - Decision trees replace narrative instruction
+
+  Autonomous Operation:
+  - Agents control routing via success_signal
+  - Clear "when to PASS" guidance prevents endless loops
+
+  Backpressure:
+  - Iteration limits enforce finite loops
+  - Quality gates provide objective criteria
+```
+
+**Related**: For runtime operational guidance, use `AGENTS.md` in the mesh directory (loaded by agents during execution).
+
+---
+
 ## Config Resolution Order
 
 1. **Project meshes**: `{workDir}/meshes/{mesh}/config.yaml`
