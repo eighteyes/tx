@@ -17,6 +17,20 @@ import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 
 /**
+ * Interface for FSM validation capability
+ * Dispatcher implements this for FSM validation
+ */
+interface FSMValidator {
+  validateMessageWithFSM(
+    senderAgentId: string,
+    targetAgentId: string,
+    messageType: string,
+    messageFrontmatter: Record<string, unknown>,
+    rearmatter?: Record<string, unknown>
+  ): Promise<boolean>;
+}
+
+/**
  * Event emitted when task-complete is rejected due to pending asks
  */
 export interface ParityReminderEvent {
@@ -53,6 +67,8 @@ export class MessageConsumer extends EventEmitter {
   // e.g., "/know:add" → "brain", "/know:plan" → "brain"
   private commandToMesh: Map<string, string> = new Map();
   // Parity gate: pending asks are now persisted in SQLite via this.queue
+  // FSM validator (dispatcher) for pre-routing validation
+  private fsmValidator: FSMValidator | null = null;
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -127,10 +143,17 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
-   * Subscribe to dispatcher events for parity gate
-   * Clears pending asks when a new session starts for an agent
+   * Subscribe to dispatcher events for parity gate and FSM validation
+   * - Clears pending asks when a new session starts for an agent
+   * - Sets up FSM validator for pre-routing message validation
    */
-  subscribeToDispatcher(dispatcher: EventEmitter): void {
+  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator>): void {
+    // Store dispatcher as FSM validator if it has the validation method
+    if (typeof dispatcher.validateMessageWithFSM === 'function') {
+      this.fsmValidator = dispatcher as FSMValidator;
+      log.debug('consumer', 'FSM validator registered');
+    }
+
     dispatcher.on('session-start', ({ agentId }: { agentId: string }) => {
       const pending = this.queue.getPendingAsks(agentId);
       if (pending.length > 0) {
@@ -201,12 +224,24 @@ ${body}
       });
 
       this.watcher.on('add', (filepath: string) => {
-        if (filepath.endsWith('.md')) this.processFile(filepath, 'new');
+        if (filepath.endsWith('.md')) {
+          this.processFile(filepath, 'new').catch((err) => {
+            log.error('consumer', `Failed to process new file: ${path.basename(filepath)}`, {
+              error: (err as Error).message,
+            });
+          });
+        }
       });
 
       // Watch for changes - handles message revisions (edited files)
       this.watcher.on('change', (filepath: string) => {
-        if (filepath.endsWith('.md')) this.processFile(filepath, 'revision');
+        if (filepath.endsWith('.md')) {
+          this.processFile(filepath, 'revision').catch((err) => {
+            log.error('consumer', `Failed to process revised file: ${path.basename(filepath)}`, {
+              error: (err as Error).message,
+            });
+          });
+        }
       });
 
       this.watcher.on('ready', () => {
@@ -228,7 +263,7 @@ ${body}
     return this.running;
   }
 
-  private processFile(filepath: string, event: 'new' | 'revision' = 'new'): void {
+  private async processFile(filepath: string, event: 'new' | 'revision' = 'new'): Promise<void> {
     const filename = path.basename(filepath);
     try {
       const content = fs.readFileSync(filepath, 'utf-8');
@@ -263,6 +298,45 @@ ${body}
             `Correct routing:\n\`\`\`yaml\nto: ${correctMesh}/${this.meshEntryPoints.get(correctMesh) || 'worker'}\ncommand: ${command}\n\`\`\``,
             parsed.frontmatter['msg-id'] || filename
           );
+          return;
+        }
+      }
+
+      // =================================================================
+      // FSM VALIDATION - happens BEFORE type-specific routing
+      // This is the central validation point for ALL message types.
+      // =================================================================
+      if (this.fsmValidator) {
+        const fromAgent = parsed.frontmatter.from;
+        const messageType = parsed.frontmatter.type;
+
+        // Build frontmatter record for FSM context
+        const frontmatterRecord: Record<string, unknown> = {
+          from: fromAgent,
+          to: toAgent,
+          type: messageType,
+          'msg-id': parsed.frontmatter['msg-id'],
+          headline: parsed.frontmatter.headline,
+          status: parsed.frontmatter.status,
+          command: parsed.frontmatter.command,
+        };
+
+        const isValid = await this.fsmValidator.validateMessageWithFSM(
+          fromAgent,
+          toAgent,
+          messageType,
+          frontmatterRecord,
+          parsed.rearmatter ?? undefined
+        );
+
+        if (!isValid) {
+          log.warn('consumer', 'Message rejected by FSM validation', {
+            filepath: filename,
+            from: fromAgent,
+            to: toAgent,
+            type: messageType,
+          });
+          // Don't route the message - FSM validation failed
           return;
         }
       }

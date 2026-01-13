@@ -46,7 +46,7 @@ routing:
       ralph-build: "Plan complete (PASS signal), passing to build"
       ralph-plan: "Needs refinement, iterating"
       core: "Plan blocked or complete without build"
-    ask:
+    ask-human:
       core: "Need human input for requirements definition"
     blocked:
       core: "Fatal error - cannot proceed"
