@@ -18,11 +18,14 @@ Default: plan (if request_mode missing)
 
 ## Plan Mode (ralph-plan)
 
-**Phase 0**: Study specs/, IMPLEMENTATION_PLAN.md, src/lib (spawn up to 100 Task subagents for parallel analysis)
-**Phase 1**: Gap analysis (compare specs to code, identify TODOs/placeholders)
-**Phase 2**: Prioritize tasks (Ultrathink synthesis, note dependencies)
-**Phase 3**: Write IMPLEMENTATION_PLAN.md (structured plan with phases, tasks, rationale)
-**Phase 4**: Signal PLAN_COMPLETE or REFINE
+**Phase 0**: Check specs/ - if empty, enter Requirements Definition; if exists, study specs/IMPLEMENTATION_PLAN.md/src/lib
+**Phase 1**: Requirements Definition (IF specs/ empty) - HITL conversation to define JTBD, break into topics, write specs/ files, iterate until approved
+**Phase 2**: Gap analysis (compare specs to code, identify TODOs/placeholders)
+**Phase 3**: Prioritize tasks (Ultrathink synthesis, note dependencies)
+**Phase 4**: Write IMPLEMENTATION_PLAN.md (structured plan with phases, tasks, rationale)
+**Phase 5**: Signal PLAN_COMPLETE or REFINE
+
+**Requirements HITL Loop**: If specs/ empty, asks human about project, identifies JTBD, breaks into topics, spawns Tasks for URL context, writes specs/ files, iterates until human approves
 
 **Guardrails (999+)**: Don't assume not implemented - search first; keep IMPLEMENTATION_PLAN.md current; document operational discoveries in AGENTS.md only
 

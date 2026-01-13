@@ -23,8 +23,13 @@ Default: plan chain
 **Role**: Create solid first draft (plan or code)
 **Decision**: Early loops (1-3) can REFINE; late loops (4-5) should PASS
 
-**Phase 0**: Study specs/, IMPLEMENTATION_PLAN.md, src/lib
-**Phases 1-4**: Mode-specific workflow (drafting)
+**Phase 0**: Check specs/ - if empty, enter Requirements Definition; if exists, study specs/IMPLEMENTATION_PLAN.md/src/lib
+**Phase 1**: Requirements Definition (IF specs/ empty in plan mode) - HITL to define JTBD, break into topics, write specs/, iterate until approved
+**Phase 2-4**: Mode-specific workflow (gap analysis → draft plan/code)
+**Phase 5**: Self-assess and signal
+
+**Requirements HITL** (plan mode only): If specs/ empty, asks human about project, identifies JTBD, writes specs/ files, iterates until approved
+
 **Guardrails (999+)**: Be honest, token-aware, spawn Task subagents for heavy lifting
 
 **Signals**: PASS → sonnet tier | REFINE → self-loop | BLOCKED → error
