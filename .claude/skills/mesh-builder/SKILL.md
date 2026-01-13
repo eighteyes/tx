@@ -41,10 +41,22 @@ entry_point: worker
 
 ## Writing Prompts
 
-Focus on **workflow only**. The system auto-injects:
-- Message protocol (paths, frontmatter schema, types)
-- Workspace paths
-- Routing instructions
+Focus on **workflow only**.
+
+### System Auto-Injects (DO NOT WRITE IN PROMPTS):
+- ❌ Message protocol (frontmatter schema, message types, paths format)
+- ❌ Routing instructions (how to write messages to other agents)
+- ❌ Rearmatter format (success_signal, grade, confidence fields)
+- ❌ Workspace structure and paths (auto-injected from config.yaml)
+- ❌ Message file naming conventions
+- ❌ Tool availability and usage instructions (system provides)
+
+### Write ONLY:
+- ✅ Agent role and mandate
+- ✅ Workflow steps (what to do, when)
+- ✅ Decision trees and logic
+- ✅ Domain-specific guidance
+- ✅ Quality gates and success criteria
 
 ```markdown
 # {Agent Name}
@@ -54,7 +66,7 @@ You are the {role} agent.
 ## Workflow
 1. Read incoming task
 2. {Work steps}
-3. Write task-complete when finished
+3. Signal completion when finished
 ```
 
 ## Multi-Agent Routing
