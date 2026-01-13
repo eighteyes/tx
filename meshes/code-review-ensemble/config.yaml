@@ -1,35 +1,40 @@
 mesh: code-review-ensemble
-description: "Parallel code review using ensemble pattern - submit code to 3 reviewers, aggregate feedback"
+description: "Parallel code review - logic analysis, architecture review, robustness checks"
 
 agents:
   - name: entry
     model: haiku
     prompt: prompts/entry.md
+    # Coordinator: splits code into 3 parallel review tasks
 
-  - name: reviewer-security
-    model: haiku
-    prompt: prompts/reviewer-security.md
+  - name: reviewer-logic
+    model: sonnet
+    prompt: prompts/reviewer-logic.md
+    # Deep analysis: edge cases, boundary conditions, logic gaps, error handling
 
-  - name: reviewer-performance
-    model: haiku
-    prompt: prompts/reviewer-performance.md
+  - name: reviewer-architecture
+    model: sonnet
+    prompt: prompts/reviewer-architecture.md
+    # Design analysis: refactoring opportunities, patterns, SOLID, coupling
 
-  - name: reviewer-style
+  - name: reviewer-robustness
     model: haiku
-    prompt: prompts/reviewer-style.md
+    prompt: prompts/reviewer-robustness.md
+    # Mechanical checks: null safety, type checks, defensive programming
 
   - name: synthesizer
-    model: haiku
+    model: sonnet
     prompt: prompts/synthesizer.md
+    # Aggregates findings, prioritizes issues, creates actionable report
 
 entry_point: entry
 
 ensemble:
   coordinator: entry
   agents:
-    - reviewer-security
-    - reviewer-performance
-    - reviewer-style
+    - reviewer-logic
+    - reviewer-architecture
+    - reviewer-robustness
   reviewer: synthesizer
   aggregation_strategy: concat
-  timeout_ms: 120000
+  timeout_ms: 180000  # 3 minutes for deeper analysis
