@@ -2032,11 +2032,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
 
         this.meshFSMs.set(meshName, fsm);
-        log.info('dispatcher', `Initialized FSM for mesh: ${meshName}`, {
-          initialState: config.fsm.initialState,
-          stateCount: config.fsm.states.length,
-          transitionCount: config.fsm.transitions.length,
-        });
       } catch (error) {
         log.error('dispatcher', `Failed to create FSM for mesh: ${meshName}`, {
           error: (error as Error).message,
@@ -2095,7 +2090,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       const validation = MeshValidator.validate(rawConfig, filename);
 
       if (!validation.valid) {
-        log.error('dispatcher', `Invalid mesh config: ${filename}`, {
+        log.error('dispatcher', `Invalid mesh config: ${rawConfig.mesh || filename}`, {
+          mesh: rawConfig.mesh,
           configPath,
           errors: validation.errors
         });
@@ -2109,7 +2105,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Log warnings but still load the config
       if (validation.warnings.length > 0) {
-        log.warn('dispatcher', `Mesh config warnings: ${filename}`, {
+        log.warn('dispatcher', `Mesh config warnings: ${rawConfig.mesh || filename}`, {
+          mesh: rawConfig.mesh,
           warnings: validation.warnings
         });
       }
@@ -2125,15 +2122,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       config._basePath = basePath;
 
       this.meshConfigs.set(config.mesh, config);
-      log.info('dispatcher', `Loaded mesh: ${config.mesh}`, {
-        source: isGlobal ? 'global' : 'project',
-        basePath,
-        agents: config.agents.map(a => a.name),
-        warnings: validation.warnings.length,
-        graded: config.graded,
-        worktree: config.worktree,
-        hasLifecycle: !!config.lifecycle,
-      });
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
     } catch (error) {
       log.error('dispatcher', `Failed to parse mesh config: ${filename}`, {
@@ -2540,7 +2528,7 @@ ${output}
       let coordinatorOutput = '';
 
       runner.on('output', (data) => {
-        coordinatorOutput += data.output || '';
+        coordinatorOutput += data.data || '';
       });
 
       runner.on('error', (data) => {

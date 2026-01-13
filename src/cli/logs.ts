@@ -190,6 +190,7 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
   const activeSeverityFilters = new Set<string>();
   let lastTimestamp = Date.now();
   let watchInterval: NodeJS.Timeout | null = null;
+  let filterModeActive = false;
 
   const filterMap: Record<string, { component: string; label: string }> = {
     worker: { component: 'worker', label: 'worker' },
@@ -200,11 +201,6 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
     watcher: { component: 'watcher', label: 'watcher' },
     quality: { component: 'quality', label: 'quality' }
   };
-
-  // Text search pattern (set via '/' key)
-  let searchPattern = '';
-  // Agent filter (set via '@' key)
-  let agentFilter = '';
 
   function getFilteredLogs(): LogEntry[] {
     let v4Logs = readJSONLFile(v4Log);
@@ -222,26 +218,6 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       allLogs = allLogs.filter(log => activeComponents.some(c => log.component.includes(c)));
     }
 
-    // Text search filter
-    if (searchPattern) {
-      try {
-        const regex = new RegExp(searchPattern, 'i');
-        allLogs = allLogs.filter(log => regex.test(log.message));
-      } catch {
-        // Invalid regex, skip filter
-      }
-    }
-
-    // Agent filter
-    if (agentFilter) {
-      allLogs = allLogs.filter(log => {
-        const logAgentId = (log.data as Record<string, unknown>)?.agentId ||
-                          (log.data as Record<string, unknown>)?.workerId ||
-                          log.component;
-        return String(logAgentId).toLowerCase().includes(agentFilter.toLowerCase());
-      });
-    }
-
     return allLogs.sort((a, b) =>
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     ).slice(-lines);
@@ -256,62 +232,18 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
   }
 
   function displayHeader(): void {
-    const filterOptions = [
-      { key: 'w', label: 'worker', filter: 'worker', color: colors.magenta },
-      { key: 'd', label: 'dispatch', filter: 'dispatcher', color: colors.cyan },
-      { key: 'n', label: 'consumer', filter: 'consumer', color: colors.green },
-      { key: 'u', label: 'queue', filter: 'queue', color: colors.blue },
-      { key: 'o', label: 'core', filter: 'core', color: colors.yellow },
-      { key: 't', label: 'watcher', filter: 'watcher', color: colors.magenta },
-      { key: 'q', label: 'quality', filter: 'quality', color: colors.cyan }
-    ];
-
-    const filterDisplay = filterOptions.map(opt => {
-      const isActive = activeFilters.has(opt.filter);
-      if (isActive) {
-        return `${colors.bright}${opt.color}█ ${opt.label}${colors.reset}`;
-      } else {
-        return `${colors.dim}${opt.key} ${opt.label}${colors.reset}`;
-      }
-    }).join('  ');
-
-    const severityOptions = [
-      { key: '1', label: 'info', level: 'info', color: colors.white },
-      { key: '2', label: 'warn', level: 'warn', color: colors.yellow },
-      { key: '3', label: 'error', level: 'error', color: colors.red },
-      { key: '4', label: 'debug', level: 'debug', color: colors.dim }
-    ];
-
-    const severityDisplay = severityOptions.map(opt => {
-      const isActive = activeSeverityFilters.has(opt.level);
-      if (isActive) {
-        return `${colors.bright}${opt.color}█ ${opt.label}${colors.reset}`;
-      } else {
-        return `${colors.dim}${opt.key} ${opt.label}${colors.reset}`;
-      }
-    }).join('  ');
-
-    const hasFilters = activeFilters.size > 0 || activeSeverityFilters.size > 0 || searchPattern || agentFilter;
+    const hasFilters = activeFilters.size > 0 || activeSeverityFilters.size > 0;
     const mode = hasFilters
       ? `${colors.dim}[filtered]${colors.reset}`
       : `${colors.dim}[all]${colors.reset}`;
 
-    const sessionLabel = options.last ? `${colors.yellow}[prev session]${colors.reset}` : '';
+    const sessionLabel = options.last ? `${colors.yellow}[prev session]${colors.reset} ` : '';
 
-    // Show active search/agent filters
-    const searchDisplay = searchPattern
-      ? `${colors.cyan}/${searchPattern}${colors.reset}  `
-      : `${colors.dim}/search${colors.reset}  `;
-    const agentDisplay = agentFilter
-      ? `${colors.magenta}@${agentFilter}${colors.reset}  `
-      : `${colors.dim}@agent${colors.reset}  `;
-
-    console.log(`${colors.dim}tx logs${colors.reset}${sessionLabel}  ${filterDisplay}  |  ${severityDisplay}  |  ${searchDisplay}${agentDisplay}${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs  q quit ${mode}${colors.reset}\n`);
+    console.log(`${colors.dim}tx logs${colors.reset} ${sessionLabel}${mode}  ${colors.cyan}f${colors.reset}${colors.dim} filter${colors.reset}  ${colors.green}a${colors.reset}${colors.dim} clear${colors.reset}  ${colors.red}c${colors.reset}${colors.dim} clear-logs${colors.reset}  ${colors.dim}q quit${colors.reset}\n`);
   }
 
-  function displayLogs(): void {
-    console.clear();
-
+  function displayFilterMode(): void {
+    // Display filtered logs first
     const logs = getFilteredLogs();
     if (logs.length === 0) {
       console.log(`${colors.dim}No logs found.${colors.reset}\n`);
@@ -320,7 +252,62 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
     }
 
     console.log();
-    displayHeader();
+
+    // Modal at bottom - vertical minimal style
+    const componentFilters = [
+      { key: 'w', label: 'worker', filter: 'worker', color: colors.magenta },
+      { key: 'd', label: 'dispatch', filter: 'dispatcher', color: colors.cyan },
+      { key: 'n', label: 'consumer', filter: 'consumer', color: colors.green },
+      { key: 'u', label: 'queue', filter: 'queue', color: colors.blue },
+      { key: 'o', label: 'core', filter: 'core', color: colors.yellow },
+      { key: 't', label: 'watcher', filter: 'watcher', color: colors.magenta },
+      { key: 'y', label: 'quality', filter: 'quality', color: colors.cyan }
+    ];
+
+    const componentDisplay = componentFilters.map(opt => {
+      const isActive = activeFilters.has(opt.filter);
+      if (isActive) {
+        return `${colors.bright}${opt.color}█ ${opt.label}${colors.reset}`;
+      } else {
+        return `${colors.dim}${opt.key} ${opt.label}${colors.reset}`;
+      }
+    }).join('  ');
+
+    const severityFilters = [
+      { key: '1', label: 'info', level: 'info', color: colors.white },
+      { key: '2', label: 'warn', level: 'warn', color: colors.yellow },
+      { key: '3', label: 'error', level: 'error', color: colors.red },
+      { key: '4', label: 'debug', level: 'debug', color: colors.dim }
+    ];
+
+    const severityDisplay = severityFilters.map(opt => {
+      const isActive = activeSeverityFilters.has(opt.level);
+      if (isActive) {
+        return `${colors.bright}${opt.color}█ ${opt.label}${colors.reset}`;
+      } else {
+        return `${colors.dim}${opt.key} ${opt.label}${colors.reset}`;
+      }
+    }).join('  ');
+
+    console.log(`${colors.dim}filter mode${colors.reset}  ${componentDisplay}  |  ${severityDisplay}  |  ${colors.cyan}*${colors.reset}${colors.dim} all-on${colors.reset}  ${colors.cyan}-${colors.reset}${colors.dim} all-off${colors.reset}  ${colors.cyan}f${colors.reset}${colors.dim} exit${colors.reset}\n`);
+  }
+
+  function displayLogs(): void {
+    console.clear();
+
+    if (filterModeActive) {
+      displayFilterMode();
+    } else {
+      const logs = getFilteredLogs();
+      if (logs.length === 0) {
+        console.log(`${colors.dim}No logs found.${colors.reset}\n`);
+      } else {
+        logs.forEach(entry => console.log(formatLogEntry(entry)));
+      }
+
+      console.log();
+      displayHeader();
+    }
   }
 
   readline.emitKeypressEvents(process.stdin);
@@ -332,59 +319,74 @@ async function logsInteractive(options: LogsOptions = {}): Promise<void> {
       process.exit(0);
     }
 
+    // Handle ESC first
+    if (key.name === 'escape' && filterModeActive) {
+      filterModeActive = false;
+      displayLogs();
+      return;
+    }
+
     const keyName = (str || '').toLowerCase();
 
-    switch (keyName) {
-      case 'w':
-        toggleFilter('worker');
-        break;
-      case 'd':
-        toggleFilter('dispatcher');
-        break;
-      case 'n':
-        toggleFilter('consumer');
-        break;
-      case 'u':
-        toggleFilter('queue');
-        break;
-      case 'o':
-        toggleFilter('core');
-        break;
-      case 't':
-        toggleFilter('watcher');
-        break;
-      case 'y':
-        toggleFilter('quality');
-        break;
-      case '1':
-        toggleSeverity('info');
-        break;
-      case '2':
-        toggleSeverity('warn');
-        break;
-      case '3':
-        toggleSeverity('error');
-        break;
-      case '4':
-        toggleSeverity('debug');
-        break;
-      case 'a':
-        activeFilters.clear();
-        activeSeverityFilters.clear();
-        searchPattern = '';
-        agentFilter = '';
-        displayLogs();
-        break;
-      case 'c':
-        clearLogFiles();
-        lastTimestamp = Date.now();
-        displayLogs();
-        break;
-      case 'q':
-        cleanup();
-        process.exit(0);
-        break;
+    // Global keys (work in both modes)
+    if (keyName === 'f') {
+      filterModeActive = !filterModeActive;
+      displayLogs();
+      return;
     }
+    if (keyName === 'a') {
+      activeFilters.clear();
+      activeSeverityFilters.clear();
+      displayLogs();
+      return;
+    }
+    if (keyName === 'c') {
+      clearLogFiles();
+      lastTimestamp = Date.now();
+      displayLogs();
+      return;
+    }
+    if (keyName === 'q') {
+      cleanup();
+      process.exit(0);
+    }
+
+    // Filter mode ONLY keys
+    if (filterModeActive) {
+      switch (keyName) {
+        case '*':
+          activeFilters.add('worker');
+          activeFilters.add('dispatcher');
+          activeFilters.add('consumer');
+          activeFilters.add('queue');
+          activeFilters.add('core');
+          activeFilters.add('watcher');
+          activeFilters.add('quality');
+          activeSeverityFilters.add('info');
+          activeSeverityFilters.add('warn');
+          activeSeverityFilters.add('error');
+          activeSeverityFilters.add('debug');
+          displayLogs();
+          break;
+        case '-':
+          activeFilters.clear();
+          activeSeverityFilters.clear();
+          displayLogs();
+          break;
+        case 'w': toggleFilter('worker'); break;
+        case 'd': toggleFilter('dispatcher'); break;
+        case 'n': toggleFilter('consumer'); break;
+        case 'u': toggleFilter('queue'); break;
+        case 'o': toggleFilter('core'); break;
+        case 't': toggleFilter('watcher'); break;
+        case 'y': toggleFilter('quality'); break;
+        case '1': toggleSeverity('info'); break;
+        case '2': toggleSeverity('warn'); break;
+        case '3': toggleSeverity('error'); break;
+        case '4': toggleSeverity('debug'); break;
+      }
+    }
+    // Normal mode: ignore filter toggle keys
   });
 
   function toggleFilter(filter: string): void {

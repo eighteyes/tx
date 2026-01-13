@@ -65,9 +65,14 @@ fsm:
             - check_haiku_max_iterations
         set:
           haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
-      transitions:
-        sonnet-reviewer: sonnet_review_loop
-        ralph-haiku: ralph_haiku_loop
+        when:
+          - condition: haiku_success_signal == "PASS"
+            target: sonnet_review_loop
+          - condition: haiku_success_signal == "REFINE"
+            target: ralph_haiku_loop
+          - condition: haiku_success_signal == "BLOCKED"
+            target: blocked_state
+        default: ralph_haiku_loop
 
     sonnet_review_loop:
       agents: [sonnet-reviewer]
@@ -80,10 +85,14 @@ fsm:
             - check_sonnet_max_iterations
         set:
           sonnet_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
-      transitions:
-        opus-reviewer: opus_review_loop
-        sonnet-reviewer: sonnet_review_loop
-        ralph-haiku: ralph_haiku_loop
+        when:
+          - condition: sonnet_success_signal == "PASS"
+            target: opus_review_loop
+          - condition: sonnet_success_signal == "REFINE"
+            target: sonnet_review_loop
+          - condition: sonnet_success_signal == "BLOCKED"
+            target: blocked_state
+        default: sonnet_review_loop
 
     opus_review_loop:
       agents: [opus-reviewer]
@@ -96,8 +105,22 @@ fsm:
             - check_opus_max_iterations
         set:
           opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
-      transitions:
-        core: complete
+        when:
+          - condition: opus_success_signal == "PASS"
+            target: complete
+          - condition: opus_success_signal == "REFINE"
+            target: opus_review_loop
+          - condition: opus_success_signal == "BLOCKED"
+            target: blocked_state
+        default: opus_review_loop
+
+    blocked_state:
+      agents: [core]
+      exit:
+        default: error_state
+
+    error_state:
+      agents: [core]
 
     complete:
       agents: [core]
