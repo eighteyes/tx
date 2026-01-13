@@ -180,6 +180,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   toolRestriction: { type: 'string', enum: ['unrestricted', 'mcp-only'] },
   // Turn workspace (custom workspace template for turn-based games)
   turn_workspace: { type: 'object' },
+  // Playbook notes for design rationale and documentation
+  playbook_notes: { type: 'string' },
 };
 
 /**
@@ -190,6 +192,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   model: { type: 'string', required: true, enum: ['opus', 'sonnet', 'haiku'] },
   prompt: { type: 'string', required: true },
   workspace: { type: 'object' },
+  description: { type: 'string' },  // Optional agent documentation
 };
 
 /**

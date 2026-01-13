@@ -230,11 +230,21 @@ export interface FSMTransitionConfig {
 }
 
 /**
+ * Object-style FSM state config (used in YAML configs)
+ * State name is the key, not part of the value
+ */
+export type FSMStateConfigObject = Omit<FSMStateConfig, 'name'> & {
+  agents?: string[];  // Alternative to coordinator + participants
+};
+
+/**
  * Full FSM configuration for mesh config
+ * Supports both array format (internal) and object format (YAML config)
  */
 export interface FSMConfig {
-  initialState: string;
-  states: FSMStateConfig[];
+  initialState?: string;  // Internal format uses initialState
+  initial?: string;       // YAML format uses initial
+  states: FSMStateConfig[] | Record<string, FSMStateConfigObject>;  // Both formats supported
   transitions: FSMTransitionConfig[];
   context?: Record<string, unknown>;  // Initial context variables
 }

@@ -373,10 +373,20 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    const meshConfig = this.meshConfigs.get(meshName);
+    let meshConfig = this.meshConfigs.get(meshName);
     if (!meshConfig) {
-      log.error('dispatcher', `Mesh not found`, { meshName, agentId });
-      return;
+      // Try JIT loading before failing
+      log.info('dispatcher', 'Mesh not loaded, attempting JIT load', { meshName, agentId });
+      const loaded = this.tryLoadMeshOnDemand(meshName);
+      if (!loaded) {
+        log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
+        return;
+      }
+      meshConfig = this.meshConfigs.get(meshName);
+      if (!meshConfig) {
+        log.error('dispatcher', 'Mesh loaded but config missing', { meshName, agentId });
+        return;
+      }
     }
 
     // Check for ensemble pattern
@@ -1928,6 +1938,203 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
   }
 
   /**
+   * Normalize FSM config to support both array and object-style states
+   * Transforms object-style states: { state_name: {...} } → array: [{ name: state_name, ...}]
+   */
+  private normalizeFSMConfig(fsm: any): FSMConfig {
+    // If states is already an array, return as-is
+    if (Array.isArray(fsm.states)) {
+      return fsm as FSMConfig;
+    }
+
+    // Transform object-style states to array-style
+    const states: any[] = [];
+    for (const [stateName, stateConfig] of Object.entries(fsm.states || {})) {
+      const normalized: any = { name: stateName, ...(stateConfig as any) };
+
+      // Transform 'agents' array → coordinator + participants
+      if (normalized.agents) {
+        const agentList = normalized.agents as string[];
+        normalized.coordinator = agentList[0];
+        if (agentList.length > 1) {
+          normalized.participants = agentList.slice(1);
+        }
+        delete normalized.agents;
+      }
+
+      states.push(normalized);
+    }
+
+    return {
+      initialState: fsm.initial || fsm.initialState,
+      states,
+      transitions: fsm.transitions || [],
+      context: fsm.context,
+    } as FSMConfig;
+  }
+
+  /**
+   * Try to load a mesh on-demand when a message arrives for an unloaded mesh
+   * Searches project meshes/ and global TX_ROOT/meshes/
+   * Returns true if mesh was loaded successfully
+   */
+  private tryLoadMeshOnDemand(meshName: string): boolean {
+    try {
+      const searchDirs: Array<{ dir: string; isGlobal: boolean }> = [];
+
+      // Project meshes
+      if (fs.existsSync(this.config.meshesDir)) {
+        searchDirs.push({ dir: this.config.meshesDir, isGlobal: false });
+      }
+
+      // Global TX_ROOT meshes
+      const globalMeshDir = process.env.TX_ROOT
+        ? path.join(process.env.TX_ROOT, 'meshes')
+        : null;
+      if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
+        searchDirs.push({ dir: globalMeshDir, isGlobal: true });
+      }
+
+      // Search for mesh directory and config file
+      for (const { dir: searchRoot, isGlobal } of searchDirs) {
+        // Try direct: meshes/{meshName}/config.yaml
+        const directPath = path.join(searchRoot, meshName);
+        if (fs.existsSync(directPath)) {
+          const configPath = this.findConfigInDir(directPath);
+          if (configPath) {
+            log.info('dispatcher', 'Found mesh config (JIT)', { meshName, configPath });
+            this.loadMeshConfigFromFile(configPath, directPath, isGlobal);
+
+            // Initialize FSM if needed
+            const config = this.meshConfigs.get(meshName);
+            if (config?.fsm) {
+              this.initializeSingleFSM(meshName, config);
+            }
+
+            return true;
+          }
+        }
+
+        // Try nested: meshes/{category}/{meshName}/config.yaml
+        const categories = fs.readdirSync(searchRoot, { withFileTypes: true })
+          .filter(e => e.isDirectory() && !e.name.startsWith('.'));
+
+        for (const category of categories) {
+          const nestedPath = path.join(searchRoot, category.name, meshName);
+          if (fs.existsSync(nestedPath)) {
+            const configPath = this.findConfigInDir(nestedPath);
+            if (configPath) {
+              log.info('dispatcher', 'Found mesh config (JIT, nested)', { meshName, configPath, category: category.name });
+              this.loadMeshConfigFromFile(configPath, nestedPath, isGlobal);
+
+              // Initialize FSM if needed
+              const config = this.meshConfigs.get(meshName);
+              if (config?.fsm) {
+                this.initializeSingleFSM(meshName, config);
+              }
+
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    } catch (error) {
+      log.error('dispatcher', 'JIT mesh load failed', {
+        meshName,
+        error: (error as Error).message,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Find config file in directory (prioritize YAML over JSON)
+   * Returns absolute path to config file, or null if not found
+   */
+  private findConfigInDir(dir: string): string | null {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
+      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
+
+      if (yamlConfig) {
+        return path.join(dir, yamlConfig.name);
+      } else if (jsonConfig) {
+        return path.join(dir, jsonConfig.name);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Initialize FSM for a single mesh (called during JIT loading)
+   */
+  private initializeSingleFSM(meshName: string, config: MeshConfig): void {
+    try {
+      const fsm = new MeshFSM(
+        meshName,
+        config.fsm!,
+        this.queue.getDatabase(),
+        config._basePath || this.config.workDir
+      );
+
+      // Wire FSM events (same as initializeFSMs)
+      fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
+        log.info('fsm', 'State transition', {
+          meshName: event.meshName,
+          from: event.from,
+          to: event.to,
+          trigger: event.trigger,
+          triggerAgent: event.triggerAgent,
+        });
+        this.emit('fsm:transition', event);
+      });
+
+      fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
+        log.debug('fsm', 'Gate check', {
+          meshName: event.meshName,
+          state: event.state,
+          passed: event.passed,
+          retryCount: event.retryCount,
+        });
+        this.emit('fsm:gate-check', event);
+      });
+
+      fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
+        if (!event.success) {
+          log.error('fsm', 'Script failed', {
+            meshName: event.meshName,
+            scriptType: event.scriptType,
+            scriptPath: event.scriptPath,
+            error: event.error,
+          });
+        }
+        this.emit('fsm:script-run', event);
+      });
+
+      // Initialize the FSM
+      fsm.initialize().catch(error => {
+        log.error('fsm', 'Failed to initialize FSM (JIT)', {
+          meshName,
+          error: (error as Error).message,
+        });
+      });
+
+      this.meshFSMs.set(meshName, fsm);
+      log.info('dispatcher', 'Initialized FSM (JIT)', { meshName });
+    } catch (error) {
+      log.error('dispatcher', 'Failed to create FSM (JIT)', {
+        meshName,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
    * Load all mesh configs from meshes/ directory structure
    * Supports: meshes/{mesh}/config.yaml and meshes/{category}/{mesh}/config.yaml
    * Falls back to TX_ROOT/meshes/ if project doesn't have meshes
@@ -2121,6 +2328,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Don't override project configs with global ones
       if (this.meshConfigs.has(config.mesh) && isGlobal) {
         return;
+      }
+
+      // Transform FSM config if needed (object-style states → array-style)
+      if (config.fsm) {
+        config.fsm = this.normalizeFSMConfig(config.fsm);
       }
 
       // Store base path for relative prompt resolution

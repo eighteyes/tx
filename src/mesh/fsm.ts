@@ -82,6 +82,7 @@ export class MeshFSM extends EventEmitter {
   private stateData: FSMStateData | null = null;
   private stateMap: Map<string, FSMStateConfig>;
   private initialized = false;
+  private _initialState: string; // Normalized initial state name
 
   constructor(
     meshName: string,
@@ -96,10 +97,32 @@ export class MeshFSM extends EventEmitter {
     this.scriptExecutor = new ScriptExecutor({ workDir });
     this.conditionEvaluator = new ConditionEvaluator();
 
-    // Build state lookup map
+    // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
+    this._initialState = config.initialState || config.initial || '';
+
+    // Build state lookup map - support both array and object formats
     this.stateMap = new Map();
-    for (const state of config.states) {
-      this.stateMap.set(state.name, state);
+    if (Array.isArray(config.states)) {
+      // Array format: [{ name: 'state1', ... }, { name: 'state2', ... }]
+      for (const state of config.states) {
+        this.stateMap.set(state.name, state);
+      }
+    } else if (config.states && typeof config.states === 'object') {
+      // Object format: { state1: { ... }, state2: { ... } }
+      for (const [name, stateConfig] of Object.entries(config.states as Record<string, Omit<FSMStateConfig, 'name'>>)) {
+        const normalizedState: FSMStateConfig = {
+          name,
+          ...stateConfig,
+          // Transform 'agents' array to coordinator + participants if needed
+          coordinator: (stateConfig as any).agents?.[0] || (stateConfig as any).coordinator,
+          participants: (stateConfig as any).agents?.slice(1) || (stateConfig as any).participants,
+        };
+        // Remove the agents field if it was transformed
+        if ((stateConfig as any).agents) {
+          delete (normalizedState as any).agents;
+        }
+        this.stateMap.set(name, normalizedState);
+      }
     }
   }
 
@@ -120,7 +143,7 @@ export class MeshFSM extends EventEmitter {
       // Create initial state
       this.stateData = {
         meshName: this.meshName,
-        currentState: this.config.initialState,
+        currentState: this._initialState,
         context: this.config.context || {},
         gateRetries: {},
         lastTransitionAt: Date.now(),
@@ -131,11 +154,11 @@ export class MeshFSM extends EventEmitter {
 
       log.info('fsm', 'Created initial FSM state', {
         meshName: this.meshName,
-        initialState: this.config.initialState,
+        initialState: this._initialState,
       });
 
       // Execute onEnter for initial state
-      await this.executeOnEnter(this.config.initialState);
+      await this.executeOnEnter(this._initialState);
     } else {
       log.info('fsm', 'Loaded existing FSM state', {
         meshName: this.meshName,
@@ -151,7 +174,7 @@ export class MeshFSM extends EventEmitter {
    * Get current state name
    */
   getCurrentState(): string {
-    return this.stateData?.currentState || this.config.initialState;
+    return this.stateData?.currentState || this._initialState;
   }
 
   /**
@@ -474,7 +497,7 @@ export class MeshFSM extends EventEmitter {
     const previousState = this.stateData.currentState;
 
     // Reset to initial state
-    this.stateData.currentState = this.config.initialState;
+    this.stateData.currentState = this._initialState;
     this.stateData.context = this.config.context || {};
     this.stateData.gateRetries = {};
     this.stateData.lastTransitionAt = Date.now();
@@ -484,7 +507,7 @@ export class MeshFSM extends EventEmitter {
     log.info('fsm', 'FSM reset to initial state', {
       meshName: this.meshName,
       previousState,
-      initialState: this.config.initialState,
+      initialState: this._initialState,
       reason,
     });
 
@@ -492,13 +515,13 @@ export class MeshFSM extends EventEmitter {
     this.emit('fsm:reset', {
       meshName: this.meshName,
       previousState,
-      initialState: this.config.initialState,
+      initialState: this._initialState,
       reason,
       timestamp: Date.now(),
     });
 
     // Execute onEnter for initial state
-    await this.executeOnEnter(this.config.initialState);
+    await this.executeOnEnter(this._initialState);
   }
 
   /**
@@ -524,7 +547,8 @@ export class MeshFSM extends EventEmitter {
    * Get all state configurations
    */
   getStates(): FSMStateConfig[] {
-    return [...this.config.states];
+    // Return from the normalized stateMap to handle both array and object formats
+    return Array.from(this.stateMap.values());
   }
 
   /**
