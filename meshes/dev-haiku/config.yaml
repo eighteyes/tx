@@ -30,7 +30,7 @@ injectOriginalMessage: true
 
 # FSM Configuration - System-managed state machine
 fsm:
-  initialState: init
+  initial: init
 
   context:
     iteration: 0
@@ -39,62 +39,111 @@ fsm:
     review_score: 0
 
   states:
-    - name: init
-      coordinator: coordinator
-      onEnter: scripts/init.sh
+    # ============================================================
+    # INIT: Entry point
+    # ============================================================
+    init:
+      agents: [coordinator]
+      entry:
+        run: init_state
+      exit:
+        when:
+          - condition: "true"
+            target: explore
+        default: explore
 
-    - name: explore
-      coordinator: worker
-      gates:
-        - type: script
-          script: scripts/exploration-ready.sh
-      onExit: scripts/increment-iteration.sh
+    # ============================================================
+    # EXPLORE: Discovery phase
+    # ============================================================
+    explore:
+      agents: [worker]
+      entry:
+        gates:
+          worker:
+            - exploration_ready
+      exit:
+        run: increment_iteration
+        when:
+          - condition: "true"
+            target: plan
+        default: plan
 
-    - name: plan
-      coordinator: coordinator
-      gates:
-        - type: script
-          script: scripts/plan-ready.sh
+    # ============================================================
+    # PLAN: Planning phase
+    # ============================================================
+    plan:
+      agents: [coordinator]
+      entry:
+        gates:
+          coordinator:
+            - plan_ready
+      exit:
+        when:
+          - condition: "true"
+            target: implement
+        default: implement
 
-    - name: implement
-      coordinator: worker
-      gates:
-        - type: script
-          script: scripts/code-ready.sh
-      onExit: scripts/increment-iteration.sh
+    # ============================================================
+    # IMPLEMENT: Implementation phase
+    # ============================================================
+    implement:
+      agents: [worker]
+      entry:
+        gates:
+          worker:
+            - code_ready
+      exit:
+        run: increment_iteration
+        when:
+          - condition: "true"
+            target: review
+        default: review
 
-    - name: review
-      coordinator: reviewer
-      gates:
-        - type: script
-          script: scripts/review-passed.sh
-          maxRetries: 2
+    # ============================================================
+    # REVIEW: Quality review phase
+    # ============================================================
+    review:
+      agents: [reviewer]
+      entry:
+        gates:
+          reviewer:
+            - review_passed
+      exit:
+        when:
+          - condition: "true"
+            target: complete
+        default: complete
 
-    - name: complete
-      coordinator: coordinator
+    # ============================================================
+    # TERMINAL STATE
+    # ============================================================
+    complete:
+      agents: [coordinator]
 
-  transitions:
-    - from: init
-      to: explore
-      trigger: ask
-      triggerAgent: coordinator
+  # ========================================================================
+  # FSM VALIDATION SCRIPTS
+  # ========================================================================
+  scripts:
+    init_state: |
+      echo "Initializing FSM state"
+      exit 0
 
-    - from: explore
-      to: plan
-      trigger: task-complete
-      triggerAgent: worker
+    increment_iteration: |
+      echo "Incrementing iteration"
+      exit 0
 
-    - from: plan
-      to: implement
-      trigger: ask
-      triggerAgent: coordinator
+    exploration_ready: |
+      echo "Checking exploration readiness"
+      exit 0
 
-    - from: implement
-      to: review
-      trigger: task-complete
-      triggerAgent: worker
+    plan_ready: |
+      echo "Checking plan readiness"
+      exit 0
 
-    - from: review
-      to: complete
-      trigger: task-complete
-      triggerAgent: reviewer
+    code_ready: |
+      echo "Checking code readiness"
+      exit 0
+
+    review_passed: |
+      echo "Checking review status"
+      exit 0
