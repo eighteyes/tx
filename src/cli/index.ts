@@ -22,6 +22,12 @@ dotenv.config({ quiet: true });
 const workDir = process.env.TX_CWD || process.cwd();
 log.init(workDir, 'debug');
 
+// Ignore EPIPE on stdout (happens when tmux detaches or terminal closes)
+process.stdout.on('error', (err: any) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
+
 // Global exception handlers
 process.on('uncaughtException', (error: Error) => {
   log.error('process', 'Uncaught exception', {
