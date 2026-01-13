@@ -152,6 +152,49 @@ export class PromptInjector {
   }
 
   /**
+   * Inject rearmatter instructions into a system prompt
+   * Provides guidance on required output format and fields
+   */
+  injectRearmatter(basePrompt: string, rearmatterConfig: any): string {
+    if (!rearmatterConfig || !rearmatterConfig.enabled) {
+      return basePrompt;
+    }
+
+    const section = this.buildRearmatterSection(rearmatterConfig);
+    return `${basePrompt}\n\n${section}`;
+  }
+
+  /**
+   * Build the rearmatter section
+   */
+  private buildRearmatterSection(config: any): string {
+    const parts: string[] = [];
+
+    parts.push('# Response Format (Rearmatter)\n');
+    parts.push('Your response must include structured metadata at the end in YAML format.\n');
+
+    if (config.fields && config.fields.length > 0) {
+      parts.push('## Required Fields\n');
+      parts.push('Include these fields in a YAML block at the end of your response:\n');
+      parts.push('```yaml');
+      for (const field of config.fields) {
+        parts.push(`${field}: <your value>`);
+      }
+      parts.push('```\n');
+    }
+
+    if (config.thresholds) {
+      parts.push('## Quality Thresholds\n');
+      for (const [field, value] of Object.entries(config.thresholds)) {
+        parts.push(`- **${field}**: Must be ${value} or higher`);
+      }
+      parts.push('');
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
    * Inject FSM context into a system prompt
    * Provides state awareness to ALL agents in FSM-enabled meshes
    */
