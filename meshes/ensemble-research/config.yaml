@@ -17,7 +17,9 @@ agents:
 entry_point: literature-review
 
 ensemble:
+  coordinator: literature-review
   agents: [literature-review, interviews, statistics]
+  reviewer: literature-review
   aggregation_strategy: deduplicate
   timeout_ms: 120000
   allow_partial_failure: false

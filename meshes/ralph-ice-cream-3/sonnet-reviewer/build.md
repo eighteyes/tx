@@ -58,6 +58,7 @@ Does COMPLETE implementation pass all 4 quality gates?
   NO: Can I fix issues this iteration?
     YES & iteration < 3 → REFINE (improve complete work)
     NO or iteration == 3 → PASS (let opus handle)
+```
 
 ## Output Signal (YAML Frontmatter)
 
@@ -66,8 +67,6 @@ success_signal: PASS | REFINE | BLOCKED
 analysis: "Gates passed/failed; fixes made"
 mode: build
 tier: sonnet
-```
-
 ```
 
 ## Guardrails (999+)

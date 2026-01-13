@@ -34,7 +34,7 @@ agents:
 # ============================================================================
 
 entry_point: ralph-plan
-completion_agent: ralph-plan
+completion_agent: ralph-build
 
 # ============================================================================
 # MESSAGE ROUTING
@@ -43,8 +43,9 @@ completion_agent: ralph-plan
 routing:
   ralph-plan:
     complete:
-      core: "Plan complete, returning to core"
+      ralph-build: "Plan complete (PASS signal), passing to build"
       ralph-plan: "Needs refinement, iterating"
+      core: "Plan blocked or complete without build"
     ask:
       core: "Need human input for requirements definition"
     blocked:
@@ -55,7 +56,7 @@ routing:
       core: "Build complete, returning to core"
       ralph-build: "Needs refinement, iterating"
     blocked:
-      core: "Fatal error - cannot proceed"
+      core: "Build blocked, returning to core"
 
 # ============================================================================
 # WORKSPACE STRUCTURE
@@ -80,12 +81,13 @@ workspace:
 rearmatter:
   enabled: true
   fields:
+    - confidence
     - success_signal
     - analysis
     - iteration_notes
     - mode
   thresholds:
-    confidence: 0.7
+    confidence: 0.9
 
 # ============================================================================
 # FSM: FINITE STATE MACHINE
@@ -137,7 +139,9 @@ fsm:
           plan_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
         when:
           - condition: plan_success_signal == "PLAN_COMPLETE"
-            target: complete
+            target: build_loop
+          - condition: plan_success_signal == "PASS"
+            target: build_loop
           - condition: plan_success_signal == "REFINE"
             target: plan_loop
           - condition: plan_success_signal == "BLOCKED"

@@ -42,6 +42,9 @@ routing:
 workspace:
   path: ".ai/ralph/{topic}/"
 
+rearmatter:
+  - success_signal
+
 fsm:
   initial: ralph_haiku_loop
 

@@ -101,8 +101,9 @@ routing:
 
   opus-plan:
     complete:
-      core: "Final plan review complete - approved for delivery"
+      haiku-build: "Final plan review complete (PASS signal), passing to build chain"
       opus-plan: "Final polish needed"
+      core: "Plan blocked or complete without build"
     blocked:
       core: "Fatal error - cannot proceed"
 
@@ -255,7 +256,7 @@ fsm:
           opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
         when:
           - condition: opus_success_signal == "PASS"
-            target: complete
+            target: haiku_build_loop
           - condition: opus_success_signal == "REFINE"
             target: opus_plan_loop
           - condition: opus_success_signal == "BLOCKED"

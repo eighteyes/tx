@@ -286,44 +286,59 @@ async function getAllSessions(sessionsDir: string): Promise<ParsedSession[]> {
 
 /**
  * Get all prompts from .ai/tx/prompts/
+ * Prompts are stored in subdirectories: prompts/mesh/agent.md
  */
 async function getAllPrompts(promptsDir: string): Promise<ParsedPrompt[]> {
   if (!fs.existsSync(promptsDir)) return [];
 
   const prompts: ParsedPrompt[] = [];
-  const files = fs.readdirSync(promptsDir);
 
-  for (const file of files) {
-    if (!file.endsWith('.md')) continue;
+  // Recursively read mesh subdirectories
+  function readPromptsRecursive(dir: string): void {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-    const filepath = path.join(promptsDir, file);
-    try {
-      const content = fs.readFileSync(filepath, 'utf-8');
-      const parts = content.split(/^---$/m);
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
 
-      let frontmatter: Record<string, string> = {};
-      let body = content;
+      if (entry.isDirectory()) {
+        readPromptsRecursive(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const parts = content.split(/^---$/m);
 
-      if (parts.length >= 3) {
-        frontmatter = parseFrontmatter(parts[1].trim());
-        body = parts.slice(2).join('---').trim();
+          let frontmatter: Record<string, string> = {};
+          let body = content;
+
+          if (parts.length >= 3) {
+            frontmatter = parseFrontmatter(parts[1].trim());
+            body = parts.slice(2).join('---').trim();
+          }
+
+          // Extract agentId from path: prompts/mesh/agent.md -> mesh/agent
+          const relativePath = path.relative(promptsDir, fullPath);
+          const agentId = frontmatter.agent || relativePath.replace('.md', '');
+
+          // Use file stat for timestamp if not in frontmatter
+          const stat = fs.statSync(fullPath);
+          const timestamp = frontmatter.timestamp || stat.birthtime.toISOString();
+
+          prompts.push({
+            filepath: fullPath,
+            filename: entry.name,
+            agentId,
+            model: frontmatter.model || 'unknown',
+            timestamp,
+            content: body
+          });
+        } catch {
+          // Ignore parse errors
+        }
       }
-
-      // Filename is mesh_agent.md -> mesh/agent
-      const agentId = frontmatter.agent || file.replace('.md', '').replace('_', '/');
-
-      prompts.push({
-        filepath,
-        filename: file,
-        agentId,
-        model: frontmatter.model || 'unknown',
-        timestamp: frontmatter.timestamp || new Date().toISOString(),
-        content: body
-      });
-    } catch {
-      // Ignore
     }
   }
+
+  readPromptsRecursive(promptsDir);
 
   return prompts.sort((a, b) => a.agentId.localeCompare(b.agentId));
 }
