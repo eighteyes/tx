@@ -148,37 +148,20 @@ workspace: /path/to/turn-5
 
 See `docs/mesh-fsm-config.md` for full documentation.
 
-## Documentation Patterns
+## Documentation
 
-**Two-layer documentation approach:**
+**`playbook_notes` in config.yaml** (for maintainers)
+- Design rationale and architectural decisions
+- WHY the mesh is built this way
+- Alignment with methodologies/patterns
+- Not injected into prompts
 
-1. **`playbook_notes` in config.yaml** (for maintainers)
-   - Design rationale and architectural decisions
-   - WHY the mesh is built this way
-   - Alignment with methodologies/patterns
-   - Not processed by the system
-
-2. **`README.md` in mesh directory** (for agents at runtime)
-   - Operational guidance for autonomous execution
-   - HOW to operate (mandates, decision trees, quality gates)
-   - Loaded by agents during execution
-   - Keep brief and actionable
-
-**Example structure:**
+**Example:**
+```yaml
+playbook_notes: |
+  This mesh implements the Ralph pattern from ClaytonFarr/ralph-playbook.
+  Uses layered quality refinement: haiku drafts, sonnet reviews, opus finalizes.
 ```
-meshes/ralph-ice-cream-2/
-├── config.yaml          # includes playbook_notes
-├── README.md            # runtime operational guide
-├── ralph-haiku/
-│   └── prompt.md
-└── sonnet-reviewer/
-    └── prompt.md
-```
-
-**When to use each:**
-- `playbook_notes`: Complex meshes with novel patterns or specific methodologies
-- `README.md`: Multi-agent meshes where agents need operational context
-- Both: Advanced meshes like Ralph where design rationale AND runtime guidance matter
 
 ## Debugging
 
