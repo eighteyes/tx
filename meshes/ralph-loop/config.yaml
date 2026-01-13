@@ -1,0 +1,238 @@
+mesh: ralph-loop
+
+description: |
+  Single-agent, dual-mode mesh implementing Ralph playbook patterns.
+  Mode router routes to plan_loop or build_loop based on request_mode in message frontmatter.
+
+  Plan mode: Gap analysis, create/update IMPLEMENTATION_PLAN.md, spawn Task subagents for parallel analysis
+  Build mode: Implement from plan, test, commit, update learnings
+
+  Aligns with Ralph playbook: phase numbering (0a-0d, 1-4, 999+), context efficiency,
+  self-correction, deterministic FSM, autonomous operation with iteration awareness.
+
+# ============================================================================
+# AGENT CONFIGURATION
+# ============================================================================
+
+agents:
+  - name: ralph
+    model: sonnet
+    prompt: ralph/plan.md  # Default prompt, overridden by FSM state
+    description: |
+      Autonomous planning or building agent. Operates in two modes:
+      - Plan mode: Gap analysis, create IMPLEMENTATION_PLAN.md (uses ralph/plan.md)
+      - Build mode: Implement from plan, test, commit (uses ralph/build.md)
+      Routes via success_signal: PLAN_COMPLETE/BUILD_COMPLETE, REFINE, BLOCKED.
+
+# ============================================================================
+# MESH ENTRY & EXIT
+# ============================================================================
+
+entry_point: ralph
+completion_agent: ralph
+
+# ============================================================================
+# MESSAGE ROUTING
+# ============================================================================
+
+routing:
+  ralph:
+    complete:
+      core: "Work complete, returning to core"
+      ralph: "Needs refinement, iterating"
+    blocked:
+      core: "Fatal error - cannot proceed"
+
+# ============================================================================
+# WORKSPACE STRUCTURE
+# ============================================================================
+
+workspace:
+  path: ".ai/ralph-loop/{topic}/"
+  structure:
+    - specs/: "Requirements specifications (loaded in phase 0a)"
+    - IMPLEMENTATION_PLAN.md: "Persistent plan (created/updated across modes)"
+    - AGENTS.md: "Operational guide for this mesh"
+    - src/: "Build output directory"
+  note: |
+    Deterministic operation: Each FSM iteration loads identical workspace context.
+    Agents should reference {workspace}/IMPLEMENTATION_PLAN.md for task selection.
+    Agents should reference {workspace}/AGENTS.md for operational guidance.
+
+# ============================================================================
+# REARMATTER CONFIGURATION
+# ============================================================================
+
+rearmatter:
+  enabled: true
+  fields:
+    - success_signal
+    - analysis
+    - iteration_notes
+    - mode
+  thresholds:
+    confidence: 0.7
+
+# ============================================================================
+# FSM: FINITE STATE MACHINE
+# ============================================================================
+
+fsm:
+  initial: mode_router
+
+  context:
+    request_mode: ""
+    plan_iteration: 0
+    build_iteration: 0
+    max_plan_iterations: 10
+    max_build_iterations: 5
+
+  states:
+    # ============================================================
+    # MODE ROUTER: Entry point, routes based on request_mode
+    # ============================================================
+    mode_router:
+      description: |
+        Entry point - reads request_mode from message frontmatter.
+        Routes to plan_loop or build_loop based on mode.
+        Default: plan (if request_mode not specified or invalid)
+      entry:
+        set:
+          request_mode: "$(echo '$message' | yq '.request_mode // \"plan\"')"
+      exit:
+        when:
+          - condition: request_mode == "plan"
+            target: plan_loop
+          - condition: request_mode == "build"
+            target: build_loop
+        default: plan_loop
+
+    # ============================================================
+    # PLAN LOOP: Gap analysis, create IMPLEMENTATION_PLAN.md
+    # ============================================================
+    plan_loop:
+      agents: [ralph]
+      prompt_override: ralph/plan.md
+      entry:
+        set:
+          plan_iteration: "$((plan_iteration + 1))"
+        inject:
+          mode: plan
+          iteration: "$plan_iteration"
+          max_iterations: "$max_plan_iterations"
+      exit:
+        gates:
+          ralph:
+            - check_plan_max_iterations
+        set:
+          plan_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: plan_success_signal == "PLAN_COMPLETE"
+            target: complete
+          - condition: plan_success_signal == "REFINE"
+            target: plan_loop
+          - condition: plan_success_signal == "BLOCKED"
+            target: blocked_state
+        default: plan_loop
+
+    # ============================================================
+    # BUILD LOOP: Implement from plan, test, commit
+    # ============================================================
+    build_loop:
+      agents: [ralph]
+      prompt_override: ralph/build.md
+      entry:
+        set:
+          build_iteration: "$((build_iteration + 1))"
+        inject:
+          mode: build
+          iteration: "$build_iteration"
+          max_iterations: "$max_build_iterations"
+      exit:
+        gates:
+          ralph:
+            - check_build_max_iterations
+        set:
+          build_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: build_success_signal == "BUILD_COMPLETE"
+            target: complete
+          - condition: build_success_signal == "REFINE"
+            target: build_loop
+          - condition: build_success_signal == "BLOCKED"
+            target: blocked_state
+        default: build_loop
+
+    # ============================================================
+    # TERMINAL STATES
+    # ============================================================
+    blocked_state:
+      agents: [core]
+      description: "Fatal error encountered, escalate to core"
+      exit:
+        default: error_state
+
+    error_state:
+      agents: [core]
+
+    complete:
+      agents: [core]
+
+  # ========================================================================
+  # FSM VALIDATION SCRIPTS
+  # ========================================================================
+  scripts:
+    check_plan_max_iterations: |
+      [[ $plan_iteration -le $max_plan_iterations ]] || {
+        echo "Plan max iterations ($max_plan_iterations) reached" >&2
+        exit 1
+      }
+
+    check_build_max_iterations: |
+      [[ $build_iteration -le $max_build_iterations ]] || {
+        echo "Build max iterations ($max_build_iterations) reached" >&2
+        exit 1
+      }
+
+# ============================================================================
+# PLAYBOOK ALIGNMENT
+# ============================================================================
+playbook_notes: |
+  Ralph Playbook Implementation:
+
+  Phase Numbering:
+  - 0a: Study specs/ with Task subagents
+  - 0b: Study IMPLEMENTATION_PLAN.md
+  - 0c: Study src/lib shared utilities
+  - 0d: Reference workspace paths
+  - 1-4: Mode-specific workflow
+  - 999+: Guardrails in ascending priority
+
+  Context Efficiency:
+  - Prompts follow phase structure
+  - Decision trees replace narrative instruction
+  - Markdown-first, token-aware guidance
+
+  Autonomous Operation:
+  - Agent controls routing via success_signal
+  - Mode-aware prompts (plan.md vs build.md)
+  - Iteration awareness built into prompts
+
+  Backpressure:
+  - Plan mode: max 10 iterations, up to 100 Task subagents for analysis
+  - Build mode: max 5 iterations per task, 1 Task for build/test (serialized)
+
+  Task Spawning:
+  - Plan mode: Spawn up to 100 parallel Task subagents for codebase analysis
+  - Build mode: Spawn single Task for build/tests (backpressure control)
+
+  Conservative Language:
+  - "study" (not "analyze" or "review")
+  - "don't assume not implemented"
+  - "using parallel subagents"
+  - "Ultrathink" for deep reasoning
+
+  IMPLEMENTATION_PLAN.md:
+  - Required in workspace
+  - Created during plan mode
+  - Updated during build mode with discoveries

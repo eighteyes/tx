@@ -1,0 +1,398 @@
+mesh: ralph-ice-cream-3
+
+description: |
+  Three-tier quality refinement pipeline with plan/build mode separation.
+  Mode router routes to plan or build chains: haiku→sonnet→opus per mode.
+
+  Plan mode: Gap analysis, create IMPLEMENTATION_PLAN.md with progressive refinement
+  Build mode: Implementation with layered quality gates
+
+  Aligns with Ralph playbook: phase numbering (0a-0d, 1-4, 999+), context efficiency,
+  self-correction, deterministic FSM, autonomous operation with iteration awareness.
+
+# ============================================================================
+# AGENT CONFIGURATION
+# ============================================================================
+
+agents:
+  - name: haiku
+    model: haiku
+    prompt: haiku/plan.md  # Default, overridden by FSM
+    description: |
+      Fast drafting agent. Creates solid first-draft plans or implementations.
+      Self-assesses via decision tree (accuracy, completeness, clarity).
+      Routes via success_signal: PASS→sonnet, REFINE→self, BLOCKED→error.
+
+  - name: sonnet-reviewer
+    model: sonnet
+    prompt: sonnet-reviewer/plan.md  # Default, overridden by FSM
+    description: |
+      Quality review agent. Reviews haiku's draft against 4 quality gates.
+      Routes based on value-add: PASS→opus, REFINE→self, BLOCKED→error.
+
+  - name: opus-reviewer
+    model: opus
+    prompt: opus-reviewer/plan.md  # Default, overridden by FSM
+    description: |
+      Final quality gate. Makes final judgment on readiness for delivery.
+      Applies final polish if needed (max 1 refinement). Routes to core.
+
+# ============================================================================
+# MESH ENTRY & EXIT
+# ============================================================================
+
+entry_point: haiku
+completion_agent: opus-reviewer
+
+# ============================================================================
+# MESSAGE ROUTING
+# ============================================================================
+
+routing:
+  haiku:
+    complete:
+      sonnet-reviewer: "Quality threshold met, ready for sonnet review"
+      haiku: "Below threshold, refining draft"
+    blocked:
+      core: "Fatal error - cannot proceed"
+
+  sonnet-reviewer:
+    complete:
+      opus-reviewer: "Review complete, ready for opus final review"
+      sonnet-reviewer: "Needs refinement, reviewing again"
+    blocked:
+      core: "Fatal error - cannot proceed"
+
+  opus-reviewer:
+    complete:
+      core: "Final review complete - approved for delivery"
+      opus-reviewer: "Final polish needed"
+    blocked:
+      core: "Fatal error - cannot proceed"
+
+# ============================================================================
+# WORKSPACE STRUCTURE
+# ============================================================================
+
+workspace:
+  path: ".ai/ralph-ice-cream-3/{topic}/"
+  structure:
+    - specs/: "Requirements specifications (loaded in phase 0a)"
+    - IMPLEMENTATION_PLAN.md: "Persistent plan (created in plan mode)"
+    - AGENTS.md: "Operational guide for this mesh"
+    - plan/:
+      - haiku-draft.md: "Haiku's plan draft"
+      - sonnet-review.md: "Sonnet's review"
+      - opus-final.md: "Opus's final approval"
+    - build/:
+      - src/: "Build output"
+      - build-log.md: "Build progress log"
+  note: |
+    Deterministic operation: Each FSM iteration loads identical workspace context.
+    Agents should reference {workspace}/IMPLEMENTATION_PLAN.md for task selection.
+    Agents should reference {workspace}/AGENTS.md for operational guidance.
+
+# ============================================================================
+# REARMATTER CONFIGURATION
+# ============================================================================
+
+rearmatter:
+  enabled: true
+  fields:
+    - success_signal
+    - analysis
+    - iteration_notes
+    - mode
+    - tier
+  thresholds:
+    confidence: 0.7
+
+# ============================================================================
+# FSM: FINITE STATE MACHINE
+# ============================================================================
+
+fsm:
+  initial: mode_router
+
+  context:
+    request_mode: ""
+    haiku_iteration: 0
+    sonnet_iteration: 0
+    opus_iteration: 0
+    max_haiku_iterations: 5
+    max_sonnet_iterations: 3
+    max_opus_iterations: 2
+
+  states:
+    # ============================================================
+    # MODE ROUTER: Entry point, routes based on request_mode
+    # ============================================================
+    mode_router:
+      description: |
+        Entry point - reads request_mode from message frontmatter.
+        Routes to plan chain or build chain based on mode.
+        Default: plan (if request_mode not specified or invalid)
+      entry:
+        set:
+          request_mode: "$(echo '$message' | yq '.request_mode // \"plan\"')"
+          haiku_iteration: 0
+          sonnet_iteration: 0
+          opus_iteration: 0
+      exit:
+        when:
+          - condition: request_mode == "plan"
+            target: haiku_plan_loop
+          - condition: request_mode == "build"
+            target: haiku_build_loop
+        default: haiku_plan_loop
+
+    # ============================================================
+    # PLAN MODE CHAIN
+    # ============================================================
+
+    # Haiku Plan Loop
+    haiku_plan_loop:
+      agents: [haiku]
+      prompt_override: haiku/plan.md
+      entry:
+        set:
+          haiku_iteration: "$((haiku_iteration + 1))"
+        inject:
+          mode: plan
+          tier: haiku
+          iteration: "$haiku_iteration"
+          max_iterations: "$max_haiku_iterations"
+      exit:
+        gates:
+          haiku:
+            - check_haiku_max_iterations
+        set:
+          haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: haiku_success_signal == "PASS"
+            target: sonnet_plan_loop
+          - condition: haiku_success_signal == "REFINE"
+            target: haiku_plan_loop
+          - condition: haiku_success_signal == "BLOCKED"
+            target: blocked_state
+        default: haiku_plan_loop
+
+    # Sonnet Plan Loop
+    sonnet_plan_loop:
+      agents: [sonnet-reviewer]
+      prompt_override: sonnet-reviewer/plan.md
+      entry:
+        set:
+          sonnet_iteration: "$((sonnet_iteration + 1))"
+        inject:
+          mode: plan
+          tier: sonnet
+          iteration: "$sonnet_iteration"
+          max_iterations: "$max_sonnet_iterations"
+      exit:
+        gates:
+          sonnet-reviewer:
+            - check_sonnet_max_iterations
+        set:
+          sonnet_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: sonnet_success_signal == "PASS"
+            target: opus_plan_loop
+          - condition: sonnet_success_signal == "REFINE"
+            target: sonnet_plan_loop
+          - condition: sonnet_success_signal == "BLOCKED"
+            target: blocked_state
+        default: sonnet_plan_loop
+
+    # Opus Plan Loop
+    opus_plan_loop:
+      agents: [opus-reviewer]
+      prompt_override: opus-reviewer/plan.md
+      entry:
+        set:
+          opus_iteration: "$((opus_iteration + 1))"
+        inject:
+          mode: plan
+          tier: opus
+          iteration: "$opus_iteration"
+          max_iterations: "$max_opus_iterations"
+      exit:
+        gates:
+          opus-reviewer:
+            - check_opus_max_iterations
+        set:
+          opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: opus_success_signal == "PASS"
+            target: complete
+          - condition: opus_success_signal == "REFINE"
+            target: opus_plan_loop
+          - condition: opus_success_signal == "BLOCKED"
+            target: blocked_state
+        default: opus_plan_loop
+
+    # ============================================================
+    # BUILD MODE CHAIN
+    # ============================================================
+
+    # Haiku Build Loop
+    haiku_build_loop:
+      agents: [haiku]
+      prompt_override: haiku/build.md
+      entry:
+        set:
+          haiku_iteration: "$((haiku_iteration + 1))"
+        inject:
+          mode: build
+          tier: haiku
+          iteration: "$haiku_iteration"
+          max_iterations: "$max_haiku_iterations"
+      exit:
+        gates:
+          haiku:
+            - check_haiku_max_iterations
+        set:
+          haiku_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: haiku_success_signal == "PASS"
+            target: sonnet_build_loop
+          - condition: haiku_success_signal == "REFINE"
+            target: haiku_build_loop
+          - condition: haiku_success_signal == "BLOCKED"
+            target: blocked_state
+        default: haiku_build_loop
+
+    # Sonnet Build Loop
+    sonnet_build_loop:
+      agents: [sonnet-reviewer]
+      prompt_override: sonnet-reviewer/build.md
+      entry:
+        set:
+          sonnet_iteration: "$((sonnet_iteration + 1))"
+        inject:
+          mode: build
+          tier: sonnet
+          iteration: "$sonnet_iteration"
+          max_iterations: "$max_sonnet_iterations"
+      exit:
+        gates:
+          sonnet-reviewer:
+            - check_sonnet_max_iterations
+        set:
+          sonnet_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: sonnet_success_signal == "PASS"
+            target: opus_build_loop
+          - condition: sonnet_success_signal == "REFINE"
+            target: sonnet_build_loop
+          - condition: sonnet_success_signal == "BLOCKED"
+            target: blocked_state
+        default: sonnet_build_loop
+
+    # Opus Build Loop
+    opus_build_loop:
+      agents: [opus-reviewer]
+      prompt_override: opus-reviewer/build.md
+      entry:
+        set:
+          opus_iteration: "$((opus_iteration + 1))"
+        inject:
+          mode: build
+          tier: opus
+          iteration: "$opus_iteration"
+          max_iterations: "$max_opus_iterations"
+      exit:
+        gates:
+          opus-reviewer:
+            - check_opus_max_iterations
+        set:
+          opus_success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+        when:
+          - condition: opus_success_signal == "PASS"
+            target: complete
+          - condition: opus_success_signal == "REFINE"
+            target: opus_build_loop
+          - condition: opus_success_signal == "BLOCKED"
+            target: blocked_state
+        default: opus_build_loop
+
+    # ============================================================
+    # TERMINAL STATES
+    # ============================================================
+    blocked_state:
+      agents: [core]
+      description: "Fatal error encountered, escalate to core"
+      exit:
+        default: error_state
+
+    error_state:
+      agents: [core]
+
+    complete:
+      agents: [core]
+
+  # ========================================================================
+  # FSM VALIDATION SCRIPTS
+  # ========================================================================
+  scripts:
+    check_haiku_max_iterations: |
+      [[ $haiku_iteration -le $max_haiku_iterations ]] || {
+        echo "Haiku max iterations ($max_haiku_iterations) reached" >&2
+        exit 1
+      }
+
+    check_sonnet_max_iterations: |
+      [[ $sonnet_iteration -le $max_sonnet_iterations ]] || {
+        echo "Sonnet max iterations ($max_sonnet_iterations) reached" >&2
+        exit 1
+      }
+
+    check_opus_max_iterations: |
+      [[ $opus_iteration -le $max_opus_iterations ]] || {
+        echo "Opus max iterations ($max_opus_iterations) reached" >&2
+        exit 1
+      }
+
+# ============================================================================
+# PLAYBOOK ALIGNMENT
+# ============================================================================
+playbook_notes: |
+  Ralph Playbook Implementation:
+
+  Phase Numbering (All 6 Prompts):
+  - 0a: Study specs/
+  - 0b: Study IMPLEMENTATION_PLAN.md
+  - 0c: Study src/lib shared utilities
+  - 0d: Reference workspace paths
+  - 1-4: Mode and tier-specific workflow
+  - 999+: Guardrails in ascending priority
+
+  Mode Router:
+  - Reads request_mode from message frontmatter
+  - Routes to plan chain (haiku_plan→sonnet_plan→opus_plan)
+  - Or build chain (haiku_build→sonnet_build→opus_build)
+
+  Quality Gates by Mode:
+
+  Plan Mode Gates (4):
+  1. Completeness - All requirements mapped to tasks?
+  2. Feasibility - Dependencies identified correctly?
+  3. Clarity - Plan understandable and actionable?
+  4. Structure - Logical flow, phases defined?
+
+  Build Mode Gates (4):
+  1. Accuracy - Code correct, tests pass?
+  2. Completeness - All plan tasks addressed?
+  3. Clarity - Code readable, documented?
+  4. Structure - Logical organization, patterns?
+
+  Conservative Language:
+  - "study" (not "analyze" or "review")
+  - "don't assume not implemented"
+  - "using parallel subagents"
+  - "Ultrathink" for deep reasoning
+
+  Three-Tier Refinement:
+  - Haiku: Fast drafting (5 max iterations)
+  - Sonnet: Quality review (3 max iterations)
+  - Opus: Final gate (2 max iterations)

@@ -20,9 +20,12 @@ Create and collaborate with distributed, observable, composable agentic AI workf
 - `message` - core unit of interaction between meshes and agents
 - `core` - the AI you use to interact with the tx system
 - `task` - a unit of work which is sent to a mesh, or between agents
+- `ask` - a message between agents or to the user which blocks further work until a responce is recieved
 
 ## Usage
-After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". `tx` will write a file with frontmatter formatting, which starts the mesh process. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to you for response.
+After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". 
+
+`tx` will write a file with frontmatter formatting, which starts the mesh process. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to you for response.
 
 ## Features
 - Claude Code SDK uses your current authentication to run agents in isolation.
@@ -60,6 +63,10 @@ cd ../<project-directory>
 tx start
 
 > "Research a report about pelicans riding bikes"
+...wait... the next bit is injected by tx.
+> Read and follow the instructions in .ai/tx/msgs/...
+
+AI: Your report is available at...
 
 # steps to quit 
 # to leave tmux ( /exit just leaves to shell )
@@ -127,11 +134,11 @@ Subagents and skills are fantastic, their  but they interrupt my conversation, a
 Hooks are amazing for incorporating code logic with agentic output, but having them spin up a subagent session isn't really viable. 
 
 ## Philosophy
-`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to only automate. `tx run` supports headless operation. We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
+`tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to only automate (`tx run` supports headless operation). We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
 
 By removing the implementation details from your core conversation, your mind is free to operate at a higher, more strategic level, explore tangential ideas with HITL loops to help steer the meshes when they are not clear. You don't have to context switch to change what your AI is working on.
 
-We are also solving for context pollution, as the system takes care of the wiring and isolates each agent with precisely the information and direction it needs to achieve it's task. Mesh agents run about 1k tokens when in use. 
+We are also solving for context pollution, as the system takes care of the state and behavioral steer-by-wire and isolates each agent with precisely the information and direction it needs to achieve it's task. Mesh agents run about 1k tokens when in use. 
 
 Conversational AI interfaces have not fundamentally changed in the past 60 years. "How does one wield this tool effectively and efficiently", asks the dedicated practitioner, how do we type less and have greater impact? Bespoke user interfaces.
 
