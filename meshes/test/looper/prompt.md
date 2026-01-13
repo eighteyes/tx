@@ -21,7 +21,7 @@ from: test/looper
 type: task
 msg-id: loop-[N]
 headline: Iteration [N+1]
-timestamp: 2025-12-22T00:00:0[N]Z
+timestamp: 2025-12-22T00:00:0[N].000Z
 ---
 
 Iteration [N+1] of 3
@@ -37,7 +37,7 @@ from: test/looper
 type: task
 msg-id: complete-loop
 headline: Completed 3 iterations
-timestamp: 2025-12-22T00:00:03Z
+timestamp: 2025-12-22T00:00:03.000Z
 ---
 
 Completed 3 iterations successfully.

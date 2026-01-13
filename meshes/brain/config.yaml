@@ -51,14 +51,14 @@ intents:
     design: "/know:plan"
     architect: "/know:plan"
     "spec out": "/know:plan"
-    # Implementation → validate before building
-    build: "/know:validate"
-    implement: "/know:validate"
-    "code up": "/know:validate"
-    develop: "/know:validate"
-    refactor: "/know:validate"
-    improve: "/know:validate"
-    optimize: "/know:validate"
+    # Implementation → build workflow
+    build: "/know:build"
+    implement: "/know:build"
+    "code up": "/know:build"
+    develop: "/know:build"
+    refactor: "/know:build"
+    improve: "/know:build"
+    optimize: "/know:build"
 
 agents:
   - name: brain
