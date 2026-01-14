@@ -690,25 +690,34 @@ export class MeshValidator {
         }
 
         // Validate state type (optional, defaults to 'normal')
+        // NOTE: state.type is DEPRECATED in favor of state.ensemble.type
         if (state.type !== undefined) {
           if (typeof state.type !== 'string') {
             errors.push(`${prefix}.type must be a string${context}`);
           } else if (!['normal', 'ensemble'].includes(state.type)) {
             errors.push(`${prefix}.type must be 'normal' or 'ensemble', got '${state.type}'${context}`);
+          } else if (state.type === 'ensemble') {
+            // Warn about deprecated pattern
+            warnings.push(`${prefix}: 'type: ensemble' is deprecated. Use 'ensemble: { type: parallel }' instead${context}`);
           }
         }
 
-        // Validate subtask flag (optional boolean)
-        if (state.subtask !== undefined && typeof state.subtask !== 'boolean') {
-          errors.push(`${prefix}.subtask must be a boolean${context}`);
+        // Validate subtask flag (optional boolean) - DEPRECATED
+        if (state.subtask !== undefined) {
+          if (typeof state.subtask !== 'boolean') {
+            errors.push(`${prefix}.subtask must be a boolean${context}`);
+          } else {
+            warnings.push(`${prefix}: 'subtask: true' is deprecated. Use explicit ensemble routing instead${context}`);
+          }
         }
 
-        // Validate ensemble configuration
-        if (state.type === 'ensemble') {
-          // type: ensemble requires ensemble config
-          if (!state.ensemble) {
-            errors.push(`${prefix}: type 'ensemble' requires 'ensemble' configuration${context}`);
-          }
+        // Validate ensemble configuration (new structure: ensemble.type === 'parallel')
+        const hasLegacyEnsembleType = state.type === 'ensemble';
+        const hasNewEnsembleConfig = state.ensemble !== undefined && typeof state.ensemble === 'object' && state.ensemble !== null && !Array.isArray(state.ensemble);
+
+        // Check for type: ensemble without ensemble config (legacy error)
+        if (hasLegacyEnsembleType && !state.ensemble) {
+          errors.push(`${prefix}: type 'ensemble' requires 'ensemble' configuration${context}`);
         }
 
         if (state.ensemble !== undefined) {
@@ -717,6 +726,16 @@ export class MeshValidator {
           } else {
             const ensemble = state.ensemble as Record<string, unknown>;
             const ensemblePrefix = `${prefix}.ensemble`;
+
+            // Validate ensemble.type (required for new config, optional for legacy)
+            if (ensemble.type !== undefined) {
+              if (ensemble.type !== 'parallel') {
+                errors.push(`${ensemblePrefix}.type must be 'parallel', got '${ensemble.type}'${context}`);
+              }
+            } else if (!hasLegacyEnsembleType) {
+              // New ensemble config without type field should have type: parallel
+              warnings.push(`${ensemblePrefix}: missing 'type' field. Add 'type: parallel' for clarity${context}`);
+            }
 
             // Validate that either agents array OR (agent + count) is provided, not both
             const hasAgents = ensemble.agents !== undefined;
@@ -819,7 +838,7 @@ export class MeshValidator {
             }
 
             // Check for unknown ensemble fields
-            const knownEnsembleFields = ['agents', 'agent', 'count', 'aggregation', 'timeout_ms', 'fault_tolerance'];
+            const knownEnsembleFields = ['type', 'agents', 'agent', 'count', 'aggregation', 'timeout_ms', 'fault_tolerance'];
             for (const field of Object.keys(ensemble)) {
               if (!knownEnsembleFields.includes(field)) {
                 warnings.push(`Unknown ${ensemblePrefix} field '${field}'${context}`);
@@ -1100,7 +1119,14 @@ export class MeshValidator {
         if (!stateValue || typeof stateValue !== 'object') continue;
         const state = stateValue as Record<string, unknown>;
 
-        if (state.type === 'ensemble' && state.ensemble) {
+        // Check for ensemble state (both legacy state.type === 'ensemble' and new state.ensemble.type === 'parallel')
+        const isLegacyEnsemble = state.type === 'ensemble';
+        const isNewEnsemble = state.ensemble !== undefined &&
+          typeof state.ensemble === 'object' &&
+          state.ensemble !== null &&
+          (state.ensemble as Record<string, unknown>).type === 'parallel';
+
+        if ((isLegacyEnsemble || isNewEnsemble) && state.ensemble) {
           const ensemble = state.ensemble as Record<string, unknown>;
           if (Array.isArray(ensemble.agents)) {
             for (const agent of ensemble.agents) {
@@ -1167,8 +1193,13 @@ export class MeshValidator {
       if (!stateValue || typeof stateValue !== 'object') continue;
       const state = stateValue as Record<string, unknown>;
 
-      // Check if this is an ensemble state
-      const isEnsembleState = state.type === 'ensemble';
+      // Check if this is an ensemble state (both legacy and new structure)
+      const isLegacyEnsembleState = state.type === 'ensemble';
+      const isNewEnsembleState = state.ensemble !== undefined &&
+        typeof state.ensemble === 'object' &&
+        state.ensemble !== null &&
+        (state.ensemble as Record<string, unknown>).type === 'parallel';
+      const isEnsembleState = isLegacyEnsembleState || isNewEnsembleState;
 
       if (isEnsembleState && state.ensemble) {
         // Collect ensemble agents - they don't need routing
@@ -1209,7 +1240,15 @@ export class MeshValidator {
       }
     }
 
-    // Log info about ensemble agents (they intentionally don't need routing)
-    // No warning for ensemble agents - their routing is handled by EnsembleCoordinator
+    // Validate ensemble agents have routing (recommended for new ensemble.type: parallel config)
+    // Ensemble agents should have routing to define where their completion messages go
+    for (const agentName of ensembleAgents) {
+      if (!routingObj[agentName]) {
+        warnings.push(
+          `Ensemble agent '${agentName}' should have routing configuration${context}. ` +
+          `Add routing for ensemble agents to define completion message destinations.`
+        );
+      }
+    }
   }
 }

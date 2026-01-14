@@ -92,7 +92,7 @@ See `docs/mesh-config.md` for full routing reference.
 
 **FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm. 
 
-**Parallel execution**: `type: ensemble` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
+**Parallel execution**: `ensemble: { type: parallel }` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 
@@ -149,19 +149,25 @@ fsm:
 
 **Parallel workflow (ensemble):**
 ```yaml
+routing:
+  # Ensemble agents need explicit routing
+  rev-1:
+    complete:
+      synthesizer: "Review 1 complete"
+  rev-2:
+    complete:
+      synthesizer: "Review 2 complete"
+  rev-3:
+    complete:
+      synthesizer: "Review 3 complete"
+
 fsm:
-  initial: generate_subtasks
+  initial: parallel_review
 
   states:
-    generate_subtasks:
-      agents: [coordinator]
-      subtask: true
-      exit:
-        default: parallel_review
-
     parallel_review:
-      type: ensemble
       ensemble:
+        type: parallel          # Required: type inside ensemble block
         agents: [rev-1, rev-2, rev-3]
         aggregation: concat
       exit:

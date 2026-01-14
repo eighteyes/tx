@@ -23,9 +23,8 @@ fsm:
   states:                       # Required: state definitions
     state_name:
       agents: [agent1, ...]     # Agents that can send in this state
-      type: normal              # Optional: 'normal' (default) or 'ensemble'
-      subtask: false            # Optional: inject subtask generation context
-      ensemble:                 # Required if type: ensemble
+      ensemble:                 # For parallel execution (alternative to agents)
+        type: parallel          # Required: must be 'parallel'
         agents: [a1, a2]        # Agents to run in parallel
         aggregation: concat     # Strategy: concat, voting, consensus, etc
         timeout_ms: 120000      # Per-agent timeout
@@ -334,7 +333,7 @@ validation:
 
 ## Ensemble States (Parallel Execution)
 
-FSM supports parallel agent execution within a single state using the ensemble pattern. When a state has `type: ensemble`, all configured agents spawn simultaneously and their results are aggregated.
+FSM supports parallel agent execution within a single state using the ensemble pattern. When a state has `ensemble.type: parallel`, all configured agents spawn simultaneously and their results are aggregated.
 
 ### Configuration
 
@@ -342,8 +341,8 @@ FSM supports parallel agent execution within a single state using the ensemble p
 fsm:
   states:
     parallel_review:
-      type: ensemble              # Enable ensemble mode
       ensemble:
+        type: parallel            # Required: must be 'parallel'
         agents: [rev-1, rev-2]    # Agents to spawn in parallel
         aggregation: concat       # How to combine results
         timeout_ms: 120000        # Per-agent timeout
@@ -360,7 +359,7 @@ fsm:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | string | Yes | Set to `ensemble` to enable parallel execution |
+| `ensemble.type` | string | Yes | Must be `'parallel'` to enable parallel execution |
 | `ensemble.agents` | string[] | Yes* | List of agent names to run in parallel |
 | `ensemble.agent` | string | Yes* | Single agent to run N times (alternative to agents) |
 | `ensemble.count` | number/string | No | Number of times to spawn agent (use with `agent`) |
@@ -380,27 +379,37 @@ fsm:
 | `consensus` | Require all agents agree, fail if mismatch |
 | `custom` | Use custom aggregation prompt (advanced) |
 
-### Subtask Generation
+### Ensemble Agent Routing
 
-Use `subtask: true` on a state to inject subtask generation context into the agent prompt. This tells the agent to break down work for parallel execution.
+Ensemble agents should have explicit routing to define where their completion messages go. Unlike the deprecated `subtask: true` approach, explicit routing integrates with TX's message-based architecture.
 
 ```yaml
-generate_subtasks:
-  agents: [coordinator]
-  subtask: true              # Injects subtask generation context
-  exit:
-    default: parallel_review
+routing:
+  # Ensemble agents route to synthesizer
+  reviewer-logic:
+    complete:
+      synthesizer: "Logic review complete"
 
-parallel_review:
-  type: ensemble
-  ensemble:
-    agents: [reviewer-1, reviewer-2, reviewer-3]
-    aggregation: concat
-  exit:
-    default: synthesize
+  reviewer-architecture:
+    complete:
+      synthesizer: "Architecture review complete"
+
+  reviewer-robustness:
+    complete:
+      synthesizer: "Robustness review complete"
+
+fsm:
+  states:
+    parallel_review:
+      ensemble:
+        type: parallel
+        agents: [reviewer-logic, reviewer-architecture, reviewer-robustness]
+        aggregation: concat
+      exit:
+        default: synthesize
 ```
 
-The coordinator agent receives context explaining how to format subtasks for parallel agents.
+The validator warns if ensemble agents don't have routing configuration.
 
 ### Accessing Ensemble Output
 
@@ -408,8 +417,8 @@ Use `$ENSEMBLE_OUTPUT` in `exit.set` to capture aggregated results:
 
 ```yaml
 parallel_review:
-  type: ensemble
   ensemble:
+    type: parallel
     agents: [rev-1, rev-2, rev-3]
     aggregation: concat
   exit:
@@ -449,21 +458,44 @@ agents:
 
 entry_point: entry
 
+routing:
+  # Entry agent routes to core (FSM handles state transition)
+  entry:
+    complete:
+      core: "Entry complete, triggering parallel review"
+
+  # Ensemble agents: explicit routing to synthesizer
+  reviewer-logic:
+    complete:
+      synthesizer: "Logic review complete"
+
+  reviewer-architecture:
+    complete:
+      synthesizer: "Architecture review complete"
+
+  reviewer-robustness:
+    complete:
+      synthesizer: "Robustness review complete"
+
+  # Synthesizer routes back to core
+  synthesizer:
+    complete:
+      core: "Review synthesis complete"
+
 fsm:
-  initial: generate_subtasks
+  initial: entry_state
 
   states:
-    # Step 1: Entry agent generates subtasks
-    generate_subtasks:
+    # Step 1: Entry agent initializes
+    entry_state:
       agents: [entry]
-      subtask: true              # Inject subtask context
       exit:
         default: parallel_review
 
     # Step 2: Three reviewers run in parallel
     parallel_review:
-      type: ensemble
       ensemble:
+        type: parallel
         agents: [reviewer-logic, reviewer-architecture, reviewer-robustness]
         aggregation: concat
         timeout_ms: 120000
@@ -486,10 +518,10 @@ fsm:
 ```
 
 **Execution flow:**
-1. User sends code → `entry` agent (subtask generation mode)
+1. User sends code → `entry` agent
 2. FSM transitions → `parallel_review` state
 3. Three reviewers spawn simultaneously (logic, architecture, robustness)
-4. Each reviewer analyzes code independently
+4. Each reviewer analyzes code independently and routes to synthesizer
 5. FSM aggregates results using `concat` strategy
 6. FSM transitions → `synthesize` state
 7. Synthesizer receives aggregated reviews, creates final report
@@ -501,8 +533,8 @@ Handle partial failures with `fault_tolerance` config:
 
 ```yaml
 parallel_review:
-  type: ensemble
   ensemble:
+    type: parallel
     agents: [rev-1, rev-2, rev-3]
     aggregation: concat
     timeout_ms: 120000
@@ -521,8 +553,8 @@ Run the same agent N times for Monte Carlo sampling or variance analysis:
 
 ```yaml
 sampling:
-  type: ensemble
   ensemble:
+    type: parallel
     agent: sampler              # Single agent
     count: 5                    # Run 5 times
     aggregation: voting         # Pick most common result
@@ -534,7 +566,7 @@ sampling:
 
 | Pattern | When to Use |
 |---------|-------------|
-| **Ensemble** (`type: ensemble`) | Independent parallel work (code review, analysis, sampling) |
+| **Ensemble** (`ensemble.type: parallel`) | Independent parallel work (code review, analysis, sampling) |
 | **Sequential** (regular FSM) | Dependent steps, self-loops, conditional routing |
 
 Use ensemble for embarrassingly parallel tasks. Use sequential FSM for workflows with dependencies and branching.
@@ -543,33 +575,41 @@ Use ensemble for embarrassingly parallel tasks. Use sequential FSM for workflows
 
 FSM ensemble states replace mesh-level `ensemble:` config. Both patterns achieve parallel execution, but FSM ensemble integrates with state tracking and conditional routing.
 
-**Mesh-level ensemble** (deprecated):
+**Legacy pattern** (deprecated):
 ```yaml
-# OLD: mesh-level pattern
-ensemble:
-  coordinator: entry
-  agents: [rev-1, rev-2]
-  reviewer: synthesizer
-  aggregation_strategy: concat
-```
-
-**FSM ensemble** (preferred):
-```yaml
-# NEW: FSM state-level pattern
+# OLD: type at state level (deprecated)
 fsm:
   states:
     parallel_review:
-      type: ensemble
+      type: ensemble             # ← deprecated
       ensemble:
         agents: [rev-1, rev-2]
         aggregation: concat
 ```
+
+**New pattern** (preferred):
+```yaml
+# NEW: type inside ensemble block
+fsm:
+  states:
+    parallel_review:
+      ensemble:
+        type: parallel           # ← type inside ensemble
+        agents: [rev-1, rev-2]
+        aggregation: concat
+```
+
+**Key changes in new pattern:**
+- `type: parallel` moved inside `ensemble` block (clearer structure)
+- Ensemble agents need explicit routing (message-based coordination)
+- `subtask: true` is deprecated (use explicit routing instead)
 
 FSM ensemble provides:
 - Better state tracking and observability
 - Conditional routing based on ensemble results
 - Integration with FSM context and scripts
 - Single orchestration pattern for both sequential and parallel workflows
+- Message-based coordination via explicit routing
 
 ## Scripts
 
@@ -867,7 +907,7 @@ Multi-variable logic handled in run scripts.
 
 ## Routing Configuration
 
-FSM meshes require routing configuration, but **ensemble agents do NOT need explicit routing**:
+FSM meshes require routing configuration. **All agents should have explicit routing**, including ensemble agents.
 
 ### Which Agents Need Routing
 
@@ -876,7 +916,7 @@ FSM meshes require routing configuration, but **ensemble agents do NOT need expl
 | Entry/coordinator | Yes | Routes to FSM or core |
 | Normal state agents | Yes | Define message destinations |
 | Synthesizer/final agent | Yes | Routes back to core |
-| **Ensemble agents** | **No** | Results collected by EnsembleCoordinator |
+| **Ensemble agents** | **Yes** | Define where completion messages go |
 
 ### Example: Code Review Ensemble Routing
 
@@ -885,11 +925,20 @@ routing:
   # Entry agent: Routes via FSM exit routing
   entry:
     complete:
-      core: "Subtasks generated for parallel review"
+      core: "Entry complete, triggering parallel review"
 
-  # Ensemble agents (reviewer-*): NO ROUTING NEEDED
-  # Their results are collected by EnsembleCoordinator
-  # FSM handles aggregation and transition to synthesize state
+  # Ensemble agents: explicit routing to synthesizer
+  reviewer-logic:
+    complete:
+      synthesizer: "Logic review complete"
+
+  reviewer-architecture:
+    complete:
+      synthesizer: "Architecture review complete"
+
+  reviewer-robustness:
+    complete:
+      synthesizer: "Robustness review complete"
 
   # Synthesizer: Routes back to core when done
   synthesizer:
@@ -902,9 +951,9 @@ routing:
 | Component | Purpose |
 |-----------|---------|
 | **FSM** | State transitions ("go to synthesize state") |
-| **Routing** | Message destinations ("send task-complete to core/core") |
+| **Routing** | Message destinations ("send task-complete to synthesizer") |
 
-These are complementary. FSM decides which state comes next, routing decides where messages go. Ensemble agents skip routing because their outputs flow directly to the EnsembleCoordinator, not via messages.
+These are complementary. FSM decides which state comes next, routing decides where messages go. Ensemble agents use explicit routing for message-based coordination.
 
 ## Validation
 
@@ -914,11 +963,12 @@ The mesh validator checks:
 2. **When clause targets exist** in states map
 3. **Default targets exist** in states map
 4. **Agent names** in `agents` field match mesh agents
-5. **Ensemble agents** exist in mesh config (when `type: ensemble`)
+5. **Ensemble type** - Must be `'parallel'` inside `ensemble` block
 6. **Ensemble aggregation** is valid strategy
 7. **Script syntax** (bash -n validation)
 8. **Multi-agent routing** - Multi-agent meshes must have routing config
-9. **Normal state agent routing** - Warns if normal state agents lack routing (ensemble agents excluded)
+9. **All agent routing** - Warns if any agents (including ensemble agents) lack routing
+10. **Deprecated patterns** - Warns if using `type: ensemble` at state level or `subtask: true`
 
 ## Benefits
 
@@ -948,4 +998,4 @@ The mesh validator checks:
 
 ---
 
-*Updated 2026-01-14 to document ensemble states (parallel execution) and exit-based routing*
+*Updated 2026-01-14 to document new ensemble config structure (ensemble.type: parallel), explicit routing for ensemble agents, and deprecate subtask approach*
