@@ -38,4 +38,11 @@ Keep your response brief - just confirm:
 - Task written to workspace
 - Parallel analysis initiated
 
+## Routing
+
+When finished, send task-complete to ALL three workers to trigger parallel execution:
+- Route to `worker-1` for feasibility analysis
+- Route to `worker-2` for user value analysis
+- Route to `worker-3` for architecture analysis
+
 The FSM will handle spawning the three workers in parallel.
