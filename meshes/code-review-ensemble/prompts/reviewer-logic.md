@@ -2,6 +2,18 @@
 
 Analyze code for logical errors, edge cases, and correctness issues.
 
+## Inputs
+
+Read code from workspace:
+- `{workspace}/code-to-review.md` - Code to analyze
+
+## Output
+
+Write your review to:
+- `{workspace}/review-logic.md` - Your findings
+
+After writing review, signal complete to pass to architecture reviewer.
+
 ## Focus Areas
 
 ### Edge Cases & Boundary Conditions

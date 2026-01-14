@@ -1,11 +1,11 @@
 mesh: code-review-ensemble
-description: "Parallel code review - logic analysis, architecture review, robustness checks"
+description: "FSM-orchestrated code review - logic, architecture, robustness analysis with synthesis"
 
 agents:
-  - name: entry
+  - name: coordinator
     model: haiku
-    prompt: prompts/entry.md
-    # Coordinator: splits code into 3 parallel review tasks
+    prompt: prompts/coordinator.md
+    # Entry point: receives code, initiates review workflow
 
   - name: reviewer-logic
     model: sonnet
@@ -27,14 +27,107 @@ agents:
     prompt: prompts/synthesizer.md
     # Aggregates findings, prioritizes issues, creates actionable report
 
-entry_point: entry
+entry_point: coordinator
+completion_agent: synthesizer
 
-ensemble:
-  coordinator: entry
-  agents:
-    - reviewer-logic
-    - reviewer-architecture
-    - reviewer-robustness
-  reviewer: synthesizer
-  aggregation_strategy: concat
-  timeout_ms: 180000  # 3 minutes for deeper analysis
+routing:
+  coordinator:
+    complete:
+      reviewer-logic: "Start logic review"
+    blocked:
+      core: "Failed to initiate review"
+
+  reviewer-logic:
+    complete:
+      reviewer-architecture: "Logic review complete, pass to architecture"
+    blocked:
+      synthesizer: "Logic review incomplete, proceed with partial results"
+
+  reviewer-architecture:
+    complete:
+      reviewer-robustness: "Architecture review complete, pass to robustness"
+    blocked:
+      synthesizer: "Architecture review incomplete, proceed with partial results"
+
+  reviewer-robustness:
+    complete:
+      synthesizer: "Robustness review complete, synthesize all findings"
+    blocked:
+      synthesizer: "Robustness review incomplete, synthesize available findings"
+
+  synthesizer:
+    complete:
+      core: "Review synthesis complete"
+
+# Workspace for passing reviews between agents
+workspace:
+  path: ".ai/code-review/{task-id}/"
+
+# FSM: Sequential review workflow with state tracking
+fsm:
+  initial: coordinate
+
+  context:
+    task_id: ""
+    reviews_completed: 0
+    total_reviews: 3
+
+  states:
+    # ============================================================
+    # COORDINATE: Entry point, store code for review
+    # ============================================================
+    coordinate:
+      agents: [coordinator]
+      entry:
+        set:
+          task_id: "$(echo '$message' | yq '.msg-id')"
+      exit:
+        default: logic_review
+
+    # ============================================================
+    # LOGIC_REVIEW: Analyze logic and correctness
+    # ============================================================
+    logic_review:
+      agents: [reviewer-logic]
+      entry:
+        set:
+          reviews_completed: "$((reviews_completed + 1))"
+      exit:
+        default: architecture_review
+
+    # ============================================================
+    # ARCHITECTURE_REVIEW: Analyze design and structure
+    # ============================================================
+    architecture_review:
+      agents: [reviewer-architecture]
+      entry:
+        set:
+          reviews_completed: "$((reviews_completed + 1))"
+      exit:
+        default: robustness_review
+
+    # ============================================================
+    # ROBUSTNESS_REVIEW: Analyze safety and defensive programming
+    # ============================================================
+    robustness_review:
+      agents: [reviewer-robustness]
+      entry:
+        set:
+          reviews_completed: "$((reviews_completed + 1))"
+      exit:
+        default: synthesize
+
+    # ============================================================
+    # SYNTHESIZE: Aggregate all reviews into final report
+    # ============================================================
+    synthesize:
+      agents: [synthesizer]
+      exit:
+        default: complete
+
+    # ============================================================
+    # TERMINAL STATE
+    # ============================================================
+    complete: {}
+
+  scripts: {}
