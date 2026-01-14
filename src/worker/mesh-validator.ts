@@ -17,7 +17,7 @@
  * ```
  */
 
-import type { SemanticModel, EnsembleConfig, TaskDistributionConfig } from '../shared/types.ts';
+import type { SemanticModel, EnsembleConfig, TaskDistributionConfig, AggregationStrategy } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 /**
@@ -274,11 +274,6 @@ export class MeshValidator {
     // Validate FSM if present
     if (cfg.fsm && Array.isArray(cfg.agents)) {
       this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
-    }
-
-    // Validate ensemble if present
-    if (cfg.ensemble && Array.isArray(cfg.agents)) {
-      this.validateEnsemble(cfg.ensemble, cfg.agents, errors, warnings, context);
     }
 
     // Validate task_distribution if present
@@ -684,6 +679,145 @@ export class MeshValidator {
           }
         }
 
+        // Validate state type (optional, defaults to 'normal')
+        if (state.type !== undefined) {
+          if (typeof state.type !== 'string') {
+            errors.push(`${prefix}.type must be a string${context}`);
+          } else if (!['normal', 'ensemble'].includes(state.type)) {
+            errors.push(`${prefix}.type must be 'normal' or 'ensemble', got '${state.type}'${context}`);
+          }
+        }
+
+        // Validate subtask flag (optional boolean)
+        if (state.subtask !== undefined && typeof state.subtask !== 'boolean') {
+          errors.push(`${prefix}.subtask must be a boolean${context}`);
+        }
+
+        // Validate ensemble configuration
+        if (state.type === 'ensemble') {
+          // type: ensemble requires ensemble config
+          if (!state.ensemble) {
+            errors.push(`${prefix}: type 'ensemble' requires 'ensemble' configuration${context}`);
+          }
+        }
+
+        if (state.ensemble !== undefined) {
+          if (typeof state.ensemble !== 'object' || state.ensemble === null || Array.isArray(state.ensemble)) {
+            errors.push(`${prefix}.ensemble must be an object${context}`);
+          } else {
+            const ensemble = state.ensemble as Record<string, unknown>;
+            const ensemblePrefix = `${prefix}.ensemble`;
+
+            // Validate that either agents array OR (agent + count) is provided, not both
+            const hasAgents = ensemble.agents !== undefined;
+            const hasAgentWithCount = ensemble.agent !== undefined;
+
+            if (!hasAgents && !hasAgentWithCount) {
+              errors.push(`${ensemblePrefix}: must specify either 'agents' array OR 'agent' with 'count'${context}`);
+            } else if (hasAgents && hasAgentWithCount) {
+              errors.push(`${ensemblePrefix}: cannot specify both 'agents' array AND 'agent' with 'count'${context}`);
+            }
+
+            // Validate agents array
+            if (hasAgents) {
+              if (!Array.isArray(ensemble.agents)) {
+                errors.push(`${ensemblePrefix}.agents must be an array${context}`);
+              } else {
+                if (ensemble.agents.length === 0) {
+                  errors.push(`${ensemblePrefix}.agents cannot be empty${context}`);
+                }
+                for (const agent of ensemble.agents) {
+                  if (typeof agent !== 'string') {
+                    errors.push(`${ensemblePrefix}.agents must contain strings${context}`);
+                  } else if (!agentNames.has(agent)) {
+                    warnings.push(`${ensemblePrefix}.agents: '${agent}' not found in mesh agents${context}`);
+                  }
+                }
+              }
+            }
+
+            // Validate agent + count pattern
+            if (hasAgentWithCount) {
+              if (typeof ensemble.agent !== 'string') {
+                errors.push(`${ensemblePrefix}.agent must be a string${context}`);
+              } else if (!agentNames.has(ensemble.agent)) {
+                warnings.push(`${ensemblePrefix}.agent: '${ensemble.agent}' not found in mesh agents${context}`);
+              }
+
+              // Count is required when using agent pattern
+              if (ensemble.count === undefined) {
+                errors.push(`${ensemblePrefix}: 'count' is required when using 'agent' pattern${context}`);
+              } else {
+                // Count can be number or string (variable reference like $parallelism)
+                const countType = typeof ensemble.count;
+                if (countType !== 'number' && countType !== 'string') {
+                  errors.push(`${ensemblePrefix}.count must be a number or variable reference (string)${context}`);
+                } else if (countType === 'number' && (ensemble.count as number) < 1) {
+                  errors.push(`${ensemblePrefix}.count must be >= 1${context}`);
+                } else if (countType === 'string' && !(ensemble.count as string).startsWith('$')) {
+                  errors.push(`${ensemblePrefix}.count as string must be a variable reference (start with $)${context}`);
+                }
+              }
+            }
+
+            // Validate aggregation strategy (required)
+            const validAggregations: AggregationStrategy[] = ['concat', 'deduplicate', 'voting', 'consensus', 'custom'];
+            if (!ensemble.aggregation) {
+              errors.push(`${ensemblePrefix}.aggregation is required${context}`);
+            } else if (typeof ensemble.aggregation !== 'string') {
+              errors.push(`${ensemblePrefix}.aggregation must be a string${context}`);
+            } else if (!validAggregations.includes(ensemble.aggregation as AggregationStrategy)) {
+              errors.push(`${ensemblePrefix}.aggregation must be one of [${validAggregations.join(', ')}], got '${ensemble.aggregation}'${context}`);
+            }
+
+            // Validate timeout_ms (optional)
+            if (ensemble.timeout_ms !== undefined) {
+              if (typeof ensemble.timeout_ms !== 'number') {
+                errors.push(`${ensemblePrefix}.timeout_ms must be a number${context}`);
+              } else if (ensemble.timeout_ms < 100 || ensemble.timeout_ms > 600000) {
+                errors.push(`${ensemblePrefix}.timeout_ms must be between 100 and 600000${context}`);
+              }
+            }
+
+            // Validate fault_tolerance (optional)
+            if (ensemble.fault_tolerance !== undefined) {
+              if (typeof ensemble.fault_tolerance !== 'object' || ensemble.fault_tolerance === null) {
+                errors.push(`${ensemblePrefix}.fault_tolerance must be an object${context}`);
+              } else {
+                const ft = ensemble.fault_tolerance as Record<string, unknown>;
+
+                if (ft.min_success_count !== undefined) {
+                  if (typeof ft.min_success_count !== 'number') {
+                    errors.push(`${ensemblePrefix}.fault_tolerance.min_success_count must be a number${context}`);
+                  } else if (ft.min_success_count < 1) {
+                    errors.push(`${ensemblePrefix}.fault_tolerance.min_success_count must be >= 1${context}`);
+                  }
+                }
+
+                if (ft.retry_failed !== undefined && typeof ft.retry_failed !== 'boolean') {
+                  errors.push(`${ensemblePrefix}.fault_tolerance.retry_failed must be a boolean${context}`);
+                }
+
+                // Check for unknown fault_tolerance fields
+                const knownFTFields = ['min_success_count', 'retry_failed'];
+                for (const field of Object.keys(ft)) {
+                  if (!knownFTFields.includes(field)) {
+                    warnings.push(`Unknown ${ensemblePrefix}.fault_tolerance field '${field}'${context}`);
+                  }
+                }
+              }
+            }
+
+            // Check for unknown ensemble fields
+            const knownEnsembleFields = ['agents', 'agent', 'count', 'aggregation', 'timeout_ms', 'fault_tolerance'];
+            for (const field of Object.keys(ensemble)) {
+              if (!knownEnsembleFields.includes(field)) {
+                warnings.push(`Unknown ${ensemblePrefix} field '${field}'${context}`);
+              }
+            }
+          }
+        }
+
         // Validate exit block (optional, but critical for routing)
         if (state.exit !== undefined) {
           if (typeof state.exit !== 'object' || state.exit === null || Array.isArray(state.exit)) {
@@ -837,79 +971,6 @@ export class MeshValidator {
       totalErrors,
       totalWarnings
     };
-  }
-
-  /**
-   * Validate ensemble configuration
-   */
-  private static validateEnsemble(
-    config: unknown,
-    agents: unknown[],
-    errors: string[],
-    warnings: string[],
-    context: string
-  ): void {
-    if (!config || typeof config !== 'object') {
-      errors.push(`Invalid ensemble config${context}: must be a JSON object`);
-      return;
-    }
-
-    const ensemble = config as Record<string, unknown>;
-    const agentNames = (agents as Record<string, unknown>[]).map(a => a.name);
-
-    // Validate agents array exists and is non-empty
-    if (!ensemble.agents || !Array.isArray(ensemble.agents) || ensemble.agents.length === 0) {
-      errors.push(`Ensemble config${context}: 'agents' must be a non-empty array`);
-      return;
-    }
-
-    // Validate all agents exist in mesh
-    for (const agent of ensemble.agents as string[]) {
-      if (!agentNames.includes(agent)) {
-        errors.push(`Ensemble agent '${agent}' not found in mesh agents${context}`);
-      }
-    }
-
-    // Validate aggregation_strategy
-    const validStrategies = ['concat', 'deduplicate', 'voting', 'consensus', 'custom'];
-    if (!ensemble.aggregation_strategy || !validStrategies.includes(ensemble.aggregation_strategy as string)) {
-      errors.push(`Ensemble config${context}: 'aggregation_strategy' must be one of: ${validStrategies.join(', ')}`);
-    }
-
-    // For custom strategy, aggregation_prompt must be provided
-    if (ensemble.aggregation_strategy === 'custom' && !ensemble.aggregation_prompt) {
-      errors.push(`Ensemble config${context}: custom aggregation strategy requires 'aggregation_prompt'`);
-    }
-
-    // Validate timeout_ms if present
-    if (ensemble.timeout_ms !== undefined) {
-      const timeout = ensemble.timeout_ms as number;
-      if (typeof timeout !== 'number' || timeout < 100 || timeout > 600000) {
-        errors.push(`Ensemble config${context}: 'timeout_ms' must be between 100 and 600000`);
-      }
-    }
-
-    // Validate allow_partial_failure if present
-    if (ensemble.allow_partial_failure !== undefined && typeof ensemble.allow_partial_failure !== 'boolean') {
-      errors.push(`Ensemble config${context}: 'allow_partial_failure' must be a boolean`);
-    }
-
-    // Validate fault_tolerance if present
-    if (ensemble.fault_tolerance && typeof ensemble.fault_tolerance === 'object') {
-      const ft = ensemble.fault_tolerance as Record<string, unknown>;
-
-      if (ft.min_success_count !== undefined) {
-        const minCount = ft.min_success_count as number;
-        const agentCount = (ensemble.agents as string[]).length;
-        if (typeof minCount !== 'number' || minCount < 1 || minCount > agentCount) {
-          errors.push(`Ensemble config${context}: 'fault_tolerance.min_success_count' must be between 1 and ${agentCount}`);
-        }
-      }
-
-      if (ft.retry_failed !== undefined && typeof ft.retry_failed !== 'boolean') {
-        errors.push(`Ensemble config${context}: 'fault_tolerance.retry_failed' must be a boolean`);
-      }
-    }
   }
 
   /**

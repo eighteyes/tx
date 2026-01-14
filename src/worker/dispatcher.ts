@@ -15,7 +15,6 @@ import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
 import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
@@ -35,6 +34,8 @@ import {
 import type { ParityReminderEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
+import { EnsembleCoordinator } from './ensemble-coordinator.ts';
+import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -355,7 +356,6 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Handle incoming worker message - spawn worker if not already running
-   * Checks for ensemble pattern first, then falls back to single worker spawn
    */
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
@@ -379,18 +379,25 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    // Check for ensemble pattern
-    if (meshConfig.ensemble) {
-      const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
-      // Only trigger ensemble if message is for entry point agent
-      if (agentName === entryAgent) {
-        log.info('dispatcher', 'Ensemble pattern detected', {
-          mesh: meshName,
-          agents: meshConfig.ensemble.agents.length,
+    // Check for FSM ensemble state
+    const fsm = this.meshFSMs.get(meshName);
+    if (fsm && fsm.isInitialized()) {
+      const currentState = fsm.getCurrentStateConfig();
+      if (currentState?.type === 'ensemble') {
+        log.info('dispatcher', `Detected ensemble state, delegating to handleEnsembleState`, {
+          meshName,
+          state: currentState.name,
+          agentId,
         });
-        this.handleEnsemblePattern(meshName, meshConfig).catch(error => {
-          log.error('dispatcher', 'Ensemble execution failed', {
+        this.handleEnsembleState(meshName, currentState, fsm).catch((error) => {
+          log.error('dispatcher', `Ensemble state handling failed`, {
             meshName,
+            state: currentState.name,
+            error: (error as Error).message,
+          });
+          this.emit('mesh:halt', {
+            meshName,
+            reason: 'Ensemble execution failure',
             error: (error as Error).message,
           });
         });
@@ -1366,6 +1373,32 @@ The system will resume your session when the human responds.`;
             agentId,
             currentState: status.currentState,
           });
+
+          // Inject subtask instructions if state has subtask: true
+          if (currentStateConfig.subtask) {
+            // Get agent count from next state's ensemble config
+            // Priority: agents array length > count (if number) > default 3
+            const nextStateConfig = this.getNextStateConfig(fsm, currentStateConfig);
+            const ensembleConfig = nextStateConfig?.ensemble;
+
+            let subtaskAgentCount = 3; // default
+            if (ensembleConfig?.agents?.length) {
+              subtaskAgentCount = ensembleConfig.agents.length;
+            } else if (ensembleConfig?.count && typeof ensembleConfig.count === 'number') {
+              subtaskAgentCount = ensembleConfig.count;
+            }
+
+            systemPrompt = this.promptInjector.injectSubtaskInstructions(
+              systemPrompt,
+              { agentCount: subtaskAgentCount }
+            );
+            log.debug('dispatcher', 'Injected subtask instructions', {
+              meshName,
+              agentId,
+              subtaskAgentCount,
+              nextState: nextStateConfig?.name,
+            });
+          }
         }
       }
 
@@ -2322,355 +2355,322 @@ ${output}
   }
 
   /**
-   * Handle ensemble pattern - run coordinator first, then spawn parallel agents
-   *
-   * Execution flow:
-   * 1. Run coordinator agent (if configured) with original task
-   * 2. Coordinator outputs SUBTASK markers (SUBTASK 1:, SUBTASK 2:, etc.)
-   * 3. Parse coordinator output for SUBTASK markers
-   * 4. Create and enqueue subtask messages to queue (one per parallel agent)
-   * 5. Spawn parallel agents who poll queue for their subtasks
-   * 6. Wait for all agents to complete
-   * 7. (Optional) Run reviewer agent to synthesize results
+   * Get the next state config from FSM exit routing
+   * Used to determine ensemble agent count for subtask injection
    */
-  private async handleEnsemblePattern(meshName: string, meshConfig: MeshConfig): Promise<void> {
-    if (!meshConfig.ensemble) return;
+  private getNextStateConfig(fsm: MeshFSM, currentStateConfig: FSMStateConfig): FSMStateConfig | undefined {
+    // Check exit config for default target
+    const exitConfig = currentStateConfig.exit;
+    if (!exitConfig) return undefined;
 
-    const entryAgent = meshConfig.entry_point || meshConfig.agents[0].name;
-    const agentId = `${meshName}/${entryAgent}`;
+    // Try default first (most common for subtask states)
+    if (exitConfig.default) {
+      const states = fsm.getStates();
+      return states.find(s => s.name === exitConfig.default);
+    }
 
-    // Get the task message from queue
+    // Try run if it's a literal state name
+    if (exitConfig.run) {
+      const states = fsm.getStates();
+      const state = states.find(s => s.name === exitConfig.run);
+      if (state) return state;
+    }
+
+    // Try first when clause target
+    if (exitConfig.when && exitConfig.when.length > 0) {
+      const states = fsm.getStates();
+      return states.find(s => s.name === exitConfig.when![0].target);
+    }
+
+    return undefined;
+  }
+
+  // ============================================================================
+  // Ensemble State Handling
+  // ============================================================================
+
+  /**
+   * Handle an FSM state of type 'ensemble'
+   * Spawns all ensemble agents in parallel, waits for completion, aggregates results,
+   * then runs exit routing.
+   */
+  private async handleEnsembleState(
+    meshName: string,
+    stateConfig: FSMStateConfig,
+    fsm: MeshFSM
+  ): Promise<void> {
+    const { ensemble } = stateConfig;
+    if (!ensemble) {
+      log.error('dispatcher', 'Ensemble state missing ensemble config', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    // Determine agents to spawn
+    const agentsToSpawn = ensemble.agents
+      || Array(this.resolveEnsembleCount(ensemble.count, fsm)).fill(ensemble.agent!);
+
+    if (agentsToSpawn.length === 0) {
+      log.error('dispatcher', 'No agents to spawn for ensemble state', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    // Get task from queue - peek at the first agent's queue or mesh queue
+    const firstAgent = agentsToSpawn[0];
+    const agentId = `${meshName}/${firstAgent}`;
     const task = this.queue.peekOne(agentId);
     if (!task) {
-      log.warn('dispatcher', 'No task found for ensemble', { meshName, agentId });
+      log.warn('dispatcher', 'No task for ensemble state', {
+        meshName,
+        state: stateConfig.name,
+        agentId,
+      });
       return;
     }
 
     log.info('dispatcher', 'Starting ensemble execution', {
-      mesh: meshName,
-      coordinator: meshConfig.ensemble.coordinator,
-      agents: meshConfig.ensemble.agents.length,
-      reviewer: meshConfig.ensemble.reviewer,
-      strategy: meshConfig.ensemble.aggregation_strategy,
+      meshName,
+      state: stateConfig.name,
+      agents: agentsToSpawn,
+      aggregation: ensemble.aggregation,
     });
 
     // Start ensemble tracking
+    const ensembleConfig: EnsembleConfig = {
+      agents: agentsToSpawn,
+      aggregation_strategy: ensemble.aggregation,
+      timeout_ms: ensemble.timeout_ms,
+      fault_tolerance: ensemble.fault_tolerance,
+    };
+
     const ensembleId = this.ensembleCoordinator.startEnsemble(
       meshName,
-      meshConfig.ensemble,
+      ensembleConfig,
       task
     );
 
-    // Consume the task so it's not processed again
+    // Consume task from queue
     this.queue.pollOne(agentId);
 
-    // STEP 1: Run coordinator FIRST (if configured)
-    let subtasks: Array<{ id: string; content: string; assignedAgent: string }> = [];
-
-    if (meshConfig.ensemble.coordinator) {
-      const coordinatorOutput = await this.runEnsembleCoordinator(
-        meshName,
-        meshConfig.ensemble.coordinator,
-        task,
-        meshConfig
-      );
-
-      if (!coordinatorOutput) {
-        log.error('dispatcher', 'Coordinator failed to produce output', {
-          meshName,
-          ensembleId,
-          coordinator: meshConfig.ensemble.coordinator,
-        });
-
-        // Emit failure and return
-        this.emit('ensemble:complete', {
-          meshName,
-          ensembleId,
-          success: false,
-          error: 'Coordinator failed to produce output',
-        });
-        this.ensembleCoordinator.completeEnsemble(ensembleId);
-        return;
-      }
-
-      // STEP 2: Parse SUBTASK markers from coordinator output
-      subtasks = this.parseSubtaskMarkers(coordinatorOutput, meshConfig.ensemble.agents);
-
-      if (subtasks.length === 0) {
-        log.warn('dispatcher', 'Coordinator did not produce SUBTASK markers, using original task', {
-          meshName,
-          ensembleId,
-          outputLength: coordinatorOutput.length,
-        });
-
-        // Fall back to original task for all agents
-        subtasks = meshConfig.ensemble.agents.map((agentName, idx) => ({
-          id: `subtask-${idx + 1}`,
-          content: task.payload.body as string || '',
-          assignedAgent: agentName,
-        }));
-      }
-
-      log.info('dispatcher', 'Coordinator produced subtasks', {
-        meshName,
-        ensembleId,
-        subtaskCount: subtasks.length,
-        assignedAgents: subtasks.map(s => s.assignedAgent),
-      });
-    } else {
-      // No coordinator - all agents get the original task
-      subtasks = meshConfig.ensemble.agents.map((agentName, idx) => ({
-        id: `subtask-${idx + 1}`,
-        content: task.payload.body as string || '',
-        assignedAgent: agentName,
-      }));
-    }
-
-    // STEP 3: Enqueue subtask messages for each parallel agent
-    const timestamp = Date.now();
-    for (const subtask of subtasks) {
-      const subtaskAgentId = `${meshName}/${subtask.assignedAgent}`;
-      const subtaskMsgId = `ensemble-${ensembleId}-subtask-${subtask.id}`;
-
-      await this.queue.insert({
-        from_agent: meshConfig.ensemble.coordinator
-          ? `${meshName}/${meshConfig.ensemble.coordinator}`
-          : `${meshName}/ensemble`,
-        to_agent: subtaskAgentId,
-        type: 'task',
-        payload: {
-          'msg-id': subtaskMsgId,
-          headline: `Ensemble subtask ${subtask.id}`,
-          body: subtask.content,
-          timestamp: new Date(timestamp).toISOString(),
-          ensemble_id: ensembleId,
-          subtask_id: subtask.id,
-        },
-      });
-
-      log.debug('dispatcher', 'Enqueued subtask message', {
-        ensembleId,
-        subtaskId: subtask.id,
-        toAgent: subtaskAgentId,
-      });
-    }
-
-    // STEP 4: Spawn all ensemble agents in parallel
-    const agentPromises = meshConfig.ensemble.agents.map(agentName =>
-      this.spawnEnsembleAgent(meshName, agentName, task, ensembleId, meshConfig)
-    );
-
-    // Wait for all agents (don't fail if one fails)
-    await Promise.allSettled(agentPromises);
-
-    // STEP 5: Check if ensemble is complete and aggregate
-    await this.checkEnsembleCompletion(meshName, ensembleId);
-  }
-
-  /**
-   * Run the ensemble coordinator agent and capture its output
-   * Returns the coordinator's output (should contain SUBTASK markers)
-   */
-  private async runEnsembleCoordinator(
-    meshName: string,
-    coordinatorName: string,
-    task: Message,
-    meshConfig: MeshConfig
-  ): Promise<string | null> {
-    const coordinatorId = `${meshName}/${coordinatorName}`;
-    const agentConfig = meshConfig.agents.find(a => a.name === coordinatorName);
-
-    if (!agentConfig) {
-      log.error('dispatcher', 'Coordinator agent not found in mesh config', {
-        meshName,
-        coordinatorName,
-        availableAgents: meshConfig.agents.map(a => a.name),
-      });
-      return null;
-    }
-
-    const timeout = meshConfig.ensemble?.timeout_ms || 120000;
-
-    log.info('dispatcher', 'Starting ensemble coordinator', {
-      coordinatorId,
-      model: agentConfig.model,
-      timeout,
+    this.emit('ensemble:start', {
+      ensembleId,
+      meshName,
+      state: stateConfig.name,
+      agents: agentsToSpawn,
     });
 
-    try {
-      // Build the system prompt for coordinator
-      const promptPath = agentConfig.prompt.startsWith('/')
-        ? agentConfig.prompt
-        : path.join(meshConfig._basePath || this.config.workDir, agentConfig.prompt);
+    // Spawn all agents in parallel
+    const spawnPromises = agentsToSpawn.map((agentName, idx) =>
+      this.spawnEnsembleAgentForFSM(
+        meshName,
+        agentName,
+        ensembleId,
+        fsm,
+        task,
+        stateConfig,
+        idx
+      )
+    );
 
-      if (!fs.existsSync(promptPath)) {
-        throw new Error(`Coordinator prompt not found: ${promptPath}`);
-      }
+    await Promise.allSettled(spawnPromises);
 
-      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+    // Wait for completion or timeout
+    const timeout = ensemble.timeout_ms || 120000;
+    const startTime = Date.now();
 
-      // Inject preamble
-      const agentCount = meshConfig.agents?.length ?? 1;
-      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
-
-      // Create runner config for coordinator
-      const runnerConfig: SdkRunnerConfig = {
-        id: coordinatorId,
-        model: agentConfig.model,
-        systemPrompt,
-        workDir: this.config.workDir,
-        msgsDir: this.config.msgsDir,
-      };
-
-      const runner = new SdkRunner(runnerConfig, this.queue);
-
-      // Capture coordinator output
-      let coordinatorOutput = '';
-
-      runner.on('output', (data) => {
-        coordinatorOutput += data.data || '';
-      });
-
-      runner.on('error', (data) => {
-        log.error('dispatcher', 'Coordinator error', {
-          coordinatorId,
-          error: data.error,
+    // Poll until ensemble is complete or timeout
+    while (!this.ensembleCoordinator.isComplete(ensembleId)) {
+      if (Date.now() - startTime > timeout) {
+        log.warn('dispatcher', 'Ensemble timeout reached', {
+          meshName,
+          ensembleId,
+          timeout,
         });
-      });
-
-      // Enqueue the original task for the coordinator
-      await this.queue.insert({
-        from_agent: task.from_agent,
-        to_agent: coordinatorId,
-        type: 'task',
-        payload: {
-          ...task.payload,
-          'msg-id': `coordinator-task-${Date.now()}`,
-        },
-      });
-
-      // Run coordinator with timeout
-      await Promise.race([
-        runner.run(),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error(`Coordinator timeout after ${timeout}ms`)), timeout)
-        ),
-      ]);
-
-      log.info('dispatcher', 'Coordinator completed', {
-        coordinatorId,
-        outputLength: coordinatorOutput.length,
-      });
-
-      return coordinatorOutput;
-    } catch (err) {
-      const errorMsg = (err as Error).message;
-      log.error('dispatcher', 'Coordinator execution failed', {
-        coordinatorId,
-        error: errorMsg,
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Parse SUBTASK markers from coordinator output
-   * Format: SUBTASK 1: ... SUBTASK 2: ... etc.
-   *
-   * @param output - Coordinator output containing SUBTASK markers
-   * @param agents - List of agent names to assign subtasks to
-   * @returns Array of parsed subtasks with assigned agents
-   */
-  private parseSubtaskMarkers(
-    output: string,
-    agents: string[]
-  ): Array<{ id: string; content: string; assignedAgent: string }> {
-    const subtasks: Array<{ id: string; content: string; assignedAgent: string }> = [];
-
-    // Match SUBTASK N: followed by content until next SUBTASK or end
-    const subtaskRegex = /SUBTASK\s+(\d+):([\s\S]*?)(?=SUBTASK\s+\d+:|$)/gi;
-    let match: RegExpExecArray | null;
-
-    while ((match = subtaskRegex.exec(output)) !== null) {
-      const subtaskNum = parseInt(match[1], 10);
-      const content = match[2].trim();
-
-      // Assign to agent (round-robin if more subtasks than agents)
-      const agentIndex = (subtaskNum - 1) % agents.length;
-      const assignedAgent = agents[agentIndex];
-
-      subtasks.push({
-        id: `subtask-${subtaskNum}`,
-        content,
-        assignedAgent,
-      });
+        break;
+      }
+      // Brief pause before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    return subtasks;
-  }
-
-  /**
-   * Spawn single ensemble agent
-   */
-  private async spawnEnsembleAgent(
-    meshName: string,
-    agentName: string,
-    task: Message,
-    ensembleId: string,
-    meshConfig: MeshConfig
-  ): Promise<void> {
-    const agentConfig = meshConfig.agents.find(a => a.name === agentName);
-    if (!agentConfig) {
-      log.error('dispatcher', 'Agent not found', { agentName, meshName });
-      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, '', 'Agent not found');
+    // Aggregate results
+    const result = await this.ensembleCoordinator.getAggregatedResult(ensembleId);
+    if (!result) {
+      log.error('dispatcher', 'Ensemble aggregation failed', {
+        meshName,
+        ensembleId,
+      });
+      this.emit('ensemble:error', {
+        ensembleId,
+        meshName,
+        error: 'Aggregation failed',
+      });
+      this.ensembleCoordinator.completeEnsemble(ensembleId);
       return;
     }
 
-    const timeout = meshConfig.ensemble?.timeout_ms || 120000;
+    log.info('dispatcher', 'Ensemble aggregation complete', {
+      meshName,
+      ensembleId,
+      success: result.metadata.success,
+      strategy: result.metadata.strategy,
+    });
+
+    // Set result in FSM context
+    fsm.updateContext({
+      ENSEMBLE_OUTPUT: result.output,
+      ENSEMBLE_METADATA: result.metadata,
+    });
+
+    this.emit('ensemble:aggregated', {
+      ensembleId,
+      meshName,
+      output: result.output.slice(0, 500),
+      metadata: result.metadata,
+    });
+
+    // Run exit block with aggregated result
+    await this.processFSMExit(meshName, fsm, stateConfig);
+
+    // Cleanup
+    this.ensembleCoordinator.completeEnsemble(ensembleId);
+
+    this.emit('ensemble:complete', {
+      ensembleId,
+      meshName,
+      state: stateConfig.name,
+    });
+  }
+
+  /**
+   * Spawn an ensemble agent for FSM execution
+   * Similar to spawnWorker but designed for parallel ensemble execution
+   */
+  private async spawnEnsembleAgentForFSM(
+    meshName: string,
+    agentName: string,
+    ensembleId: string,
+    fsm: MeshFSM,
+    task: Message,
+    stateConfig: FSMStateConfig,
+    index: number
+  ): Promise<void> {
+    const meshConfig = this.meshConfigs.get(meshName);
+    const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+
+    if (!agentConfig) {
+      log.error('dispatcher', 'Ensemble agent not found in mesh config', {
+        meshName,
+        agentName,
+        ensembleId,
+      });
+      this.ensembleCoordinator.recordAgentResult(
+        ensembleId,
+        agentName,
+        '',
+        'Agent not found in mesh config'
+      );
+      return;
+    }
+
+    const timeout = stateConfig.ensemble?.timeout_ms || 120000;
     const agentId = `${meshName}/${agentName}`;
 
     try {
-      log.info('dispatcher', 'Spawning ensemble agent', { agentId, ensembleId });
+      log.info('dispatcher', 'Spawning ensemble agent', {
+        agentId,
+        ensembleId,
+        index,
+      });
 
-      // Register agent start time for timing metrics
       this.ensembleCoordinator.registerAgentStart(ensembleId, agentName);
 
-      // Build the system prompt for this agent
-      const promptPath = agentConfig.prompt.startsWith('/')
-        ? agentConfig.prompt
-        : path.join(meshConfig._basePath || this.config.workDir, agentConfig.prompt);
+      // Build prompt path - resolve relative to mesh basePath or workDir
+      let promptPath: string | null = null;
 
-      if (!fs.existsSync(promptPath)) {
-        throw new Error(`Prompt not found: ${promptPath}`);
+      if (meshConfig?._basePath) {
+        const meshRelativePath = path.join(meshConfig._basePath, agentConfig.prompt);
+        if (fs.existsSync(meshRelativePath)) {
+          promptPath = meshRelativePath;
+        }
+      }
+
+      if (!promptPath) {
+        const workDirPath = path.join(this.config.workDir, agentConfig.prompt);
+        if (fs.existsSync(workDirPath)) {
+          promptPath = workDirPath;
+        }
+      }
+
+      if (!promptPath) {
+        throw new Error(`Prompt not found: ${agentConfig.prompt}`);
       }
 
       let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
 
       // Inject preamble
-      const agentCount = meshConfig.agents?.length ?? 1;
+      const agentCount = meshConfig?.agents?.length ?? 1;
       systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
+
+      // Inject messaging protocol
+      systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
+
+      // Inject FSM context if available
+      const currentStateConfig = fsm.getCurrentStateConfig();
+      if (currentStateConfig) {
+        const status = fsm.getStatus();
+        const fsmContext: FSMInjectionContext = {
+          meshName,
+          currentState: status.currentState,
+          stateConfig: currentStateConfig,
+          availableTransitions: status.availableTransitions,
+          context: status.context,
+          gateRetries: status.gateRetries,
+        };
+        systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
+      }
+
+      // Apply model transformations based on mode
+      let model = agentConfig.model;
+      if (this.config.ultraLowMode) {
+        model = 'haiku' as SemanticModel;
+      } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
+        model = (model as string).replace('opus', 'sonnet') as SemanticModel;
+      }
 
       // Create runner config
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
-        model: agentConfig.model,
+        model: model,
         systemPrompt,
         workDir: this.config.workDir,
         msgsDir: this.config.msgsDir,
+        mcpServers: agentConfig.mcpServers,
+        toolRestriction: meshConfig?.toolRestriction,
       };
 
       const runner = new SdkRunner(runnerConfig, this.queue);
 
-      // Track result collection
       let result = '';
       let error: string | undefined;
 
+      // Set up event handlers
       runner.on('output', (data) => {
-        result += data.output || '';
+        result += data.data || '';
       });
 
       runner.on('error', (data) => {
         error = data.error;
+      });
+
+      runner.on('complete', (data) => {
+        if (data.output) {
+          result = data.output;
+        }
       });
 
       // Run with timeout
@@ -2681,69 +2681,146 @@ ${output}
         ),
       ]);
 
-      // Record result
       this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, result, error);
-      log.debug('dispatcher', 'Ensemble agent completed', { agentName, ensembleId });
+
+      log.debug('dispatcher', 'Ensemble agent completed', {
+        agentName,
+        ensembleId,
+        resultLength: result.length,
+        hasError: !!error,
+      });
     } catch (err) {
-      const errorMsg = (err as Error).message;
+      const errorMessage = (err as Error).message;
       this.ensembleCoordinator.recordAgentResult(
         ensembleId,
         agentName,
         '',
-        errorMsg
+        errorMessage
       );
-      log.warn('dispatcher', 'Ensemble agent failed', { agentName, error: errorMsg });
+      log.warn('dispatcher', 'Ensemble agent failed', {
+        agentName,
+        ensembleId,
+        error: errorMessage,
+      });
     }
   }
 
   /**
-   * Check if ensemble is complete and aggregate
+   * Resolve ensemble count from config
+   * Can be a literal number or a $variable reference to FSM context
    */
-  private async checkEnsembleCompletion(meshName: string, ensembleId: string): Promise<void> {
-    if (!this.ensembleCoordinator.isComplete(ensembleId)) {
-      log.debug('dispatcher', 'Ensemble not yet complete', { ensembleId });
-      return;
+  private resolveEnsembleCount(count: number | string | undefined, fsm: MeshFSM): number {
+    if (typeof count === 'number') return count;
+
+    if (typeof count === 'string') {
+      // Resolve from FSM context: $subtask_count
+      const varName = count.startsWith('$') ? count.slice(1) : count;
+      const value = fsm.getContext()[varName];
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = parseInt(value, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      log.warn('dispatcher', 'Could not resolve ensemble count from context', {
+        varName,
+        value,
+        fallback: 3,
+      });
+      return 3;  // default fallback
     }
 
-    log.info('dispatcher', 'Ensemble complete, aggregating results', { ensembleId });
-
-    const result = await this.ensembleCoordinator.getAggregatedResult(ensembleId);
-    if (!result) {
-      log.error('dispatcher', 'Failed to get aggregated result', { ensembleId });
-      return;
-    }
-
-    // Write result message to queue
-    const timestamp = new Date().toISOString();
-    const msgId = `ensemble-${Date.now()}`;
-
-    await this.queue.insert({
-      from_agent: `${meshName}/ensemble`,
-      to_agent: 'core/core',
-      type: 'task-complete',
-      payload: {
-        'msg-id': msgId,
-        ensemble_id: ensembleId,
-        headline: `Ensemble execution complete: ${meshName}`,
-        body: result.output,
-        timestamp,
-        ...result.metadata,
-      },
-    });
-
-    log.info('dispatcher', 'Ensemble result written to queue', {
-      ensembleId,
-      success: result.metadata.success,
-    });
-
-    // Cleanup
-    this.ensembleCoordinator.completeEnsemble(ensembleId);
-
-    // Emit event
-    this.emit('ensemble:complete', {
-      meshName,
-      ensembleId,
-      success: result.metadata.success,
-    });
+    return 3;  // default
   }
+
+  /**
+   * Process FSM exit block after ensemble completion
+   * Runs gates, set, when/run/default routing, and transitions to next state
+   */
+  private async processFSMExit(
+    meshName: string,
+    fsm: MeshFSM,
+    stateConfig: FSMStateConfig
+  ): Promise<void> {
+    const exit = stateConfig.exit;
+    if (!exit) {
+      log.warn('dispatcher', 'No exit config for state, cannot route', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'Processing FSM exit', {
+      meshName,
+      state: stateConfig.name,
+      hasGates: !!exit.gates,
+      hasWhen: !!exit.when,
+      hasRun: !!exit.run,
+      hasDefault: !!exit.default,
+    });
+
+    // Process exit.set first if present (extract values before routing)
+    if (exit.set) {
+      log.debug('dispatcher', 'Setting exit context variables', {
+        meshName,
+        state: stateConfig.name,
+        vars: Object.keys(exit.set),
+      });
+      fsm.updateContext(exit.set as Record<string, unknown>);
+    }
+
+    // Evaluate routing using FSM's evaluateExitRouting
+    const context = fsm.getContext();
+    const nextState = await fsm.evaluateExitRouting(exit, context);
+
+    if (!nextState) {
+      log.error('dispatcher', 'FSM exit routing failed - no valid next state', {
+        meshName,
+        currentState: stateConfig.name,
+      });
+      this.emit('mesh:halt', {
+        meshName,
+        reason: 'Exit routing failed',
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'FSM exit routing determined next state', {
+      meshName,
+      currentState: stateConfig.name,
+      nextState,
+    });
+
+    // Transition to next state
+    const transitioned = await fsm.transitionTo(
+      nextState,
+      'ensemble-complete',
+      'dispatcher'
+    );
+
+    if (transitioned) {
+      log.info('dispatcher', 'FSM transitioned after ensemble', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+      });
+
+      this.emit('fsm:transition', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+        trigger: 'ensemble-complete',
+        triggerAgent: 'dispatcher',
+        timestamp: Date.now(),
+      });
+    } else {
+      log.error('dispatcher', 'FSM transition failed', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+      });
+    }
+  }
+
 }

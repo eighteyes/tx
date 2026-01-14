@@ -27,12 +27,21 @@ export { ConditionEvaluator } from './fsm-evaluator.ts';
 import type {
   FSMConfig,
   FSMStateConfig,
+  FSMStateType,
+  FSMEnsembleConfig,
   FSMGateConfig,
   FSMTransitionConfig,
 } from '../shared/types.ts';
 
 // Re-export types for backward compatibility
-export type { FSMConfig, FSMStateConfig, FSMGateConfig, FSMTransitionConfig } from '../shared/types.ts';
+export type {
+  FSMConfig,
+  FSMStateConfig,
+  FSMStateType,
+  FSMEnsembleConfig,
+  FSMGateConfig,
+  FSMTransitionConfig,
+} from '../shared/types.ts';
 
 /**
  * Transition event data
@@ -509,6 +518,7 @@ export class MeshFSM extends EventEmitter {
     currentState: string;
     context: Record<string, unknown>;
     gateRetries: Record<string, number>;
+    availableTransitions: string[];
     lastTransitionAt: number;
   } {
     return {
@@ -516,6 +526,7 @@ export class MeshFSM extends EventEmitter {
       currentState: this.getCurrentState(),
       context: this.getContext(),
       gateRetries: { ...this.stateData?.gateRetries },
+      availableTransitions: this.getAvailableTransitions(),
       lastTransitionAt: this.stateData?.lastTransitionAt || 0,
     };
   }
@@ -546,5 +557,215 @@ export class MeshFSM extends EventEmitter {
    */
   getScriptExecutor(): ScriptExecutor {
     return this.scriptExecutor;
+  }
+
+  /**
+   * Handle an incoming message and check for state transitions
+   *
+   * Checks if the message triggers a transition from the current state
+   * based on the configured transitions table.
+   *
+   * @param from - Agent that sent the message (e.g., "mesh/agent")
+   * @param to - Agent receiving the message
+   * @param messageType - Type of message (e.g., 'ask', 'task-complete')
+   * @param frontmatter - Message frontmatter for context updates
+   * @returns true if a transition occurred, false otherwise
+   */
+  async handleMessage(
+    from: string,
+    to: string,
+    messageType: string,
+    frontmatter: Record<string, unknown>
+  ): Promise<boolean> {
+    if (!this.initialized || !this.stateData) {
+      log.warn('fsm', 'FSM not initialized, cannot handle message', {
+        meshName: this.meshName,
+      });
+      return false;
+    }
+
+    const currentState = this.stateData.currentState;
+    const fromAgent = from.split('/')[1]; // Extract agent name from "mesh/agent"
+
+    // Find matching transition
+    const transition = this.config.transitions.find(t =>
+      t.from === currentState &&
+      t.trigger === messageType &&
+      (!t.triggerAgent || t.triggerAgent === fromAgent)
+    );
+
+    if (!transition) {
+      log.debug('fsm', 'No matching transition for message', {
+        meshName: this.meshName,
+        currentState,
+        trigger: messageType,
+        from: fromAgent,
+      });
+      return false;
+    }
+
+    const toState = transition.to;
+    const toStateConfig = this.stateMap.get(toState);
+
+    if (!toStateConfig) {
+      log.error('fsm', 'Invalid transition target state', {
+        meshName: this.meshName,
+        from: currentState,
+        to: toState,
+      });
+      return false;
+    }
+
+    log.info('fsm', 'Transitioning state', {
+      meshName: this.meshName,
+      from: currentState,
+      to: toState,
+      trigger: messageType,
+      triggerAgent: fromAgent,
+    });
+
+    const transitionStartTime = Date.now();
+
+    // Create script context
+    const scriptContext: ScriptContext = {
+      fsmState: currentState,
+      fsmMeshName: this.meshName,
+      fsmTransition: `${currentState}->${toState}`,
+      fsmTrigger: messageType,
+      fsmTriggerAgent: fromAgent,
+      ...this.stateData.context,
+    };
+
+    // Execute onExit for current state
+    const currentStateConfig = this.stateMap.get(currentState);
+    if (currentStateConfig?.onExit) {
+      await this.executeScript('onExit', currentStateConfig.onExit, scriptContext);
+    }
+
+    // Execute transition script if defined
+    if (transition.script) {
+      await this.executeScript('transition', transition.script, scriptContext);
+    }
+
+    // Update state
+    this.stateData.currentState = toState;
+    this.stateData.lastTransitionAt = Date.now();
+    this.stateData.updatedAt = Date.now();
+    delete this.stateData.gateRetries[toState]; // Reset gate retries for new state
+    this.persistence.saveState(this.stateData);
+
+    // Emit transition event
+    const transitionEvent: FSMTransitionEvent = {
+      meshName: this.meshName,
+      from: currentState,
+      to: toState,
+      trigger: messageType,
+      triggerAgent: fromAgent,
+      timestamp: Date.now(),
+      durationMs: Date.now() - transitionStartTime,
+    };
+    this.emit('fsm:transition', transitionEvent);
+
+    // Execute onEnter for new state
+    if (toStateConfig.onEnter) {
+      await this.executeOnEnter(toState);
+    }
+
+    return true;
+  }
+
+  /**
+   * Get available transitions from current state
+   */
+  getAvailableTransitions(): string[] {
+    if (!this.stateData) return [];
+
+    const currentState = this.stateData.currentState;
+    return this.config.transitions
+      .filter(t => t.from === currentState)
+      .map(t => `${t.trigger}${t.triggerAgent ? `:${t.triggerAgent}` : ''} -> ${t.to}`);
+  }
+
+  /**
+   * Execute a transition to a specific state using exit-based routing
+   * Used after an agent completes (for exit routing with gates)
+   *
+   * @param toState - Target state to transition to
+   * @param trigger - Trigger type (e.g., 'task-complete')
+   * @param triggerAgent - Agent that triggered the transition
+   * @returns true if transition succeeded
+   */
+  async transitionTo(
+    toState: string,
+    trigger: string,
+    triggerAgent?: string
+  ): Promise<boolean> {
+    if (!this.initialized || !this.stateData) {
+      log.warn('fsm', 'FSM not initialized', { meshName: this.meshName });
+      return false;
+    }
+
+    const fromState = this.stateData.currentState;
+    const toStateConfig = this.stateMap.get(toState);
+
+    if (!toStateConfig) {
+      log.error('fsm', 'Invalid target state', {
+        meshName: this.meshName,
+        toState,
+      });
+      return false;
+    }
+
+    log.info('fsm', 'Executing exit-based transition', {
+      meshName: this.meshName,
+      from: fromState,
+      to: toState,
+      trigger,
+      triggerAgent,
+    });
+
+    const transitionStartTime = Date.now();
+
+    // Create script context
+    const scriptContext: ScriptContext = {
+      fsmState: fromState,
+      fsmMeshName: this.meshName,
+      fsmTransition: `${fromState}->${toState}`,
+      fsmTrigger: trigger,
+      fsmTriggerAgent: triggerAgent,
+      ...this.stateData.context,
+    };
+
+    // Execute onExit for current state
+    const fromStateConfig = this.stateMap.get(fromState);
+    if (fromStateConfig?.onExit) {
+      await this.executeScript('onExit', fromStateConfig.onExit, scriptContext);
+    }
+
+    // Update state
+    this.stateData.currentState = toState;
+    this.stateData.lastTransitionAt = Date.now();
+    this.stateData.updatedAt = Date.now();
+    delete this.stateData.gateRetries[toState];
+    this.persistence.saveState(this.stateData);
+
+    // Emit transition event
+    const transitionEvent: FSMTransitionEvent = {
+      meshName: this.meshName,
+      from: fromState,
+      to: toState,
+      trigger,
+      triggerAgent,
+      timestamp: Date.now(),
+      durationMs: Date.now() - transitionStartTime,
+    };
+    this.emit('fsm:transition', transitionEvent);
+
+    // Execute onEnter for new state
+    if (toStateConfig.onEnter) {
+      await this.executeOnEnter(toState);
+    }
+
+    return true;
   }
 }

@@ -206,12 +206,37 @@ export interface FSMExitConfig {
 }
 
 /**
+ * State type for FSM states
+ */
+export type FSMStateType = 'normal' | 'ensemble';
+
+/**
+ * Inline ensemble configuration for FSM states
+ * Used within state definition (different from mesh-level EnsembleConfig)
+ */
+export interface FSMEnsembleConfig {
+  agents?: string[];             // Different agents to run in parallel
+  agent?: string;                // OR same agent N times
+  count?: number | string;       // Static number or $variable reference
+  aggregation: AggregationStrategy;
+  timeout_ms?: number;           // Timeout per agent (defaults to 120000)
+  fault_tolerance?: {
+    min_success_count?: number;  // Minimum agents that must succeed
+    retry_failed?: boolean;      // Retry failed agents
+  };
+}
+
+/**
  * FSM state configuration
  */
 export interface FSMStateConfig {
   name: string;
-  coordinator: string;  // Agent that coordinates this state
-  participants?: string[];  // Other agents that participate
+  coordinator?: string;  // Agent that coordinates this state (optional for ensemble)
+  participants?: string[];  // Other agents that participate (backward compat)
+  agents?: string[];  // Agents for this state (preferred over participants)
+  type?: FSMStateType;  // State type: 'normal' (default) or 'ensemble'
+  ensemble?: FSMEnsembleConfig;  // Ensemble configuration (required when type === 'ensemble')
+  subtask?: boolean;  // Inject subtask prompt into agent context
   gates?: FSMGateConfig[];  // Gates to check before transition
   onEnter?: string;  // Script to run on state entry
   onExit?: string;   // Script to run on state exit

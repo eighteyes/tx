@@ -6,6 +6,7 @@
  * - Inject messaging protocol for inter-agent communication
  * - Inject workspace context (output files, location)
  * - Inject FSM context (state, transitions, context variables)
+ * - Inject subtask instructions for parallel agent coordination
  */
 
 import type { WorkspaceInfo } from './manager.ts';
@@ -33,6 +34,14 @@ export interface FSMInjectionContext {
   stateConfig: FSMStateConfig;
   context: Record<string, unknown>;
   gateRetries?: Record<string, number>;
+  availableTransitions?: string[];
+}
+
+/**
+ * Context for subtask injection
+ */
+export interface SubtaskInjectionContext {
+  agentCount: number;
 }
 
 const PREAMBLE_SINGLE_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
@@ -158,6 +167,71 @@ export class PromptInjector {
   injectFSMContext(basePrompt: string, fsmContext: FSMInjectionContext): string {
     const section = this.buildFSMSection(fsmContext);
     return `${basePrompt}\n\n${section}`;
+  }
+
+  /**
+   * Inject subtask instructions into a system prompt
+   * Used when state has subtask: true to instruct agent to produce SUBTASK markers
+   * for parallel agent coordination
+   */
+  injectSubtaskInstructions(prompt: string, config: SubtaskInjectionContext): string {
+    const injection = `
+## SUBTASK Output Format
+
+You MUST produce SUBTASK markers for parallel agents.
+
+Format your output with SUBTASK markers:
+
+\`\`\`
+SUBTASK 1:
+[Content for first parallel agent]
+
+SUBTASK 2:
+[Content for second parallel agent]
+
+SUBTASK 3:
+[Content for third parallel agent]
+\`\`\`
+
+There are ${config.agentCount} parallel agents. Produce exactly ${config.agentCount} SUBTASK blocks.
+
+Each SUBTASK block should contain the complete context that agent needs to accomplish its part of the work.
+`;
+    return this.injectAfterPreamble(prompt, injection);
+  }
+
+  /**
+   * Inject content after the preamble section of a prompt
+   * Finds the first double newline after the preamble header and inserts content there
+   */
+  private injectAfterPreamble(prompt: string, injection: string): string {
+    // Look for common preamble markers
+    const preambleMarkers = [
+      '# Autonomous Operation',
+      '# Multi-Agent Mesh',
+      '# Use of Explore',
+    ];
+
+    // Find the end of preamble section
+    let insertIndex = -1;
+    for (const marker of preambleMarkers) {
+      const markerIndex = prompt.indexOf(marker);
+      if (markerIndex !== -1) {
+        // Find the next double newline after this marker
+        const doubleNewline = prompt.indexOf('\n\n', markerIndex);
+        if (doubleNewline !== -1 && (insertIndex === -1 || doubleNewline > insertIndex)) {
+          insertIndex = doubleNewline + 2; // +2 to skip the double newline
+        }
+      }
+    }
+
+    // If no preamble found, prepend the injection
+    if (insertIndex === -1) {
+      return `${injection}\n\n${prompt}`;
+    }
+
+    // Insert after preamble
+    return prompt.slice(0, insertIndex) + injection + '\n' + prompt.slice(insertIndex);
   }
 
   /**

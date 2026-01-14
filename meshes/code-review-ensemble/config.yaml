@@ -1,5 +1,5 @@
 mesh: code-review-ensemble
-description: "Parallel code review using ensemble pattern - submit code to 3 reviewers, aggregate feedback"
+description: "Parallel code review using FSM ensemble pattern - submit code to 3 reviewers, aggregate feedback"
 
 agents:
   - name: entry
@@ -24,12 +24,33 @@ agents:
 
 entry_point: entry
 
-ensemble:
-  coordinator: entry
-  agents:
-    - reviewer-security
-    - reviewer-performance
-    - reviewer-style
-  reviewer: synthesizer
-  aggregation_strategy: concat
-  timeout_ms: 120000
+fsm:
+  initial: generate_subtasks
+
+  states:
+    generate_subtasks:
+      agents: [entry]
+      subtask: true
+      exit:
+        default: parallel_review
+
+    parallel_review:
+      type: ensemble
+      ensemble:
+        agents: [reviewer-security, reviewer-performance, reviewer-style]
+        aggregation: concat
+        timeout_ms: 120000
+      exit:
+        set:
+          review_results: "$ENSEMBLE_OUTPUT"
+        default: synthesize
+
+    synthesize:
+      agents: [synthesizer]
+      exit:
+        default: complete
+
+    complete:
+      agents: [core]
+
+  scripts: {}
