@@ -13,6 +13,7 @@ import { tasks } from './tasks.ts';
 import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
+import { validateMesh } from './validate-mesh.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -92,16 +93,17 @@ const HELP = {
   main: `TX V4 - Multi-agent orchestration CLI
 
 Commands:
-  tx start       Start core agent (attaches to tmux)
-  tx stop        Stop core agent
-  tx status      Show system status
-  tx run         Headless mesh REPL (no core)
-  tx msg         View messages
-  tx logs        View logs
-  tx spy         Real-time activity stream
-  tx tasks       View task queue
-  tx prompt      Show built prompt for agent
-  tx tool        Search and web utilities
+  tx start          Start core agent (attaches to tmux)
+  tx stop           Stop core agent
+  tx status         Show system status
+  tx run            Headless mesh REPL (no core)
+  tx msg            View messages
+  tx logs           View logs
+  tx spy            Real-time activity stream
+  tx tasks          View task queue
+  tx prompt         Show built prompt for agent
+  tx tool           Search and web utilities
+  tx validate-mesh  Validate mesh configuration
 
 Run 'tx <command> -h' for command-specific options.`,
 
@@ -229,6 +231,34 @@ get-www options:
 youtube-transcript options:
   -l, --lang <lang>     Language code (e.g., "en")
   -T, --timestamps      Include timestamps`,
+
+  'validate-mesh': `tx validate-mesh - Validate mesh configuration
+
+Usage: tx validate-mesh <mesh-name|path> [options]
+
+Arguments:
+  mesh-name     Name of mesh in meshes/ directory
+  path          Direct path to config.yaml file
+
+Options:
+  --strict      Treat warnings as errors
+
+Examples:
+  tx validate-mesh mesh-builder
+  tx validate-mesh meshes/dev/config.yaml
+  tx validate-mesh my-mesh --strict
+
+Validates:
+  - Required fields (mesh, agents, entry_point)
+  - Agent configuration (name, model, prompt)
+  - Routing block structure and targets
+  - FSM states and transitions (if present)
+  - Config field types and values
+  - Unknown/deprecated fields
+
+Exit codes:
+  0 - Valid configuration
+  1 - Validation failed (errors or warnings in strict mode)`,
 };
 
 function showHelp(cmd: string): void {
@@ -370,6 +400,13 @@ async function main() {
         lang: flags.l as string || flags.lang as string,
         timestamps: Boolean(flags.T || flags.timestamps),
         providers: Boolean(flags.providers)
+      });
+      break;
+
+    case 'validate-mesh':
+      if (wantsHelp || !args[0]) { showHelp('validate-mesh'); break; }
+      await validateMesh(args[0], {
+        strict: Boolean(flags.strict)
       });
       break;
 

@@ -14,7 +14,12 @@ export const colors = {
   magenta: '\x1b[35m',
   white: '\x1b[37m',
   gray: '\x1b[90m',
-  redBright: '\x1b[91m'
+  redBright: '\x1b[91m',
+  greenBright: '\x1b[92m',
+  yellowBright: '\x1b[93m',
+  blueBright: '\x1b[94m',
+  magentaBright: '\x1b[95m',
+  cyanBright: '\x1b[96m'
 };
 
 // Chalk-style helper functions
@@ -29,4 +34,10 @@ export const chalk = {
   gray: (text: string) => `${colors.gray}${text}${colors.reset}`,
   dim: (text: string) => `${colors.dim}${text}${colors.reset}`,
   bold: (text: string) => `${colors.bright}${text}${colors.reset}`,
+  redBright: (text: string) => `${colors.redBright}${text}${colors.reset}`,
+  greenBright: (text: string) => `${colors.greenBright}${text}${colors.reset}`,
+  yellowBright: (text: string) => `${colors.yellowBright}${text}${colors.reset}`,
+  blueBright: (text: string) => `${colors.blueBright}${text}${colors.reset}`,
+  magentaBright: (text: string) => `${colors.magentaBright}${text}${colors.reset}`,
+  cyanBright: (text: string) => `${colors.cyanBright}${text}${colors.reset}`,
 };

@@ -80,20 +80,12 @@ export interface MeshConfigSchema {
   agents: MeshAgentConfig[];
   entry_point?: string;
   completion_agent?: string;
-  type?: 'persistent' | 'ephemeral';
-  auto_despawn?: boolean;
-  keepalive?: boolean;
-  grace_period_ms?: number;
-  topology?: 'static' | 'dynamic';
   routing?: MeshRouting;
   rearmatter?: RearmatterConfig;
   workspace?: WorkspaceConfigSchema;
-  brain?: boolean;
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
-  'clear-before'?: boolean;
   ensemble?: EnsembleConfig;
-  task_distribution?: TaskDistributionConfig;
 }
 
 /**
