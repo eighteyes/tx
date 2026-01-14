@@ -93,8 +93,9 @@ init:
 Executed when exiting this state. Determines next state. Optional but critical for routing.
 
 **Exit processing order (strict sequence):**
+0. **Merge rearmatter** - Agent's rearmatter fields automatically added to context
 1. **`exit.gates`** - Validate outputs (stop if fail)
-2. **`exit.set`** - Extract values
+2. **`exit.set`** - Extract/transform values
 3. **`exit.when`** - Evaluate conditions
 4. **`exit.run`** - Determine next state
 5. **`exit.default`** - Fallback if no route
@@ -638,13 +639,39 @@ confidence: 0.85           # 0.0-1.0 float
 reasoning: "Task complete"
 ```
 
-**Usage in when conditions:**
+**Rearmatter fields are automatically merged into FSM context** during message handling. This means rearmatter values become context variables that can be used directly in `when` conditions and scripts.
+
+**Automatic context merge:**
 ```yaml
+# Agent outputs rearmatter:
+# success_signal: PASS
+# confidence: 0.85
+
+# Rearmatter fields available as context:
 exit:
   when:
-    - condition: haiku_success_signal == "PASS"
+    - condition: success_signal == "PASS"    # Direct access
+      target: next_state
+```
+
+**Manual extraction with `exit.set`:**
+Use `exit.set` when you need to transform or rename rearmatter values:
+
+```yaml
+exit:
+  set:
+    # Extract and rename
+    haiku_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+    # Transform value
+    confidence_pct: "$(echo '$rearmatter' | yq '.confidence * 100')"
+  when:
+    - condition: haiku_signal == "PASS"
       target: sonnet_review_loop
 ```
+
+**Both patterns work:**
+- **Automatic**: Rearmatter fields merge into context (no `exit.set` needed)
+- **Manual**: Use `exit.set` for transformations, renaming, or extracting nested values
 
 ## Execution Flow
 
@@ -661,8 +688,9 @@ exit:
 3. **Dispatcher observes** → receives agent message
 
 4. **FSM exit processing** → runs in order:
+   - **Merge rearmatter** into FSM context (automatic)
    - Run `exit.gates` for validation
-   - Run `exit.set` to extract values
+   - Run `exit.set` to extract/transform values
    - Evaluate `exit.when` clauses (first match wins)
    - Run `exit.run` script (outputs state name)
    - Use `exit.default` if no route found
