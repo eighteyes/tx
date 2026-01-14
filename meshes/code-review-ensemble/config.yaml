@@ -1,25 +1,25 @@
 mesh: code-review-ensemble
-description: "Parallel code review using FSM ensemble pattern - submit code to 3 reviewers, aggregate feedback"
+description: "Parallel code review using FSM ensemble pattern - logic, architecture, robustness analysis"
 
 agents:
   - name: entry
     model: haiku
     prompt: prompts/entry.md
 
-  - name: reviewer-security
-    model: haiku
-    prompt: prompts/reviewer-security.md
+  - name: reviewer-logic
+    model: sonnet
+    prompt: prompts/reviewer-logic.md
 
-  - name: reviewer-performance
-    model: haiku
-    prompt: prompts/reviewer-performance.md
+  - name: reviewer-architecture
+    model: sonnet
+    prompt: prompts/reviewer-architecture.md
 
-  - name: reviewer-style
+  - name: reviewer-robustness
     model: haiku
-    prompt: prompts/reviewer-style.md
+    prompt: prompts/reviewer-robustness.md
 
   - name: synthesizer
-    model: haiku
+    model: sonnet
     prompt: prompts/synthesizer.md
 
 entry_point: entry
@@ -37,7 +37,7 @@ fsm:
     parallel_review:
       type: ensemble
       ensemble:
-        agents: [reviewer-security, reviewer-performance, reviewer-style]
+        agents: [reviewer-logic, reviewer-architecture, reviewer-robustness]
         aggregation: concat
         timeout_ms: 120000
       exit:

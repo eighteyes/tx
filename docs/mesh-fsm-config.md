@@ -418,27 +418,27 @@ The `review_results` context variable is then available to subsequent states.
 
 ```yaml
 mesh: code-review-ensemble
-description: "Parallel code review with specialized reviewers"
+description: "Parallel code review - logic, architecture, robustness analysis"
 
 agents:
   - name: entry
     model: haiku
     prompt: prompts/entry.md
 
-  - name: reviewer-security
-    model: haiku
-    prompt: prompts/reviewer-security.md
+  - name: reviewer-logic
+    model: sonnet
+    prompt: prompts/reviewer-logic.md
 
-  - name: reviewer-performance
-    model: haiku
-    prompt: prompts/reviewer-performance.md
+  - name: reviewer-architecture
+    model: sonnet
+    prompt: prompts/reviewer-architecture.md
 
-  - name: reviewer-style
+  - name: reviewer-robustness
     model: haiku
-    prompt: prompts/reviewer-style.md
+    prompt: prompts/reviewer-robustness.md
 
   - name: synthesizer
-    model: haiku
+    model: sonnet
     prompt: prompts/synthesizer.md
 
 entry_point: entry
@@ -458,7 +458,7 @@ fsm:
     parallel_review:
       type: ensemble
       ensemble:
-        agents: [reviewer-security, reviewer-performance, reviewer-style]
+        agents: [reviewer-logic, reviewer-architecture, reviewer-robustness]
         aggregation: concat
         timeout_ms: 120000
       exit:
@@ -482,7 +482,7 @@ fsm:
 **Execution flow:**
 1. User sends code → `entry` agent (subtask generation mode)
 2. FSM transitions → `parallel_review` state
-3. Three reviewers spawn simultaneously (security, performance, style)
+3. Three reviewers spawn simultaneously (logic, architecture, robustness)
 4. Each reviewer analyzes code independently
 5. FSM aggregates results using `concat` strategy
 6. FSM transitions → `synthesize` state
