@@ -83,13 +83,13 @@ fsm:
   - Branching logic (different paths based on conditions)
   - Iteration/loops (retry, refinement)
   - State variables needed
-  - Parallel execution (ensemble states)
+  - Parallel execution (`ensemble: { type: parallel }`)
 
 **Routing Patterns**:
 - **Sequential**: agent-a → agent-b → agent-c → core
 - **Branching**: Use FSM with conditional exits
-- **Parallel**: Use FSM ensemble state with aggregation
-- **Fan-out/fan-in**: Ensemble state with multiple agents
+- **Parallel**: Use FSM ensemble state (`ensemble: { type: parallel }`) with aggregation
+- **Fan-out/fan-in**: Ensemble state with multiple agents, each with explicit routing
 
 **Keep it Simple**:
 - Start with routing-only if workflow is linear

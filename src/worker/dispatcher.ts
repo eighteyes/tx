@@ -481,20 +481,26 @@ export class WorkerDispatcher extends EventEmitter {
       }
     }
 
-    // Check for FSM ensemble state
+    // Check for FSM ensemble state (both legacy type: ensemble and new ensemble.type: parallel)
     const fsm = this.meshFSMs.get(meshName);
     if (fsm && fsm.isInitialized()) {
       const currentState = fsm.getCurrentStateConfig();
-      if (currentState?.type === 'ensemble') {
+      // Detect ensemble state using both patterns:
+      // - Legacy: currentState.type === 'ensemble'
+      // - New: currentState.ensemble?.type === 'parallel'
+      const isLegacyEnsemble = currentState?.type === 'ensemble';
+      const isNewEnsemble = currentState?.ensemble?.type === 'parallel';
+      if (isLegacyEnsemble || isNewEnsemble) {
         log.info('dispatcher', `Detected ensemble state, delegating to handleEnsembleState`, {
           meshName,
-          state: currentState.name,
+          state: currentState?.name,
           agentId,
+          ensembleType: isLegacyEnsemble ? 'legacy' : 'new',
         });
-        this.handleEnsembleState(meshName, currentState, fsm).catch((error) => {
+        this.handleEnsembleState(meshName, currentState!, fsm).catch((error) => {
           log.error('dispatcher', `Ensemble state handling failed`, {
             meshName,
-            state: currentState.name,
+            state: currentState?.name,
             error: (error as Error).message,
           });
           this.emit('mesh:halt', {
@@ -1450,31 +1456,8 @@ The system will resume your session when the human responds.`;
             currentState: status.currentState,
           });
 
-          // Inject subtask instructions if state has subtask: true
-          if (currentStateConfig.subtask) {
-            // Get agent count from next state's ensemble config
-            // Priority: agents array length > count (if number) > default 3
-            const nextStateConfig = this.getNextStateConfig(fsm, currentStateConfig);
-            const ensembleConfig = nextStateConfig?.ensemble;
-
-            let subtaskAgentCount = 3; // default
-            if (ensembleConfig?.agents?.length) {
-              subtaskAgentCount = ensembleConfig.agents.length;
-            } else if (ensembleConfig?.count && typeof ensembleConfig.count === 'number') {
-              subtaskAgentCount = ensembleConfig.count;
-            }
-
-            systemPrompt = this.promptInjector.injectSubtaskInstructions(
-              systemPrompt,
-              { agentCount: subtaskAgentCount }
-            );
-            log.debug('dispatcher', 'Injected subtask instructions', {
-              meshName,
-              agentId,
-              subtaskAgentCount,
-              nextState: nextStateConfig?.name,
-            });
-          }
+          // NOTE: subtask injection removed - ensemble agents now use explicit routing
+          // instead of file-based SUBTASK markers. See: ensemble.type: parallel in config.
         }
       }
 
@@ -2634,40 +2617,11 @@ ${output}
     }
   }
 
-  /**
-   * Get the next state config from FSM exit routing
-   * Used to determine ensemble agent count for subtask injection
-   */
-  private getNextStateConfig(fsm: MeshFSM, currentStateConfig: FSMStateConfig): FSMStateConfig | undefined {
-    // Check exit config for default target
-    const exitConfig = currentStateConfig.exit;
-    if (!exitConfig) return undefined;
-
-    // Try default first (most common for subtask states)
-    if (exitConfig.default) {
-      const states = fsm.getStates();
-      return states.find(s => s.name === exitConfig.default);
-    }
-
-    // Try run if it's a literal state name
-    if (exitConfig.run) {
-      const states = fsm.getStates();
-      const state = states.find(s => s.name === exitConfig.run);
-      if (state) return state;
-    }
-
-    // Try first when clause target
-    if (exitConfig.when && exitConfig.when.length > 0) {
-      const states = fsm.getStates();
-      return states.find(s => s.name === exitConfig.when![0].target);
-    }
-
-    return undefined;
-  }
-
   // ============================================================================
   // Ensemble State Handling
   // ============================================================================
+  // NOTE: getNextStateConfig method removed - it was only used for subtask injection
+  // which has been deprecated in favor of explicit routing for ensemble agents.
 
   /**
    * Handle an FSM state of type 'ensemble'

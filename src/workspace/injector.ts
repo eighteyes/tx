@@ -38,7 +38,10 @@ export interface FSMInjectionContext {
 }
 
 /**
- * Context for subtask injection
+ * Context for subtask injection - DEPRECATED
+ * Ensemble agents now use explicit routing instead of SUBTASK markers.
+ * This interface is kept for backwards compatibility but should not be used.
+ * @deprecated Use explicit routing in config.yaml instead
  */
 export interface SubtaskInjectionContext {
   agentCount: number;
@@ -213,34 +216,25 @@ export class PromptInjector {
   }
 
   /**
-   * Inject subtask instructions into a system prompt
-   * Used when state has subtask: true to instruct agent to produce SUBTASK markers
-   * for parallel agent coordination
+   * Inject subtask instructions into a system prompt - DEPRECATED
+   *
+   * This method is deprecated and returns the original prompt unmodified.
+   * Ensemble agents now use explicit routing instead of SUBTASK markers.
+   * The subtask approach was incompatible with TX's message-based architecture.
+   *
+   * @deprecated Use explicit routing for ensemble agents instead
    */
-  injectSubtaskInstructions(prompt: string, config: SubtaskInjectionContext): string {
-    const injection = `
-## SUBTASK Output Format
-
-You MUST produce SUBTASK markers for parallel agents.
-
-Format your output with SUBTASK markers:
-
-\`\`\`
-SUBTASK 1:
-[Content for first parallel agent]
-
-SUBTASK 2:
-[Content for second parallel agent]
-
-SUBTASK 3:
-[Content for third parallel agent]
-\`\`\`
-
-There are ${config.agentCount} parallel agents. Produce exactly ${config.agentCount} SUBTASK blocks.
-
-Each SUBTASK block should contain the complete context that agent needs to accomplish its part of the work.
-`;
-    return this.injectAfterPreamble(prompt, injection);
+  injectSubtaskInstructions(prompt: string, _config: SubtaskInjectionContext): string {
+    // DEPRECATED: Subtask approach removed.
+    // Ensemble agents should use explicit routing in config.yaml:
+    //
+    // routing:
+    //   reviewer-logic:
+    //     complete:
+    //       synthesizer: "Logic review complete"
+    //
+    // See: ensemble.type: parallel in fsm.states configuration
+    return prompt;
   }
 
   /**
