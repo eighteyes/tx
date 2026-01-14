@@ -1,0 +1,19 @@
+name: dev-junior
+description: "Handles simple, well-defined tasks: typo fixes, basic bug fixes, adding simple functions, straightforward config changes, and trivial refactors. Use for low-risk changes with clear requirements."
+version: 1.0.0
+model: haiku
+
+agents:
+  - id: worker
+    role: Junior Developer
+    model: haiku
+    prompt: worker.md
+    initial: true
+
+routing:
+  complete:
+    to: core/core
+  error:
+    to: core/core
+  blocked:
+    to: core/core

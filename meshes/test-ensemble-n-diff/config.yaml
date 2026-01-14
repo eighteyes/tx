@@ -1,0 +1,95 @@
+mesh: test-ensemble-n-diff
+description: "Dynamic ensemble with task decomposition - each worker receives a different subtask"
+
+agents:
+  - name: entry
+    model: sonnet
+    prompt: entry.md
+
+  - name: worker
+    model: sonnet
+    prompt: worker.md
+
+  - name: aggregator
+    model: sonnet
+    prompt: aggregator.md
+
+entry_point: entry
+
+routing:
+  # Entry: Routes to worker agent (FSM spawns N instances based on subtask_count)
+  entry:
+    complete:
+      worker: "Entry wrote subtasks, spawn workers"
+
+  # Worker: Routes to aggregator when complete
+  worker:
+    complete:
+      aggregator: "Worker completed subtask"
+
+  # Aggregator: Routes to core with final result
+  aggregator:
+    complete:
+      core: "Aggregation complete"
+
+fsm:
+  initial: decompose
+
+  context:
+    subtask_count: 0
+
+  states:
+    decompose:
+      agents: [entry]
+      exit:
+        set:
+          subtask_count: "$(echo '$rearmatter' | yq '.subtask_count')"
+        default: parallel_work
+
+    parallel_work:
+      ensemble:
+        type: parallel
+        agent: worker
+        count: $subtask_count
+        aggregation: concat
+        timeout_ms: 180000
+      exit:
+        set:
+          worker_results: "$ENSEMBLE_OUTPUT"
+        default: aggregate
+
+    aggregate:
+      agents: [aggregator]
+      exit:
+        default: complete
+
+    complete:
+      agents: [core]
+
+  scripts: {}
+
+type: ephemeral
+auto_despawn: true
+
+playbook_notes: |
+  ## Design Rationale
+
+  This mesh demonstrates the dynamic ensemble pattern with task decomposition:
+
+  1. **Entry agent** analyzes incoming task and decomposes it into N independent subtasks
+  2. **FSM extracts** `subtask_count` from entry's rearmatter to set worker count
+  3. **Ensemble state** spawns N worker instances using `agent` + `count: $subtask_count`
+  4. **Workers execute in parallel** - each receives ENSEMBLE_INDEX/ENSEMBLE_TOTAL for differentiation
+  5. **Aggregator synthesizes** all worker outputs (received via $ENSEMBLE_OUTPUT) into final report
+
+  Key FSM features demonstrated:
+  - Dynamic instance count: `ensemble.count: $subtask_count` (variable from context)
+  - Worker differentiation: Each worker sees ENSEMBLE_INDEX (0,1,2...) and ENSEMBLE_TOTAL
+  - Context passing: Aggregator receives `$worker_results` with concatenated outputs
+
+  Contrast with test-ensemble-n-same:
+  - SAME: All workers get identical message (parallel processing of same task)
+  - DIFF (this mesh): Each worker can differentiate via ENSEMBLE_INDEX
+
+  Note: For true subtask differentiation, the entry agent should write subtask files
+  to workspace (e.g., subtask-0.md, subtask-1.md) that workers read using their index.
