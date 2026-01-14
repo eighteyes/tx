@@ -82,6 +82,19 @@ export class TmuxSession {
   }
 
   /**
+   * Source a tmux configuration file for this session
+   */
+  async sourceConfig(configPath: string): Promise<boolean> {
+    try {
+      await execAsync(`tmux source-file -t '${this.name}' '${configPath}'`);
+      return true;
+    } catch (err) {
+      log.error('tmux', 'Failed to source config', { path: configPath, error: err });
+      return false;
+    }
+  }
+
+  /**
    * Check if pane is in copy-mode (scroll mode)
    * When in copy-mode, send-keys goes to copy-mode instead of the shell
    */

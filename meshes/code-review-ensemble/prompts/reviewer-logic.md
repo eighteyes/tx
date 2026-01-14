@@ -9,10 +9,11 @@ Read code from workspace:
 
 ## Output
 
-Write your review to:
-- `{workspace}/review-logic.md` - Your findings
+**CRITICAL**: Write your review in the **message body** of your task-complete message.
 
-After writing review, signal complete to pass to architecture reviewer.
+DO NOT write to workspace files. The synthesizer will read your review from the message you send.
+
+After writing review in message body, send task-complete to synthesizer.
 
 ## Focus Areas
 

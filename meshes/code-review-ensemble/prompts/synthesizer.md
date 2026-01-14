@@ -4,10 +4,14 @@ Aggregate findings from parallel reviewers and create prioritized, actionable re
 
 ## Inputs
 
-Read all reviews from workspace:
-- `{workspace}/review-logic.md` - Logic & Correctness review
-- `{workspace}/review-architecture.md` - Architecture & Design review
-- `{workspace}/review-robustness.md` - Robustness & Safety review
+**CRITICAL**: Read all reviews from the **incoming messages** that triggered your session.
+
+You will receive 3 task-complete messages from:
+- `reviewer-logic` - Logic & Correctness review (in message body)
+- `reviewer-architecture` - Architecture & Design review (in message body)
+- `reviewer-robustness` - Robustness & Safety review (in message body)
+
+Each review is in the message body. DO NOT look for workspace files.
 
 Also reference the code:
 - `{workspace}/code-to-review.md` - Original code

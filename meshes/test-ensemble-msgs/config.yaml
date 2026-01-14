@@ -1,0 +1,81 @@
+mesh: test-ensemble-msgs
+description: "Test message-based ensemble pattern with simple parallel task execution"
+
+agents:
+  - name: entry
+    model: haiku
+    prompt: prompts/entry.md
+
+  - name: worker-1
+    model: haiku
+    prompt: prompts/worker-1.md
+
+  - name: worker-2
+    model: haiku
+    prompt: prompts/worker-2.md
+
+  - name: worker-3
+    model: haiku
+    prompt: prompts/worker-3.md
+
+  - name: aggregator
+    model: sonnet
+    prompt: prompts/aggregator.md
+
+entry_point: entry
+
+routing:
+  # Entry agent: Fans out to all three workers in parallel
+  entry:
+    complete:
+      worker-1: "Analyze from perspective 1"
+      worker-2: "Analyze from perspective 2"
+      worker-3: "Analyze from perspective 3"
+
+  # Ensemble workers: Each reports completion to aggregator
+  worker-1:
+    complete:
+      aggregator: "Worker 1 analysis complete"
+
+  worker-2:
+    complete:
+      aggregator: "Worker 2 analysis complete"
+
+  worker-3:
+    complete:
+      aggregator: "Worker 3 analysis complete"
+
+  # Aggregator: Routes back to core when done
+  aggregator:
+    complete:
+      core: "Aggregation complete"
+
+fsm:
+  initial: entry_state
+
+  states:
+    entry_state:
+      agents: [entry]
+      exit:
+        default: parallel_analysis
+
+    parallel_analysis:
+      ensemble:
+        type: parallel
+        agents: [worker-1, worker-2, worker-3]
+        aggregation: concat
+        timeout_ms: 120000
+      exit:
+        set:
+          worker_results: "$ENSEMBLE_OUTPUT"
+        default: aggregate
+
+    aggregate:
+      agents: [aggregator]
+      exit:
+        default: complete
+
+    complete:
+      agents: [core]
+
+  scripts: {}
