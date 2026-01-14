@@ -90,9 +90,18 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Quality evaluation**: `graded: true` or `graded: [checklist, rubric]`
 
-**FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm. 
+**FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm.
 
 **Parallel execution**: `ensemble: { type: parallel }` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
+
+**CRITICAL - FSM Entry Routing**: Entry agents in FSM meshes MUST route to `core`, not directly to downstream agents. This allows FSM to observe completion and transition states. Direct routing bypasses FSM and breaks ensemble spawning.
+```yaml
+routing:
+  entry:
+    complete:
+      core: "Entry complete"  # ✅ CORRECT - FSM handles transition
+      # synthesizer: "..."     # ❌ WRONG - Bypasses FSM!
+```
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 

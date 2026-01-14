@@ -109,14 +109,55 @@ awaiting_narrator:
   exit:
     gates:
       narrator:
-        - "$workspace/prose-draft.md"
-        - check_min_word_count
+        - "$workspace/prose-draft.md"      # File existence check
+        - check_min_word_count              # Named script from fsm.scripts
 ```
 
-- **File paths**: `"$workspace/file.yaml"` (must exist)
-- **Scripts**: `check_min_word_count` (exit 0 = pass, non-zero = fail with stderr message)
+**Gate Types:**
+- **File existence checks**: `"$workspace/file.yaml"` - Checks if file exists at resolved path
+- **Named scripts**: `check_min_word_count` - Runs script from `fsm.scripts` config
+  - Exit 0 = pass
+  - Non-zero = fail with stderr message
 
-If gate fails, transition blocked, stay in current state.
+**Retry Logic:**
+Gates include automatic retry handling:
+- Up to 3 retry attempts before fatal error
+- Useful for transient file system delays
+- Gate failure blocks state transition (stays in current state)
+
+**Example with gate scripts:**
+```yaml
+fsm:
+  scripts:
+    check_min_word_count: |
+      word_count=$(wc -w < $workspace/prose-draft.md)
+      [[ $word_count -ge 100 ]] || {
+        echo "Word count too low: $word_count < 100" >&2
+        exit 1
+      }
+
+    validate_output_format: |
+      # Validate file exists and has correct YAML structure
+      [ -f "$workspace/output.yaml" ] || {
+        echo "Output file missing: $workspace/output.yaml" >&2
+        exit 1
+      }
+      yq eval '.field' "$workspace/output.yaml" >/dev/null 2>&1 || {
+        echo "Invalid YAML structure in output.yaml" >&2
+        exit 1
+      }
+
+  states:
+    processing:
+      exit:
+        gates:
+          worker:
+            - "$workspace/output.yaml"      # File must exist
+            - validate_output_format         # File must have valid structure
+            - check_min_word_count          # Content must meet criteria
+```
+
+If any gate fails, transition is blocked and the state remains unchanged.
 
 #### Exit.Set: Data Extraction (Step 2)
 
@@ -375,13 +416,44 @@ fsm:
 |----------|----------|
 | `concat` | Concatenate all outputs with agent labels |
 | `deduplicate` | Remove duplicate outputs, keep unique |
-| `voting` | Select most common output (majority wins) |
+| `voting` | Group similar results using Jaccard similarity (80% threshold), select most common group, return longest content from winning group with detailed metadata (winner, coalition, vote breakdown) |
 | `consensus` | Require all agents agree, fail if mismatch |
 | `custom` | Use custom aggregation prompt (advanced) |
 
+**Voting Strategy Details:**
+The voting aggregation strategy provides intelligent result selection:
+- Groups similar outputs using Jaccard word-based similarity (80% threshold)
+- Selects the group with the most votes (agents agreeing)
+- Returns the longest content from the winning group as most comprehensive
+- Provides metadata:
+  - `winner`: Winning agent name
+  - `winning_coalition`: All agents that agreed
+  - `vote_count`: Number of agreeing votes
+  - `vote_breakdown`: Full breakdown by group
+
 ### Ensemble Agent Routing
 
-Ensemble agents should have explicit routing to define where their completion messages go. Unlike the deprecated `subtask: true` approach, explicit routing integrates with TX's message-based architecture.
+**CRITICAL**: In FSM meshes, entry agents must route to `core`, not directly to downstream agents. This allows the FSM to observe completion and transition to the next state.
+
+**Entry Agent Routing Pattern:**
+```yaml
+routing:
+  entry:
+    complete:
+      core: "Entry complete, FSM handles transition"  # ✅ CORRECT
+```
+
+**❌ WRONG - Bypasses FSM:**
+```yaml
+routing:
+  entry:
+    complete:
+      synthesizer: "Direct routing"  # ❌ Bypasses FSM state machine!
+```
+
+When entry routes directly to downstream agents, the FSM never observes the completion and cannot transition to the ensemble state. The ensemble workers never spawn.
+
+**Ensemble agents** should have explicit routing to define where their completion messages go. Unlike the deprecated `subtask: true` approach, explicit routing integrates with TX's message-based architecture.
 
 ```yaml
 routing:
@@ -428,6 +500,64 @@ parallel_review:
 ```
 
 The `review_results` context variable is then available to subsequent states.
+
+### Message Body Aggregation
+
+When an ensemble state completes, the FSM automatically aggregates the message bodies from all ensemble agents and makes them available to the next state's agents.
+
+**How it works:**
+1. Ensemble agents complete and send task-complete messages with their output in the message body
+2. FSM collects all message bodies from the ensemble agents
+3. FSM aggregates the content using the specified aggregation strategy
+4. FSM transitions to the next state (e.g., `synthesize`)
+5. FSM writes a message file to the next state's agent(s) with the aggregated content
+6. The synthesizer agent receives the aggregated output in its incoming message
+
+**Example workflow:**
+```yaml
+fsm:
+  states:
+    parallel_review:
+      ensemble:
+        type: parallel
+        agents: [reviewer-logic, reviewer-architecture, reviewer-robustness]
+        aggregation: concat
+      exit:
+        set:
+          review_results: "$ENSEMBLE_OUTPUT"
+        default: synthesize
+
+    synthesize:
+      agents: [synthesizer]
+      exit:
+        default: complete
+```
+
+**What the synthesizer receives:**
+```markdown
+---
+to: synthesizer
+from: system/fsm
+type: task
+---
+
+# Aggregated Reviews
+
+## reviewer-logic
+[Logic review content from task-complete message body]
+
+---
+
+## reviewer-architecture
+[Architecture review content from task-complete message body]
+
+---
+
+## reviewer-robustness
+[Robustness review content from task-complete message body]
+```
+
+The synthesizer agent can then process all reviews from a single incoming message. No need to read separate files or query message history - the FSM handles aggregation and delivery.
 
 ### Example: Code Review Ensemble
 
@@ -547,19 +677,59 @@ parallel_review:
 
 If fewer than `min_success_count` agents succeed, the ensemble fails and the mesh halts.
 
-### Same Agent Multiple Times
+### Same Agent Multiple Times (Dynamic Agent Count)
 
-Run the same agent N times for Monte Carlo sampling or variance analysis:
+Run the same agent N times for Monte Carlo sampling or variance analysis. The `count` field supports FSM context variables for dynamic determination:
 
 ```yaml
-sampling:
+fsm:
+  context:
+    parallel_count: 3  # Can be set dynamically by entry agent
+
+  states:
+    sampling:
+      ensemble:
+        type: parallel
+        agent: sampler              # Single agent
+        count: $parallel_count      # Variable from FSM context
+        aggregation: voting         # Pick most common result
+      exit:
+        default: next_state
+```
+
+**Each ensemble worker receives:**
+- `ENSEMBLE_INDEX`: Their position (0, 1, 2, ...) in the ensemble
+- `ENSEMBLE_TOTAL`: Total number of workers spawned
+
+Workers can use these variables to:
+- Read different input files: `workspace/task-${ENSEMBLE_INDEX}.md`
+- Access indexed arrays in context: `worker_messages[ENSEMBLE_INDEX]`
+- Identify themselves in logs or output
+
+**Example: Entry agent decides N dynamically:**
+```yaml
+entry_state:
+  agents: [entry]
+  exit:
+    set:
+      parallel_count: 3  # Entry analyzes task and decides worker count
+    default: parallel_work
+
+parallel_work:
   ensemble:
     type: parallel
-    agent: sampler              # Single agent
-    count: 5                    # Run 5 times
-    aggregation: voting         # Pick most common result
+    agent: worker
+    count: $parallel_count  # Spawns 3 instances
+    aggregation: voting
   exit:
-    default: next_state
+    default: synthesize
+```
+
+**Worker prompt example:**
+```markdown
+You are worker ${ENSEMBLE_INDEX} of ${ENSEMBLE_TOTAL}.
+
+Read your assigned input from: workspace/input-${ENSEMBLE_INDEX}.md
 ```
 
 ### Ensemble vs Sequential
@@ -998,4 +1168,10 @@ The mesh validator checks:
 
 ---
 
-*Updated 2026-01-14 to document new ensemble config structure (ensemble.type: parallel), explicit routing for ensemble agents, and deprecate subtask approach*
+*Updated 2026-01-14 to document:*
+- *New ensemble config structure (ensemble.type: parallel)*
+- *Explicit routing for ensemble agents (deprecate subtask approach)*
+- *Message body aggregation for ensemble states*
+- *Dynamic agent count with ENSEMBLE_INDEX and ENSEMBLE_TOTAL variables*
+- *Exit gate scripts with file existence checks and retry logic*
+- *Voting aggregation strategy with Jaccard similarity grouping*
