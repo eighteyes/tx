@@ -201,6 +201,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
     log.error('dispatcher', `Worker error: ${id}`, errorContext);
   });
+  dispatcher.on('error', ({ agentId, error }: { agentId: string; error: string }) => {
+    log.error('dispatcher', `Dispatcher error for agent: ${agentId}`, { error });
+  });
   dispatcher.on('worker:output', ({ id, data }) => {
     log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
   });

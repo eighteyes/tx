@@ -25,6 +25,17 @@ agents:
 entry_point: entry
 
 routing:
+  # Entry agent: Routes via FSM exit routing (subtask: true generates tasks for ensemble)
+  # No explicit routing needed - FSM handles transition to parallel_review state
+  entry:
+    complete:
+      core: "Subtasks generated for parallel review"
+
+  # Ensemble agents (reviewer-*): No explicit routing needed
+  # Their results are collected by EnsembleCoordinator, not routed as messages
+  # FSM handles aggregation and transition to synthesize state
+
+  # Synthesizer: Routes back to core when done
   synthesizer:
     complete:
       core: "Review synthesis complete"

@@ -205,20 +205,20 @@ simple_state:
 # Script that echoes state (dynamic routing)
 conditional_state:
   exit:
+    set:
+      success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
     run: |
-      signal="$FSM_CTX_SUCCESS_SIGNAL"
-      if [ "$signal" = "PASS" ]; then
+      # Context variables are available as simple $variable names
+      if [ "$success_signal" = "PASS" ]; then
         echo "sonnet_review_loop"
       else
         echo "ralph_haiku_loop"
       fi
-    set:
-      success_signal: "$(echo '$REARMATTER' | yq '.success_signal')"
 ```
 
 **Script requirements:**
 - Must output a valid state name to stdout (single line, trimmed)
-- Has access to all FSM context variables via `$FSM_CTX_*` env vars
+- Has access to all FSM context variables as `$variable_name`
 - Exit code 0 = success, non-zero = fail and fall through to `when` or `default`
 - Invalid state output falls through to `when` or `default`
 
@@ -271,11 +271,12 @@ variable_name != "value"
 layer_loop:
   exit:
     set:
-      signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+      signal: "$(echo '$rearmatter' | yq '.success_signal')"
     run: |
-      if [ "$FSM_CTX_SIGNAL" = "PASS" ]; then
+      # Context variables are available as simple $variable names
+      if [ "$signal" = "PASS" ]; then
         echo "next_layer"
-      elif [ "$FSM_CTX_SIGNAL" = "REFINE" ]; then
+      elif [ "$signal" = "REFINE" ]; then
         echo "layer_loop"
       else
         echo "blocked_state"
@@ -287,11 +288,11 @@ layer_loop:
 layer_loop:
   exit:
     set:
-      signal: "$(echo '$REARMATTER' | yq '.success_signal')"
+      signal: "$(echo '$rearmatter' | yq '.success_signal')"
     when:
-      - condition: "signal == PASS"
+      - condition: signal == "PASS"
         target: next_layer
-      - condition: "signal == REFINE"
+      - condition: signal == "REFINE"
         target: layer_loop  # Retry current layer
     default: blocked_state
 ```
@@ -300,19 +301,23 @@ layer_loop:
 ```yaml
 haiku_layer:
   exit:
+    set:
+      haiku_signal: "$(echo '$rearmatter' | yq '.success_signal')"
     when:
-      - condition: "haiku_signal == PASS"
+      - condition: haiku_signal == "PASS"
         target: sonnet_layer
-      - condition: "haiku_signal == REFINE"
+      - condition: haiku_signal == "REFINE"
         target: haiku_layer
     default: error_state
 
 sonnet_layer:
   exit:
+    set:
+      sonnet_signal: "$(echo '$rearmatter' | yq '.success_signal')"
     when:
-      - condition: "sonnet_signal == PASS"
+      - condition: sonnet_signal == "PASS"
         target: opus_layer
-      - condition: "sonnet_signal == REFINE"
+      - condition: sonnet_signal == "REFINE"
         target: sonnet_layer
     default: haiku_layer  # Cascade back
 ```
@@ -322,7 +327,7 @@ sonnet_layer:
 validation:
   exit:
     when:
-      - condition: "validation_result != OK"
+      - condition: validation_result != "OK"
         target: error_handler
     default: next_state
 ```
@@ -595,13 +600,13 @@ All scripts receive:
 
 | Variable | Type | Scope | Description |
 |----------|------|-------|-------------|
-| `$turn` | number | context | Turn number |
+| `$turn` | number | context | Turn number (accessible as `$turn` everywhere) |
 | `$game_path` | string | context | Game directory path |
 | `$workspace` | string | context | Workspace path |
-| `$state` | string | fsm | Current state name |
-| `$variable_name` | string | context | Any context var: `$success_signal`, `$iteration` |
+| `$state` | string | fsm | Current state name (accessible as `$state` in scripts) |
+| `$variable_name` | string | context | Any context variable (accessible as `$variable_name` everywhere) |
 | `$SDK_STATS` | JSON | exit only | SDK execution metrics |
-| `$rearmatter` | YAML | exit only | Agent self-assessment fields |
+| `$rearmatter` | YAML | exit only | Agent self-assessment fields (in entry/exit.set only, use `$(echo '$rearmatter' | yq '.field')`) |
 
 #### SDK Stats (`$SDK_STATS`)
 
@@ -860,6 +865,47 @@ exit:
 ```
 Multi-variable logic handled in run scripts.
 
+## Routing Configuration
+
+FSM meshes require routing configuration, but **ensemble agents do NOT need explicit routing**:
+
+### Which Agents Need Routing
+
+| Agent Type | Needs Routing? | Why |
+|------------|----------------|-----|
+| Entry/coordinator | Yes | Routes to FSM or core |
+| Normal state agents | Yes | Define message destinations |
+| Synthesizer/final agent | Yes | Routes back to core |
+| **Ensemble agents** | **No** | Results collected by EnsembleCoordinator |
+
+### Example: Code Review Ensemble Routing
+
+```yaml
+routing:
+  # Entry agent: Routes via FSM exit routing
+  entry:
+    complete:
+      core: "Subtasks generated for parallel review"
+
+  # Ensemble agents (reviewer-*): NO ROUTING NEEDED
+  # Their results are collected by EnsembleCoordinator
+  # FSM handles aggregation and transition to synthesize state
+
+  # Synthesizer: Routes back to core when done
+  synthesizer:
+    complete:
+      core: "Review synthesis complete"
+```
+
+### Key Insight: FSM vs Routing
+
+| Component | Purpose |
+|-----------|---------|
+| **FSM** | State transitions ("go to synthesize state") |
+| **Routing** | Message destinations ("send task-complete to core/core") |
+
+These are complementary. FSM decides which state comes next, routing decides where messages go. Ensemble agents skip routing because their outputs flow directly to the EnsembleCoordinator, not via messages.
+
 ## Validation
 
 The mesh validator checks:
@@ -871,6 +917,8 @@ The mesh validator checks:
 5. **Ensemble agents** exist in mesh config (when `type: ensemble`)
 6. **Ensemble aggregation** is valid strategy
 7. **Script syntax** (bash -n validation)
+8. **Multi-agent routing** - Multi-agent meshes must have routing config
+9. **Normal state agent routing** - Warns if normal state agents lack routing (ensemble agents excluded)
 
 ## Benefits
 
