@@ -367,11 +367,6 @@ export class WorkerDispatcher extends EventEmitter {
     const fsm = this.meshFSMs.get(meshName);
     if (!fsm || !fsm.isInitialized()) {
       // No FSM = no validation needed
-      log.debug('dispatcher', 'No FSM for mesh, skipping validation', {
-        meshName,
-        from: senderAgentId,
-        to: targetAgentId,
-      });
       return true;
     }
 
@@ -2857,12 +2852,20 @@ ${output}
       const currentStateConfig = fsm.getCurrentStateConfig();
       if (currentStateConfig) {
         const status = fsm.getStatus();
+        // Inject ensemble index into context for differentiated messaging
+        const contextWithIndex = {
+          ...status.context,
+          ENSEMBLE_INDEX: index,
+          ENSEMBLE_TOTAL: stateConfig.ensemble?.agents?.length ||
+            (stateConfig.ensemble?.count ?
+              this.resolveEnsembleCount(stateConfig.ensemble.count, fsm) : 1),
+        };
         const fsmContext: FSMInjectionContext = {
           meshName,
           currentState: status.currentState,
           stateConfig: currentStateConfig,
           availableTransitions: status.availableTransitions,
-          context: status.context,
+          context: contextWithIndex,
           gateRetries: status.gateRetries,
         };
         systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
@@ -3048,11 +3051,101 @@ ${output}
         triggerAgent: 'dispatcher',
         timestamp: Date.now(),
       });
+
+      // Trigger next state's agent with aggregated content
+      await this.triggerNextStateAgent(meshName, fsm, nextState, context);
     } else {
       log.error('dispatcher', 'FSM transition failed', {
         meshName,
         from: stateConfig.name,
         to: nextState,
+      });
+    }
+  }
+
+  /**
+   * Trigger the next state's agent by writing a message with aggregated content
+   * This bridges ensemble completion to the synthesizer/next agent
+   */
+  private async triggerNextStateAgent(
+    meshName: string,
+    fsm: MeshFSM,
+    nextState: string,
+    context: Record<string, unknown>
+  ): Promise<void> {
+    // Get the next state's configuration
+    const nextStateConfig = fsm.getStateConfig(nextState);
+    if (!nextStateConfig) {
+      log.warn('dispatcher', 'No state config for next state, skipping agent trigger', {
+        meshName,
+        nextState,
+      });
+      return;
+    }
+
+    // Determine the target agent - use first agent in the state
+    const targetAgents = nextStateConfig.agents || [];
+    if (targetAgents.length === 0) {
+      log.debug('dispatcher', 'Next state has no agents, skipping trigger', {
+        meshName,
+        nextState,
+      });
+      return;
+    }
+
+    const targetAgent = targetAgents[0];
+    const targetAgentId = `${meshName}/${targetAgent}`;
+
+    // Get ENSEMBLE_OUTPUT from context
+    const ensembleOutput = context.ENSEMBLE_OUTPUT as string || '';
+    const ensembleMetadata = context.ENSEMBLE_METADATA as Record<string, unknown> || {};
+
+    // Generate message ID
+    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = Date.now();
+    const toSafe = targetAgentId.replace(/\//g, '-');
+    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    // Build message content with aggregated output
+    const messageContent = `---
+to: ${targetAgentId}
+from: dispatcher/ensemble
+type: task
+msg-id: ${msgId}
+headline: Ensemble aggregation complete
+timestamp: ${new Date().toISOString()}
+---
+
+# Aggregated Ensemble Results
+
+The following content has been collected and aggregated from parallel ensemble agents.
+
+${ensembleOutput}
+
+---
+**Aggregation Metadata:**
+- Strategy: ${ensembleMetadata.strategy || 'unknown'}
+- Agent Count: ${ensembleMetadata.agent_count || 'unknown'}
+- Success: ${ensembleMetadata.success ?? 'unknown'}
+`;
+
+    try {
+      fs.writeFileSync(filepath, messageContent);
+      log.info('dispatcher', 'Wrote message to trigger next state agent', {
+        meshName,
+        nextState,
+        targetAgent,
+        msgId,
+        filepath,
+        outputLength: ensembleOutput.length,
+      });
+    } catch (err) {
+      log.error('dispatcher', 'Failed to write trigger message', {
+        meshName,
+        nextState,
+        targetAgent,
+        error: (err as Error).message,
       });
     }
   }

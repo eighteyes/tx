@@ -143,8 +143,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   if (fs.existsSync(tmuxConf)) {
     console.log(`[tmux] Loading config: ${tmuxConf}`);
-    tmux.send(`tmux source-file '${tmuxConf}'`);
-    tmux.sendEnter();
+    await tmux.sourceConfig(tmuxConf);
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 

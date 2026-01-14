@@ -4,17 +4,16 @@ Check for defensive programming gaps, type safety issues, and error-prone patter
 
 ## Inputs
 
-Read from workspace:
+Read code from workspace:
 - `{workspace}/code-to-review.md` - Code to analyze
-- `{workspace}/review-logic.md` - Logic review (avoid duplication)
-- `{workspace}/review-architecture.md` - Architecture review (avoid duplication)
 
 ## Output
 
-Write your review to:
-- `{workspace}/review-robustness.md` - Your findings
+**CRITICAL**: Write your review in the **message body** of your task-complete message.
 
-After writing review, signal complete to pass to synthesizer.
+DO NOT write to workspace files. The synthesizer will read your review from the message you send.
+
+After writing review in message body, send task-complete to synthesizer.
 
 ## Focus Areas
 

@@ -272,6 +272,7 @@ export interface FSMConfig {
   states: FSMStateConfig[] | Record<string, FSMStateConfigObject>;  // Both formats supported
   transitions: FSMTransitionConfig[];
   context?: Record<string, unknown>;  // Initial context variables
+  scripts?: Record<string, string>;   // Named scripts for gates and transitions
 }
 
 // Ensemble types

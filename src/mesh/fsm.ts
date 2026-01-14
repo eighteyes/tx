@@ -186,6 +186,13 @@ export class MeshFSM extends EventEmitter {
   }
 
   /**
+   * Get configuration for a specific state by name
+   */
+  getStateConfig(stateName: string): FSMStateConfig | undefined {
+    return this.stateMap.get(stateName);
+  }
+
+  /**
    * Get FSM context variables
    */
   getContext(): Record<string, unknown> {
@@ -412,6 +419,18 @@ export class MeshFSM extends EventEmitter {
     });
 
     return result;
+  }
+
+  /**
+   * Transition to a state with trigger information
+   * Used by dispatcher after ensemble completion
+   */
+  async transitionTo(
+    toState: string,
+    trigger: string,
+    triggerAgent: string
+  ): Promise<boolean> {
+    return this.forceTransition(toState, `${trigger} by ${triggerAgent}`);
   }
 
   /**
@@ -739,13 +758,81 @@ export class MeshFSM extends EventEmitter {
               ...this.stateData.context,
             };
 
-            // TODO: Look up gate script from fsm.scripts config
-            // For now, log that gate checking is pending
-            log.debug('mesh-fsm', 'Gate check pending implementation', {
-              meshName: this.meshName,
-              gateName,
-              agentName,
-            });
+            // Check if gate is a file path reference (starts with $workspace or is a path)
+            if (gateName.startsWith('$') || gateName.includes('/')) {
+              // File existence check gate
+              const filePath = gateName.startsWith('$workspace')
+                ? gateName.replace('$workspace', this.scriptExecutor['config'].workDir)
+                : gateName;
+
+              const fs = await import('node:fs');
+              if (!fs.existsSync(filePath)) {
+                log.warn('mesh-fsm', 'Gate file not found', {
+                  meshName: this.meshName,
+                  gateName,
+                  filePath,
+                  agentName,
+                });
+                // Increment retry counter
+                this.stateData.gateRetries[gateName] = (this.stateData.gateRetries[gateName] || 0) + 1;
+                if (this.stateData.gateRetries[gateName] >= 3) {
+                  throw new Error(`Gate failed after 3 retries: file not found: ${filePath}`);
+                }
+                return false; // Block transition, will retry
+              }
+              log.debug('mesh-fsm', 'Gate file exists', {
+                meshName: this.meshName,
+                gateName,
+                filePath,
+              });
+            } else {
+              // Look up script from fsm.scripts config
+              const scriptPath = this.config.scripts?.[gateName];
+              if (!scriptPath) {
+                log.warn('mesh-fsm', 'Gate script not found in config', {
+                  meshName: this.meshName,
+                  gateName,
+                  agentName,
+                  availableScripts: Object.keys(this.config.scripts || {}),
+                });
+                // Skip this gate if script not defined (non-blocking)
+                continue;
+              }
+
+              // Execute the gate script
+              const result = await this.scriptExecutor.execute(scriptPath, gateScriptContext);
+
+              this.emit('fsm:gate-check', {
+                meshName: this.meshName,
+                state: currentState,
+                gate: { type: 'script', script: scriptPath },
+                passed: result.success,
+                retryCount: this.stateData.gateRetries[gateName] || 0,
+                timestamp: Date.now(),
+              } as FSMGateEvent);
+
+              if (!result.success) {
+                log.warn('mesh-fsm', 'Gate script failed', {
+                  meshName: this.meshName,
+                  gateName,
+                  scriptPath,
+                  exitCode: result.exitCode,
+                  stderr: result.stderr,
+                });
+                // Increment retry counter
+                this.stateData.gateRetries[gateName] = (this.stateData.gateRetries[gateName] || 0) + 1;
+                if (this.stateData.gateRetries[gateName] >= 3) {
+                  throw new Error(`Gate script failed after 3 retries: ${gateName}`);
+                }
+                return false; // Block transition, will retry
+              }
+
+              log.debug('mesh-fsm', 'Gate script passed', {
+                meshName: this.meshName,
+                gateName,
+                scriptPath,
+              });
+            }
           } catch (error) {
             log.error('mesh-fsm', 'Gate check failed', {
               meshName: this.meshName,
