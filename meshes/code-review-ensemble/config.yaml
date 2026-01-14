@@ -25,13 +25,14 @@ agents:
 entry_point: entry
 
 routing:
-  # Entry agent: Routes to trigger parallel review state
+  # Entry agent: Fans out to all three reviewers in parallel
   entry:
     complete:
-      core: "Entry complete, triggering parallel review"
+      reviewer-logic: "Review logic and correctness"
+      reviewer-architecture: "Review architecture and design"
+      reviewer-robustness: "Review robustness and edge cases"
 
   # Ensemble agents: Each reports completion to synthesizer
-  # Explicit routing enables message-based coordination
   reviewer-logic:
     complete:
       synthesizer: "Logic review complete"
