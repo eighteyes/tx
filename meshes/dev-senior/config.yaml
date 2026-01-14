@@ -1,0 +1,19 @@
+name: dev-senior
+description: "Handles complex, high-stakes work: major refactors, architectural changes, performance-critical code, security-sensitive features, complex algorithms, and system-wide changes. Use for critical work requiring deep analysis."
+version: 1.0.0
+model: opus
+
+agents:
+  - id: worker
+    role: Senior Developer
+    model: opus
+    prompt: worker.md
+    initial: true
+
+routing:
+  complete:
+    to: core/core
+  error:
+    to: core/core
+  blocked:
+    to: core/core
