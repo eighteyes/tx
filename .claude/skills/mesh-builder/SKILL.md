@@ -92,6 +92,8 @@ See `docs/mesh-config.md` for full routing reference.
 
 **FSM state tracking**: `fsm:` block for system-managed state
 
+**Parallel execution**: `type: ensemble` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
+
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
 
 **Design documentation**: `playbook_notes:` - Embed architectural rationale in config (replaces separate READMEs)
@@ -113,6 +115,7 @@ Available hooks: `worktree:create`, `commit:auto`, `brain-update`, `quality:*`. 
 
 Add `fsm:` block to track state and provide context to agents.
 
+**Sequential workflow:**
 ```yaml
 fsm:
   initial: init
@@ -124,18 +127,47 @@ fsm:
   states:
     init:
       agents: [coordinator]
-      entry: [turn, workspace]
-      transitions:
-        worker: awaiting_work
+      entry:
+        set:
+          turn: "$((turn + 1))"
+          workspace: "/path/to/turn-$turn"
+      exit:
+        default: awaiting_work
 
     awaiting_work:
       agents: [worker]
-      transitions:
-        coordinator: complete
+      exit:
+        when:
+          - condition: signal == "PASS"
+            target: complete
+        default: awaiting_work
 
-  scripts:
-    turn: "echo $((turn + 1))"
-    workspace: "echo \"/path/to/turn-$turn\""
+  scripts: {}
+```
+
+**Parallel workflow (ensemble):**
+```yaml
+fsm:
+  initial: generate_subtasks
+
+  states:
+    generate_subtasks:
+      agents: [coordinator]
+      subtask: true
+      exit:
+        default: parallel_review
+
+    parallel_review:
+      type: ensemble
+      ensemble:
+        agents: [rev-1, rev-2, rev-3]
+        aggregation: concat
+      exit:
+        set:
+          results: "$ENSEMBLE_OUTPUT"
+        default: synthesize
+
+  scripts: {}
 ```
 
 **Agents receive injected context:**
@@ -146,7 +178,11 @@ turn: 5
 workspace: /path/to/turn-5
 ```
 
-See `docs/mesh-fsm-config.md` for full documentation.
+See `docs/mesh-fsm-config.md` for:
+- Exit-based routing (when/run/default)
+- Ensemble states (parallel execution)
+- Self-loops and iteration tracking
+- Gates and validation
 
 ## Documentation
 
