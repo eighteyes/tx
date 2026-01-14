@@ -84,13 +84,13 @@ See `docs/mesh-config.md` for full routing reference.
 
 ## Common Patterns
 
-**Session persistence**: `continuation: true` or `continuation: [agent1, agent2]`
+**Automatic Session persistence**: `continuation: true` or `continuation: [agent1, agent2]`
 
 **MCP tools only**: `toolRestriction: mcp-only`
 
 **Quality evaluation**: `graded: true` or `graded: [checklist, rubric]`
 
-**FSM state tracking**: `fsm:` block for system-managed state variables and rlogic
+**FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm. 
 
 **Parallel execution**: `type: ensemble` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
 

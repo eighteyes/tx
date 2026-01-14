@@ -152,7 +152,7 @@ export class MeshFSM extends EventEmitter {
       };
       this.persistence.saveState(this.stateData);
 
-      log.debug('fsm', 'Created initial FSM state', {
+      log.debug('mesh-fsm', 'Created initial FSM state', {
         meshName: this.meshName,
         initialState: this._initialState,
         context: this.stateData.context,
@@ -161,7 +161,7 @@ export class MeshFSM extends EventEmitter {
       // Execute onEnter for initial state
       await this.executeOnEnter(this._initialState);
     } else {
-      log.debug('fsm', 'Loaded existing FSM state', {
+      log.debug('mesh-fsm', 'Loaded existing FSM state', {
         meshName: this.meshName,
         currentState: this.stateData.currentState,
         lastTransitionAt: new Date(this.stateData.lastTransitionAt).toISOString(),
@@ -219,7 +219,7 @@ export class MeshFSM extends EventEmitter {
 
       // Check if it's a literal state name
       if (this.stateMap.has(trimmed)) {
-        log.debug('fsm', 'Exit routing: run literal state', {
+        log.debug('mesh-fsm', 'Exit routing: run literal state', {
           meshName: this.meshName,
           target: trimmed,
         });
@@ -236,28 +236,28 @@ export class MeshFSM extends EventEmitter {
 
           // Validate output is a valid state
           if (this.stateMap.has(output)) {
-            log.debug('fsm', 'Exit routing: run script output', {
+            log.debug('mesh-fsm', 'Exit routing: run script output', {
               meshName: this.meshName,
               target: output,
               scriptOutput: result.stdout,
             });
             return output;
           } else {
-            log.error('fsm', 'Exit routing: run script output invalid state', {
+            log.error('mesh-fsm', 'Exit routing: run script output invalid state', {
               meshName: this.meshName,
               output,
               validStates: Array.from(this.stateMap.keys()),
             });
           }
         } else {
-          log.error('fsm', 'Exit routing: run script failed', {
+          log.error('mesh-fsm', 'Exit routing: run script failed', {
             meshName: this.meshName,
             exitCode: result.exitCode,
             stderr: result.stderr,
           });
         }
       } catch (error) {
-        log.error('fsm', 'Exit routing: run script exception', {
+        log.error('mesh-fsm', 'Exit routing: run script exception', {
           meshName: this.meshName,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -270,7 +270,7 @@ export class MeshFSM extends EventEmitter {
         const matches = this.conditionEvaluator.evaluate(clause.condition, context);
 
         if (matches) {
-          log.debug('fsm', 'Exit routing: when clause matched', {
+          log.debug('mesh-fsm', 'Exit routing: when clause matched', {
             meshName: this.meshName,
             condition: clause.condition,
             target: clause.target,
@@ -279,7 +279,7 @@ export class MeshFSM extends EventEmitter {
         }
       }
 
-      log.debug('fsm', 'Exit routing: no when clause matched', {
+      log.debug('mesh-fsm', 'Exit routing: no when clause matched', {
         meshName: this.meshName,
         whenClauseCount: exit.when.length,
       });
@@ -287,7 +287,7 @@ export class MeshFSM extends EventEmitter {
 
     // 3. Check default
     if (exit.default) {
-      log.debug('fsm', 'Exit routing: using default', {
+      log.debug('mesh-fsm', 'Exit routing: using default', {
         meshName: this.meshName,
         target: exit.default,
       });
@@ -295,7 +295,7 @@ export class MeshFSM extends EventEmitter {
     }
 
     // 4. No route found - error condition
-    log.warn('fsm', 'Exit routing: no route found', {
+    log.warn('mesh-fsm', 'Exit routing: no route found', {
       meshName: this.meshName,
       hasRun: !!exit.run,
       hasWhen: !!exit.when,
@@ -331,7 +331,7 @@ export class MeshFSM extends EventEmitter {
     this.stateData.updatedAt = Date.now();
     this.persistence.saveState(this.stateData);
 
-    log.debug('fsm', 'Updated FSM context', {
+    log.debug('mesh-fsm', 'Updated FSM context', {
       meshName: this.meshName,
       updates,
     });
@@ -362,7 +362,7 @@ export class MeshFSM extends EventEmitter {
     scriptPath: string,
     context: ScriptContext
   ): Promise<ScriptResult> {
-    log.debug('fsm', 'Executing script', {
+    log.debug('mesh-fsm', 'Executing script', {
       meshName: this.meshName,
       scriptType,
       scriptPath,
@@ -382,7 +382,7 @@ export class MeshFSM extends EventEmitter {
     this.emit('fsm:script-run', scriptEvent);
 
     if (!result.success) {
-      log.error('fsm', 'Script execution failed - FATAL', {
+      log.error('mesh-fsm', 'Script execution failed - FATAL', {
         meshName: this.meshName,
         scriptType,
         scriptPath,
@@ -403,7 +403,7 @@ export class MeshFSM extends EventEmitter {
       this.updateContext(result.outputs);
     }
 
-    log.debug('fsm', 'Script completed', {
+    log.debug('mesh-fsm', 'Script completed', {
       meshName: this.meshName,
       scriptType,
       scriptPath,
@@ -423,7 +423,7 @@ export class MeshFSM extends EventEmitter {
     reason: string
   ): Promise<boolean> {
     if (!this.initialized || !this.stateData) {
-      log.warn('fsm', 'FSM not initialized', { meshName: this.meshName });
+      log.warn('mesh-fsm', 'FSM not initialized', { meshName: this.meshName });
       return false;
     }
 
@@ -431,14 +431,14 @@ export class MeshFSM extends EventEmitter {
     const toStateConfig = this.stateMap.get(toState);
 
     if (!toStateConfig) {
-      log.error('fsm', 'Invalid target state', {
+      log.error('mesh-fsm', 'Invalid target state', {
         meshName: this.meshName,
         toState,
       });
       return false;
     }
 
-    log.warn('fsm', 'Forcing transition', {
+    log.warn('mesh-fsm', 'Forcing transition', {
       meshName: this.meshName,
       from: fromState,
       to: toState,
@@ -469,7 +469,7 @@ export class MeshFSM extends EventEmitter {
     this.persistence.saveState(this.stateData);
 
     // Log FSM context after state change
-    log.debug('fsm', 'FSM state changed', {
+    log.debug('mesh-fsm', 'FSM state changed', {
       meshName: this.meshName,
       from: fromState,
       to: toState,
@@ -513,7 +513,7 @@ export class MeshFSM extends EventEmitter {
     this.stateData.updatedAt = Date.now();
     this.persistence.saveState(this.stateData);
 
-    log.debug('fsm', 'FSM reset to initial state', {
+    log.debug('mesh-fsm', 'FSM reset to initial state', {
       meshName: this.meshName,
       previousState,
       initialState: this._initialState,
@@ -611,7 +611,7 @@ export class MeshFSM extends EventEmitter {
     rearmatter?: Record<string, unknown>
   ): Promise<boolean> {
     if (!this.initialized || !this.stateData) {
-      log.warn('fsm', 'FSM not initialized, skipping validation', {
+      log.warn('mesh-fsm', 'FSM not initialized, skipping validation', {
         meshName: this.meshName,
       });
       return true; // Allow message if FSM not ready
@@ -621,7 +621,7 @@ export class MeshFSM extends EventEmitter {
     const stateConfig = this.stateMap.get(currentState);
 
     if (!stateConfig) {
-      log.warn('fsm', 'No state config found for current state', {
+      log.warn('mesh-fsm', 'No state config found for current state', {
         meshName: this.meshName,
         currentState,
       });
@@ -630,14 +630,14 @@ export class MeshFSM extends EventEmitter {
 
     // If no exit config, allow message (state doesn't control routing)
     if (!stateConfig.exit) {
-      log.debug('fsm', 'State has no exit config, allowing message', {
+      log.debug('mesh-fsm', 'State has no exit config, allowing message', {
         meshName: this.meshName,
         currentState,
       });
       return true;
     }
 
-    log.debug('fsm', 'Validating message with FSM', {
+    log.debug('mesh-fsm', 'Validating message with FSM', {
       meshName: this.meshName,
       currentState,
       from,
@@ -700,13 +700,13 @@ export class MeshFSM extends EventEmitter {
             context[key] = output;
             // Also update FSM context for persistence
             this.updateContext({ [key]: output });
-            log.debug('fsm', 'Exit.set evaluated', {
+            log.debug('mesh-fsm', 'Exit.set evaluated', {
               meshName: this.meshName,
               key,
               value: output,
             });
           } else {
-            log.warn('fsm', 'Exit.set evaluation failed', {
+            log.warn('mesh-fsm', 'Exit.set evaluation failed', {
               meshName: this.meshName,
               key,
               expr: valueExpr,
@@ -714,7 +714,7 @@ export class MeshFSM extends EventEmitter {
             });
           }
         } catch (error) {
-          log.error('fsm', 'Exit.set execution error', {
+          log.error('mesh-fsm', 'Exit.set execution error', {
             meshName: this.meshName,
             key,
             error: (error as Error).message,
@@ -741,13 +741,13 @@ export class MeshFSM extends EventEmitter {
 
             // TODO: Look up gate script from fsm.scripts config
             // For now, log that gate checking is pending
-            log.debug('fsm', 'Gate check pending implementation', {
+            log.debug('mesh-fsm', 'Gate check pending implementation', {
               meshName: this.meshName,
               gateName,
               agentName,
             });
           } catch (error) {
-            log.error('fsm', 'Gate check failed', {
+            log.error('mesh-fsm', 'Gate check failed', {
               meshName: this.meshName,
               gateName,
               error: (error as Error).message,
@@ -762,7 +762,7 @@ export class MeshFSM extends EventEmitter {
     const nextState = await this.evaluateExitRouting(stateConfig.exit, context);
 
     if (!nextState) {
-      log.error('fsm', 'No valid exit route found', {
+      log.error('mesh-fsm', 'No valid exit route found', {
         meshName: this.meshName,
         currentState,
         from,
@@ -775,7 +775,7 @@ export class MeshFSM extends EventEmitter {
       return false; // Reject message - no valid route
     }
 
-    log.debug('fsm', 'FSM determined next state', {
+    log.debug('mesh-fsm', 'FSM determined next state', {
       meshName: this.meshName,
       currentState,
       nextState,
@@ -791,7 +791,7 @@ export class MeshFSM extends EventEmitter {
     // If routing to a different mesh (e.g., core/core), that's always allowed
     // FSM only validates intra-mesh routing
     if (targetMesh !== this.meshName) {
-      log.debug('fsm', 'Message routes outside mesh, executing transition', {
+      log.debug('mesh-fsm', 'Message routes outside mesh, executing transition', {
         meshName: this.meshName,
         targetMesh,
         nextState,
@@ -818,7 +818,7 @@ export class MeshFSM extends EventEmitter {
 
       // Check if target agent is in allowed list
       if (allowedAgents.length > 0 && !allowedAgents.includes(targetAgent)) {
-        log.error('fsm', 'Agent routing violates FSM state', {
+        log.error('mesh-fsm', 'Agent routing violates FSM state', {
           meshName: this.meshName,
           currentState,
           nextState,
@@ -879,7 +879,7 @@ export class MeshFSM extends EventEmitter {
       };
       this.emit('fsm:transition', transitionEvent);
 
-      log.info('fsm', 'FSM state transitioned', {
+      log.info('mesh-fsm', 'FSM state transitioned', {
         meshName: this.meshName,
         from: fromState,
         to: toState,
@@ -892,7 +892,7 @@ export class MeshFSM extends EventEmitter {
 
       return true;
     } catch (error) {
-      log.error('fsm', 'Transition failed', {
+      log.error('mesh-fsm', 'Transition failed', {
         meshName: this.meshName,
         from: fromState,
         to: toState,

@@ -1,0 +1,49 @@
+mesh: mesh-builder
+description: Meta mesh that builds TX meshes from user requirements
+
+agents:
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer.md
+
+  - name: architect
+    model: sonnet
+    prompt: architect.md
+
+  - name: implementer
+    model: sonnet
+    prompt: implementer.md
+
+  - name: refiner
+    model: opus
+    prompt: refiner.md
+
+entry_point: interviewer
+
+routing:
+  interviewer:
+    complete:
+      architect: "Requirements gathered, ready for design"
+  architect:
+    complete:
+      implementer: "Architecture designed, ready for implementation"
+  implementer:
+    complete:
+      refiner: "Files written, ready for review"
+  refiner:
+    complete:
+      core: "Mesh complete and validated"
+
+playbook_notes: |
+  Meta mesh for building TX meshes from user requirements.
+
+  Simple linear workflow via routing:
+  interviewer → architect → implementer → refiner → core
+
+  1. Interviewer gathers requirements via questions
+  2. Architect designs mesh structure (agents, routing, FSM if needed)
+  3. Implementer writes config.yaml and prompt files
+  4. Refiner (opus) reviews and polishes for best practices
+
+  No FSM needed - just a straightforward handoff chain.
+  Follows mesh-builder skill documentation and best practices.

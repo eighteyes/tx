@@ -37,6 +37,46 @@ const TYPE_COLORS: Record<string, (s: string) => string> = {
   'error': chalk.red
 };
 
+// Color palette for agent IDs - distinct, terminal-friendly colors
+const AGENT_COLORS: Array<(s: string) => string> = [
+  chalk.cyan,
+  chalk.green,
+  chalk.yellow,
+  chalk.blue,
+  chalk.magenta,
+  chalk.red,
+  chalk.white,
+  chalk.blueBright,
+];
+
+// Cache agent ID → color function for consistency within session
+const agentColorCache = new Map<string, (s: string) => string>();
+
+/**
+ * Hash a string to a number using djb2 algorithm
+ */
+function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Get a consistent color for an agent ID
+ */
+function getAgentColor(agentId: string): (s: string) => string {
+  if (agentColorCache.has(agentId)) {
+    return agentColorCache.get(agentId)!;
+  }
+
+  const colorIndex = hashString(agentId) % AGENT_COLORS.length;
+  const colorFn = AGENT_COLORS[colorIndex];
+  agentColorCache.set(agentId, colorFn);
+  return colorFn;
+}
+
 function getTypeIcon(type: string): string {
   return TYPE_ICONS[type] || '📨';
 }
@@ -235,7 +275,8 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
   }
 
   const time = formatTimeAgo(new Date(entry.timestamp).getTime());
-  const agent = chalk.magenta(entry.agentId);
+  const agentColorFn = getAgentColor(entry.agentId);
+  const agent = agentColorFn(entry.agentId);
 
   if (entry.event === 'output') {
     console.log(`💭 ${agent} ${chalk.dim(time)}`);
