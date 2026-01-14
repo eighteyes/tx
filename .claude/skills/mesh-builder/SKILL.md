@@ -90,7 +90,7 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Quality evaluation**: `graded: true` or `graded: [checklist, rubric]`
 
-**FSM state tracking**: `fsm:` block for system-managed state
+**FSM state tracking**: `fsm:` block for system-managed state variables and rlogic
 
 **Parallel execution**: `type: ensemble` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
 
@@ -114,6 +114,8 @@ Available hooks: `worktree:create`, `commit:auto`, `brain-update`, `quality:*`. 
 ## FSM (State Tracking)
 
 Add `fsm:` block to track state and provide context to agents.
+
+**IMPORTANT**: If you use FSM, you must also define `routing:` configuration. Routes can exist without FSM, but FSM cannot exist without routes.
 
 **Sequential workflow:**
 ```yaml

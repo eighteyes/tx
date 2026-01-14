@@ -279,6 +279,21 @@ export class MeshValidator {
       this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
     }
 
+    // FSM requires routing
+    if (cfg.fsm && !cfg.routing) {
+      errors.push(`FSM requires 'routing' configuration${context}`);
+    }
+
+    // Validate multi-agent mesh routing
+    if (Array.isArray(cfg.agents) && cfg.agents.length > 1) {
+      this.validateMultiAgentRouting(cfg, errors, warnings, context);
+    }
+
+    // Validate FSM state agent routing
+    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents)) {
+      this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
+    }
+
     // Validate task_distribution if present
     if (cfg.task_distribution && Array.isArray(cfg.agents)) {
       this.validateTaskDistribution(cfg.task_distribution, cfg.agents, errors, warnings, context);
@@ -1058,5 +1073,151 @@ export class MeshValidator {
     if (distribution.allow_partial_failure !== undefined && typeof distribution.allow_partial_failure !== 'boolean') {
       errors.push(`Task distribution config${context}: 'allow_partial_failure' must be a boolean`);
     }
+  }
+
+  /**
+   * Validate routing configuration for multi-agent meshes
+   *
+   * Multi-agent meshes should have routing configuration to define message flow.
+   * Without routing, agents don't know where to send their messages.
+   *
+   * Note: Ensemble agents are excluded from warnings since their output is
+   * collected by EnsembleCoordinator, not routed via messages.
+   */
+  private static validateMultiAgentRouting(
+    config: Record<string, unknown>,
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    const agents = config.agents as unknown[];
+    const routing = config.routing as Record<string, unknown> | undefined;
+    const fsm = config.fsm as Record<string, unknown> | undefined;
+
+    // Multi-agent mesh without any routing is an error
+    if (!routing) {
+      errors.push(`Multi-agent mesh missing routing configuration${context}`);
+      return;
+    }
+
+    // Collect ensemble agents (they don't need routing)
+    const ensembleAgents = new Set<string>();
+    if (fsm && typeof fsm.states === 'object' && fsm.states !== null) {
+      const statesObj = fsm.states as Record<string, unknown>;
+      for (const [, stateValue] of Object.entries(statesObj)) {
+        if (!stateValue || typeof stateValue !== 'object') continue;
+        const state = stateValue as Record<string, unknown>;
+
+        if (state.type === 'ensemble' && state.ensemble) {
+          const ensemble = state.ensemble as Record<string, unknown>;
+          if (Array.isArray(ensemble.agents)) {
+            for (const agent of ensemble.agents) {
+              if (typeof agent === 'string') ensembleAgents.add(agent);
+            }
+          }
+          if (typeof ensemble.agent === 'string') {
+            ensembleAgents.add(ensemble.agent);
+          }
+        }
+      }
+    }
+
+    // Get agent names
+    const agentNames = agents
+      .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+      .map(a => a.name as string);
+
+    // Check each agent has routing (warning only - some patterns like ensemble don't need it)
+    for (const agentName of agentNames) {
+      if (!routing[agentName]) {
+        // Skip ensemble agents - they don't need explicit routing
+        if (ensembleAgents.has(agentName)) continue;
+
+        warnings.push(`Agent '${agentName}' has no routing configuration${context}`);
+      }
+    }
+  }
+
+  /**
+   * Validate FSM state agent routing
+   *
+   * Ensures agents referenced in FSM states have appropriate routing:
+   * - Ensemble state agents: Do NOT need routing (handled by EnsembleCoordinator)
+   * - Normal state agents: SHOULD have routing to define message destinations
+   *
+   * FSM handles state transitions, but routing handles message destinations.
+   * These are complementary: FSM says "go to synthesize state", routing says
+   * "send task-complete to core/core".
+   */
+  private static validateFSMStateRouting(
+    fsm: unknown,
+    routing: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof fsm !== 'object' || fsm === null) return;
+    if (typeof routing !== 'object' || routing === null) return;
+
+    const fsmObj = fsm as Record<string, unknown>;
+    const routingObj = routing as Record<string, unknown>;
+
+    if (!fsmObj.states || typeof fsmObj.states !== 'object') return;
+
+    const statesObj = fsmObj.states as Record<string, unknown>;
+
+    // Collect agents by state type
+    const ensembleAgents = new Set<string>();
+    const normalStateAgents = new Set<string>();
+
+    for (const [stateName, stateValue] of Object.entries(statesObj)) {
+      if (!stateValue || typeof stateValue !== 'object') continue;
+      const state = stateValue as Record<string, unknown>;
+
+      // Check if this is an ensemble state
+      const isEnsembleState = state.type === 'ensemble';
+
+      if (isEnsembleState && state.ensemble) {
+        // Collect ensemble agents - they don't need routing
+        const ensemble = state.ensemble as Record<string, unknown>;
+        if (Array.isArray(ensemble.agents)) {
+          for (const agent of ensemble.agents) {
+            if (typeof agent === 'string') {
+              ensembleAgents.add(agent);
+            }
+          }
+        }
+        if (typeof ensemble.agent === 'string') {
+          ensembleAgents.add(ensemble.agent);
+        }
+      } else {
+        // Normal state - collect agents that should have routing
+        if (Array.isArray(state.agents)) {
+          for (const agent of state.agents) {
+            if (typeof agent === 'string') {
+              normalStateAgents.add(agent);
+            }
+          }
+        }
+      }
+    }
+
+    // Validate normal state agents have routing
+    for (const agentName of normalStateAgents) {
+      // Skip if agent is also used in ensemble state (ensemble takes precedence)
+      if (ensembleAgents.has(agentName)) continue;
+
+      if (!routingObj[agentName]) {
+        // Normal state agents should have routing to define where their messages go
+        warnings.push(
+          `FSM state uses agent '${agentName}' but agent has no routing configuration${context}. ` +
+          `Normal state agents should have routing to define message destinations.`
+        );
+      }
+    }
+
+    // Log info about ensemble agents (they intentionally don't need routing)
+    // No warning for ensemble agents - their routing is handled by EnsembleCoordinator
   }
 }

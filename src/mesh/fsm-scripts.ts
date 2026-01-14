@@ -334,8 +334,8 @@ export class ScriptExecutor {
 
       // Only include string/number/boolean values
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        const envKey = `FSM_CTX_${key.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
-        env[envKey] = String(value);
+        // Use simple variable name (lowercase with underscores)
+        env[key] = String(value);
       }
     }
 

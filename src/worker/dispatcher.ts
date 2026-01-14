@@ -2206,7 +2206,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Wire FSM events (same as initializeFSMs)
       fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-        log.debug('fsm', 'State transition', {
+        log.debug('mesh-fsm', 'State transition', {
           meshName: event.meshName,
           from: event.from,
           to: event.to,
@@ -2217,7 +2217,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
-        log.debug('fsm', 'Gate check', {
+        log.debug('mesh-fsm', 'Gate check', {
           meshName: event.meshName,
           state: event.state,
           passed: event.passed,
@@ -2228,7 +2228,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
         if (!event.success) {
-          log.error('fsm', 'Script failed', {
+          log.error('mesh-fsm', 'Script failed', {
             meshName: event.meshName,
             scriptType: event.scriptType,
             scriptPath: event.scriptPath,
@@ -2240,7 +2240,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Initialize the FSM
       fsm.initialize().catch(error => {
-        log.error('fsm', 'Failed to initialize FSM (JIT)', {
+        log.error('mesh-fsm', 'Failed to initialize FSM (JIT)', {
           meshName,
           error: (error as Error).message,
         });
@@ -2324,7 +2324,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Wire FSM events for observability
         fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-          log.debug('fsm', 'State transition', {
+          log.debug('mesh-fsm', 'State transition', {
             meshName: event.meshName,
             from: event.from,
             to: event.to,
@@ -2335,7 +2335,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
 
         fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
-          log.debug('fsm', 'Gate check', {
+          log.debug('mesh-fsm', 'Gate check', {
             meshName: event.meshName,
             state: event.state,
             passed: event.passed,
@@ -2346,7 +2346,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
           if (!event.success) {
-            log.error('fsm', 'Script failed', {
+            log.error('mesh-fsm', 'Script failed', {
               meshName: event.meshName,
               scriptType: event.scriptType,
               scriptPath: event.scriptPath,
@@ -2358,7 +2358,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Initialize the FSM (loads or creates state)
         fsm.initialize().catch(error => {
-          log.error('fsm', 'Failed to initialize FSM', {
+          log.error('mesh-fsm', 'Failed to initialize FSM', {
             meshName,
             error: (error as Error).message,
           });
