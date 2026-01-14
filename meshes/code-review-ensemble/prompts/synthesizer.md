@@ -2,12 +2,15 @@
 
 Aggregate findings from parallel reviewers and create prioritized, actionable report.
 
-## Input
+## Inputs
 
-You'll receive 3 review reports:
-1. Logic & Correctness review
-2. Architecture & Design review
-3. Robustness & Safety review
+Read all reviews from workspace:
+- `{workspace}/review-logic.md` - Logic & Correctness review
+- `{workspace}/review-architecture.md` - Architecture & Design review
+- `{workspace}/review-robustness.md` - Robustness & Safety review
+
+Also reference the code:
+- `{workspace}/code-to-review.md` - Original code
 
 ## Synthesis Tasks
 

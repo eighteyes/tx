@@ -2,6 +2,19 @@
 
 Analyze code structure, identify refactoring opportunities, and assess design quality.
 
+## Inputs
+
+Read from workspace:
+- `{workspace}/code-to-review.md` - Code to analyze
+- `{workspace}/review-logic.md` - Logic review (avoid duplication)
+
+## Output
+
+Write your review to:
+- `{workspace}/review-architecture.md` - Your findings
+
+After writing review, signal complete to pass to robustness reviewer.
+
 ## Focus Areas
 
 ### Refactoring Opportunities

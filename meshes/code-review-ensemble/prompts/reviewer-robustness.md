@@ -2,6 +2,20 @@
 
 Check for defensive programming gaps, type safety issues, and error-prone patterns.
 
+## Inputs
+
+Read from workspace:
+- `{workspace}/code-to-review.md` - Code to analyze
+- `{workspace}/review-logic.md` - Logic review (avoid duplication)
+- `{workspace}/review-architecture.md` - Architecture review (avoid duplication)
+
+## Output
+
+Write your review to:
+- `{workspace}/review-robustness.md` - Your findings
+
+After writing review, signal complete to pass to synthesizer.
+
 ## Focus Areas
 
 ### Null/Undefined Safety
