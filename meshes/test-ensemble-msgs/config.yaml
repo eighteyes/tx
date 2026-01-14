@@ -25,28 +25,30 @@ agents:
 entry_point: entry
 
 routing:
-  # Entry agent: FSM handles ensemble state transition
+  # Entry agent: Fans out to ALL workers for parallel execution
   entry:
     complete:
-      core: "Entry complete, FSM handles ensemble transition"
+      worker-1: "Analyze feasibility"
+      worker-2: "Analyze user value"
+      worker-3: "Analyze architecture"
 
   # Ensemble workers: Each reports completion to aggregator
   worker-1:
     complete:
-      aggregator: "Worker 1 analysis complete"
+      aggregator: "Feasibility analysis complete"
 
   worker-2:
     complete:
-      aggregator: "Worker 2 analysis complete"
+      aggregator: "User value analysis complete"
 
   worker-3:
     complete:
-      aggregator: "Worker 3 analysis complete"
+      aggregator: "Architecture analysis complete"
 
   # Aggregator: Routes back to core when done
   aggregator:
     complete:
-      core: "Aggregation complete"
+      core: "Final aggregation complete"
 
 fsm:
   initial: entry_state

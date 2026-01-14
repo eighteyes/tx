@@ -433,25 +433,25 @@ The voting aggregation strategy provides intelligent result selection:
 
 ### Ensemble Agent Routing
 
-**CRITICAL**: In FSM meshes, entry agents must route to `core`, not directly to downstream agents. This allows the FSM to observe completion and transition to the next state.
+**CRITICAL**: In FSM ensemble meshes, entry agents must fan out to ALL ensemble workers. The FSM observes these routed messages to track ensemble state, but the explicit routing is what triggers the workers.
 
 **Entry Agent Routing Pattern:**
 ```yaml
 routing:
   entry:
     complete:
-      core: "Entry complete, FSM handles transition"  # ✅ CORRECT
+      worker-1: "Entry complete, spawn worker 1"
+      worker-2: "Entry complete, spawn worker 2"
+      worker-3: "Entry complete, spawn worker 3"
 ```
 
-**❌ WRONG - Bypasses FSM:**
+**For dynamic agent count (single agent, N instances):**
 ```yaml
 routing:
   entry:
     complete:
-      synthesizer: "Direct routing"  # ❌ Bypasses FSM state machine!
+      worker: "Entry complete, FSM spawns N instances"
 ```
-
-When entry routes directly to downstream agents, the FSM never observes the completion and cannot transition to the ensemble state. The ensemble workers never spawn.
 
 **Ensemble agents** should have explicit routing to define where their completion messages go. Unlike the deprecated `subtask: true` approach, explicit routing integrates with TX's message-based architecture.
 

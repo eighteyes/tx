@@ -94,13 +94,15 @@ See `docs/mesh-config.md` for full routing reference.
 
 **Parallel execution**: `ensemble: { type: parallel }` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
 
-**CRITICAL - FSM Entry Routing**: Entry agents in FSM meshes MUST route to `core`, not directly to downstream agents. This allows FSM to observe completion and transition states. Direct routing bypasses FSM and breaks ensemble spawning.
+**CRITICAL - FSM Entry Routing**: Entry agents in FSM ensemble meshes MUST fan out to ALL ensemble workers. FSM observes these messages to track state, but explicit routing triggers the workers.
 ```yaml
 routing:
   entry:
     complete:
-      core: "Entry complete"  # ✅ CORRECT - FSM handles transition
-      # synthesizer: "..."     # ❌ WRONG - Bypasses FSM!
+      worker-1: "Spawn worker 1"  # ✅ CORRECT - Fan out to all workers
+      worker-2: "Spawn worker 2"
+      worker-3: "Spawn worker 3"
+      # core: "..."                # ❌ WRONG - Workers never spawn!
 ```
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents
