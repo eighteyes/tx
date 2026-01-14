@@ -4,7 +4,7 @@ description: "Parallel code review using FSM ensemble pattern - logic, architect
 agents:
   - name: entry
     model: haiku
-    prompt: prompts/entry.md
+    prompt: prompts/coordinator.md
 
   - name: reviewer-logic
     model: sonnet
@@ -23,6 +23,11 @@ agents:
     prompt: prompts/synthesizer.md
 
 entry_point: entry
+
+routing:
+  synthesizer:
+    complete:
+      core: "Review synthesis complete"
 
 fsm:
   initial: generate_subtasks
