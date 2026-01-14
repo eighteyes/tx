@@ -1,133 +1,56 @@
 mesh: code-review-ensemble
-description: "FSM-orchestrated code review - logic, architecture, robustness analysis with synthesis"
+description: "Parallel code review using FSM ensemble pattern - submit code to 3 reviewers, aggregate feedback"
 
 agents:
-  - name: coordinator
+  - name: entry
     model: haiku
-    prompt: prompts/coordinator.md
-    # Entry point: receives code, initiates review workflow
+    prompt: prompts/entry.md
 
-  - name: reviewer-logic
-    model: sonnet
-    prompt: prompts/reviewer-logic.md
-    # Deep analysis: edge cases, boundary conditions, logic gaps, error handling
-
-  - name: reviewer-architecture
-    model: sonnet
-    prompt: prompts/reviewer-architecture.md
-    # Design analysis: refactoring opportunities, patterns, SOLID, coupling
-
-  - name: reviewer-robustness
+  - name: reviewer-security
     model: haiku
-    prompt: prompts/reviewer-robustness.md
-    # Mechanical checks: null safety, type checks, defensive programming
+    prompt: prompts/reviewer-security.md
+
+  - name: reviewer-performance
+    model: haiku
+    prompt: prompts/reviewer-performance.md
+
+  - name: reviewer-style
+    model: haiku
+    prompt: prompts/reviewer-style.md
 
   - name: synthesizer
-    model: sonnet
+    model: haiku
     prompt: prompts/synthesizer.md
-    # Aggregates findings, prioritizes issues, creates actionable report
 
-entry_point: coordinator
-completion_agent: synthesizer
+entry_point: entry
 
-routing:
-  coordinator:
-    complete:
-      reviewer-logic: "Start logic review"
-    blocked:
-      core: "Failed to initiate review"
-
-  reviewer-logic:
-    complete:
-      reviewer-architecture: "Logic review complete, pass to architecture"
-    blocked:
-      synthesizer: "Logic review incomplete, proceed with partial results"
-
-  reviewer-architecture:
-    complete:
-      reviewer-robustness: "Architecture review complete, pass to robustness"
-    blocked:
-      synthesizer: "Architecture review incomplete, proceed with partial results"
-
-  reviewer-robustness:
-    complete:
-      synthesizer: "Robustness review complete, synthesize all findings"
-    blocked:
-      synthesizer: "Robustness review incomplete, synthesize available findings"
-
-  synthesizer:
-    complete:
-      core: "Review synthesis complete"
-
-# Workspace for passing reviews between agents
-workspace:
-  path: ".ai/code-review/{task-id}/"
-
-# FSM: Sequential review workflow with state tracking
 fsm:
-  initial: coordinate
-
-  context:
-    task_id: ""
-    reviews_completed: 0
-    total_reviews: 3
+  initial: generate_subtasks
 
   states:
-    # ============================================================
-    # COORDINATE: Entry point, store code for review
-    # ============================================================
-    coordinate:
-      agents: [coordinator]
-      entry:
-        set:
-          task_id: "$(echo '$message' | yq '.msg-id')"
+    generate_subtasks:
+      agents: [entry]
+      subtask: true
       exit:
-        default: logic_review
+        default: parallel_review
 
-    # ============================================================
-    # LOGIC_REVIEW: Analyze logic and correctness
-    # ============================================================
-    logic_review:
-      agents: [reviewer-logic]
-      entry:
-        set:
-          reviews_completed: "$((reviews_completed + 1))"
+    parallel_review:
+      type: ensemble
+      ensemble:
+        agents: [reviewer-security, reviewer-performance, reviewer-style]
+        aggregation: concat
+        timeout_ms: 120000
       exit:
-        default: architecture_review
-
-    # ============================================================
-    # ARCHITECTURE_REVIEW: Analyze design and structure
-    # ============================================================
-    architecture_review:
-      agents: [reviewer-architecture]
-      entry:
         set:
-          reviews_completed: "$((reviews_completed + 1))"
-      exit:
-        default: robustness_review
-
-    # ============================================================
-    # ROBUSTNESS_REVIEW: Analyze safety and defensive programming
-    # ============================================================
-    robustness_review:
-      agents: [reviewer-robustness]
-      entry:
-        set:
-          reviews_completed: "$((reviews_completed + 1))"
-      exit:
+          review_results: "$ENSEMBLE_OUTPUT"
         default: synthesize
 
-    # ============================================================
-    # SYNTHESIZE: Aggregate all reviews into final report
-    # ============================================================
     synthesize:
       agents: [synthesizer]
       exit:
         default: complete
 
-    # ============================================================
-    # TERMINAL STATE
-    # ============================================================
-    complete: {}
+    complete:
+      agents: [core]
 
   scripts: {}

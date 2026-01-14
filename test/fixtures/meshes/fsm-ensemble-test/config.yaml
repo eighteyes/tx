@@ -1,0 +1,67 @@
+mesh: fsm-ensemble-test
+description: "Test mesh for FSM ensemble states - parallel review with aggregation"
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator.md
+
+  - name: reviewer-a
+    model: haiku
+    prompt: reviewer-a.md
+
+  - name: reviewer-b
+    model: haiku
+    prompt: reviewer-b.md
+
+  - name: reviewer-c
+    model: haiku
+    prompt: reviewer-c.md
+
+  - name: synthesizer
+    model: haiku
+    prompt: synthesizer.md
+
+  - name: worker
+    model: haiku
+    prompt: worker.md
+
+entry_point: coordinator
+
+fsm:
+  initial: generate_subtasks
+
+  context:
+    subtask_count: 0
+    review_results: ""
+
+  states:
+    generate_subtasks:
+      agents: [coordinator]
+      subtask: true
+      exit:
+        run: [parse_subtasks]
+        default: parallel_review
+
+    parallel_review:
+      type: ensemble
+      ensemble:
+        agents: [reviewer-a, reviewer-b, reviewer-c]
+        aggregation: concat
+        timeout_ms: 60000
+      exit:
+        set:
+          review_results: "$ENSEMBLE_OUTPUT"
+        default: synthesize
+
+    synthesize:
+      agents: [synthesizer]
+      exit:
+        default: complete
+
+    complete:
+      agents: [core]
+
+  scripts:
+    parse_subtasks: |
+      echo "subtask_count=3"
