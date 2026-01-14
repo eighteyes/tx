@@ -22,6 +22,8 @@ entry_point: interviewer
 
 routing:
   interviewer:
+    ask-human:
+      core: "Questions about requirements."
     complete:
       architect: "Requirements gathered, ready for design"
   architect:

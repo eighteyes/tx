@@ -25,12 +25,10 @@ agents:
 entry_point: entry
 
 routing:
-  # Entry agent: Fans out to all three workers in parallel
+  # Entry agent: FSM handles ensemble state transition
   entry:
     complete:
-      worker-1: "Analyze from perspective 1"
-      worker-2: "Analyze from perspective 2"
-      worker-3: "Analyze from perspective 3"
+      core: "Entry complete, FSM handles ensemble transition"
 
   # Ensemble workers: Each reports completion to aggregator
   worker-1:
