@@ -56,6 +56,34 @@ interface ParsedMessage {
   rearmatter: Record<string, unknown> | null;
 }
 
+/**
+ * Routing violation tracker for self-heal mechanism
+ */
+interface RoutingViolation {
+  count: number;
+  lastViolation: {
+    attemptedTarget: string;
+    messageType: string;
+    timestamp: number;
+  };
+}
+
+/**
+ * Cached mesh config for routing validation
+ */
+interface CachedMeshConfig {
+  config: MeshConfig;
+  loadedAt: number;
+}
+
+/**
+ * Mesh config structure (minimal for routing)
+ */
+interface MeshConfig {
+  mesh: string;
+  routing?: Record<string, Record<string, Record<string, string>>>;
+}
+
 export class MessageConsumer extends EventEmitter {
   private watchDir: string;
   private queue: MessageQueue;
@@ -69,6 +97,11 @@ export class MessageConsumer extends EventEmitter {
   // Parity gate: pending asks are now persisted in SQLite via this.queue
   // FSM validator (dispatcher) for pre-routing validation
   private fsmValidator: FSMValidator | null = null;
+  // Routing self-heal: track violations per agent
+  private routingViolationTracker: Map<string, RoutingViolation> = new Map();
+  // Cache mesh configs for routing validation
+  private meshConfigCache: Map<string, CachedMeshConfig> = new Map();
+  private readonly MESH_CONFIG_CACHE_TTL = 60000; // 60 seconds
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -303,12 +336,37 @@ ${body}
       }
 
       // =================================================================
+      // ROUTING VALIDATION - happens BEFORE FSM check
+      // Validates that routing rules exist for intra-mesh messages.
+      // Self-heals on first violation, escalates on second.
+      // =================================================================
+      const fromAgent = parsed.frontmatter.from;
+      const messageType = parsed.frontmatter.type;
+
+      if (fromAgent && toAgent && messageType) {
+        const [fromMesh] = fromAgent.split('/');
+        const [toMesh] = toAgent.split('/');
+
+        // Only validate intra-mesh routing (not cross-mesh or system messages)
+        // Skip task-complete as it's handled specially
+        // Skip system messages (from: system/*)
+        if (fromMesh === toMesh &&
+            messageType !== 'task-complete' &&
+            !fromAgent.startsWith('system/') &&
+            !fromAgent.startsWith('core/')) {
+          const routingValid = await this.validateRouting(fromAgent, toAgent, messageType, filepath);
+          if (!routingValid) {
+            // Already wrote feedback/escalation, skip further processing
+            return;
+          }
+        }
+      }
+
+      // =================================================================
       // FSM VALIDATION - happens BEFORE type-specific routing
       // This is the central validation point for ALL message types.
       // =================================================================
       if (this.fsmValidator) {
-        const fromAgent = parsed.frontmatter.from;
-        const messageType = parsed.frontmatter.type;
 
         // Build frontmatter record for FSM context
         const frontmatterRecord: Record<string, unknown> = {
@@ -409,10 +467,8 @@ ${body}
       // Detect ask messages - these trigger await state in dispatcher
       // Worker writes ask → consumer detects → dispatcher enters await
       // Also handles ask-human messages which require interrupt + steering
-      const messageType = parsed.frontmatter.type;
       if (messageType === 'ask' || messageType === 'ask-human') {
         const msgId = parsed.frontmatter['msg-id'];
-        const fromAgent = parsed.frontmatter.from;
 
         log.info('consumer', `${messageType} message detected`, {
           from: fromAgent,
@@ -659,5 +715,352 @@ ${body}
     }
 
     return data;
+  }
+
+  // ==========================================================================
+  // ROUTING SELF-HEAL METHODS
+  // ==========================================================================
+
+  /**
+   * Load mesh config from file system (cached)
+   */
+  private async loadMeshConfig(meshName: string): Promise<MeshConfig | null> {
+    // Check cache
+    const cached = this.meshConfigCache.get(meshName);
+    if (cached && Date.now() - cached.loadedAt < this.MESH_CONFIG_CACHE_TTL) {
+      return cached.config;
+    }
+
+    // Find and load config
+    const meshDir = path.join(this.meshesDir, meshName);
+    const yamlPath = path.join(meshDir, 'config.yaml');
+    const ymlPath = path.join(meshDir, 'config.yml');
+    const jsonPath = path.join(meshDir, 'config.json');
+
+    let configPath: string | null = null;
+    if (fs.existsSync(yamlPath)) configPath = yamlPath;
+    else if (fs.existsSync(ymlPath)) configPath = ymlPath;
+    else if (fs.existsSync(jsonPath)) configPath = jsonPath;
+
+    if (!configPath) {
+      log.debug('consumer', `No config found for mesh: ${meshName}`);
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const config = configPath.endsWith('.json')
+        ? JSON.parse(content)
+        : YAML.parse(content);
+
+      // Cache the config
+      this.meshConfigCache.set(meshName, {
+        config,
+        loadedAt: Date.now(),
+      });
+
+      return config;
+    } catch (err) {
+      log.error('consumer', `Failed to load mesh config: ${meshName}`, {
+        error: (err as Error).message,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Validate routing rule exists for agent → target message
+   * Returns true if valid, false if invalid (feedback/escalation already written)
+   */
+  private async validateRouting(
+    fromAgent: string,
+    toAgent: string,
+    messageType: string,
+    filepath: string
+  ): Promise<boolean> {
+    const [meshName, agentName] = fromAgent.split('/');
+    const [, targetAgentName] = toAgent.split('/');
+
+    // Load mesh config
+    const meshConfig = await this.loadMeshConfig(meshName);
+    if (!meshConfig || !meshConfig.routing) {
+      // No routing config = allow (mesh doesn't define routing rules)
+      return true;
+    }
+
+    // Check if routing rule exists for this agent → type → target
+    const agentRouting = meshConfig.routing[agentName];
+    if (!agentRouting) {
+      // Agent not in routing table - might be an entry point receiving from core
+      return true;
+    }
+
+    const typeRouting = agentRouting[messageType];
+    if (!typeRouting) {
+      // No rules for this message type = might be allowed
+      // Only validate if the agent HAS routing rules defined
+      const hasAnyRules = Object.keys(agentRouting).length > 0;
+      if (!hasAnyRules) return true;
+
+      // Agent has rules but not for this type - track violation
+      await this.trackRoutingViolation(fromAgent, toAgent, messageType, meshConfig, filepath);
+      return false;
+    }
+
+    // Check if target is in the allowed destinations
+    const routingRule = typeRouting[targetAgentName];
+    if (!routingRule) {
+      // Invalid target - track violation
+      await this.trackRoutingViolation(fromAgent, toAgent, messageType, meshConfig, filepath);
+      return false;
+    }
+
+    // Valid routing - clear any previous violations
+    this.routingViolationTracker.delete(fromAgent);
+    return true;
+  }
+
+  /**
+   * Track routing violation and write feedback or escalation
+   */
+  private async trackRoutingViolation(
+    fromAgent: string,
+    toAgent: string,
+    messageType: string,
+    meshConfig: MeshConfig,
+    filepath: string
+  ): Promise<void> {
+    const violation = this.routingViolationTracker.get(fromAgent) || {
+      count: 0,
+      lastViolation: { attemptedTarget: '', messageType: '', timestamp: 0 },
+    };
+
+    violation.count++;
+    violation.lastViolation = {
+      attemptedTarget: toAgent,
+      messageType,
+      timestamp: Date.now(),
+    };
+    this.routingViolationTracker.set(fromAgent, violation);
+
+    const [, agentName] = fromAgent.split('/');
+    const validTargets = this.getValidRoutingTargets(meshConfig, agentName, messageType);
+
+    log.warn('consumer', `Routing violation ${violation.count}x`, {
+      fromAgent,
+      toAgent,
+      messageType,
+      validTargets: validTargets.map(t => t.target),
+      file: path.basename(filepath),
+    });
+
+    if (violation.count === 1) {
+      // First violation: Write feedback to agent
+      await this.writeRoutingFeedback(fromAgent, toAgent, messageType, validTargets, meshConfig);
+    } else {
+      // Second violation: Escalate to user
+      await this.writeRoutingEscalation(fromAgent, toAgent, messageType, validTargets, meshConfig);
+    }
+  }
+
+  /**
+   * Get valid routing targets for an agent's message type
+   */
+  private getValidRoutingTargets(
+    meshConfig: MeshConfig,
+    agentName: string,
+    messageType: string
+  ): Array<{ target: string; description: string }> {
+    const routing = meshConfig.routing?.[agentName]?.[messageType];
+    if (!routing) return [];
+
+    return Object.entries(routing).map(([target, description]) => ({
+      target,
+      description: String(description),
+    }));
+  }
+
+  /**
+   * Get all routing rules for an agent (for feedback context)
+   */
+  private getAllAgentRouting(
+    meshConfig: MeshConfig,
+    agentName: string
+  ): Record<string, Array<{ target: string; description: string }>> {
+    const agentRouting = meshConfig.routing?.[agentName];
+    if (!agentRouting) return {};
+
+    const result: Record<string, Array<{ target: string; description: string }>> = {};
+    for (const [msgType, targets] of Object.entries(agentRouting)) {
+      result[msgType] = Object.entries(targets).map(([target, description]) => ({
+        target,
+        description: String(description),
+      }));
+    }
+    return result;
+  }
+
+  /**
+   * Write routing feedback message to agent (first violation)
+   */
+  private async writeRoutingFeedback(
+    fromAgent: string,
+    attemptedTarget: string,
+    messageType: string,
+    validTargets: Array<{ target: string; description: string }>,
+    meshConfig: MeshConfig
+  ): Promise<void> {
+    const [meshName, agentName] = fromAgent.split('/');
+
+    // Get all routing rules for context
+    const allRouting = this.getAllAgentRouting(meshConfig, agentName);
+
+    // Format valid targets for the attempted message type
+    const targetsFormatted = validTargets.length > 0
+      ? validTargets.map(t => `- **${t.target}**: "${t.description}"`).join('\n')
+      : '_No valid targets defined for this message type_';
+
+    // Format all routing rules for context
+    let allRoutingFormatted = '';
+    for (const [msgType, targets] of Object.entries(allRouting)) {
+      allRoutingFormatted += `\n**${msgType}:**\n`;
+      for (const t of targets) {
+        allRoutingFormatted += `- ${t.target}: "${t.description}"\n`;
+      }
+    }
+
+    const timestamp = Date.now();
+    const msgId = `routing-feedback-${timestamp}`;
+    const filename = `${timestamp}-routing-feedback-system--${meshName}-${agentName}-${msgId}.md`;
+    const filepath = path.join(this.watchDir, filename);
+
+    const feedbackContent = `---
+to: ${fromAgent}
+from: system/routing-validator
+type: routing-feedback
+violation-count: 1
+timestamp: ${new Date().toISOString()}
+---
+
+# Routing Violation
+
+Your message to \`${attemptedTarget}\` with type \`${messageType}\` has no routing rule.
+
+## Valid targets for ${agentName} → ${messageType}:
+
+${targetsFormatted}
+
+## Current routing configuration for ${agentName}:
+${allRoutingFormatted || '_No routing rules defined_'}
+
+Please select a valid target and retry.
+`;
+
+    fs.writeFileSync(filepath, feedbackContent);
+    log.info('consumer', 'Wrote routing feedback to agent', {
+      fromAgent,
+      attemptedTarget,
+      messageType,
+      msgId,
+    });
+  }
+
+  /**
+   * Write routing escalation message to core (second violation)
+   */
+  private async writeRoutingEscalation(
+    fromAgent: string,
+    attemptedTarget: string,
+    messageType: string,
+    validTargets: Array<{ target: string; description: string }>,
+    meshConfig: MeshConfig
+  ): Promise<void> {
+    const [meshName, agentName] = fromAgent.split('/');
+
+    const targetsFormatted = validTargets.length > 0
+      ? validTargets.map(t => `- **${t.target}**: "${t.description}"`).join('\n')
+      : '_No valid targets defined for this message type_';
+
+    const timestamp = Date.now();
+    const msgId = `routing-escalation-${timestamp}`;
+    const filename = `${timestamp}-ask-human-system--core-core-${msgId}.md`;
+    const filepath = path.join(this.watchDir, filename);
+
+    const escalationContent = `---
+to: core/core
+from: system/routing-validator
+type: ask-human
+msg-id: ${msgId}
+headline: Routing violation needs human intervention
+timestamp: ${new Date().toISOString()}
+---
+
+# Agent Repeatedly Violating Routing Rules
+
+Agent \`${fromAgent}\` has violated routing rules **2 times** and needs human intervention.
+
+## Latest Violation
+
+- **Attempted target:** \`${attemptedTarget}\`
+- **Message type:** \`${messageType}\`
+- **Mesh:** ${meshName}
+
+## Valid Targets for ${agentName} → ${messageType}:
+
+${targetsFormatted}
+
+## Recommended Actions
+
+1. **Correct the agent's routing** - Guide the agent to use valid targets
+2. **Update mesh config** - If the routing rule should exist, add it to \`meshes/${meshName}/config.yaml\`
+3. **Reset the mesh** - Restart the mesh if agent is stuck
+
+The agent's session is blocked until this is resolved.
+`;
+
+    fs.writeFileSync(filepath, escalationContent);
+    log.info('consumer', 'Escalated routing violation to core', {
+      fromAgent,
+      attemptedTarget,
+      messageType,
+      msgId,
+    });
+
+    // Also write feedback to the agent so they know they're blocked
+    const agentFeedbackMsgId = `routing-blocked-${timestamp}`;
+    const agentFilename = `${timestamp}-routing-feedback-system--${meshName}-${agentName}-${agentFeedbackMsgId}.md`;
+    const agentFilepath = path.join(this.watchDir, agentFilename);
+
+    const agentFeedbackContent = `---
+to: ${fromAgent}
+from: system/routing-validator
+type: routing-feedback
+violation-count: 2
+escalated: true
+timestamp: ${new Date().toISOString()}
+---
+
+# Routing Violation - Escalated
+
+Your message to \`${attemptedTarget}\` with type \`${messageType}\` has been blocked.
+
+**This is your second routing violation.** The issue has been escalated to a human operator.
+
+## What Happened
+
+Your routing attempt does not match any configured routing rules for your agent.
+
+## Valid targets for ${agentName} → ${messageType}:
+
+${targetsFormatted}
+
+**Your session is paused until a human resolves this issue.**
+`;
+
+    fs.writeFileSync(agentFilepath, agentFeedbackContent);
+    log.info('consumer', 'Wrote escalation notice to agent', {
+      fromAgent,
+      msgId: agentFeedbackMsgId,
+    });
   }
 }
