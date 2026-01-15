@@ -1455,7 +1455,6 @@ The system will resume your session when the human responds.`;
           // instead of file-based SUBTASK markers. See: ensemble.type: parallel in config.
         }
       }
-
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 
