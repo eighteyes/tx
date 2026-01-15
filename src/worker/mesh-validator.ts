@@ -905,8 +905,22 @@ export class MeshValidator {
       }
     }
 
+    // Validate context_descriptions if present
+    if (fsmObj.context_descriptions !== undefined) {
+      if (typeof fsmObj.context_descriptions !== 'object' || fsmObj.context_descriptions === null || Array.isArray(fsmObj.context_descriptions)) {
+        errors.push(`fsm.context_descriptions must be an object${context}`);
+      } else {
+        // Validate all values are strings
+        for (const [key, value] of Object.entries(fsmObj.context_descriptions)) {
+          if (typeof value !== 'string') {
+            errors.push(`fsm.context_descriptions.${key} must be a string${context}`);
+          }
+        }
+      }
+    }
+
     // Check for unknown fsm fields
-    const knownFSMFields = ['initial', 'states', 'context', 'scripts'];
+    const knownFSMFields = ['initial', 'states', 'context', 'context_descriptions', 'scripts'];
     for (const field of Object.keys(fsmObj)) {
       if (!knownFSMFields.includes(field)) {
         warnings.push(`Unknown fsm field '${field}'${context}`);

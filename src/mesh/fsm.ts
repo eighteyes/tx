@@ -133,6 +133,7 @@ export class MeshFSM extends EventEmitter {
   private _initialState: string; // Normalized initial state name
   private msgsDir: string; // Directory for writing feedback messages
   private violationTracker: Map<string, FSMViolation> = new Map(); // Track violations per agent for self-heal
+  private contextDescriptions: Record<string, string>; // Human-readable descriptions for context variables
 
   constructor(
     meshName: string,
@@ -151,6 +152,9 @@ export class MeshFSM extends EventEmitter {
 
     // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
     this._initialState = config.initialState || config.initial || '';
+
+    // Store context descriptions for injection into prompts
+    this.contextDescriptions = config.context_descriptions || {};
 
     // Build state lookup map - support both array and object formats
     this.stateMap = new Map();
@@ -249,6 +253,14 @@ export class MeshFSM extends EventEmitter {
    */
   getContext(): Record<string, unknown> {
     return { ...this.stateData?.context };
+  }
+
+  /**
+   * Get FSM context variable descriptions
+   * Used for injecting self-documenting variable info into agent prompts
+   */
+  getContextDescriptions(): Record<string, string> {
+    return { ...this.contextDescriptions };
   }
 
   /**

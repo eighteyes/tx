@@ -1440,6 +1440,7 @@ The system will resume your session when the human responds.`;
             stateConfig: currentStateConfig,
             availableTransitions: status.availableTransitions,
             context: status.context,
+            contextDescriptions: fsm.getContextDescriptions(),
             gateRetries: status.gateRetries,
           };
           systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
@@ -2066,6 +2067,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       states,
       transitions: fsm.transitions || [],
       context: fsm.context,
+      context_descriptions: fsm.context_descriptions,
     } as FSMConfig;
   }
 
@@ -2862,6 +2864,7 @@ ${output}
           stateConfig: currentStateConfig,
           availableTransitions: status.availableTransitions,
           context: contextWithIndex,
+          contextDescriptions: fsm.getContextDescriptions(),
           gateRetries: status.gateRetries,
         };
         systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);

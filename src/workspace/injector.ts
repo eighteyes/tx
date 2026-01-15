@@ -33,6 +33,7 @@ export interface FSMInjectionContext {
   currentState: string;
   stateConfig: FSMStateConfig;
   context: Record<string, unknown>;
+  contextDescriptions?: Record<string, string>;  // Human-readable descriptions for context variables
   gateRetries?: Record<string, number>;
   availableTransitions?: string[];
 }
@@ -289,12 +290,18 @@ export class PromptInjector {
       parts.push(`**Participants**: ${fsmContext.stateConfig.participants.map(p => `\`${p}\``).join(', ')}`);
     }
 
-    // Context variables
+    // Context variables with optional descriptions
     if (Object.keys(fsmContext.context).length > 0) {
-      parts.push('\n## Context Variables\n');
+      parts.push('\n## FSM Context Variables\n');
       for (const [key, value] of Object.entries(fsmContext.context)) {
         const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value);
         parts.push(`- **${key}**: ${displayValue}`);
+        // Add description if available
+        const description = fsmContext.contextDescriptions?.[key];
+        if (description) {
+          parts.push(`  _${description}_`);
+        }
+        parts.push('');  // Empty line for readability
       }
     }
 
