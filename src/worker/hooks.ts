@@ -15,7 +15,6 @@ import type { MessageQueue } from '../queue/index.ts';
 import {
   createStackFromConfig,
   createPreflightGate,
-  type GradedConfig,
   type GateType,
   type PreflightOutput,
   type StackResult,

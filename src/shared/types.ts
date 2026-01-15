@@ -238,6 +238,7 @@ export interface FSMStateConfig {
   ensemble?: FSMEnsembleConfig;  // Ensemble configuration (required when type === 'ensemble')
   subtask?: boolean;  // Inject subtask prompt into agent context
   gates?: FSMGateConfig[];  // Gates to check before transition
+  entry_gates?: string[];  // Gate scripts to validate BEFORE entering this state
   onEnter?: string;  // Script to run on state entry
   onExit?: string;   // Script to run on state exit
   exit?: FSMExitConfig;  // Exit configuration with conditional routing

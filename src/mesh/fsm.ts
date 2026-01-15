@@ -11,6 +11,8 @@
  */
 
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
 import { ScriptExecutor, type ScriptContext, type ScriptResult } from './fsm-scripts.ts';
@@ -62,6 +64,21 @@ export interface FSMGateEvent {
 }
 
 /**
+ * Entry gate check event data (for entry_gates validation)
+ */
+export interface FSMEntryGateEvent {
+  meshName: string;
+  fromState: string;
+  toState: string;
+  gateName: string;
+  gateType: 'script' | 'file-exists';
+  passed: boolean;
+  retryCount: number;
+  error?: string;
+  timestamp: number;
+}
+
+/**
  * Script run event data
  */
 export interface FSMScriptEvent {
@@ -71,6 +88,35 @@ export interface FSMScriptEvent {
   success: boolean;
   durationMs: number;
   error?: string;
+  timestamp: number;
+}
+
+/**
+ * FSM violation data for self-heal tracking
+ */
+export interface FSMViolation {
+  count: number;
+  lastViolation: {
+    attemptedTarget: string;
+    currentState: string;
+    allowedTargets: string[];
+    violationType: 'no-route' | 'invalid-agent';
+    timestamp: number;
+  } | null;
+}
+
+/**
+ * FSM feedback event data
+ */
+export interface FSMFeedbackEvent {
+  meshName: string;
+  agentId: string;
+  violationType: 'no-route' | 'invalid-agent';
+  currentState: string;
+  attemptedTarget: string;
+  allowedTargets: string[];
+  violationCount: number;
+  escalated: boolean;
   timestamp: number;
 }
 
@@ -85,6 +131,8 @@ export class MeshFSM extends EventEmitter {
   private stateMap: Map<string, FSMStateConfig>;
   private initialized = false;
   private _initialState: string; // Normalized initial state name
+  private msgsDir: string; // Directory for writing feedback messages
+  private violationTracker: Map<string, FSMViolation> = new Map(); // Track violations per agent for self-heal
 
   constructor(
     meshName: string,
@@ -99,6 +147,7 @@ export class MeshFSM extends EventEmitter {
     this.scriptExecutor = new ScriptExecutor({ workDir });
     this.conditionEvaluator = new ConditionEvaluator();
     this.expressionEvaluator = new SimpleExpressionEvaluator();
+    this.msgsDir = path.join(workDir, '.ai', 'tx', 'msgs');
 
     // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
     this._initialState = config.initialState || config.initial || '';
@@ -901,6 +950,10 @@ export class MeshFSM extends EventEmitter {
           Object.entries(context).filter(([k]) => !['message', 'rearmatter'].includes(k))
         ),
       });
+
+      // Self-heal: Track violation and write feedback or escalation
+      const allowedTargets = this.getAllowedTargets(currentState);
+      await this.trackViolation(from, to, 'no-route', allowedTargets);
       return false; // Reject message - no valid route
     }
 
@@ -928,6 +981,12 @@ export class MeshFSM extends EventEmitter {
 
       // Execute transition to next state
       const transitioned = await this.executeTransition(currentState, nextState, from, messageType);
+
+      // Clear violations on successful transition
+      if (transitioned) {
+        this.clearViolations(from);
+      }
+
       return transitioned;
     }
 
@@ -954,17 +1013,33 @@ export class MeshFSM extends EventEmitter {
           agentRoutedTo: targetAgent,
           fsmAllowedAgents: allowedAgents,
         });
+
+        // Self-heal: Track violation and write feedback or escalation
+        await this.trackViolation(from, to, 'invalid-agent', allowedAgents);
         return false; // Reject - routing violates FSM rules
       }
     }
 
     // Execute transition to next state
     const transitioned = await this.executeTransition(currentState, nextState, from, messageType);
+
+    // Clear violations on successful transition
+    if (transitioned) {
+      this.clearViolations(from);
+    }
+
     return transitioned;
   }
 
   /**
    * Execute state transition with proper lifecycle
+   *
+   * Flow:
+   * 1. Validate entry gates BEFORE executing onExit
+   * 2. If entry gates fail: Stay in current state, emit event, return false
+   * 3. Execute onExit script for current state
+   * 4. Update state
+   * 5. Execute onEnter script for new state
    */
   private async executeTransition(
     fromState: string,
@@ -975,9 +1050,26 @@ export class MeshFSM extends EventEmitter {
     if (!this.stateData) return false;
 
     const startTime = Date.now();
+    const toStateConfig = this.stateMap.get(toState);
+
+    // Step 1: Validate entry gates BEFORE any state change
+    if (toStateConfig?.entry_gates && toStateConfig.entry_gates.length > 0) {
+      const entryGateResult = await this.validateEntryGates(fromState, toState, toStateConfig.entry_gates);
+      if (!entryGateResult.passed) {
+        log.warn('mesh-fsm', 'Entry gate validation failed, staying in current state', {
+          meshName: this.meshName,
+          fromState,
+          toState,
+          failedGate: entryGateResult.failedGate,
+          error: entryGateResult.error,
+          retryCount: entryGateResult.retryCount,
+        });
+        return false; // Stay in current state
+      }
+    }
 
     try {
-      // Execute onExit for current state
+      // Step 2: Execute onExit for current state
       const fromStateConfig = this.stateMap.get(fromState);
       if (fromStateConfig?.onExit) {
         const scriptContext: ScriptContext = {
@@ -989,11 +1081,18 @@ export class MeshFSM extends EventEmitter {
         await this.executeScript('onExit', fromStateConfig.onExit, scriptContext);
       }
 
-      // Update state
+      // Step 3: Update state
       this.stateData.currentState = toState;
       this.stateData.lastTransitionAt = Date.now();
       this.stateData.updatedAt = Date.now();
+      // Clear both exit gate retries and entry gate retries for the new state
       delete this.stateData.gateRetries[toState];
+      // Clear any entry gate retry counters for this transition
+      for (const key of Object.keys(this.stateData.gateRetries)) {
+        if (key.startsWith(`entry:${toState}:`)) {
+          delete this.stateData.gateRetries[key];
+        }
+      }
       this.persistence.saveState(this.stateData);
 
       // Emit transition event
@@ -1016,7 +1115,7 @@ export class MeshFSM extends EventEmitter {
         triggerAgent,
       });
 
-      // Execute onEnter for new state
+      // Step 4: Execute onEnter for new state
       await this.executeOnEnter(toState);
 
       return true;
@@ -1028,6 +1127,419 @@ export class MeshFSM extends EventEmitter {
         error: (error as Error).message,
       });
       throw error; // Re-throw for caller to handle
+    }
+  }
+
+  /**
+   * Validate entry gates for a target state
+   *
+   * Entry gates are validated BEFORE transitioning to a state.
+   * If any gate fails, the transition is blocked and the FSM stays in the current state.
+   *
+   * Supported gate types:
+   * - Script reference: Gate name maps to fsm.scripts[gateName]
+   * - File existence: Path starting with $ or containing / checks if file exists
+   *
+   * @returns Object with passed status and failure details if applicable
+   */
+  private async validateEntryGates(
+    fromState: string,
+    toState: string,
+    entryGates: string[]
+  ): Promise<{
+    passed: boolean;
+    failedGate?: string;
+    error?: string;
+    retryCount?: number;
+  }> {
+    const scriptContext: ScriptContext = {
+      fsmState: fromState,
+      fsmMeshName: this.meshName,
+      fsmTransition: `${fromState}->${toState}`,
+      ...this.stateData?.context,
+    };
+
+    for (const gateName of entryGates) {
+      const retryKey = `entry:${toState}:${gateName}`;
+      const currentRetries = this.stateData?.gateRetries[retryKey] || 0;
+
+      try {
+        let gateType: 'script' | 'file-exists' = 'script';
+        let gatePassed = false;
+        let errorMsg: string | undefined;
+
+        // Check if gate is a file path reference (starts with $ or contains /)
+        if (gateName.startsWith('$') || gateName.includes('/')) {
+          gateType = 'file-exists';
+          const filePath = gateName.startsWith('$workspace')
+            ? gateName.replace('$workspace', this.scriptExecutor['config'].workDir)
+            : gateName;
+
+          const fs = await import('node:fs');
+          if (fs.existsSync(filePath)) {
+            gatePassed = true;
+            log.debug('mesh-fsm', 'Entry gate file exists', {
+              meshName: this.meshName,
+              gateName,
+              filePath,
+              toState,
+            });
+          } else {
+            errorMsg = `File not found: ${filePath}`;
+            log.debug('mesh-fsm', 'Entry gate file not found', {
+              meshName: this.meshName,
+              gateName,
+              filePath,
+              toState,
+            });
+          }
+        } else {
+          // Look up script from fsm.scripts config
+          const scriptPath = this.config.scripts?.[gateName];
+          if (!scriptPath) {
+            log.warn('mesh-fsm', 'Entry gate script not found in config, skipping', {
+              meshName: this.meshName,
+              gateName,
+              toState,
+              availableScripts: Object.keys(this.config.scripts || {}),
+            });
+            // Skip undefined gates (non-blocking) - treat as passed
+            continue;
+          }
+
+          // Execute the gate script
+          const result = await this.scriptExecutor.execute(scriptPath, scriptContext);
+          gatePassed = result.success;
+          if (!result.success) {
+            errorMsg = result.stderr || `Exit code: ${result.exitCode}`;
+          }
+
+          log.debug('mesh-fsm', 'Entry gate script executed', {
+            meshName: this.meshName,
+            gateName,
+            scriptPath,
+            passed: gatePassed,
+            toState,
+          });
+        }
+
+        // Emit gate check event
+        const gateEvent: FSMEntryGateEvent = {
+          meshName: this.meshName,
+          fromState,
+          toState,
+          gateName,
+          gateType,
+          passed: gatePassed,
+          retryCount: currentRetries,
+          error: errorMsg,
+          timestamp: Date.now(),
+        };
+        this.emit('fsm:gate-check', gateEvent);
+
+        if (!gatePassed) {
+          // Increment retry counter
+          if (this.stateData) {
+            this.stateData.gateRetries[retryKey] = currentRetries + 1;
+            this.stateData.updatedAt = Date.now();
+            this.persistence.saveState(this.stateData);
+          }
+
+          return {
+            passed: false,
+            failedGate: gateName,
+            error: errorMsg,
+            retryCount: currentRetries + 1,
+          };
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        log.error('mesh-fsm', 'Entry gate check threw exception', {
+          meshName: this.meshName,
+          gateName,
+          toState,
+          error: errorMsg,
+        });
+
+        // Emit failure event
+        const gateEvent: FSMEntryGateEvent = {
+          meshName: this.meshName,
+          fromState,
+          toState,
+          gateName,
+          gateType: 'script',
+          passed: false,
+          retryCount: currentRetries,
+          error: errorMsg,
+          timestamp: Date.now(),
+        };
+        this.emit('fsm:gate-check', gateEvent);
+
+        // Increment retry counter
+        if (this.stateData) {
+          this.stateData.gateRetries[retryKey] = currentRetries + 1;
+          this.stateData.updatedAt = Date.now();
+          this.persistence.saveState(this.stateData);
+        }
+
+        return {
+          passed: false,
+          failedGate: gateName,
+          error: errorMsg,
+          retryCount: currentRetries + 1,
+        };
+      }
+    }
+
+    // All gates passed
+    return { passed: true };
+  }
+
+  /**
+   * Get allowed target agents for a given state
+   * Returns agents that can be messaged based on coordinator/participants config
+   */
+  private getAllowedTargets(stateName: string): string[] {
+    const stateConfig = this.stateMap.get(stateName);
+    if (!stateConfig) return [];
+
+    const allowedAgents: string[] = [];
+
+    // Get coordinator
+    if (stateConfig.coordinator) {
+      allowedAgents.push(stateConfig.coordinator);
+    }
+
+    // Get participants
+    if (stateConfig.participants) {
+      allowedAgents.push(...stateConfig.participants);
+    }
+
+    return allowedAgents;
+  }
+
+  /**
+   * Get all valid state names for this FSM
+   */
+  private getValidStates(): string[] {
+    return Array.from(this.stateMap.keys());
+  }
+
+  /**
+   * Track a violation for an agent and handle self-heal logic
+   * Returns true if this is the first violation (feedback sent), false if escalated
+   */
+  private async trackViolation(
+    agentId: string,
+    attemptedTarget: string,
+    violationType: 'no-route' | 'invalid-agent',
+    allowedTargets: string[]
+  ): Promise<boolean> {
+    const currentState = this.getCurrentState();
+    const violation = this.violationTracker.get(agentId) || { count: 0, lastViolation: null };
+
+    violation.count++;
+    violation.lastViolation = {
+      attemptedTarget,
+      currentState,
+      allowedTargets,
+      violationType,
+      timestamp: Date.now(),
+    };
+    this.violationTracker.set(agentId, violation);
+
+    log.warn('mesh-fsm', 'FSM violation tracked', {
+      meshName: this.meshName,
+      agentId,
+      violationType,
+      violationCount: violation.count,
+      currentState,
+      attemptedTarget,
+      allowedTargets,
+    });
+
+    // Emit feedback event
+    const feedbackEvent: FSMFeedbackEvent = {
+      meshName: this.meshName,
+      agentId,
+      violationType,
+      currentState,
+      attemptedTarget,
+      allowedTargets,
+      violationCount: violation.count,
+      escalated: violation.count > 1,
+      timestamp: Date.now(),
+    };
+    this.emit('fsm:feedback', feedbackEvent);
+
+    if (violation.count === 1) {
+      // First violation: Write feedback message to agent
+      await this.writeFeedbackMessage(agentId, violation.lastViolation);
+      return true; // Feedback sent, agent can self-correct
+    } else {
+      // Second+ violation: Escalate to core
+      await this.writeEscalationMessage(agentId, violation.lastViolation);
+      return false; // Escalated, agent needs human help
+    }
+  }
+
+  /**
+   * Write a feedback message to help the agent self-correct
+   */
+  private async writeFeedbackMessage(
+    agentId: string,
+    violation: {
+      attemptedTarget: string;
+      currentState: string;
+      allowedTargets: string[];
+      violationType: 'no-route' | 'invalid-agent';
+      timestamp: number;
+    }
+  ): Promise<void> {
+    // Ensure msgs directory exists
+    if (!fs.existsSync(this.msgsDir)) {
+      fs.mkdirSync(this.msgsDir, { recursive: true });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `fsm-feedback-${Date.now()}`;
+    const toSafe = agentId.replace('/', '-');
+    const filename = `${timestamp}-fsm-feedback-system-fsm-validator--${toSafe}-${msgId}.md`;
+    const filepath = path.join(this.msgsDir, filename);
+
+    const violationDescription = violation.violationType === 'no-route'
+      ? 'No valid exit route was found for your message.'
+      : `The agent \`${violation.attemptedTarget}\` is not allowed in the target state.`;
+
+    const allowedTargetsFormatted = violation.allowedTargets.length > 0
+      ? violation.allowedTargets.map(t => `- \`${this.meshName}/${t}\``).join('\n')
+      : '- (no specific agents configured for this state)';
+
+    const validStates = this.getValidStates();
+
+    const content = `---
+to: ${agentId}
+from: system/fsm-validator
+type: fsm-feedback
+violation-count: 1
+timestamp: ${new Date().toISOString()}
+---
+
+# FSM State Violation
+
+Your message violates FSM routing rules. ${violationDescription}
+
+## Current State
+\`${violation.currentState}\`
+
+## Attempted Target
+\`${violation.attemptedTarget}\`
+
+## Allowed Agents in Current State
+${allowedTargetsFormatted}
+
+## Valid States
+${validStates.map(s => `- \`${s}\``).join('\n')}
+
+## How to Fix
+
+1. **Check your message routing**: Ensure the \`to:\` field targets an agent allowed in the FSM's current or next state.
+2. **Review state transitions**: The FSM controls which states can be transitioned to based on exit conditions.
+3. **Route outside mesh if needed**: Messages to \`core/core\` or other meshes are always allowed.
+
+Please correct your routing and resend the message.
+`;
+
+    fs.writeFileSync(filepath, content);
+    log.info('mesh-fsm', 'FSM feedback message written', {
+      meshName: this.meshName,
+      agentId,
+      filepath,
+      violationType: violation.violationType,
+    });
+  }
+
+  /**
+   * Write an escalation message to core when agent fails to self-correct
+   */
+  private async writeEscalationMessage(
+    agentId: string,
+    violation: {
+      attemptedTarget: string;
+      currentState: string;
+      allowedTargets: string[];
+      violationType: 'no-route' | 'invalid-agent';
+      timestamp: number;
+    }
+  ): Promise<void> {
+    // Ensure msgs directory exists
+    if (!fs.existsSync(this.msgsDir)) {
+      fs.mkdirSync(this.msgsDir, { recursive: true });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `fsm-escalation-${Date.now()}`;
+    const filename = `${timestamp}-ask-human-system-fsm-validator--core-core-${msgId}.md`;
+    const filepath = path.join(this.msgsDir, filename);
+
+    const content = `---
+to: core/core
+from: system/fsm-validator
+type: ask-human
+msg-id: ${msgId}
+headline: FSM Violation - Agent needs help
+timestamp: ${new Date().toISOString()}
+---
+
+# FSM Violation Escalation
+
+Agent \`${agentId}\` has repeatedly violated FSM routing rules and needs human intervention.
+
+## Violation Details
+
+- **Agent**: \`${agentId}\`
+- **Mesh**: \`${this.meshName}\`
+- **Current State**: \`${violation.currentState}\`
+- **Attempted Target**: \`${violation.attemptedTarget}\`
+- **Violation Type**: ${violation.violationType === 'no-route' ? 'No valid exit route' : 'Invalid agent target'}
+- **Allowed Agents**: ${violation.allowedTargets.length > 0 ? violation.allowedTargets.join(', ') : '(none configured)'}
+
+## What Happened
+
+The agent attempted to send a message that doesn't conform to the FSM's state machine rules.
+A feedback message was sent to help the agent self-correct, but the violation occurred again.
+
+## Recommended Actions
+
+1. **Review the agent's task**: The agent may be confused about workflow requirements.
+2. **Check FSM configuration**: The mesh's FSM may have overly restrictive routing.
+3. **Manually guide the agent**: Provide explicit routing instructions.
+4. **Reset if needed**: Consider resetting the FSM state if it's in an unexpected state.
+
+Please investigate and provide guidance to the agent.
+`;
+
+    fs.writeFileSync(filepath, content);
+    log.warn('mesh-fsm', 'FSM escalation message written', {
+      meshName: this.meshName,
+      agentId,
+      filepath,
+      violationType: violation.violationType,
+    });
+  }
+
+  /**
+   * Clear violations for an agent after successful transition
+   * Called when an agent successfully sends a valid message
+   */
+  private clearViolations(agentId: string): void {
+    if (this.violationTracker.has(agentId)) {
+      log.debug('mesh-fsm', 'Clearing FSM violations for agent', {
+        meshName: this.meshName,
+        agentId,
+        previousCount: this.violationTracker.get(agentId)?.count,
+      });
+      this.violationTracker.delete(agentId);
     }
   }
 }

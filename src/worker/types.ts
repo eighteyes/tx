@@ -40,7 +40,7 @@ export type MeshAgentRouting = Record<string, MeshRoutingDestination>;
 export type MeshRouting = Record<string, MeshAgentRouting>;
 
 /**
- * Iteration config for graded meshes
+ * Iteration config for quality gates
  */
 export interface IterationConfig {
   maxIterations?: number;  // Max re-runs on quality failure (default: 3)
@@ -89,8 +89,7 @@ export interface MeshConfig {
   };
   routing?: MeshRouting;  // Agent routing tables
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
-  graded?: boolean | string[];  // Quality stack config
-  iteration?: IterationConfig;  // Iteration config for graded meshes
+  iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
   rearmatter?: RearmatterConfig;  // Transparency metadata config

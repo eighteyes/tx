@@ -28,7 +28,6 @@ import {
 import { StuckAgentDetector, type StuckAgentConfig, type ActiveWorkerInfo } from './stuck-detector.ts';
 import { MeshValidator } from './mesh-validator.ts';
 import {
-  type GradedConfig,
   type PreflightOutput,
 } from '../quality/index.ts';
 import type { ParityReminderEvent } from '../core/consumer.ts';
@@ -91,7 +90,7 @@ type MeshAgentRouting = Record<string, MeshRoutingDestination>;
 type MeshRouting = Record<string, MeshAgentRouting>;
 
 /**
- * Iteration config for graded meshes
+ * Iteration config for quality gates
  */
 interface IterationConfig {
   maxIterations?: number;  // Max re-runs on quality failure (default: 3)
@@ -118,8 +117,7 @@ interface MeshConfig {
   };
   routing?: MeshRouting;  // Agent routing tables
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
-  graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
-  iteration?: IterationConfig;  // Iteration config for graded meshes
+  iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
@@ -183,6 +181,7 @@ interface AskResponseMessageEvent {
  * Active worker state
  */
 interface ActiveWorker {
+  workerId: string;  // Unique instance ID (agentId-uuid) for parallel execution
   runner: SdkRunner;
   machine: WorkerStateMachine;
   startedAt: number;
@@ -1332,13 +1331,11 @@ The system will resume your session when the human responds.`;
         });
       }
 
-      // Resolve lifecycle hooks (worktree: true, graded: true, or explicit lifecycle)
+      // Resolve lifecycle hooks (worktree: true or explicit lifecycle)
       log.info('dispatcher', 'Resolving lifecycle hooks', {
         agentId,
         hasMeshConfig: !!meshConfig,
         meshName: meshConfig?.mesh,
-        hasGraded: meshConfig?.graded !== undefined,
-        gradedValue: meshConfig?.graded,
         hasWorktree: meshConfig?.worktree !== undefined,
         hasLifecycle: meshConfig?.lifecycle !== undefined,
       });
@@ -1352,7 +1349,7 @@ The system will resume your session when the human responds.`;
         post: lifecycle?.post || [],
       });
 
-      // Execute pre-hooks if configured (includes quality:preflight for graded meshes)
+      // Execute pre-hooks if configured
       if (lifecycle?.pre && lifecycle.pre.length > 0) {
         log.info('dispatcher', `Executing pre-hooks for ${agentId}`, {
           hooks: lifecycle.pre,

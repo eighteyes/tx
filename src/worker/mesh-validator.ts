@@ -152,11 +152,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   worktree: { type: 'boolean' },
   // Lifecycle hooks
   lifecycle: { type: 'object' },
-  // Quality stack configuration (boolean or array of gate types)
-  // Note: 'graded' can be true, false, or array like ['checklist', 'adversarial']
-  // Type is 'boolean' but array is also accepted (validated specially in validateFieldTypes)
-  graded: { type: 'boolean' },  // Special validation accepts boolean | string[]
-  // Iteration config for graded meshes
+  // Iteration config for quality gates
   iteration: { type: 'object' },  // { maxIterations?: number, onFail?: 'loop' | 'halt' }
   // FSM (Finite State Machine) configuration for workflow orchestration
   fsm: { type: 'object' },  // FSMConfig: { initialState, states, transitions, context }
@@ -347,24 +343,6 @@ export class MeshValidator {
       if (field === 'workspace' && actualType === 'string') {
         // Legacy string format - accept but warn
         warnings.push(`Field 'workspace' should be object format { path: "..." }, got string${context}. Legacy format still works but object format is preferred.`);
-        continue;
-      }
-
-      // Special case: graded can be boolean or array
-      if (field === 'graded') {
-        if (actualType !== 'boolean' && actualType !== 'array') {
-          warnings.push(`Field 'graded' should be boolean or array, got ${actualType}${context}`);
-        }
-        // If array, validate gate names
-        if (actualType === 'array') {
-          const validGates = ['summarizer', 'accuracy', 'checklist', 'rubric', 'adversarial', 'deterministic'];
-          const gates = value as string[];
-          for (const gate of gates) {
-            if (!validGates.includes(gate)) {
-              warnings.push(`Unknown gate type '${gate}' in graded array (valid: ${validGates.join(', ')})${context}`);
-            }
-          }
-        }
         continue;
       }
 

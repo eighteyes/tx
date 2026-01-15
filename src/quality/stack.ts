@@ -303,19 +303,19 @@ export function createStandardStack(
 }
 
 /**
- * Create a quality stack from graded config
+ * Create a quality stack from gate config
  */
 export function createStackFromConfig(
-  graded: boolean | GateType[],
+  gateConfig: boolean | GateType[],
   preflight: PreflightOutput,
   options: QualityStackOptions = {}
 ): QualityStack {
   // Combine required and suggested gates
   let gates: GateType[];
 
-  if (Array.isArray(graded)) {
+  if (Array.isArray(gateConfig)) {
     // User specified gates + preflight suggestions
-    gates = [...new Set([...graded, ...preflight.suggestedGates])];
+    gates = [...new Set([...gateConfig, ...preflight.suggestedGates])];
   } else {
     // Use all gates from preflight
     gates = [...new Set([...preflight.requiredGates, ...preflight.suggestedGates])];
