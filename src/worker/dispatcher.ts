@@ -9,6 +9,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { MessageQueue, type Message } from '../queue/index.ts';
@@ -206,7 +207,7 @@ export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
   private running = false;
-  private activeWorkers: Map<string, ActiveWorker> = new Map();
+  private activeWorkers: Map<string, ActiveWorker[]> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
   private meshFSMs: Map<string, MeshFSM> = new Map();  // mesh name -> FSM instance
   private stateFile: string;
@@ -248,27 +249,30 @@ export class WorkerDispatcher extends EventEmitter {
 
   private writeWorkerState(): void {
     const state = {
-      workers: Array.from(this.activeWorkers.entries()).map(([id, w]) => {
-        const status = w.machine.getStatus();
-        const baseState = {
-          id,
-          status,
-          startedAt: w.startedAt,
-          messagesProcessed: w.machine.getMessagesProcessed(),
-          duration: w.machine.getDuration()
-        };
-
-        // Add awaiting-specific fields if in awaiting state
-        if (status === 'awaiting') {
-          return {
-            ...baseState,
-            awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
-            awaitDuration: w.machine.getAwaitDuration()
+      workers: Array.from(this.activeWorkers.entries()).flatMap(([agentId, workers]) =>
+        workers.map((w) => {
+          const status = w.machine.getStatus();
+          const baseState = {
+            id: w.workerId,  // Use unique workerId instead of agentId
+            agentId,
+            status,
+            startedAt: w.startedAt,
+            messagesProcessed: w.machine.getMessagesProcessed(),
+            duration: w.machine.getDuration()
           };
-        }
 
-        return baseState;
-      }),
+          // Add awaiting-specific fields if in awaiting state
+          if (status === 'awaiting') {
+            return {
+              ...baseState,
+              awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
+              awaitDuration: w.machine.getAwaitDuration()
+            };
+          }
+
+          return baseState;
+        })
+      ),
       updatedAt: Date.now(),
     };
     try {
@@ -286,6 +290,98 @@ export class WorkerDispatcher extends EventEmitter {
     if (continuation === true) return true;
     if (Array.isArray(continuation)) return continuation.includes(agentName);
     return false;
+  }
+
+  // ============================================================================
+  // Worker Instance Management (Array-based for Runtime Parallelism)
+  // ============================================================================
+
+  /**
+   * Add a worker instance to the active workers map
+   * Generates a unique workerId for parallel execution tracking
+   */
+  private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId'>): string {
+    const workerId = `${agentId}-${crypto.randomUUID().slice(0, 8)}`;
+    const workerWithId: ActiveWorker = { ...worker, workerId };
+
+    const workers = this.activeWorkers.get(agentId) || [];
+    workers.push(workerWithId);
+    this.activeWorkers.set(agentId, workers);
+
+    log.debug('dispatcher', 'Added active worker', {
+      workerId,
+      agentId,
+      totalWorkersForAgent: workers.length,
+    });
+
+    return workerId;
+  }
+
+  /**
+   * Remove a specific worker instance by workerId
+   * Returns true if worker was found and removed
+   */
+  private removeActiveWorker(agentId: string, workerId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers) return false;
+
+    const filtered = workers.filter(w => w.workerId !== workerId);
+
+    if (filtered.length === workers.length) {
+      // Worker not found
+      return false;
+    }
+
+    if (filtered.length === 0) {
+      this.activeWorkers.delete(agentId);
+    } else {
+      this.activeWorkers.set(agentId, filtered);
+    }
+
+    log.debug('dispatcher', 'Removed active worker', {
+      workerId,
+      agentId,
+      remainingWorkersForAgent: filtered.length,
+    });
+
+    return true;
+  }
+
+  /**
+   * Get a specific worker by workerId (searches across all agents)
+   */
+  private getWorkerByWorkerId(workerId: string): { agentId: string; worker: ActiveWorker } | undefined {
+    for (const [agentId, workers] of this.activeWorkers) {
+      const worker = workers.find(w => w.workerId === workerId);
+      if (worker) {
+        return { agentId, worker };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Get the first worker for an agent (for backwards compatibility)
+   * Used when a specific workerId is not available
+   */
+  private getFirstWorkerForAgent(agentId: string): ActiveWorker | undefined {
+    const workers = this.activeWorkers.get(agentId);
+    return workers?.[0];
+  }
+
+  /**
+   * Get all workers for an agent
+   */
+  getActiveWorkersForAgent(agentId: string): ActiveWorker[] {
+    return this.activeWorkers.get(agentId) || [];
+  }
+
+  /**
+   * Check if agent has any active workers
+   */
+  hasActiveWorkers(agentId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    return workers !== undefined && workers.length > 0;
   }
 
   /**
@@ -425,32 +521,38 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Get active workers in format needed by stuck detector
+   * Returns all worker instances (flattened from array-based tracking)
    */
   private getActiveWorkersForDetector(): Map<string, ActiveWorkerInfo> {
     const result = new Map<string, ActiveWorkerInfo>();
-    for (const [agentId, worker] of this.activeWorkers) {
-      result.set(agentId, {
-        runner: worker.runner,
-        machine: worker.machine,
-        startedAt: worker.startedAt,
-        hookContext: worker.hookContext,
-        lastOutputAt: worker.lastOutputAt,
-      });
+    for (const [_agentId, workers] of this.activeWorkers) {
+      for (const worker of workers) {
+        result.set(worker.workerId, {
+          runner: worker.runner,
+          machine: worker.machine,
+          startedAt: worker.startedAt,
+          hookContext: worker.hookContext,
+          lastOutputAt: worker.lastOutputAt,
+        });
+      }
     }
     return result;
   }
 
   /**
-   * Handle incoming worker message - spawn worker if not already running
+   * Handle incoming worker message - spawn worker for each message
+   * Allows concurrent workers for the same agentId (runtime parallelism)
    */
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
 
-    // Skip if worker already running
-    if (this.activeWorkers.has(agentId)) {
-      log.debug('dispatcher', `Worker already running, message queued`, { agentId });
-      return;
-    }
+    // NOTE: Per-agent lock REMOVED for runtime parallelism
+    // Multiple workers can now run concurrently for the same agentId
+    const currentWorkers = this.activeWorkers.get(agentId) || [];
+    log.debug('dispatcher', `Worker message received`, {
+      agentId,
+      currentWorkerCount: currentWorkers.length
+    });
 
     // Parse mesh/agent from agentId
     const [meshName, agentName] = agentId.split('/');
@@ -520,11 +622,13 @@ export class WorkerDispatcher extends EventEmitter {
   /**
    * Handle message revision - interrupt active worker and resume with revised content
    * This enables mid-flight corrections when message files are edited.
+   * Note: With parallelism, revisions affect the first worker for the agent
    */
   private async handleRevisionMessage(event: RevisionMessageEvent): Promise<void> {
     const { agentId, content, headline } = event;
 
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent (revision applies to oldest running worker)
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       log.warn('dispatcher', `Revision received but no active worker found`, {
         agentId,
@@ -638,11 +742,13 @@ export class WorkerDispatcher extends EventEmitter {
    *
    * NOTE: FSM validation now happens centrally in validateMessageWithFSM()
    * before this handler is called. This handler only manages worker state.
+   * Note: With parallelism, asks affect the first worker for the agent
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
 
-    const activeWorker = this.activeWorkers.get(senderAgentId);
+    // Get first worker for this agent
+    const activeWorker = this.getFirstWorkerForAgent(senderAgentId);
     if (!activeWorker) {
       log.debug('dispatcher', `Ask message but no active worker found`, {
         from: senderAgentId,
@@ -651,7 +757,7 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    const { machine, runner } = activeWorker;
+    const { machine, runner, workerId } = activeWorker;
     const currentStatus = machine.getStatus();
 
     // Get session ID for resume
@@ -747,21 +853,24 @@ export class WorkerDispatcher extends EventEmitter {
 
             this.emit('worker:suspended', {
               agentId: senderAgentId,
+              workerId,
               sessionId,
               reason: 'ask-human',
               targetAgent: targetAgentId,
             });
 
-            // Remove from active workers
-            this.activeWorkers.delete(senderAgentId);
+            // Remove from active workers using workerId
+            this.removeActiveWorker(senderAgentId, workerId);
 
             log.info('dispatcher', `Worker killed and suspended`, {
               from: senderAgentId,
+              workerId,
               sessionId: sessionId.slice(0, 8),
             });
           } catch (killError) {
             log.error('dispatcher', `Failed to kill worker for ask-human`, {
               from: senderAgentId,
+              workerId,
               error: (killError as Error).message,
             });
           }
@@ -776,7 +885,7 @@ export class WorkerDispatcher extends EventEmitter {
 
       // Track incoming ask on target agent (if not ask-human and target exists)
       if (messageType !== 'ask-human') {
-        const targetWorker = this.activeWorkers.get(targetAgentId);
+        const targetWorker = this.getFirstWorkerForAgent(targetAgentId);
         if (targetWorker) {
           const msgId = event.msgId || `${senderAgentId}->${targetAgentId}-${Date.now()}`;
           targetWorker.machine.addIncomingAsk(senderAgentId, msgId);
@@ -880,13 +989,22 @@ The system will resume your session when the human responds.`;
         msgsDir: this.config.msgsDir,
       };
 
+      // Store in active workers and get the generated workerId
+      const workerId = this.addActiveWorker(agentId, {
+        runner,
+        machine,
+        startedAt: Date.now(),
+        hookContext,
+      });
+
       // Set up minimal event handlers
       runner.on('complete', async (data) => {
         log.info('dispatcher', `Resumed worker completed`, {
           agentId,
+          workerId,
           sessionId: sessionId.slice(0, 8),
         });
-        this.activeWorkers.delete(agentId);
+        this.removeActiveWorker(agentId, workerId);
         await machine.complete(data);
         this.emit('worker:complete', {
           ...data,
@@ -905,7 +1023,7 @@ The system will resume your session when the human responds.`;
           });
 
           setTimeout(() => {
-            if (this.running && !this.activeWorkers.has(agentId)) {
+            if (this.running && !this.hasActiveWorkers(agentId)) {
               this.spawnWorker(meshName, agentConfig);
             }
           }, 100);
@@ -915,19 +1033,12 @@ The system will resume your session when the human responds.`;
       runner.on('error', (error) => {
         log.error('dispatcher', `Resumed worker error`, {
           agentId,
+          workerId,
           error: error.message,
         });
-        this.activeWorkers.delete(agentId);
+        this.removeActiveWorker(agentId, workerId);
         this.emit('worker:error', { id: agentId, error: error.message });
         this.writeWorkerState();
-      });
-
-      // Store in active workers
-      this.activeWorkers.set(agentId, {
-        runner,
-        machine,
-        startedAt: Date.now(),
-        hookContext,
       });
 
       // Start the FSM (use process.pid as the runner pid)
@@ -955,8 +1066,9 @@ The system will resume your session when the human responds.`;
         agentId,
         error: (error as Error).message,
       });
-      // Clean up on failure
+      // Clean up on failure - remove all workers for this agent
       this.suspendedSessions.delete(agentId);
+      // For cleanup, we delete the entire array for this agent
       this.activeWorkers.delete(agentId);
     }
   }
@@ -986,7 +1098,8 @@ The system will resume your session when the human responds.`;
       return;
     }
 
-    const activeWorker = this.activeWorkers.get(awaitingAgentId);
+    // Get first worker for awaiting agent
+    const activeWorker = this.getFirstWorkerForAgent(awaitingAgentId);
     if (!activeWorker) {
       log.debug('dispatcher', `Ask-response but no active worker found`, {
         from: respondingAgentId,
@@ -1026,7 +1139,7 @@ The system will resume your session when the human responds.`;
       });
 
       // Remove incoming ask from responding agent
-      const respondingWorker = this.activeWorkers.get(respondingAgentId);
+      const respondingWorker = this.getFirstWorkerForAgent(respondingAgentId);
       if (respondingWorker) {
         const msgId = event.msgId || `${awaitingAgentId}->${respondingAgentId}`;
         respondingWorker.machine.removeIncomingAsk(awaitingAgentId, msgId);
@@ -1128,7 +1241,8 @@ The system will resume your session when the human responds.`;
   private async handleParityReminder(event: ParityReminderEvent): Promise<void> {
     const { agentId, pendingAsks, deletedFile } = event;
 
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       log.warn('dispatcher', `Pending asks/tasks reminder: no active worker found`, {
         agentId,
@@ -1234,18 +1348,20 @@ The system will resume your session when the human responds.`;
    * Handle await timeout - transition worker to error state
    */
   private async handleAwaitTimeout(agentId: string): Promise<void> {
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent (the one in awaiting state)
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       return;
     }
 
-    const { machine } = activeWorker;
+    const { machine, workerId } = activeWorker;
     if (machine.getStatus() !== 'awaiting') {
       return;  // Already transitioned out of awaiting
     }
 
     log.warn('dispatcher', `Await timeout expired`, {
       agentId,
+      workerId,
       awaitingResponses: Array.from(machine.getAwaitingResponses()),
       awaitDuration: machine.getAwaitDuration(),
     });
@@ -1258,12 +1374,13 @@ The system will resume your session when the human responds.`;
         awaitingResponses: Array.from(machine.getAwaitingResponses()),
       });
 
-      // Cleanup
-      this.activeWorkers.delete(agentId);
+      // Cleanup using workerId
+      this.removeActiveWorker(agentId, workerId);
       this.writeWorkerState();
     } catch (error) {
       log.error('dispatcher', `Failed to handle await timeout`, {
         agentId,
+        workerId,
         error: (error as Error).message,
       });
     }
@@ -1302,9 +1419,11 @@ The system will resume your session when the human responds.`;
     // Stop stuck agent detector
     this.stuckDetector.stop();
 
-    // Kill all active workers
-    for (const [_id, { runner }] of this.activeWorkers) {
-      runner.kill();
+    // Kill all active workers (iterate through all instances)
+    for (const [_agentId, workers] of this.activeWorkers) {
+      for (const worker of workers) {
+        worker.runner.kill();
+      }
     }
     this.activeWorkers.clear();
     this.writeWorkerState();
@@ -1694,11 +1813,18 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         this.emit('worker:start', data);
       });
 
+      // Variable to store workerId once the worker is registered
+      // This allows event handlers to properly track this specific instance
+      let registeredWorkerId: string | null = null;
+
       worker.on('output', (data) => {
         // Track last output time for stuck detection
-        const activeWorker = this.activeWorkers.get(agentId);
-        if (activeWorker) {
-          activeWorker.lastOutputAt = Date.now();
+        // Note: We need to find this specific worker by workerId
+        if (registeredWorkerId) {
+          const result = this.getWorkerByWorkerId(registeredWorkerId);
+          if (result) {
+            result.worker.lastOutputAt = Date.now();
+          }
         }
         this.emit('worker:output', data);
       });
@@ -1728,8 +1854,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // We hold the FSM.complete() until AFTER post-hooks pass to avoid race conditions
       // with quality gate iteration loops
       worker.on('complete', async (data) => {
-        const activeWorker = this.activeWorkers.get(agentId);
+        // Get this specific worker by workerId
+        const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
+        const activeWorker = workerInfo?.worker;
         const workerHookContext = activeWorker?.hookContext || hookContext;
+        const currentWorkerId = registeredWorkerId || 'unknown';
 
         // Wait for FSM 'start' transition to complete before proceeding
         // This fixes race condition when queue is empty (0 messages processed)
@@ -1811,12 +1940,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 // No sessionId available - fall back to legacy respawn behavior
                 log.warn('dispatcher', 'No sessionId available, falling back to respawn', {
                   agentId,
+                  workerId: currentWorkerId,
                   iteration: workerHookContext.qualityIteration,
                 });
 
                 // Complete FSM first to avoid race condition
                 await machine.complete(data);
-                this.activeWorkers.delete(agentId);
+                this.removeActiveWorker(agentId, currentWorkerId);
                 this.writeWorkerState();
 
                 // Then respawn after a delay
@@ -1837,13 +1967,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             if (error instanceof QualityHaltError) {
               log.warn('dispatcher', 'Quality stack HALT - stopping immediately', {
                 agentId,
+                workerId: currentWorkerId,
                 taskId: workerHookContext.taskId,
                 feedback: error.feedback,
               });
 
               // Complete FSM before emitting events
               await machine.complete(data);
-              this.activeWorkers.delete(agentId);
+              this.removeActiveWorker(agentId, currentWorkerId);
               this.writeWorkerState();
 
               this.emit('quality:halt', {
@@ -1908,15 +2039,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               // Check if we've exceeded max reminders
               if (reminderCount >= 3) {
                 // Force error after 3 reminders
-                const activeWorker = this.activeWorkers.get(agentId);
                 if (activeWorker) {
-                  await this.forceErrorForUnansweredAsks(agentId, activeWorker, incomingAsks);
+                  await this.forceErrorForUnansweredAsks(agentId, activeWorker, incomingAsks, currentWorkerId);
                 }
                 return;
               }
 
               // Inject reminder and continue
-              const activeWorker = this.activeWorkers.get(agentId);
               if (activeWorker) {
                 await this.injectIncomingAskReminder(agentId, activeWorker, incomingAsks, reminderCount);
               }
@@ -1962,7 +2091,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
-        this.activeWorkers.delete(agentId);
+        this.removeActiveWorker(agentId, currentWorkerId);
         this.stuckDetector.clearNudgeTracking(agentId);
         this.writeWorkerState();
 
@@ -1989,6 +2118,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         this.emit('worker:complete', {
           ...data,
+          workerId: currentWorkerId,
           transitionName: 'complete',
           qualityResult: workerHookContext.qualityPreflight
             ? { iterations: workerHookContext.qualityIteration || 1, passed: true }
@@ -2008,7 +2138,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Schedule next iteration (slight delay to allow state to settle)
           setTimeout(() => {
-            if (this.running && !this.activeWorkers.has(agentId)) {
+            if (this.running && !this.hasActiveWorkers(agentId)) {
               this.spawnWorker(meshName, agent);
             }
           }, 100);
@@ -2017,6 +2147,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Error transition with retry logic
       worker.on('error', async (data) => {
+        const errorWorkerId = registeredWorkerId || 'unknown';
         await machine.error(data.error);
 
         // Check if we can retry
@@ -2029,11 +2160,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         if (canRetry) {
           log.info('dispatcher', `Retrying worker`, {
             agentId,
+            workerId: errorWorkerId,
             attempt: machine.currentContext.retryCount + 1,
             maxRetries: machine.currentContext.maxRetries
           });
 
           await machine.retry();
+          // Remove current worker before respawning
+          this.removeActiveWorker(agentId, errorWorkerId);
           // Recursively spawn again, but check if dispatcher is still running
           setTimeout(() => {
             if (this.running) {
@@ -2043,21 +2177,25 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             }
           }, 1000);
         } else {
-          log.error('dispatcher', `Worker exhausted retries`, { agentId });
-          this.activeWorkers.delete(agentId);
+          log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
+          this.removeActiveWorker(agentId, errorWorkerId);
           this.writeWorkerState();
         }
 
-        this.emit('worker:error', { ...data, transitionName: 'error' });
+        this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
       });
 
-      this.activeWorkers.set(agentId, {
+      // Add worker to active workers with unique workerId for parallel execution
+      const workerId = this.addActiveWorker(agentId, {
         runner: worker,
         machine,
         startedAt: Date.now(),
         hookContext,
         startedPromise,  // Add promise to track 'start' completion
       });
+      // Set the registeredWorkerId so event handlers can reference it
+      registeredWorkerId = workerId;
+      log.debug('dispatcher', `Worker registered`, { agentId, workerId });
       this.writeWorkerState();
 
       // Run the worker (async, don't await)
@@ -2592,17 +2730,36 @@ ${output}
   }
 
   /**
-   * Get active worker count
+   * Get total active worker count across all agents
    */
   getActiveWorkerCount(): number {
-    return this.activeWorkers.size;
+    let count = 0;
+    for (const workers of this.activeWorkers.values()) {
+      count += workers.length;
+    }
+    return count;
   }
 
   /**
-   * Get list of active worker IDs
+   * Get list of active agent IDs (not worker IDs)
+   * For backwards compatibility - returns unique agentIds that have workers
    */
   getActiveWorkerIds(): string[] {
     return Array.from(this.activeWorkers.keys());
+  }
+
+  /**
+   * Get list of all active worker instance IDs
+   * Returns unique workerIds for all running workers
+   */
+  getAllActiveWorkerIds(): string[] {
+    const ids: string[] = [];
+    for (const workers of this.activeWorkers.values()) {
+      for (const worker of workers) {
+        ids.push(worker.workerId);
+      }
+    }
+    return ids;
   }
 
   /**
@@ -2613,19 +2770,23 @@ ${output}
   }
 
   /**
-   * Get worker state machine by agent ID
+   * Get worker state machine by agent ID (returns first worker's machine)
    */
   getWorkerMachine(agentId: string): WorkerStateMachine | undefined {
-    return this.activeWorkers.get(agentId)?.machine;
+    const workers = this.activeWorkers.get(agentId);
+    return workers?.[0]?.machine;
   }
 
   /**
    * Get all active worker state machines
+   * Returns machines keyed by workerId for unique identification
    */
   getAllWorkerMachines(): Map<string, WorkerStateMachine> {
     const machines = new Map<string, WorkerStateMachine>();
-    for (const [id, worker] of this.activeWorkers) {
-      machines.set(id, worker.machine);
+    for (const workers of this.activeWorkers.values()) {
+      for (const worker of workers) {
+        machines.set(worker.workerId, worker.machine);
+      }
     }
     return machines;
   }
@@ -2647,8 +2808,9 @@ ${output}
     const session = this.sessionMetrics.get(meshInstance);
     if (!session) return;
 
-    // Check if any workers from this mesh are still active
+    // Check if any workers from this mesh are still active (flatten arrays)
     const activeInMesh = Array.from(this.activeWorkers.values())
+      .flat()
       .some(w => w.hookContext?.meshInstance === meshInstance);
 
     if (!activeInMesh) {
@@ -3211,7 +3373,7 @@ ${ensembleOutput}
    */
   private async injectIncomingAskReminder(
     agentId: string,
-    worker: ActiveWorkerInfo,
+    worker: ActiveWorker,
     incomingAsks: Array<{ from: string; msgId: string }>,
     currentReminderCount: number
   ): Promise<void> {
@@ -3312,14 +3474,16 @@ If you attempt to complete again without responding to these asks, your session 
    */
   private async forceErrorForUnansweredAsks(
     agentId: string,
-    worker: ActiveWorkerInfo,
-    incomingAsks: Array<{ from: string; msgId: string }>
+    worker: ActiveWorker,
+    incomingAsks: Array<{ from: string; msgId: string }>,
+    workerId: string
   ): Promise<void> {
     const { machine, runner } = worker;
     const askList = incomingAsks.map(a => `${a.from} (${a.msgId})`).join(', ');
 
     log.error('dispatcher', 'Forcing error after max reminders about unanswered asks', {
       agentId,
+      workerId,
       incomingAsks: askList,
       reminderAttempts: 3,
     });
@@ -3330,17 +3494,18 @@ If you attempt to complete again without responding to these asks, your session 
     // Transition to error state
     await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);
 
-    // Clean up
-    this.activeWorkers.delete(agentId);
+    // Clean up using workerId for proper removal
+    this.removeActiveWorker(agentId, workerId);
     this.writeWorkerState();
 
     this.emit('worker:error', {
       id: agentId,
+      workerId,
       error: `Unanswered incoming asks after 3 reminders: [${askList}]`,
       transitionName: 'error',
     });
 
-    log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId });
+    log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId, workerId });
   }
 
 }
