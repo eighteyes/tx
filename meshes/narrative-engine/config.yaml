@@ -151,6 +151,8 @@ routing:
       lint-coordinator: "Lint prose (phase 3 - parallel linters)"
       oracle: "Validate continuity"
       scribe: "Compress turn state"
+      dramaturg: "Analyze story context"
+      system: "Need mechanical resolution"
     ask-human:
       core: "Need player input OR game state anomaly"
     complete:
