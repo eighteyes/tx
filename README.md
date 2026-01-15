@@ -37,6 +37,14 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - Chain agent outputs with plain language "research pain points around (topic) and plan a software project based off your findings"
 - [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
 
+### Mesh Features
+- Routing table defined per mesh, injected at runtime and enforced by framework. 
+- State management to govern phase transitions and carry variables between meshes. 
+- Session continuation to revisit conversations.
+- SlashCommand support for agents.
+- Workspace defining files and folders.
+- Pre/Post hooks for logic and/or agents surrounding mesh operations.
+
 ## Dependencies
 - `node` (recommended: Node >= 20.19.0)
 - Authenticated Claude Code 
@@ -69,7 +77,7 @@ tx start
 AI: Your report is available at...
 
 # steps to quit 
-# to leave tmux ( /exit just leaves to shell )
+# to exit tx ( tmux, /exit just leaves to shell )
 Cntl-B d
 ```
 
@@ -86,8 +94,10 @@ Cntl-B d
 - `research` - 4 agent basic researcher
 - `deep-research` - 6 agent research with theorizer / disprover loop, use "theory" or "hypothesis" in your prompt as intent
 
+See [Mesh List](docs/MESH_LIST.md) for complete list of meshes.
+
 ## Architecture
-> As a matter of convention, I store all AI tooling information in `.ai` and hope that the vendor community will stop polluting our project roots with their hidden folders.
+> As a matter of convention, `tx` stores all AI tooling information in `.ai` and hopes that the vendor community will stop polluting our project roots with their hidden folders.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -130,8 +140,7 @@ Cntl-B d
 ```
 
 ## What are we solving? Isn't this just subagents and skills? 
-Subagents and skills are fantastic, their  but they interrupt my conversation, and are not invoked as readily as I'd like. I also find the context pollution to be considerable and detracts from my ability to steer the Ai. There is also not enough tooling around them for getting the consistent, reproducible, composable behavior which I want to achieve. 
-Hooks are amazing for incorporating code logic with agentic output, but having them spin up a subagent session isn't really viable. 
+Subagents and skills are fantastic, but they interrupt my conversation, and are not invoked as readily as I'd like. I also find the context pollution to be considerable and detracts from my ability to steer the AI. There is also not enough tooling around them for getting the consistent, reproducible, composable behavior which I want to achieve. 
 
 ## Philosophy
 `tx` is an **Augmented Thinking** surface area for multiplexed AI interaction. Automation is well covered in the tooling world, we are not aiming to only automate (`tx run` supports headless operation). We are aiming to extend our individual information-processing capability exponentially, using AI as *leverage*. What matters is not the quantity of tokens consumed, but the quality of outputs, as human attention is the bottleneck for review and completion.
