@@ -49,19 +49,7 @@ Quick reference for available meshes and when to use them.
 - **Use when**: Decisions, tradeoffs, comparisons, evaluations
 - **Triggers**: `should I`, `what's better`, `analyze`, `evaluate`, `decide`, `which option`, `compare`, `tradeoffs`
 
-## Graded Meshes
-
-### dev-graded
-
-- **Purpose**: Development with quality iteration loop
-- **Entry**: `dev-graded/worker`
-- **Model**: opus
-- **Use when**: High-stakes implementations needing QA, when quality matters more than speed
-- **Triggers**: `build`, `implement`, `code up`, `fix`, `develop`
-- **Features**:
-  - `graded: true` - enables quality assessment
-  - `maxIterations: 5` - up to 5 improvement cycles
-  - `onFail: loop` - automatically retries on quality failure
+## Quality-Enabled Meshes
 
 ### dev-worktree
 
@@ -116,7 +104,6 @@ Quick reference for available meshes and when to use them.
 |------|------|-----|
 | Add feature to spec | brain | Manages spec-graph |
 | Write code | dev | General development |
-| Write code (QA) | dev-graded | With quality iteration loop |
 | Isolated feature work | dev-worktree | Git worktree isolation |
 | Research topic | research | Multi-agent pipeline |
 | Deep analysis | deep-research | Confidence loop until 95% |
@@ -132,7 +119,7 @@ TX routes tasks to meshes based on pattern matching. Here's what triggers each:
 |---------|-----------|
 | "add feature", "create feature", "new feature" | brain |
 | "bug", "issue", "problem", "broken" | brain |
-| "build", "implement", "code up", "fix" | dev / dev-graded |
+| "build", "implement", "code up", "fix" | dev |
 | "research", "investigate", "find out", "explore" | research |
 | "hypothesis", "theory" | deep-research |
 | "should I", "analyze", "compare", "tradeoffs" | structured-thinking |

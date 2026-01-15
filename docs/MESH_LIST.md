@@ -25,7 +25,6 @@ Domain-specific development meshes for code implementation.
 | Mesh | Description | Status |
 |------|-------------|--------|
 | `dev` | Developer mesh for implementing features, writing code, and running tests | Development |
-| `dev-graded` | Developer mesh with grading and iteration for quality assurance, use to evaluate output quality | Development |
 | `dev-haiku` | FSM state tracking validation with haiku agents. Tests deterministic state transitions | Development |
 | `dev-junior` | Handles simple, well-defined tasks: typo fixes, basic bug fixes, adding simple functions | Development |
 | `dev-mesh` | Smart-routing dev coordinator with domain specialists | Development |

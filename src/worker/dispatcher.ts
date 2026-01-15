@@ -774,6 +774,20 @@ export class WorkerDispatcher extends EventEmitter {
         });
       }
 
+      // Track incoming ask on target agent (if not ask-human and target exists)
+      if (messageType !== 'ask-human') {
+        const targetWorker = this.activeWorkers.get(targetAgentId);
+        if (targetWorker) {
+          const msgId = event.msgId || `${senderAgentId}->${targetAgentId}-${Date.now()}`;
+          targetWorker.machine.addIncomingAsk(senderAgentId, msgId);
+          log.debug('dispatcher', `Tracked incoming ask on target`, {
+            from: senderAgentId,
+            to: targetAgentId,
+            msgId,
+          });
+        }
+      }
+
       this.writeWorkerState();
     } catch (error) {
       log.error('dispatcher', `Failed to enter await state`, {
@@ -1010,6 +1024,18 @@ The system will resume your session when the human responds.`;
         to: awaitingAgentId,
         remainingBefore: awaitingResponses.size,
       });
+
+      // Remove incoming ask from responding agent
+      const respondingWorker = this.activeWorkers.get(respondingAgentId);
+      if (respondingWorker) {
+        const msgId = event.msgId || `${awaitingAgentId}->${respondingAgentId}`;
+        respondingWorker.machine.removeIncomingAsk(awaitingAgentId, msgId);
+        log.debug('dispatcher', `Removed incoming ask from responder`, {
+          from: respondingAgentId,
+          to: awaitingAgentId,
+          msgId,
+        });
+      }
 
       // Remove responder from awaiting set
       const allReceived = await machine.receiveResponse(respondingAgentId);
@@ -1868,7 +1894,37 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Check if this is a protocol violation (completing with pending asks)
           if (errorMsg.includes('PROTOCOL VIOLATION') || errorMsg.includes('outstanding asks')) {
-            log.warn('dispatcher', `BLOCKED: task-complete while asks pending`, {
+            // Check if it's unanswered INCOMING asks (need to remind/escalate)
+            if (errorMsg.includes('unanswered incoming asks')) {
+              const incomingAsks = machine.getIncomingAsks();
+              const reminderCount = machine.getIncomingAskReminderCount();
+
+              log.warn('dispatcher', `BLOCKED: task-complete with unanswered incoming asks`, {
+                agentId,
+                incomingAsks: incomingAsks.map(a => `${a.from} (${a.msgId})`),
+                reminderCount,
+              });
+
+              // Check if we've exceeded max reminders
+              if (reminderCount >= 3) {
+                // Force error after 3 reminders
+                const activeWorker = this.activeWorkers.get(agentId);
+                if (activeWorker) {
+                  await this.forceErrorForUnansweredAsks(agentId, activeWorker, incomingAsks);
+                }
+                return;
+              }
+
+              // Inject reminder and continue
+              const activeWorker = this.activeWorkers.get(agentId);
+              if (activeWorker) {
+                await this.injectIncomingAskReminder(agentId, activeWorker, incomingAsks, reminderCount);
+              }
+              return;
+            }
+
+            // Otherwise, it's OUTGOING asks (awaiting responses) - just block
+            log.warn('dispatcher', `BLOCKED: task-complete while awaiting responses`, {
               agentId,
               error: errorMsg,
               currentState: machine.getStatus(),
@@ -3147,6 +3203,144 @@ ${ensembleOutput}
         error: (err as Error).message,
       });
     }
+  }
+
+  /**
+   * Inject reminder about unanswered incoming asks
+   * Escalating prompts based on reminder count
+   */
+  private async injectIncomingAskReminder(
+    agentId: string,
+    worker: ActiveWorkerInfo,
+    incomingAsks: Array<{ from: string; msgId: string }>,
+    currentReminderCount: number
+  ): Promise<void> {
+    const { machine, runner } = worker;
+    const sessionId = runner.getSessionId();
+
+    if (!sessionId) {
+      log.error('dispatcher', 'Cannot inject reminder without session ID', { agentId });
+      return;
+    }
+
+    // Increment reminder count
+    const newReminderCount = machine.incrementIncomingAskReminder();
+
+    const askList = incomingAsks.map(a => `- **${a.from}** (msg-id: ${a.msgId})`).join('\n');
+
+    const reminderPrompts = [
+      // Reminder 1: Gentle
+      `## System Notice: Unanswered Ask Messages
+
+You have received ask messages that require responses:
+
+${askList}
+
+**You cannot complete this task until you respond to these asks.**
+
+Please send ask-response messages to each agent listed above before attempting to complete.
+
+If you don't have the information to respond, you can:
+1. Send an ask-response explaining what information you need
+2. Send an ask-human to escalate
+3. Continue working to gather the needed information
+
+What would you like to do?`,
+
+      // Reminder 2: Firm
+      `## IMPORTANT: Completion Blocked - Unanswered Asks
+
+**ATTENTION**: You attempted to complete but have ${incomingAsks.length} unanswered ask message(s):
+
+${askList}
+
+**This is your second reminder.**
+
+You MUST send ask-response messages to all agents above before you can complete.
+
+**Required Action**: Send ask-response to each agent immediately.`,
+
+      // Reminder 3: Final warning
+      `## FINAL WARNING: Session Termination Imminent
+
+**CRITICAL**: You have ${incomingAsks.length} unanswered ask message(s):
+
+${askList}
+
+**This is your FINAL warning.**
+
+If you attempt to complete again without responding to these asks, your session will be **TERMINATED** and the task will be marked as **FAILED**.
+
+**Send ask-response messages NOW.**`
+    ];
+
+    const prompt = reminderPrompts[Math.min(newReminderCount - 1, reminderPrompts.length - 1)];
+
+    log.info('dispatcher', `Injecting incoming ask reminder (attempt ${newReminderCount})`, {
+      agentId,
+      reminderCount: newReminderCount,
+      incomingAsks: incomingAsks.map(a => a.from),
+    });
+
+    this.emit('worker:incoming-ask-reminder', {
+      agentId,
+      reminderCount: newReminderCount,
+      incomingAsks,
+    });
+
+    try {
+      // Interrupt current run and resume with reminder
+      await runner.interrupt();
+      const result = await runner.resume(sessionId, prompt);
+
+      if (!result.success) {
+        log.error('dispatcher', 'Reminder injection failed', {
+          agentId,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      log.error('dispatcher', 'Failed to inject incoming ask reminder', {
+        agentId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Force error state after 3 failed reminder attempts
+   */
+  private async forceErrorForUnansweredAsks(
+    agentId: string,
+    worker: ActiveWorkerInfo,
+    incomingAsks: Array<{ from: string; msgId: string }>
+  ): Promise<void> {
+    const { machine, runner } = worker;
+    const askList = incomingAsks.map(a => `${a.from} (${a.msgId})`).join(', ');
+
+    log.error('dispatcher', 'Forcing error after max reminders about unanswered asks', {
+      agentId,
+      incomingAsks: askList,
+      reminderAttempts: 3,
+    });
+
+    // Kill the worker
+    runner.kill();
+
+    // Transition to error state
+    await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);
+
+    // Clean up
+    this.activeWorkers.delete(agentId);
+    this.writeWorkerState();
+
+    this.emit('worker:error', {
+      id: agentId,
+      error: `Unanswered incoming asks after 3 reminders: [${askList}]`,
+      transitionName: 'error',
+    });
+
+    log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId });
   }
 
 }

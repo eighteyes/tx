@@ -26,7 +26,7 @@ Transform requirements into a concrete mesh design:
    - Entry point (first agent)
    - Routing block
    - FSM block (if needed)
-   - Special features (continuation, toolRestriction, graded, etc.)
+   - Special features (continuation, toolRestriction, lifecycle hooks, etc.)
 5. **Document design** in structured format
 6. **Route to implementer** with complete design
 
@@ -67,7 +67,7 @@ fsm:
 - `auto_despawn: true` (for ephemeral)
 - `continuation: true` (if session persistence needed)
 - `toolRestriction: mcp-only` (if MCP tools only)
-- `graded: true` (if quality evaluation needed)
+- `lifecycle: { pre: [...], post: [...] }` (for quality hooks)
 ```
 
 ## Design Guidelines

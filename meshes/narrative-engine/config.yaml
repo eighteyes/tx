@@ -153,6 +153,7 @@ routing:
       scribe: "Compress turn state"
       dramaturg: "Analyze story context"
       system: "Need mechanical resolution"
+      editor: "Review prose"
     ask-human:
       core: "Need player input OR game state anomaly"
     complete:

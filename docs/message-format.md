@@ -293,7 +293,7 @@ assumptions: ["User has valid session"]
 | `grade` | string | Self-assessed grade: `A`, `B`, `C`, `D`, `F` |
 | `confidence` | number | Confidence score: `0.0` - `1.0` |
 | `status` | string | Completion status: `complete`, `partial`, `blocked` |
-| `iteration` | number | Current iteration number (for graded meshes) |
+| `iteration` | number | Current iteration number (for quality hooks) |
 | `gaps` | array/object | Known gaps or missing information |
 | `assumptions` | array | Assumptions made during work |
 | `speculation` | object | Speculative elements in the response |
@@ -356,7 +356,7 @@ assumptions:
 
 #### `sources` - Source References
 
-For accuracy validation in graded meshes:
+For accuracy validation with quality hooks:
 
 ```yaml
 sources:
@@ -718,7 +718,7 @@ Worker                   Dispatcher            Consumer              Core/Human
 1. **Use descriptive headlines**: Headlines appear in logs and UI
 2. **Include msg-id**: Enables correlation of responses to requests
 3. **Set appropriate status**: Enables routing rules
-4. **Add rearmatter for quality**: Especially for graded meshes
+4. **Add rearmatter for quality**: Especially for meshes with quality hooks
 
 ### Rearmatter Guidelines
 

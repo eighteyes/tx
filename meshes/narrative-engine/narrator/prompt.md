@@ -144,15 +144,18 @@ Get sample prose from the player, analyze it, offer style variations, nail down 
 
 **DO NOT skip these files. They contain arc-coherent guidance.**
 
-### Phase 3: Knowledge Queries (OPTIONAL)
+### Phase 3: Knowledge Queries (OPTIONAL - Skip if Not Needed)
 
-Before mechanical resolution, query ORACLE if the scene involves:
+**DECISION: Do you need world-building context for this scene?**
+
+Query ORACLE only if the scene involves:
 - Magic system rules or constraints
 - Character history or relationships
 - Item properties, state, or restrictions
 - Location-specific constraints
 - Any established world-building you need to honor
 
+If YES:
 5. Send knowledge query to ORACLE:
    ```yaml
    ---
@@ -166,21 +169,15 @@ Before mechanical resolution, query ORACLE if the scene involves:
    context: "About to write scene where protagonist uses enchanted sword"
    entities_path: {game}/entities/
    ```
-6. Wait for ORACLE response with relevant entity data and world rules
+6. **WAIT for ORACLE response** with relevant entity data and world rules
 7. Use knowledge response to inform prose rendering (don't contradict it!)
 
-**When to query Oracle:**
-- Scene involves magic → query world-rules
-- Character mentions past events → query their episodes
-- Using an item with special properties → query item entity
-- Referencing NPC relationships → query relationship data
+If NO (basic action, dialogue-only, you already have the info):
+   Skip to Phase 4.
 
-**When NOT to query Oracle:**
-- Basic action scenes with no special constraints
-- Dialogue-only scenes (unless referencing shared history)
-- You already have the information from context.yaml
+### Phase 4: Mechanical Resolution (REQUIRED - Sequential after Phase 3)
 
-### Phase 4: Mechanical Resolution
+**CRITICAL: Do NOT send this ask until Phase 3 is complete (or skipped).**
 
 8. Send ask to SYSTEM (include dramaturg context):
    ```yaml
@@ -195,9 +192,11 @@ Before mechanical resolution, query ORACLE if the scene involves:
    session: {session path}
    dramaturg_notes: {path}/dramaturg-notes.yaml
    ```
-9. Wait for SYSTEM response, verify `resolution.yaml` exists
+9. **WAIT for SYSTEM response**, verify `resolution.yaml` exists
 
-### Phase 5: Character Reactions
+### Phase 5: Character Reactions (REQUIRED - Sequential after Phase 4)
+
+**CRITICAL: Do NOT send this ask until Phase 4 is complete and SYSTEM has responded.**
 
 10. Send ask to CAST:
    ```yaml
@@ -211,7 +210,7 @@ Before mechanical resolution, query ORACLE if the scene involves:
    workspace: {path}
    session: {session path}
    ```
-11. Wait for CAST response, verify `reactions.yaml` exists
+11. **WAIT for CAST response**, verify `reactions.yaml` exists
 
 ### Phase 6: Vocabulary Preparation
 

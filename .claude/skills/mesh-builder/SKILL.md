@@ -88,7 +88,15 @@ See `docs/mesh-config.md` for full routing reference.
 
 **MCP tools only**: `toolRestriction: mcp-only`
 
-**Quality evaluation**: `graded: true` or `graded: [checklist, rubric]`
+**Quality hooks**: Use explicit `lifecycle:` hooks for quality evaluation:
+```yaml
+lifecycle:
+  pre:
+    - quality:preflight
+  post:
+    - quality:checklist
+    - quality:rubric
+```
 
 **FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm.
 

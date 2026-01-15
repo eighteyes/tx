@@ -59,7 +59,14 @@ type: ephemeral          # or persistent
 auto_despawn: true       # for ephemeral only
 continuation: true       # for session persistence
 toolRestriction: mcp-only  # if MCP tools only
-graded: true            # for quality evaluation
+
+# Quality hooks (explicit lifecycle, not graded shorthand)
+lifecycle:
+  pre:
+    - quality:preflight
+  post:
+    - quality:checklist
+    - quality:rubric
 
 playbook_notes: |
   Design rationale here
