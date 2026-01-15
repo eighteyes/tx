@@ -85,11 +85,48 @@ export class TmuxSession {
    * Source a tmux configuration file for this session
    */
   async sourceConfig(configPath: string): Promise<boolean> {
+    log.debug('tmux', 'sourceConfig called', { session: this.name, configPath });
+
     try {
-      await execAsync(`tmux source-file -t '${this.name}' '${configPath}'`);
+      let hostPath = configPath;
+
+      // If path doesn't exist (e.g., Docker path mismatch), try to resolve relative to CLI installation
+      if (!fs.existsSync(configPath)) {
+        log.debug('tmux', 'Config path does not exist, trying alt path', { configPath });
+
+        // Get CLI installation directory (where this code is actually running)
+        const cliRoot = path.resolve(__dirname, '../..');
+        const filename = path.basename(configPath);
+        const altPath = path.join(cliRoot, filename);
+
+        log.debug('tmux', 'Checking alt path', { cliRoot, filename, altPath });
+
+        if (fs.existsSync(altPath)) {
+          hostPath = altPath;
+          log.info('tmux', 'Using alt config path', { original: configPath, resolved: hostPath });
+        } else {
+          log.error('tmux', 'Config file not found', { path: configPath, altPath });
+          return false;
+        }
+      } else {
+        log.debug('tmux', 'Config path exists', { hostPath });
+      }
+
+      const cmd = `tmux source-file '${hostPath}'`;
+      log.debug('tmux', 'Executing source-file command', { cmd, session: this.name });
+
+      const result = await execAsync(cmd);
+      log.info('tmux', 'Successfully sourced config', { path: hostPath, stdout: result.stdout, stderr: result.stderr });
       return true;
-    } catch (err) {
-      log.error('tmux', 'Failed to source config', { path: configPath, error: err });
+    } catch (err: any) {
+      log.error('tmux', 'Failed to source config', {
+        session: this.name,
+        path: configPath,
+        error: err.message,
+        stderr: err.stderr,
+        stdout: err.stdout,
+        code: err.code
+      });
       return false;
     }
   }

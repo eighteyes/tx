@@ -45,6 +45,12 @@ export {
 } from './fsm-evaluator.ts';
 
 export {
+  SimpleExpressionEvaluator,
+  expressionEvaluator,
+  type ExpressionResult,
+} from './fsm-expression.ts';
+
+export {
   AggregationEngine,
   type AgentResult,
   type AggregationOptions,

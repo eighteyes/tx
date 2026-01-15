@@ -15,6 +15,7 @@ import type Database from 'better-sqlite3';
 import { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
 import { ScriptExecutor, type ScriptContext, type ScriptResult } from './fsm-scripts.ts';
 import { ConditionEvaluator } from './fsm-evaluator.ts';
+import { SimpleExpressionEvaluator } from './fsm-expression.ts';
 import { log } from '../shared/logger.ts';
 import type { FSMExitConfig } from '../shared/types.ts';
 
@@ -79,6 +80,7 @@ export class MeshFSM extends EventEmitter {
   private persistence: FSMPersistence;
   private scriptExecutor: ScriptExecutor;
   private conditionEvaluator: ConditionEvaluator;
+  private expressionEvaluator: SimpleExpressionEvaluator;
   private stateData: FSMStateData | null = null;
   private stateMap: Map<string, FSMStateConfig>;
   private initialized = false;
@@ -96,6 +98,7 @@ export class MeshFSM extends EventEmitter {
     this.persistence = new FSMPersistence(db);
     this.scriptExecutor = new ScriptExecutor({ workDir });
     this.conditionEvaluator = new ConditionEvaluator();
+    this.expressionEvaluator = new SimpleExpressionEvaluator();
 
     // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
     this._initialState = config.initialState || config.initial || '';
@@ -676,7 +679,46 @@ export class MeshFSM extends EventEmitter {
     if (stateConfig.exit.set) {
       for (const [key, valueExpr] of Object.entries(stateConfig.exit.set)) {
         try {
-          // Substitute context variables in the expression
+          // Build evaluation context combining FSM context, rearmatter, and message
+          const evalContext: Record<string, unknown> = {
+            ...this.stateData.context,
+          };
+
+          // Add rearmatter values with prefix for namespacing
+          if (rearmatter) {
+            for (const [rmKey, rmValue] of Object.entries(rearmatter)) {
+              if (typeof rmValue === 'string' || typeof rmValue === 'number' || typeof rmValue === 'boolean') {
+                evalContext[`rearmatter_${rmKey}`] = rmValue;
+              }
+            }
+          }
+
+          // Try simple expression evaluation first (arithmetic and string concat)
+          // This avoids shell execution for common patterns like "$iteration + 1"
+          const simpleResult = this.expressionEvaluator.evaluate(valueExpr, evalContext);
+
+          if (simpleResult.success && simpleResult.isSimpleExpression) {
+            const output = String(simpleResult.value);
+            context[key] = output;
+            this.updateContext({ [key]: output });
+            log.debug('mesh-fsm', 'Exit.set evaluated (simple expression)', {
+              meshName: this.meshName,
+              key,
+              value: output,
+              expression: valueExpr,
+            });
+            continue;  // Move to next set operation
+          }
+
+          // Fall back to shell execution for complex expressions
+          log.debug('mesh-fsm', 'Exit.set falling back to shell execution', {
+            meshName: this.meshName,
+            key,
+            expression: valueExpr,
+            simpleError: simpleResult.error,
+          });
+
+          // Substitute context variables in the expression for shell
           let expr = valueExpr;
 
           // Replace $rearmatter with JSON string
@@ -696,7 +738,7 @@ export class MeshFSM extends EventEmitter {
             }
           }
 
-          // Execute the expression
+          // Execute the expression via shell
           const scriptContext: ScriptContext = {
             fsmState: currentState,
             fsmMeshName: this.meshName,
@@ -719,7 +761,7 @@ export class MeshFSM extends EventEmitter {
             context[key] = output;
             // Also update FSM context for persistence
             this.updateContext({ [key]: output });
-            log.debug('mesh-fsm', 'Exit.set evaluated', {
+            log.debug('mesh-fsm', 'Exit.set evaluated (shell)', {
               meshName: this.meshName,
               key,
               value: output,

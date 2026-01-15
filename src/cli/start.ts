@@ -116,6 +116,12 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
   } catch { /* File doesn't exist, nothing to back up */ }
 
+  // Clear log files BEFORE initializing logger
+  for (const file of ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl']) {
+    const logPath = path.join(logsDir, file);
+    if (fs.existsSync(logPath)) fs.writeFileSync(logPath, '');
+  }
+
   // Initialize logger (file-based to avoid polluting tmux session)
   log.init(cwd, 'debug');
   log.info('start', 'Starting TX V4', { cwd, aiDir });
@@ -143,7 +149,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   if (fs.existsSync(tmuxConf)) {
     console.log(`[tmux] Loading config: ${tmuxConf}`);
-    await tmux.sourceConfig(tmuxConf);
+    const loaded = await tmux.sourceConfig(tmuxConf);
+    if (!loaded) {
+      console.warn(`[tmux] ⚠️  Failed to load config: ${tmuxConf}`);
+      console.warn(`[tmux] Session may not have expected settings`);
+    }
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
@@ -164,12 +174,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   }
   queue.clearAllSessions();
 
-  for (const file of ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl']) {
-    const logPath = path.join(logsDir, file);
-    if (fs.existsSync(logPath)) fs.writeFileSync(logPath, '');
-  }
-
-  log.info('start', 'Cleared pending messages, sessions, and logs');
+  log.info('start', 'Cleared pending messages and sessions');
 
   const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
   await consumer.start();
