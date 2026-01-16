@@ -6,6 +6,7 @@
  * - Display real-time message stream
  * - Handle user input
  * - Show connection status
+ * - Support narrative-engine mesh features
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -16,6 +17,7 @@ import { useSessionStorage } from '../hooks/useSessionStorage';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { SessionInfo } from './SessionInfo';
+import { NarrativeControls } from './NarrativeControls';
 import type { SessionInfo as SessionInfoType } from '../types/session';
 import './SessionRunner.css';
 
@@ -37,6 +39,9 @@ export function SessionRunner() {
   const { status, messages } = useWebSocket(
     session?.sessionId ?? null
   );
+
+  // Detect if this is narrative-engine mesh
+  const isNarrativeMesh = meshName === 'narrative-engine';
 
   // Initialize session (create new or resume existing)
   useEffect(() => {
@@ -163,7 +168,7 @@ export function SessionRunner() {
           </div>
         )}
 
-        <MessageList messages={messages} />
+        <MessageList messages={messages} onRespond={handleSend} />
 
         <MessageInput
           onSend={handleSend}
@@ -172,12 +177,21 @@ export function SessionRunner() {
         />
       </main>
 
-      {/* Right Sidebar - Context (placeholder) */}
+      {/* Right Sidebar - Context */}
       <aside className="context-sidebar">
         <h3>Context</h3>
-        <p className="placeholder-text">
-          Game state and context will appear here.
-        </p>
+
+        {isNarrativeMesh ? (
+          <NarrativeControls
+            onCommand={(cmd) => handleSend(cmd)}
+            disabled={status !== 'connected'}
+            hasMessages={messages.length > 0}
+          />
+        ) : (
+          <p className="placeholder-text">
+            Game state and context will appear here.
+          </p>
+        )}
       </aside>
     </div>
   );

@@ -1,0 +1,52 @@
+/**
+ * ProseDisplay.css
+ * Styles for narrative prose rendering.
+ */
+
+.prose-display {
+  font-family: Georgia, 'Times New Roman', serif;
+  line-height: 1.8;
+  color: #e5e5e5;
+}
+
+.prose-block {
+  margin-bottom: 1.5rem;
+}
+
+.prose-block:last-child {
+  margin-bottom: 0;
+}
+
+.prose-block--prose {
+  font-size: 1.0625rem;
+  text-align: justify;
+}
+
+.prose-block--visual {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border-left: 3px solid #4f46e5;
+  font-style: italic;
+}
+
+.prose-block--text {
+  font-family: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.prose-block__label {
+  display: inline-block;
+  font-family: system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4f46e5;
+  margin-bottom: 0.5rem;
+}
+
+.prose-block__content {
+  white-space: pre-wrap;
+}

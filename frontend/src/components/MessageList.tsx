@@ -5,6 +5,7 @@
  * - Display messages in chronological order
  * - Auto-scroll to bottom on new messages
  * - Handle empty state
+ * - Pass HITL response handler to message bubbles
  */
 
 import { useEffect, useRef } from 'react';
@@ -15,9 +16,10 @@ import './MessageList.css';
 interface MessageListProps {
   messages: AgentMessage[];
   loading?: boolean;
+  onRespond?: (response: string) => void;
 }
 
-export function MessageList({ messages, loading }: MessageListProps) {
+export function MessageList({ messages, loading, onRespond }: MessageListProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +52,7 @@ export function MessageList({ messages, loading }: MessageListProps) {
   return (
     <div className="message-list" ref={listRef}>
       {messages.map((msg) => (
-        <MessageBubble key={msg.id} message={msg} />
+        <MessageBubble key={msg.id} message={msg} onRespond={onRespond} />
       ))}
       <div ref={endRef} className="scroll-anchor" />
     </div>

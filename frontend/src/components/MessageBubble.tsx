@@ -5,17 +5,23 @@
  * - Render message with appropriate styling (user/agent/system)
  * - Show metadata (from, type, timestamp)
  * - Handle long messages gracefully
+ * - Render narrative prose and HITL decisions
  */
 
 import type { AgentMessage } from '../types/session';
+import { ProseDisplay, isNarrativeContent } from './ProseDisplay';
+import { HITLDecision, parseAskHuman } from './HITLDecision';
 import './MessageBubble.css';
 
 interface MessageBubbleProps {
   message: AgentMessage;
+  onRespond?: (response: string) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRespond }: MessageBubbleProps) {
   const role = getMessageRole(message);
+  const isNarrative = isNarrativeContent(message.body);
+  const isAskHuman = message.type === 'ask-human';
 
   return (
     <div className={`message-bubble message-bubble--${role}`}>
@@ -26,7 +32,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         )}
       </div>
       <div className="message-bubble__body">
-        {message.body}
+        {isAskHuman ? (
+          <HITLDecision
+            {...parseAskHuman(message.body)}
+            onDecision={onRespond || (() => {})}
+            disabled={!onRespond}
+          />
+        ) : isNarrative ? (
+          <ProseDisplay content={message.body} />
+        ) : (
+          message.body
+        )}
       </div>
       <div className="message-bubble__footer">
         <span className="message-bubble__type">{message.type}</span>
