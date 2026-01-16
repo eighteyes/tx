@@ -321,7 +321,8 @@ describe('WorkerStateMachine', () => {
     });
 
     it('should reject complete from awaiting state when asks are pending', async () => {
-      const machine = new WorkerStateMachine('await-worker-7a', testConfig, 'test-mesh', 'test-agent');
+      // Must pass isCompletionAgent=true for parity check to apply
+      const machine = new WorkerStateMachine('await-worker-7a', testConfig, 'test-mesh', 'test-agent', 300000, true);
       await machine.initialize();
       await machine.start(12345);
       await machine.enterAwait('target/agent', 'session-complete');
