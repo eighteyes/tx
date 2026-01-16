@@ -9,14 +9,14 @@
  * - Support narrative-engine mesh features
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { sessionAPI } from '../api/sessions';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useSessionStorage } from '../hooks/useSessionStorage';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
-import { SessionInfo } from './SessionInfo';
+import { SessionSidebar } from './SessionSidebar';
 import { NarrativeControls } from './NarrativeControls';
 import type { SessionInfo as SessionInfoType } from '../types/session';
 import './SessionRunner.css';
@@ -31,9 +31,22 @@ export function SessionRunner() {
   const [session, setSession] = useState<SessionInfoType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+
+  // Track whether we've validated this session already
+  const validatedSessionRef = useRef<string | null>(null);
 
   // Session storage for localStorage persistence
-  const { saveSession, updateActivity } = useSessionStorage();
+  const {
+    saveSession,
+    removeSession,
+    updateActivity,
+    getSessionsForMesh,
+    validateSession,
+  } = useSessionStorage();
+
+  // Get stored sessions for this mesh
+  const storedSessions = getSessionsForMesh(meshName || '');
 
   // WebSocket connection (messages sent via REST API, WebSocket for receiving only)
   const { status, messages } = useWebSocket(
@@ -42,6 +55,22 @@ export function SessionRunner() {
 
   // Detect if this is narrative-engine mesh
   const isNarrativeMesh = meshName === 'narrative-engine';
+
+  // Validate session on resume (if session exists in URL)
+  useEffect(() => {
+    async function validateOnResume() {
+      if (urlSessionId && validatedSessionRef.current !== urlSessionId) {
+        validatedSessionRef.current = urlSessionId;
+        const isValid = await validateSession(urlSessionId);
+        if (!isValid) {
+          // Session no longer exists, create new one
+          setError('Session expired. Creating new session...');
+          navigate(`/meshes/${meshName}/run`, { replace: true });
+        }
+      }
+    }
+    validateOnResume();
+  }, [urlSessionId, validateSession, meshName, navigate]);
 
   // Initialize session (create new or resume existing)
   useEffect(() => {
@@ -56,6 +85,10 @@ export function SessionRunner() {
           // Resume existing session
           const existingSession = await sessionAPI.getSession(urlSessionId);
           setSession(existingSession);
+
+          // Show restore message
+          setRestoreMessage('Session restored');
+          setTimeout(() => setRestoreMessage(null), 2000);
         } else {
           // Create new session
           const newSession = await sessionAPI.createSession(meshName);
@@ -110,6 +143,16 @@ export function SessionRunner() {
     }
   }, [session, meshName, navigate]);
 
+  // Create new session (for sidebar)
+  const handleNewSession = useCallback(() => {
+    navigate(`/meshes/${meshName}/run`);
+  }, [meshName, navigate]);
+
+  // Delete stored session from history
+  const handleDeleteStoredSession = useCallback((sessionId: string) => {
+    removeSession(sessionId);
+  }, [removeSession]);
+
   if (loading) {
     return (
       <div className="session-runner session-runner--loading">
@@ -134,30 +177,21 @@ export function SessionRunner() {
 
   return (
     <div className="session-runner">
+      {/* Restore Message Toast */}
+      {restoreMessage && (
+        <div className="restore-message">{restoreMessage}</div>
+      )}
+
       {/* Left Sidebar - Session Info */}
-      <aside className="session-sidebar">
-        <button
-          className="btn btn--ghost"
-          onClick={() => navigate(`/meshes/${meshName}`)}
-        >
-          &larr; Back to Mesh
-        </button>
-
-        <SessionInfo
-          session={session}
-          connectionStatus={status}
-          meshName={meshName || ''}
-        />
-
-        <div className="session-controls">
-          <button
-            className="btn btn--danger"
-            onClick={handleStop}
-          >
-            Stop Session
-          </button>
-        </div>
-      </aside>
+      <SessionSidebar
+        meshName={meshName || ''}
+        currentSession={session}
+        connectionStatus={status}
+        storedSessions={storedSessions}
+        onNewSession={handleNewSession}
+        onStopSession={handleStop}
+        onDeleteSession={handleDeleteStoredSession}
+      />
 
       {/* Main Content - Messages */}
       <main className="message-area">

@@ -299,6 +299,26 @@
   background: #1d4ed8;
 }
 
+/* Restore Message Toast */
+.restore-message {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  background: #22c55e;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  z-index: 1000;
+  animation: fadeOut 2s forwards;
+}
+
+@keyframes fadeOut {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
   .session-runner {
