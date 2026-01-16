@@ -28,8 +28,8 @@ export function SessionRunner() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
 
-  // WebSocket connection
-  const { status, messages, sendMessage: wsSendMessage } = useWebSocket(
+  // WebSocket connection (messages sent via REST API, WebSocket for receiving only)
+  const { status, messages } = useWebSocket(
     session?.sessionId ?? null
   );
 
