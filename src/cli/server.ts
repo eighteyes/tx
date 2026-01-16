@@ -32,6 +32,10 @@ import {
   type TenantInfo,
 } from '../server/index.ts';
 import { MeshController, MeshNotFoundError } from '../controllers/mesh-controller.ts';
+import { WorkspaceController, PathNotFoundError, PathSecurityError } from '../controllers/workspace-controller.ts';
+import { LogsController } from '../controllers/logs-controller.ts';
+import { SessionsController } from '../controllers/sessions-controller.ts';
+import { StatsController } from '../controllers/stats-controller.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,6 +67,10 @@ interface ServerDeps {
   quotaManager: QuotaManager;
   rateLimiter: RateLimiter;
   meshController: MeshController;
+  workspaceController: WorkspaceController;
+  logsController: LogsController;
+  sessionsController: SessionsController;
+  statsController: StatsController;
 }
 
 /**
@@ -368,6 +376,194 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     },
   },
 
+  // Dashboard stats
+  {
+    method: 'GET',
+    pattern: '/v1/dashboard/stats',
+    handler: async (ctx, deps) => {
+      return deps.statsController.getDashboardStats();
+    },
+  },
+
+  // Workspace file browser routes
+  {
+    method: 'GET',
+    pattern: '/v1/workspace',
+    handler: async (ctx, deps) => {
+      const dirPath = ctx.query.get('path') || '';
+      try {
+        return await deps.workspaceController.listDirectory(dirPath);
+      } catch (error) {
+        if (error instanceof PathNotFoundError) {
+          throw { status: 404, message: error.message };
+        }
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/workspace/file',
+    handler: async (ctx, deps) => {
+      const filePath = ctx.query.get('path');
+      if (!filePath) {
+        throw { status: 400, message: 'path is required' };
+      }
+      try {
+        return await deps.workspaceController.readFile(filePath);
+      } catch (error) {
+        if (error instanceof PathNotFoundError) {
+          throw { status: 404, message: error.message };
+        }
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/v1/workspace/file',
+    handler: async (ctx, deps) => {
+      const body = ctx.body as { path: string; content: string };
+      if (!body.path) {
+        throw { status: 400, message: 'path is required' };
+      }
+      if (body.content === undefined) {
+        throw { status: 400, message: 'content is required' };
+      }
+      try {
+        await deps.workspaceController.writeFile(body.path, body.content);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/workspace/file',
+    handler: async (ctx, deps) => {
+      const body = ctx.body as { path: string; content?: string };
+      if (!body.path) {
+        throw { status: 400, message: 'path is required' };
+      }
+      try {
+        await deps.workspaceController.createFile(body.path, body.content || '');
+        return { success: true };
+      } catch (error) {
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/workspace/directory',
+    handler: async (ctx, deps) => {
+      const body = ctx.body as { path: string };
+      if (!body.path) {
+        throw { status: 400, message: 'path is required' };
+      }
+      try {
+        await deps.workspaceController.createDirectory(body.path);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/v1/workspace/entry',
+    handler: async (ctx, deps) => {
+      const entryPath = ctx.query.get('path');
+      if (!entryPath) {
+        throw { status: 400, message: 'path is required' };
+      }
+      try {
+        await deps.workspaceController.deleteEntry(entryPath);
+        return { success: true };
+      } catch (error) {
+        if (error instanceof PathNotFoundError) {
+          throw { status: 404, message: error.message };
+        }
+        if (error instanceof PathSecurityError) {
+          throw { status: 403, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+
+  // Logs routes
+  {
+    method: 'GET',
+    pattern: '/v1/logs',
+    handler: async (ctx, deps) => {
+      const filter = {
+        level: ctx.query.get('level') || undefined,
+        component: ctx.query.get('component') || undefined,
+        search: ctx.query.get('search') || undefined,
+        limit: parseInt(ctx.query.get('limit') || '100', 10),
+        offset: parseInt(ctx.query.get('offset') || '0', 10),
+        last: ctx.query.get('last') === 'true',
+      };
+      return deps.logsController.listLogs(filter);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/logs/components',
+    handler: async (ctx, deps) => {
+      const components = await deps.logsController.getComponents();
+      return { components };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: '/v1/logs',
+    handler: async (ctx, deps) => {
+      await deps.logsController.clearLogs();
+      return { success: true };
+    },
+  },
+
+  // Sessions list routes
+  {
+    method: 'GET',
+    pattern: '/v1/sessions-list',
+    handler: async (ctx, deps) => {
+      const filter = {
+        meshId: ctx.query.get('meshId') || undefined,
+        status: ctx.query.get('status') || undefined,
+        limit: parseInt(ctx.query.get('limit') || '50', 10),
+        offset: parseInt(ctx.query.get('offset') || '0', 10),
+      };
+      return deps.sessionsController.listSessions(filter);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/sessions-list/:id/artifacts',
+    handler: async (ctx, deps) => {
+      const artifacts = await deps.sessionsController.getSessionArtifacts(ctx.params.id);
+      return { artifacts };
+    },
+  },
+
 ];
 
 /**
@@ -518,13 +714,24 @@ export async function server(options: ServerOptions): Promise<void> {
     log.info('server', 'No-DB mode: Only mesh CRUD and static serving available');
   }
 
+  // Initialize additional controllers (always available)
+  const workDir = process.env.TX_CWD || process.cwd();
+  const workspaceController = new WorkspaceController(workDir);
+  const logsController = new LogsController(workDir);
+  const sessionsController = new SessionsController(workDir);
+  const statsController = new StatsController(workDir, meshesDir);
+
   const deps: ServerDeps = {
     storage: storage!,
     sessionManager: sessionManager!,
     workerPool: workerPool!,
     quotaManager: quotaManager!,
     rateLimiter: rateLimiter!,
-    meshController
+    meshController,
+    workspaceController,
+    logsController,
+    sessionsController,
+    statsController,
   };
 
   // Create HTTP server

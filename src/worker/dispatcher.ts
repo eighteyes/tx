@@ -197,6 +197,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
+  private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -636,6 +637,16 @@ The system will resume your session when the human responds.`;
         remainingBefore: awaitingResponses.size,
       });
 
+      // Buffer this response for aggregation
+      if (!this.askResponseBuffer.has(awaitingAgentId)) {
+        this.askResponseBuffer.set(awaitingAgentId, []);
+      }
+      this.askResponseBuffer.get(awaitingAgentId)!.push({
+        from: respondingAgentId,
+        content,
+        headline: event.headline,
+      });
+
       // Remove responder from awaiting set
       const allReceived = await machine.receiveResponse(respondingAgentId);
 
@@ -665,13 +676,20 @@ The system will resume your session when the human responds.`;
           return;
         }
 
+        // Get ALL buffered responses for this agent
+        const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
+
         log.info('dispatcher', `All responses received, resuming session`, {
           awaitingAgentId,
           sessionId: sessionId.slice(0, 8),
+          responseCount: bufferedResponses.length,
         });
 
-        // Build resume prompt with the response content
-        const resumePrompt = this.buildAskResponsePrompt(respondingAgentId, content, event.headline);
+        // Build resume prompt with ALL buffered responses
+        const resumePrompt = this.buildAskResponsePrompt(bufferedResponses);
+
+        // Clear buffer before resume
+        this.askResponseBuffer.delete(awaitingAgentId);
 
         // Resume the session
         const result = await runner.resume(sessionId, resumePrompt);
@@ -701,21 +719,45 @@ The system will resume your session when the human responds.`;
 
   /**
    * Build a prompt for resuming with ask-response content
+   * Accepts an array of responses to aggregate multiple responses received while awaiting
    */
-  private buildAskResponsePrompt(from: string, content: string, headline?: string): string {
+  private buildAskResponsePrompt(responses: Array<{ from: string; content: string; headline?: string }>): string {
     const parts: string[] = [];
 
-    parts.push('## Ask Response Received\n');
-    parts.push(`Response received from **${from}**:\n`);
+    if (responses.length === 1) {
+      // Single response - use simpler format
+      const response = responses[0];
+      parts.push('## Ask Response Received\n');
+      parts.push(`Response received from **${response.from}**:\n`);
 
-    if (headline) {
-      parts.push(`**Subject**: ${headline}\n`);
+      if (response.headline) {
+        parts.push(`**Subject**: ${response.headline}\n`);
+      }
+
+      parts.push('---\n');
+      parts.push(response.content);
+      parts.push('\n---');
+      parts.push('\n**Action**: Process this response and continue with your task.');
+    } else {
+      // Multiple responses - aggregate them
+      parts.push(`## Ask Responses Received (${responses.length} total)\n`);
+      parts.push('All requested responses have arrived:\n');
+
+      for (let i = 0; i < responses.length; i++) {
+        const response = responses[i];
+        parts.push(`\n### Response ${i + 1} from **${response.from}**\n`);
+
+        if (response.headline) {
+          parts.push(`**Subject**: ${response.headline}\n`);
+        }
+
+        parts.push('---\n');
+        parts.push(response.content);
+        parts.push('\n---\n');
+      }
+
+      parts.push('\n**Action**: Process all responses above and continue with your task.');
     }
-
-    parts.push('---\n');
-    parts.push(content);
-    parts.push('\n---');
-    parts.push('\n**Action**: Process this response and continue with your task.');
 
     return parts.join('\n');
   }
@@ -859,6 +901,7 @@ The system will resume your session when the human responds.`;
 
       // Cleanup
       this.activeWorkers.delete(agentId);
+      this.askResponseBuffer.delete(agentId);
       this.writeWorkerState();
     } catch (error) {
       log.error('dispatcher', `Failed to handle await timeout`, {
@@ -903,6 +946,7 @@ The system will resume your session when the human responds.`;
       runner.kill();
     }
     this.activeWorkers.clear();
+    this.askResponseBuffer.clear();
     this.writeWorkerState();
 
     this.emit('stop');
@@ -1184,6 +1228,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Parity gate: emit session-start for consumer to clear stale pending asks
       this.emit('session-start', { agentId });
 
+      // Clear any stale ask-response buffer for this agent
+      this.askResponseBuffer.delete(agentId);
+
       // Track when FSM 'start' transition completes to avoid race condition
       // When queue is empty, 'complete' fires before 'start' async handler finishes
       // MUST be declared BEFORE event handlers that reference it
@@ -1320,6 +1367,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 // Complete FSM first to avoid race condition
                 await machine.complete(data);
                 this.activeWorkers.delete(agentId);
+                this.askResponseBuffer.delete(agentId);
                 this.writeWorkerState();
 
                 // Then respawn after a delay
@@ -1347,6 +1395,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               // Complete FSM before emitting events
               await machine.complete(data);
               this.activeWorkers.delete(agentId);
+              this.askResponseBuffer.delete(agentId);
               this.writeWorkerState();
 
               this.emit('quality:halt', {
@@ -1420,6 +1469,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.activeWorkers.delete(agentId);
+        this.askResponseBuffer.delete(agentId);
         this.writeWorkerState();
 
         // Save session ID for continuation (if enabled and session captured)
@@ -1478,6 +1528,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId });
           this.activeWorkers.delete(agentId);
+          this.askResponseBuffer.delete(agentId);
           this.writeWorkerState();
         }
 

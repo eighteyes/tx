@@ -63,6 +63,14 @@
   font-size: 0.875rem;
 }
 
+.nav__link--mesh {
+  color: #60a5fa;
+}
+
+.nav__link--mesh.nav__link--active {
+  color: #60a5fa;
+}
+
 .nav__actions {
   display: flex;
   gap: 0.5rem;
