@@ -93,6 +93,7 @@ routing:
   dramaturg:
     ask-response:
       narrator: "Story analysis complete"
+      coordinator: "Prep analysis complete"
 
   system:
     ask-response:
@@ -105,6 +106,7 @@ routing:
   scene-crafter:
     ask-response:
       narrator: "Scene outline complete"
+      coordinator: "Prep outline complete"
 
   oracle:
     ask-response:
