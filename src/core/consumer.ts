@@ -58,6 +58,8 @@ export class MessageConsumer extends EventEmitter {
   private running = false;
   private meshesDir: string;
   private meshEntryPoints: Map<string, string> = new Map();
+  // Map of mesh name to set of agent names for partial name resolution
+  private meshAgents: Map<string, Set<string>> = new Map();
   // Parity gate: track pending asks per agent by msg-id
   // Map<agentId, Map<msgId, PendingAsk>>
   private pendingAsks: Map<string, Map<string, PendingAsk>> = new Map();
@@ -99,6 +101,12 @@ export class MessageConsumer extends EventEmitter {
           const config = YAML.parse(content);
           const entryPoint = config.entry_point || 'worker';
           this.meshEntryPoints.set(config.mesh, entryPoint);
+
+          // Load agent names for partial name resolution
+          if (config.agents && Array.isArray(config.agents)) {
+            const agentNames = new Set(config.agents.map((a: { name: string }) => a.name));
+            this.meshAgents.set(config.mesh, agentNames);
+          }
         } catch {
           // Skip invalid configs
         }
@@ -108,6 +116,12 @@ export class MessageConsumer extends EventEmitter {
           const config = JSON.parse(content);
           const entryPoint = config.entry_point || 'worker';
           this.meshEntryPoints.set(config.mesh, entryPoint);
+
+          // Load agent names for partial name resolution
+          if (config.agents && Array.isArray(config.agents)) {
+            const agentNames = new Set(config.agents.map((a: { name: string }) => a.name));
+            this.meshAgents.set(config.mesh, agentNames);
+          }
         } catch {
           // Skip invalid configs
         }
@@ -147,13 +161,33 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
-   * Resolve mesh routing: to: dev → to: dev/worker
-   * If 'to' contains slash, use as-is
-   * If 'to' is just a mesh name, append entry_point
+   * Resolve mesh routing with support for partial names:
+   * - to: mesh/agent → use as-is (fully qualified)
+   * - to: agent (from narrative-engine/coordinator) → narrative-engine/agent (if agent exists in mesh)
+   * - to: mesh → mesh/entry_point (treat as mesh name)
    */
-  private resolveToAgent(to: string): string {
+  private resolveToAgent(to: string, from: string): string {
+    // Already fully qualified
     if (to.includes('/')) return to;
 
+    // Extract sender's mesh from "mesh/agent" format
+    const fromParts = from.split('/');
+    const senderMesh = fromParts.length > 1 ? fromParts[0] : null;
+
+    // Check if 'to' is an agent in sender's mesh (partial name resolution)
+    if (senderMesh) {
+      const meshAgents = this.meshAgents.get(senderMesh);
+      if (meshAgents && meshAgents.has(to)) {
+        log.debug('consumer', `Resolved partial agent name`, {
+          from,
+          to,
+          resolved: `${senderMesh}/${to}`
+        });
+        return `${senderMesh}/${to}`;
+      }
+    }
+
+    // Treat 'to' as mesh name and append entry point
     const entryPoint = this.meshEntryPoints.get(to);
     if (entryPoint) {
       return `${to}/${entryPoint}`;
@@ -215,8 +249,8 @@ export class MessageConsumer extends EventEmitter {
         return;
       }
 
-      // Resolve mesh routing: to: dev → to: dev/worker
-      const toAgent = this.resolveToAgent(parsed.frontmatter.to);
+      // Resolve mesh routing with support for partial names
+      const toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
 
       // For revisions, emit revision-message event for interrupt handling
       // before attempting to insert (which may fail due to duplicate constraint)

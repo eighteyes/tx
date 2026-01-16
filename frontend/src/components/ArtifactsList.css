@@ -1,0 +1,81 @@
+/**
+ * ArtifactsList.css
+ * Styles for the artifacts list component.
+ */
+
+.artifacts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.artifact-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: #1a1a1a;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+}
+
+.artifact-item:hover {
+  background: #222;
+}
+
+.artifact-icon {
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.artifact-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.artifact-name {
+  font-weight: 500;
+  color: #e5e5e5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-meta {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.artifact-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.btn--xs {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.artifacts-empty,
+.artifacts-loading,
+.artifacts-error {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+  font-size: 0.875rem;
+}
+
+.artifacts-error {
+  color: #f87171;
+}
+
+.artifacts-loading {
+  color: #888;
+}

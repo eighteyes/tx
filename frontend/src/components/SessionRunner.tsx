@@ -18,6 +18,7 @@ import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
 import { SessionSidebar } from './SessionSidebar';
 import { NarrativeControls } from './NarrativeControls';
+import { ArtifactsList } from './ArtifactsList';
 import type { SessionInfo as SessionInfoType } from '../types/session';
 import './SessionRunner.css';
 
@@ -211,21 +212,30 @@ export function SessionRunner() {
         />
       </main>
 
-      {/* Right Sidebar - Context */}
+      {/* Right Sidebar - Context + Artifacts */}
       <aside className="context-sidebar" role="complementary" aria-label="Session context">
-        <h3>Context</h3>
+        {/* Top: Context */}
+        <div className="context-panel">
+          <h3>Context</h3>
 
-        {isNarrativeMesh ? (
-          <NarrativeControls
-            onCommand={(cmd) => handleSend(cmd)}
-            disabled={status !== 'connected'}
-            hasMessages={messages.length > 0}
-          />
-        ) : (
-          <p className="placeholder-text">
-            Game state and context will appear here.
-          </p>
-        )}
+          {isNarrativeMesh ? (
+            <NarrativeControls
+              onCommand={(cmd) => handleSend(cmd)}
+              disabled={status !== 'connected'}
+              hasMessages={messages.length > 0}
+            />
+          ) : (
+            <p className="placeholder-text">
+              Game state and context will appear here.
+            </p>
+          )}
+        </div>
+
+        {/* Bottom: Artifacts */}
+        <div className="artifacts-panel">
+          <h3>Artifacts</h3>
+          <ArtifactsList sessionId={session?.sessionId || null} />
+        </div>
       </aside>
     </div>
   );
