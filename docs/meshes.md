@@ -15,10 +15,20 @@ Quick reference for available meshes and when to use them.
 
 ### dev
 
-- **Purpose**: Development, coding, implementation
-- **Entry**: `dev/worker`
-- **Model**: opus
-- **Use when**: Building features, writing code, fixing bugs
+- **Purpose**: Deep development with testing and code review
+- **Entry**: `dev/implementer`
+- **Agents**: implementer (opus) → tester (sonnet) → reviewer (opus)
+- **Flow**: Implement → Run tests → Code review (with feedback loops)
+- **Use when**: Complex features, significant refactors, high-stakes implementations
+- **Triggers**: `build`, `implement`, `fix`, `develop`, `refactor`
+- **Commands**: `/know:build`
+
+### dev-lite
+
+- **Purpose**: Lightweight development for simple fixes and quick features
+- **Entry**: `dev-lite/worker`
+- **Model**: sonnet
+- **Use when**: Typos, simple bug fixes, straightforward features, quick iterations
 - **Triggers**: `build`, `implement`, `code up`, `fix`, `develop`
 - **Commands**: `/know:build`
 
@@ -115,8 +125,8 @@ Quick reference for available meshes and when to use them.
 | Need | Mesh | Why |
 |------|------|-----|
 | Add feature to spec | brain | Manages spec-graph |
-| Write code | dev | General development |
-| Write code (QA) | dev-graded | With quality iteration loop |
+| Quick fixes & simple work | dev-lite | Fast iteration with Sonnet |
+| Complex features & deep work | dev | Test + review cycle with quality gates |
 | Isolated feature work | dev-worktree | Git worktree isolation |
 | Research topic | research | Multi-agent pipeline |
 | Deep analysis | deep-research | Confidence loop until 95% |

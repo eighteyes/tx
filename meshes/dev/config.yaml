@@ -1,30 +1,67 @@
 mesh: dev
-description: "Developer mesh for implementing features, writing code, and running tests"
+description: "Deep development mesh with testing, review cycles, and quality gates for complex work"
 
 intents:
   patterns:
     - build
     - implement
-    - "code up"
     - fix
     - develop
+    - refactor
   commands:
     build: "/know:build"
     implement: "/know:build"
 
 agents:
-  - name: worker
+  - name: implementer
     model: opus
-    prompt: prompt.md
+    prompt: implementer/prompt.md
 
-entry_point: worker
+  - name: tester
+    model: sonnet
+    prompt: tester/prompt.md
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+
+entry_point: implementer
 
 workspace:
   path: ".ai/output/{task-id}/"
 
 routing:
-  worker:
+  implementer:
     complete:
-      core: "Implementation complete"
+      tester: "Implementation ready for testing"
     blocked:
-      core: "Need clarification or human input"
+      core: "Need clarification on requirements"
+
+  tester:
+    complete:
+      reviewer: "Tests passing, ready for review"
+    blocked:
+      implementer: "Tests failing, need fixes"
+
+  reviewer:
+    complete:
+      core: "Approved - ready to merge"
+    blocked:
+      implementer: "Changes requested from review"
+
+lifecycle:
+  post:
+    - commit:auto
+
+playbook_notes: |
+  Deep development mesh for complex features, significant refactors, and work requiring high confidence.
+
+  Workflow:
+  1. IMPLEMENTER writes code following spec and conventions
+  2. TESTER runs test suite and integration tests
+  3. If tests fail → back to IMPLEMENTER for fixes
+  4. If tests pass → REVIEWER checks code quality, architecture, edge cases
+  5. If review fails → back to IMPLEMENTER
+  6. If approved → commit and complete
+
+  Uses Opus for implement + review (complex judgment), Sonnet for testing (mechanical).
