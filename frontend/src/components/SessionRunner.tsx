@@ -12,7 +12,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { sessionAPI } from '../api/sessions';
 import { useWebSocket } from '../hooks/useWebSocket';
-import type { SessionInfo, AgentMessage } from '../types/session';
+import { MessageList } from './MessageList';
+import { MessageInput } from './MessageInput';
+import type { SessionInfo } from '../types/session';
 import './SessionRunner.css';
 
 export function SessionRunner() {
@@ -25,8 +27,6 @@ export function SessionRunner() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
 
   // WebSocket connection (messages sent via REST API, WebSocket for receiving only)
   const { status, messages } = useWebSocket(
@@ -63,32 +63,18 @@ export function SessionRunner() {
     initSession();
   }, [meshName, urlSessionId, navigate]);
 
-  // Send message handler
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || !session || sending) return;
-
-    const messageBody = input.trim();
-    setInput('');
-    setSending(true);
+  // Send message handler (called by MessageInput with message body)
+  const handleSend = useCallback(async (body: string): Promise<void> => {
+    if (!session) return;
 
     try {
       // Send via REST API (WebSocket will receive the response)
-      await sessionAPI.sendMessage(session.sessionId, messageBody);
+      await sessionAPI.sendMessage(session.sessionId, body);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
-      setInput(messageBody); // Restore input on error
-    } finally {
-      setSending(false);
+      throw err; // Re-throw so MessageInput can handle it
     }
-  }, [input, session, sending]);
-
-  // Handle Enter key
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
+  }, [session]);
 
   // Stop session
   const handleStop = useCallback(async () => {
@@ -171,36 +157,13 @@ export function SessionRunner() {
           </div>
         )}
 
-        <div className="message-list">
-          {messages.length === 0 ? (
-            <div className="empty-state">
-              <p>No messages yet. Send a message to start the session.</p>
-            </div>
-          ) : (
-            messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))
-          )}
-        </div>
+        <MessageList messages={messages} />
 
-        <div className="message-input-container">
-          <textarea
-            className="message-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type your message... (Enter to send, Shift+Enter for newline)"
-            rows={3}
-            disabled={sending || status !== 'connected'}
-          />
-          <button
-            className="btn btn--primary send-btn"
-            onClick={handleSend}
-            disabled={!input.trim() || sending || status !== 'connected'}
-          >
-            {sending ? 'Sending...' : 'Send'}
-          </button>
-        </div>
+        <MessageInput
+          onSend={handleSend}
+          connectionStatus={status}
+          placeholder="Type your message... (Enter to send, Shift+Enter for newline)"
+        />
       </main>
 
       {/* Right Sidebar - Context (placeholder) */}
@@ -210,36 +173,6 @@ export function SessionRunner() {
           Game state and context will appear here.
         </p>
       </aside>
-    </div>
-  );
-}
-
-// Message bubble sub-component
-function MessageBubble({ message }: { message: AgentMessage }) {
-  const isUser = message.from === 'user' || message.to === 'core/core';
-  const isSystem = message.type === 'system';
-
-  return (
-    <div
-      className={`message-bubble ${
-        isUser ? 'message-bubble--user' :
-        isSystem ? 'message-bubble--system' :
-        'message-bubble--agent'
-      }`}
-    >
-      <div className="message-header">
-        <span className="message-from">{message.from}</span>
-        {message.headline && (
-          <span className="message-headline">{message.headline}</span>
-        )}
-      </div>
-      <div className="message-body">{message.body}</div>
-      <div className="message-meta">
-        <span className="message-type">{message.type}</span>
-        <span className="message-time">
-          {new Date(message.timestamp).toLocaleTimeString()}
-        </span>
-      </div>
     </div>
   );
 }

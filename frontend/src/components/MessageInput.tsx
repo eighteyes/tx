@@ -12,7 +12,7 @@ import type { ConnectionStatus } from '../hooks/useWebSocket';
 import './MessageInput.css';
 
 interface MessageInputProps {
-  onSend: (body: string) => void;
+  onSend: (body: string) => void | Promise<void>;
   disabled?: boolean;
   connectionStatus?: ConnectionStatus;
   placeholder?: string;
