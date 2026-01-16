@@ -11,6 +11,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { URL } from 'node:url';
 import YAML from 'yaml';
@@ -30,6 +31,10 @@ import {
   type MeshConfig,
   type TenantInfo,
 } from '../server/index.ts';
+import { MeshController, MeshNotFoundError } from '../controllers/mesh-controller.ts';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 interface ServerOptions {
   port?: number;
@@ -37,6 +42,7 @@ interface ServerOptions {
   mesh?: string;
   concurrency?: number;
   authEnabled?: boolean;
+  noDb?: boolean;
 }
 
 interface RequestContext {
@@ -56,6 +62,7 @@ interface ServerDeps {
   workerPool: WorkerPool;
   quotaManager: QuotaManager;
   rateLimiter: RateLimiter;
+  meshController: MeshController;
 }
 
 /**
@@ -294,6 +301,73 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
       return { status: 'ok', timestamp: Date.now() };
     },
   },
+
+  // Mesh management routes
+  {
+    method: 'GET',
+    pattern: '/v1/meshes',
+    handler: async (ctx, deps) => {
+      return deps.meshController.listMeshes();
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/meshes/:name',
+    handler: async (ctx, deps) => {
+      try {
+        return await deps.meshController.getMesh(ctx.params.name);
+      } catch (error) {
+        if (error instanceof MeshNotFoundError) {
+          throw { status: 404, message: error.message };
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'PUT',
+    pattern: '/v1/meshes/:name',
+    handler: async (ctx, deps) => {
+      const body = ctx.body as { config: unknown; format: 'yaml' | 'json' };
+
+      if (!body.config) {
+        throw { status: 400, message: 'config is required' };
+      }
+      if (!body.format || !['yaml', 'json'].includes(body.format)) {
+        throw { status: 400, message: 'format must be yaml or json' };
+      }
+
+      try {
+        const result = await deps.meshController.updateMesh(ctx.params.name, body as { config: any; format: 'yaml' | 'json' });
+        if (!result.success) {
+          throw { status: 400, message: 'Validation failed', errors: result.errors, warnings: result.warnings };
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof MeshNotFoundError) {
+          throw { status: 404, message: error.message };
+        }
+        if ((error as { status?: number }).status) {
+          throw error;
+        }
+        throw { status: 500, message: (error as Error).message };
+      }
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/meshes/:name/validate',
+    handler: async (ctx, deps) => {
+      const body = ctx.body as { config: unknown };
+
+      if (!body.config) {
+        throw { status: 400, message: 'config is required' };
+      }
+
+      return deps.meshController.validateMesh(ctx.params.name, body.config as any);
+    },
+  },
+
 ];
 
 /**
@@ -371,61 +445,87 @@ function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<
  * Start tx-server
  */
 export async function server(options: ServerOptions): Promise<void> {
-  const port = options.port || parseInt(process.env.TX_SERVER_PORT || '3000', 10);
+  const port = options.port || parseInt(process.env.TX_SERVER_PORT || '6000', 10);
   const host = options.host || process.env.TX_SERVER_HOST || '0.0.0.0';
   const concurrency = options.concurrency || parseInt(process.env.TX_WORKER_CONCURRENCY || '10', 10);
   const authEnabled = options.authEnabled ?? process.env.TX_AUTH_ENABLED === 'true';
+  const noDb = options.noDb ?? false;
   const meshesDir = process.env.TX_ROOT
     ? path.join(process.env.TX_ROOT, 'meshes')
     : path.join(process.cwd(), 'meshes');
 
-  // Initialize storage provider
-  const storage = createStorageProviderFromEnv();
-  await storage.init();
-  log.info('server', 'Storage provider initialized', { type: process.env.TX_STORAGE_TYPE || 'local' });
+  // Initialize mesh controller (always needed for mesh CRUD)
+  const meshController = new MeshController(meshesDir);
 
-  // Initialize session manager
-  const sessionManager = new SessionManager({ storage });
-  sessionManager.start();
+  let storage: StorageProvider | null = null;
+  let sessionManager: SessionManager | null = null;
+  let workerPool: WorkerPool | null = null;
+  let quotaManager: QuotaManager | null = null;
+  let rateLimiter: RateLimiter | null = null;
+  let auth: AuthMiddleware;
 
-  // Initialize auth
-  const auth = new AuthMiddleware({ enabled: authEnabled });
-  auth.loadFromEnv();
+  if (!noDb) {
+    // Full mode: Initialize storage provider
+    storage = createStorageProviderFromEnv();
+    await storage.init();
+    log.info('server', 'Storage provider initialized', { type: process.env.TX_STORAGE_TYPE || 'local' });
 
-  // Initialize rate limiter
-  const rateLimiter = new RateLimiter({
-    enabled: true,
-    defaultLimit: 60,  // 60 requests per minute
-    defaultBurst: 100,
-  });
-  rateLimiter.start();
+    // Initialize session manager
+    sessionManager = new SessionManager({ storage });
+    sessionManager.start();
 
-  // Initialize quota manager
-  const quotaManager = new QuotaManager({ storage });
-  quotaManager.start();
+    // Initialize auth
+    auth = new AuthMiddleware({ enabled: authEnabled });
+    auth.loadFromEnv();
 
-  // Initialize worker pool
-  const workerPool = new WorkerPool({
-    storage,
-    sessionManager,
-    concurrency,
-    meshConfigLoader: createMeshConfigLoader(meshesDir),
-  });
-  workerPool.start();
+    // Initialize rate limiter
+    rateLimiter = new RateLimiter({
+      enabled: true,
+      defaultLimit: 60,  // 60 requests per minute
+      defaultBurst: 100,
+    });
+    rateLimiter.start();
 
-  // Wire up events
-  workerPool.on('worker:complete', ({ sessionId, durationMs }) => {
-    const session = sessionManager.getActiveSessions().find(s => s.sessionId === sessionId);
-    if (session?.tenantId) {
-      quotaManager.recordWorkerCompleted(session.tenantId, durationMs);
-    }
-  });
+    // Initialize quota manager
+    quotaManager = new QuotaManager({ storage });
+    quotaManager.start();
 
-  sessionManager.on('session:destroyed', (sessionId) => {
-    // Already handled in route
-  });
+    // Initialize worker pool
+    workerPool = new WorkerPool({
+      storage,
+      sessionManager,
+      concurrency,
+      meshConfigLoader: createMeshConfigLoader(meshesDir),
+    });
+    workerPool.start();
 
-  const deps: ServerDeps = { storage, sessionManager, workerPool, quotaManager, rateLimiter };
+    // Wire up events
+    workerPool.on('worker:complete', ({ sessionId, durationMs }) => {
+      const session = sessionManager!.getActiveSessions().find(s => s.sessionId === sessionId);
+      if (session?.tenantId) {
+        quotaManager!.recordWorkerCompleted(session.tenantId, durationMs);
+      }
+    });
+
+    sessionManager.on('session:destroyed', (sessionId) => {
+      // Already handled in route
+    });
+
+    log.info('server', 'Full mode: Storage, sessions, and workers initialized');
+  } else {
+    // No-DB mode: Minimal setup for static serving and mesh CRUD only
+    auth = new AuthMiddleware({ enabled: false });
+    log.info('server', 'No-DB mode: Only mesh CRUD and static serving available');
+  }
+
+  const deps: ServerDeps = {
+    storage: storage!,
+    sessionManager: sessionManager!,
+    workerPool: workerPool!,
+    quotaManager: quotaManager!,
+    rateLimiter: rateLimiter!,
+    meshController
+  };
 
   // Create HTTP server
   const httpServer = http.createServer(async (req, res) => {
@@ -435,7 +535,7 @@ export async function server(options: ServerOptions): Promise<void> {
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (method === 'OPTIONS') {
@@ -444,32 +544,48 @@ export async function server(options: ServerOptions): Promise<void> {
       return;
     }
 
-    // Authenticate
-    const authResult = auth.authenticate(req);
-    if (!authResult.authenticated) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: authResult.error }));
-      return;
+    let tenant: TenantInfo;
+
+    if (!noDb) {
+      // Full mode: Auth, rate limiting, and quota tracking
+      const authResult = auth.authenticate(req);
+      if (!authResult.authenticated) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: authResult.error }));
+        return;
+      }
+
+      tenant = authResult.tenant!;
+
+      // Rate limit check
+      const limitKey = rateLimitKey(tenant.tenantId, reqPath);
+      const limitResult = rateLimiter!.check(limitKey, tenant.quotas.maxMessagesPerMinute);
+
+      res.setHeader('X-RateLimit-Remaining', String(limitResult.remaining));
+      res.setHeader('X-RateLimit-Reset', String(limitResult.resetAt));
+
+      if (!limitResult.allowed) {
+        res.setHeader('Retry-After', String(limitResult.retryAfter || 60));
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Rate limit exceeded', retryAfter: limitResult.retryAfter }));
+        return;
+      }
+
+      // Record API request
+      quotaManager!.recordApiRequest(tenant.tenantId);
+    } else {
+      // No-DB mode: Create dummy tenant for route handlers
+      tenant = {
+        tenantId: 'local',
+        name: 'Local Development',
+        quotas: {
+          maxSessions: 999,
+          maxMessagesPerSession: 999,
+          maxMessagesPerMinute: 999,
+          maxWorkerTimeMs: 999999,
+        },
+      };
     }
-
-    const tenant = authResult.tenant!;
-
-    // Rate limit check
-    const limitKey = rateLimitKey(tenant.tenantId, reqPath);
-    const limitResult = rateLimiter.check(limitKey, tenant.quotas.maxMessagesPerMinute);
-
-    res.setHeader('X-RateLimit-Remaining', String(limitResult.remaining));
-    res.setHeader('X-RateLimit-Reset', String(limitResult.resetAt));
-
-    if (!limitResult.allowed) {
-      res.setHeader('Retry-After', String(limitResult.retryAfter || 60));
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Rate limit exceeded', retryAfter: limitResult.retryAfter }));
-      return;
-    }
-
-    // Record API request
-    quotaManager.recordApiRequest(tenant.tenantId);
 
     // Find matching route
     for (const route of routes) {
@@ -500,7 +616,9 @@ export async function server(options: ServerOptions): Promise<void> {
 
         if (status >= 500) {
           log.error('server', 'Request error', { method, path: reqPath, status, message });
-          quotaManager.recordApiRequest(tenant.tenantId, true);
+          if (!noDb) {
+            quotaManager!.recordApiRequest(tenant.tenantId, true);
+          }
         }
 
         res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -509,9 +627,67 @@ export async function server(options: ServerOptions): Promise<void> {
       }
     }
 
-    // No route matched
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    // No route matched - serve static files for non-API routes
+    // Compute frontend dist path relative to this file
+    // This file is at: .ai/worktrees/tx-server/src/cli/server.ts
+    // Frontend dist is at: frontend/dist/
+    const frontendDistPath = path.resolve(__dirname, '../../../../../frontend/dist');
+
+    // For API routes that didn't match, return 404
+    if (reqPath.startsWith('/v1/')) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+      return;
+    }
+
+    // Try to serve static file
+    let filePath = path.join(frontendDistPath, reqPath);
+
+    // Determine content type based on extension
+    const getContentType = (filepath: string): string => {
+      const ext = path.extname(filepath).toLowerCase();
+      const types: Record<string, string> = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+        '.eot': 'application/vnd.ms-fontobject',
+      };
+      return types[ext] || 'application/octet-stream';
+    };
+
+    // Check if file exists
+    try {
+      const stat = fs.statSync(filePath);
+      if (stat.isFile()) {
+        const content = fs.readFileSync(filePath);
+        res.writeHead(200, { 'Content-Type': getContentType(filePath) });
+        res.end(content);
+        return;
+      }
+    } catch {
+      // File doesn't exist, fall through to SPA fallback
+    }
+
+    // SPA fallback - serve index.html for all other routes
+    const indexPath = path.join(frontendDistPath, 'index.html');
+    try {
+      const content = fs.readFileSync(indexPath);
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(content);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Frontend not built. Run: cd frontend && npm run build');
+    }
   });
 
   // Create WebSocket server
@@ -613,11 +789,13 @@ export async function server(options: ServerOptions): Promise<void> {
     wss.close();
     httpServer.close();
 
-    await workerPool.stop();
-    await quotaManager.stop();
-    rateLimiter.stop();
-    sessionManager.stop();
-    await storage.close();
+    if (!noDb) {
+      await workerPool!.stop();
+      await quotaManager!.stop();
+      rateLimiter!.stop();
+      sessionManager!.stop();
+      await storage!.close();
+    }
 
     process.exit(0);
   };
@@ -627,10 +805,9 @@ export async function server(options: ServerOptions): Promise<void> {
 
   // Start listening
   httpServer.listen(port, host, () => {
-    log.info('server', `tx-server listening on http://${host}:${port}`);
-    console.log(`
-  tx-server running on http://${host}:${port}
+    log.info('server', `tx-server listening on http://${host}:${port}`, { mode: noDb ? 'no-db' : 'full' });
 
+    const sessionEndpoints = noDb ? '' : `
   API Endpoints:
     POST   /v1/sessions              Create session
     GET    /v1/sessions/:id          Get session
@@ -642,12 +819,29 @@ export async function server(options: ServerOptions): Promise<void> {
     GET    /v1/usage                 Get usage stats
     GET    /v1/stats                 Get worker stats
     WS     /v1/sessions/:id/stream   Real-time stream
+`;
 
+    const config = noDb ? `
   Configuration:
+    MODE:                 no-db (static serving + mesh CRUD only)
+    AUTH:                 disabled
+` : `
+  Configuration:
+    MODE:                 full (sessions, workers, storage)
     TX_STORAGE_TYPE:      ${process.env.TX_STORAGE_TYPE || 'local'}
     TX_REDIS_URL:         ${process.env.TX_REDIS_URL || '(not set)'}
     TX_AUTH_ENABLED:      ${authEnabled}
     TX_WORKER_CONCURRENCY: ${concurrency}
-`);
+`;
+
+    console.log(`
+  tx-server running on http://${host}:${port}
+${sessionEndpoints}
+  Mesh Management:
+    GET    /v1/meshes                List all meshes
+    GET    /v1/meshes/:name          Get mesh config
+    PUT    /v1/meshes/:name          Update mesh config
+    POST   /v1/meshes/:name/validate Validate mesh config
+${config}`);
   });
 }

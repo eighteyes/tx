@@ -229,15 +229,20 @@ youtube-transcript options:
 Usage: tx server [options]
 
 Options:
-  -p, --port <port>     Port to listen on (default: 3000)
+  -p, --port <port>     Port to listen on (default: 6000)
   -H, --host <host>     Host to bind to (default: 0.0.0.0)
   -m, --mesh <mesh>     Default mesh for sessions
+  --no-db               Disable database (static serving + mesh CRUD only)
 
 Environment:
   TX_STORAGE_TYPE       'local' or 'redis' (default: local)
   TX_REDIS_URL          Redis connection URL
   TX_REDIS_PREFIX       Redis key prefix (default: tx)
   TX_BASE_DIR           Base directory for local storage
+
+Modes:
+  Full mode (default):  Sessions, workers, storage, auth
+  No-DB mode:           Static files + mesh management only
 
 API Endpoints:
   POST   /v1/sessions              Create session
@@ -247,7 +252,12 @@ API Endpoints:
   POST   /v1/sessions/:id/resume
   POST   /v1/sessions/:id/messages Send message
   GET    /v1/sessions/:id/messages List messages
-  WS     /v1/sessions/:id/stream   Real-time stream`,
+  WS     /v1/sessions/:id/stream   Real-time stream
+
+  GET    /v1/meshes                List all meshes (no-db compatible)
+  GET    /v1/meshes/:name          Get mesh config (no-db compatible)
+  PUT    /v1/meshes/:name          Update mesh (no-db compatible)
+  POST   /v1/meshes/:name/validate Validate mesh (no-db compatible)`,
 };
 
 function showHelp(cmd: string): void {
@@ -379,6 +389,7 @@ async function main() {
         port: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
         host: flags.H as string || flags.host as string,
         mesh: flags.m as string || flags.mesh as string,
+        noDb: Boolean(flags.noDb),
       });
       break;
 
