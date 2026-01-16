@@ -1,9 +1,12 @@
+import { FieldHelp } from '../FieldHelp';
+
 interface EnumSelectProps {
   label: string;
   value: string;
   options: string[];
   onChange: (value: string) => void;
   required?: boolean;
+  helpText?: string;
 }
 
 export function EnumSelect({
@@ -12,12 +15,14 @@ export function EnumSelect({
   options,
   onChange,
   required = false,
+  helpText,
 }: EnumSelectProps) {
   return (
     <div className="field">
       <label className="field-label">
         {label}
         {required && <span className="required">*</span>}
+        {helpText && <FieldHelp text={helpText} position="right" />}
       </label>
       <select
         className="field-select"

@@ -1,0 +1,57 @@
+/**
+ * ValidationSummary.css
+ * Styles for validation error summary.
+ */
+
+.validation-summary {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid #e74c3c;
+  border-radius: 4px;
+}
+
+.validation-summary__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.validation-summary__icon {
+  font-size: 1rem;
+}
+
+.validation-summary__title {
+  flex: 1;
+  font-weight: 600;
+  color: #c0392b;
+}
+
+.validation-summary__dismiss {
+  background: transparent;
+  border: none;
+  color: #95a5a6;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.validation-summary__dismiss:hover {
+  color: #2c3e50;
+}
+
+.validation-summary__list {
+  margin: 0;
+  padding-left: 1.5rem;
+  font-size: 0.875rem;
+  color: #c0392b;
+}
+
+.validation-summary__item {
+  margin: 0.25rem 0;
+}
+
+.validation-summary__item strong {
+  color: #e74c3c;
+}

@@ -1,6 +1,8 @@
 import type { AgentConfig, SemanticModel } from '../../types/mesh';
 import { ArrayField } from '../fields/ArrayField';
 import { EnumSelect } from '../fields/EnumSelect';
+import { FieldHelp } from '../FieldHelp';
+import { meshFieldHelp } from '../../data/meshFieldHelp';
 import '../fields/Fields.css';
 
 interface AgentConfigSectionProps {
@@ -68,6 +70,7 @@ export function AgentConfigSection({ agents, onChange }: AgentConfigSectionProps
         <div className="field">
           <label className="field-label">
             Name<span className="required">*</span>
+            <FieldHelp text={meshFieldHelp.agentName} />
           </label>
           <input
             type="text"
@@ -85,11 +88,13 @@ export function AgentConfigSection({ agents, onChange }: AgentConfigSectionProps
           options={models}
           onChange={(val) => updateAgent(index, 'model', val as SemanticModel)}
           required
+          helpText={meshFieldHelp.agentModel}
         />
 
         <div className="field">
           <label className="field-label">
             Prompt<span className="required">*</span>
+            <FieldHelp text={meshFieldHelp.agentPrompt} position="right" />
           </label>
           <input
             type="text"

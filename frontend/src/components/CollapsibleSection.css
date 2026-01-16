@@ -1,0 +1,73 @@
+/**
+ * CollapsibleSection.css
+ * Styles for collapsible form sections.
+ */
+
+.collapsible-section {
+  margin-bottom: 1rem;
+  border: 1px solid #dfe6e9;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.collapsible-section__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: #f8f9fa;
+  border: none;
+  color: #2c3e50;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.collapsible-section__header:hover {
+  background: #ecf0f1;
+}
+
+.collapsible-section__chevron {
+  font-size: 0.625rem;
+  color: #95a5a6;
+  width: 12px;
+  transition: transform 0.15s;
+}
+
+.collapsible-section--open .collapsible-section__chevron {
+  color: #7f8c8d;
+}
+
+.collapsible-section__title {
+  flex: 1;
+}
+
+.collapsible-section__badge {
+  padding: 0.125rem 0.5rem;
+  background: #3498db;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: white;
+}
+
+.collapsible-section__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dfe6e9;
+  color: #7f8c8d;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.collapsible-section__content {
+  padding: 1rem;
+  border-top: 1px solid #ecf0f1;
+}

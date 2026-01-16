@@ -1,6 +1,9 @@
 import type { MeshConfig } from '../types/mesh';
 import { AgentConfigSection } from './forms/AgentConfigSection';
 import { WorkspaceConfigSection } from './forms/WorkspaceConfigSection';
+import { FieldHelp } from './FieldHelp';
+import { CollapsibleSection } from './CollapsibleSection';
+import { meshFieldHelp } from '../data/meshFieldHelp';
 import './fields/Fields.css';
 import './MeshForm.css';
 
@@ -22,6 +25,7 @@ export function MeshForm({ config, onChange }: MeshFormProps) {
         <div className="field">
           <label className="field-label">
             Mesh Name<span className="required">*</span>
+            <FieldHelp text={meshFieldHelp.name} />
           </label>
           <input
             type="text"
@@ -33,7 +37,10 @@ export function MeshForm({ config, onChange }: MeshFormProps) {
         </div>
 
         <div className="field">
-          <label className="field-label">Description</label>
+          <label className="field-label">
+            Description
+            <FieldHelp text={meshFieldHelp.description} />
+          </label>
           <textarea
             className="field-textarea"
             value={config.description || ''}
@@ -44,7 +51,10 @@ export function MeshForm({ config, onChange }: MeshFormProps) {
         </div>
 
         <div className="field">
-          <label className="field-label">Entry Point</label>
+          <label className="field-label">
+            Entry Point
+            <FieldHelp text={meshFieldHelp.entryPoint} />
+          </label>
           <input
             type="text"
             className="field-input"
@@ -55,7 +65,10 @@ export function MeshForm({ config, onChange }: MeshFormProps) {
         </div>
 
         <div className="field">
-          <label className="field-label">Completion Agent</label>
+          <label className="field-label">
+            Completion Agent
+            <FieldHelp text={meshFieldHelp.completionAgent} />
+          </label>
           <input
             type="text"
             className="field-input"
@@ -73,35 +86,73 @@ export function MeshForm({ config, onChange }: MeshFormProps) {
               checked={!!config.continuation}
               onChange={(e) => updateField('continuation', e.target.checked)}
             />
-            Enable Continuation (preserve session between tasks)
+            Enable Continuation
+            <FieldHelp text={meshFieldHelp.continuation} position="right" />
           </label>
         </div>
       </div>
 
-      <div className="form-section">
-        <h3>Agents</h3>
+      <CollapsibleSection
+        title="Agents"
+        badge={config.agents?.length || 0}
+        help="Define the AI agents that make up this mesh"
+        defaultOpen={true}
+      >
         <AgentConfigSection
           agents={config.agents}
           onChange={(agents) => updateField('agents', agents)}
         />
-      </div>
+      </CollapsibleSection>
 
-      <div className="form-section">
-        <h3>Workspace</h3>
+      <CollapsibleSection
+        title="Workspace"
+        help="Configure the working directory for agent operations"
+        defaultOpen={true}
+      >
         <WorkspaceConfigSection
           workspace={config.workspace}
           onChange={(workspace) => updateField('workspace', workspace)}
         />
-      </div>
+      </CollapsibleSection>
 
-      <div className="form-section">
-        <h3>Advanced</h3>
+      <CollapsibleSection
+        title="Routing"
+        badge={config.routing ? Object.keys(config.routing).length : 0}
+        help="Define how messages flow between agents"
+        defaultOpen={false}
+      >
         <p className="info-text">
-          Routing, FSM, and lifecycle hooks can be edited in YAML mode.
+          Routing configuration can be edited in YAML mode.
+          <br />
+          GUI editor for routing coming in future updates.
+        </p>
+      </CollapsibleSection>
+
+      {config.fsm && (
+        <CollapsibleSection
+          title="State Machine"
+          help="Finite state machine for complex workflows"
+          defaultOpen={false}
+        >
+          <p className="info-text">
+            FSM configuration can be edited in YAML mode.
+            <br />
+            GUI editor for state machines coming in future updates.
+          </p>
+        </CollapsibleSection>
+      )}
+
+      <CollapsibleSection
+        title="Advanced"
+        help="Lifecycle hooks and advanced settings"
+        defaultOpen={false}
+      >
+        <p className="info-text">
+          Lifecycle hooks can be edited in YAML mode.
           <br />
           GUI editors for these sections coming in future updates.
         </p>
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
