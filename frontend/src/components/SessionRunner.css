@@ -232,6 +232,26 @@
   background: #b91c1c;
 }
 
+.btn--ghost {
+  background: transparent;
+  color: #888;
+  border: 1px solid #333;
+}
+
+.btn--ghost:hover {
+  background: #1a1a1a;
+  color: #e5e5e5;
+}
+
+.btn--success {
+  background: #22c55e;
+  color: white;
+}
+
+.btn--success:hover {
+  background: #16a34a;
+}
+
 /* Loading */
 .loading-spinner {
   color: #888;

@@ -83,6 +83,20 @@
   cursor: not-allowed;
 }
 
+.run-session-button {
+  background-color: #22c55e;
+  border: none;
+  color: white;
+  padding: 0.5rem 1.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.run-session-button:hover {
+  background-color: #16a34a;
+}
+
 .mesh-description {
   color: #636e72;
   margin-bottom: 1.5rem;

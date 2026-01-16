@@ -31,6 +31,11 @@ export function MeshList() {
     navigate(`/meshes/${meshName}`);
   }
 
+  function handleRun(meshName: string, e: React.MouseEvent) {
+    e.stopPropagation(); // Prevent card click navigation
+    navigate(`/meshes/${meshName}/run`);
+  }
+
   if (loading) {
     return (
       <div className="mesh-list">
@@ -111,6 +116,13 @@ export function MeshList() {
                 </svg>
                 {mesh.agents} {mesh.agents === 1 ? 'agent' : 'agents'}
               </span>
+              <button
+                className="btn btn--success btn--sm"
+                onClick={(e) => handleRun(mesh.name, e)}
+                title="Run session"
+              >
+                Run
+              </button>
             </div>
           </div>
         ))}

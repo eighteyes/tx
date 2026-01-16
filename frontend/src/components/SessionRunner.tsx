@@ -12,9 +12,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { sessionAPI } from '../api/sessions';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useSessionStorage } from '../hooks/useSessionStorage';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
-import type { SessionInfo } from '../types/session';
+import { SessionInfo } from './SessionInfo';
+import type { SessionInfo as SessionInfoType } from '../types/session';
 import './SessionRunner.css';
 
 export function SessionRunner() {
@@ -24,9 +26,12 @@ export function SessionRunner() {
   }>();
   const navigate = useNavigate();
 
-  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [session, setSession] = useState<SessionInfoType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Session storage for localStorage persistence
+  const { saveSession, updateActivity } = useSessionStorage();
 
   // WebSocket connection (messages sent via REST API, WebSocket for receiving only)
   const { status, messages } = useWebSocket(
@@ -50,6 +55,16 @@ export function SessionRunner() {
           // Create new session
           const newSession = await sessionAPI.createSession(meshName);
           setSession(newSession);
+
+          // Save to localStorage
+          saveSession({
+            sessionId: newSession.sessionId,
+            meshId: newSession.meshId,
+            meshName: meshName,
+            createdAt: newSession.createdAt,
+            lastActivityAt: newSession.createdAt,
+          });
+
           // Update URL with session ID (replace to avoid back-button issues)
           navigate(`/meshes/${meshName}/run/${newSession.sessionId}`, { replace: true });
         }
@@ -61,7 +76,7 @@ export function SessionRunner() {
     }
 
     initSession();
-  }, [meshName, urlSessionId, navigate]);
+  }, [meshName, urlSessionId, navigate, saveSession]);
 
   // Send message handler (called by MessageInput with message body)
   const handleSend = useCallback(async (body: string): Promise<void> => {
@@ -70,11 +85,13 @@ export function SessionRunner() {
     try {
       // Send via REST API (WebSocket will receive the response)
       await sessionAPI.sendMessage(session.sessionId, body);
+      // Update lastActivityAt in localStorage
+      updateActivity(session.sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
       throw err; // Re-throw so MessageInput can handle it
     }
-  }, [session]);
+  }, [session, updateActivity]);
 
   // Stop session
   const handleStop = useCallback(async () => {
@@ -87,13 +104,6 @@ export function SessionRunner() {
       setError(err instanceof Error ? err.message : 'Failed to stop session');
     }
   }, [session, meshName, navigate]);
-
-  // Connection status indicator
-  const statusColor = {
-    connected: '#22c55e',
-    connecting: '#eab308',
-    disconnected: '#ef4444',
-  }[status];
 
   if (loading) {
     return (
@@ -121,23 +131,19 @@ export function SessionRunner() {
     <div className="session-runner">
       {/* Left Sidebar - Session Info */}
       <aside className="session-sidebar">
-        <div className="session-info">
-          <h2>{meshName}</h2>
-          <div className="session-status">
-            <span
-              className="status-dot"
-              style={{ backgroundColor: statusColor }}
-            />
-            <span className="status-text">{status}</span>
-          </div>
-          {session && (
-            <div className="session-details">
-              <p><strong>Session:</strong> {session.sessionId.slice(0, 8)}...</p>
-              <p><strong>Status:</strong> {session.status}</p>
-              <p><strong>Entry:</strong> {session.config.entryAgent}</p>
-            </div>
-          )}
-        </div>
+        <button
+          className="btn btn--ghost"
+          onClick={() => navigate(`/meshes/${meshName}`)}
+        >
+          &larr; Back to Mesh
+        </button>
+
+        <SessionInfo
+          session={session}
+          connectionStatus={status}
+          meshName={meshName || ''}
+        />
+
         <div className="session-controls">
           <button
             className="btn btn--danger"

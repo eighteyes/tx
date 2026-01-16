@@ -238,6 +238,16 @@ export function MeshEditor() {
     }
   }
 
+  function handleRunSession() {
+    if (isDirty) {
+      if (confirm('You have unsaved changes. Continue to run session?')) {
+        navigate(`/meshes/${meshName}/run`);
+      }
+    } else {
+      navigate(`/meshes/${meshName}/run`);
+    }
+  }
+
   // Task 8.6: Validation Summary
   function getValidationSummary(): { errors: string[]; warnings: string[] } {
     const errors: string[] = [];
@@ -333,6 +343,12 @@ export function MeshEditor() {
           {isDirty && <span className="dirty-indicator">● Unsaved</span>}
         </div>
         <div className="header-right">
+          <button
+            onClick={handleRunSession}
+            className="run-session-button"
+          >
+            Run Session
+          </button>
           <button
             onClick={handleReset}
             disabled={!isDirty}
