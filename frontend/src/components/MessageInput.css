@@ -1,0 +1,76 @@
+/**
+ * MessageInput.css
+ * Styles for the message input area.
+ */
+
+.message-input {
+  padding: 1rem;
+  background: #111;
+  border-top: 1px solid #333;
+}
+
+.message-input__status {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: #2d2d2d;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: #888;
+}
+
+.message-input__container {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.message-input__textarea {
+  flex: 1;
+  padding: 0.75rem;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e5e5e5;
+  font-family: inherit;
+  font-size: 0.875rem;
+  resize: none;
+  line-height: 1.5;
+}
+
+.message-input__textarea:focus {
+  outline: none;
+  border-color: #555;
+}
+
+.message-input__textarea:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message-input__send {
+  align-self: flex-end;
+  padding: 0.75rem 1.5rem;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+}
+
+.message-input__send:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.message-input__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.message-input__hint {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #555;
+  text-align: right;
+}

@@ -1,0 +1,66 @@
+/**
+ * MessageBubble.css
+ * Styles for individual message bubbles.
+ */
+
+.message-bubble {
+  max-width: 80%;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #1a1a1a;
+}
+
+.message-bubble--user {
+  align-self: flex-end;
+  background: #1e3a5f;
+  border-bottom-right-radius: 2px;
+}
+
+.message-bubble--agent {
+  align-self: flex-start;
+  background: #1a1a1a;
+  border-bottom-left-radius: 2px;
+}
+
+.message-bubble--system {
+  align-self: center;
+  background: #2d2d2d;
+  font-style: italic;
+  max-width: 60%;
+  text-align: center;
+}
+
+.message-bubble__header {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.message-bubble__from {
+  font-weight: 600;
+  color: #aaa;
+}
+
+.message-bubble__headline {
+  color: #666;
+}
+
+.message-bubble__body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.message-bubble__footer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: #555;
+}
+
+.message-bubble__type {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
