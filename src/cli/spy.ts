@@ -57,6 +57,7 @@ export async function spy(options: SpyOptions): Promise<void> {
   const workDir = process.env.TX_CWD || process.cwd();
   const dbPath = process.env.TX_DB_PATH || path.join(workDir, '.ai/tx/data/queue.db');
   const activityFile = path.join(workDir, '.ai/tx/logs/activity.jsonl');
+  const dbWalFile = `${dbPath}-wal`; // SQLite Write-Ahead Log
   const queue = new MessageQueue(dbPath);
 
   const mode = options.output ? 'output' : options.messages ? 'messages' : 'all';
@@ -64,6 +65,8 @@ export async function spy(options: SpyOptions): Promise<void> {
 
   let lastMessageId = queue.getLatestMessageId();
   let lastActivityLine = 0;
+  let usingFallback = false;
+  let watchers: fs.FSWatcher[] = [];
 
   // Count existing activity lines and show recent activity
   if (fs.existsSync(activityFile)) {
@@ -105,9 +108,9 @@ export async function spy(options: SpyOptions): Promise<void> {
 
   console.log(chalk.dim('--- Live stream ---\n'));
 
-  // Poll for new messages and activity
-  const poll = async () => {
-    while (true) {
+  // Check for updates (called by watchers or polling)
+  const checkUpdates = () => {
+    try {
       // Check for new messages (unless output-only mode)
       if (!options.output) {
         const newMessages = queue.queryMessages({
@@ -142,19 +145,82 @@ export async function spy(options: SpyOptions): Promise<void> {
           lastActivityLine = lines.length;
         }
       }
-
-      await sleep(100);
+    } catch (error) {
+      console.error(chalk.red(`\n⚠️  Error checking updates: ${error instanceof Error ? error.message : String(error)}`));
+      console.error(chalk.dim('Falling back to polling mode...\n'));
+      enableFallbackPolling();
     }
   };
+
+  // Fallback polling at 1 second intervals
+  let fallbackInterval: NodeJS.Timeout | null = null;
+  const enableFallbackPolling = () => {
+    if (usingFallback) return;
+    usingFallback = true;
+
+    // Close all watchers
+    watchers.forEach(w => w.close());
+    watchers = [];
+
+    fallbackInterval = setInterval(checkUpdates, 1000);
+  };
+
+  // Setup file watchers
+  try {
+    // Watch activity log file
+    if (!options.messages && fs.existsSync(activityFile)) {
+      const activityWatcher = fs.watch(activityFile, { persistent: true }, (eventType) => {
+        if (eventType === 'change') {
+          checkUpdates();
+        }
+      });
+
+      activityWatcher.on('error', (error) => {
+        console.error(chalk.yellow(`\n⚠️  Activity watcher error: ${error.message}`));
+        enableFallbackPolling();
+      });
+
+      watchers.push(activityWatcher);
+    }
+
+    // Watch database WAL file for changes (indicates DB writes)
+    if (!options.output && fs.existsSync(dbWalFile)) {
+      const dbWatcher = fs.watch(dbWalFile, { persistent: true }, (eventType) => {
+        if (eventType === 'change') {
+          checkUpdates();
+        }
+      });
+
+      dbWatcher.on('error', (error) => {
+        console.error(chalk.yellow(`\n⚠️  Database watcher error: ${error.message}`));
+        enableFallbackPolling();
+      });
+
+      watchers.push(dbWatcher);
+    }
+
+    // If no watchers could be established, use fallback immediately
+    if (watchers.length === 0) {
+      console.log(chalk.dim('No file watchers available, using polling mode (1/sec)\n'));
+      enableFallbackPolling();
+    }
+  } catch (error) {
+    console.error(chalk.yellow(`⚠️  Failed to setup watchers: ${error instanceof Error ? error.message : String(error)}`));
+    console.log(chalk.dim('Using polling mode (1/sec)\n'));
+    enableFallbackPolling();
+  }
 
   // Handle Ctrl+C gracefully
   process.on('SIGINT', () => {
     console.log(chalk.dim('\n\nStopping spy...'));
+    watchers.forEach(w => w.close());
+    if (fallbackInterval) clearInterval(fallbackInterval);
     queue.close();
     process.exit(0);
   });
 
-  await poll();
+  // Keep process alive
+  await new Promise(() => {});
 }
 
 function printMessage(msg: {
@@ -246,6 +312,3 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
