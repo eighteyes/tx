@@ -629,9 +629,9 @@ export async function server(options: ServerOptions): Promise<void> {
 
     // No route matched - serve static files for non-API routes
     // Compute frontend dist path relative to this file
-    // This file is at: .ai/worktrees/tx-server/src/cli/server.ts
+    // This file is at: src/cli/server.ts
     // Frontend dist is at: frontend/dist/
-    const frontendDistPath = path.resolve(__dirname, '../../../../../frontend/dist');
+    const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
 
     // For API routes that didn't match, return 404
     if (reqPath.startsWith('/v1/')) {
