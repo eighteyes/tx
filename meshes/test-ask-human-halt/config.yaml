@@ -1,0 +1,20 @@
+# test-ask-human-halt/config.yaml
+# E2E Test Mesh - Validates ask-human halts worker properly
+#
+# Purpose:
+# - Prove worker sends ask-human mid-execution
+# - Prove worker process is killed (not just paused)
+# - Prove session is stored in suspendedSessions map
+# - Prove ask-response resumes with same sessionId
+# - Prove conversation context is preserved
+
+mesh: test-ask-human-halt
+description: "Ask-human halt test mesh - validates HITL flow kills and resumes workers"
+
+agents:
+  - name: worker
+    model: haiku
+    prompt: worker.md
+
+entry_point: worker
+completion_agent: worker
