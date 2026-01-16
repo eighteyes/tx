@@ -9,6 +9,7 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { EventEmitter } from 'node:events';
 import { MessageQueue } from '../../src/queue/index.ts';
 import { WorkerDispatcher } from '../../src/worker/index.ts';
 
@@ -18,6 +19,7 @@ describe('V4 Worker Dispatcher Test', () => {
   let meshesDir: string;
   let queue: MessageQueue;
   let dispatcher: WorkerDispatcher;
+  let mockConsumer: EventEmitter;
 
   beforeEach(() => {
     // Create temp test directory
@@ -63,11 +65,14 @@ You are a test worker. When you receive a task, acknowledge it.`;
       meshesDir,
       pollInterval: 100  // Fast polling for tests
     }, queue);
+
+    // Create mock consumer for event-driven dispatch
+    mockConsumer = new EventEmitter();
   });
 
   afterEach(async () => {
     // Cleanup
-    await dispatcher.stop();
+    await dispatcher.stop(mockConsumer);
     queue.close();
     fs.rmSync(testDir, { recursive: true, force: true });
   });
@@ -90,7 +95,8 @@ You are a test worker. When you receive a task, acknowledge it.`;
       spawnedAgent = agentId;
     });
 
-    await dispatcher.start();
+    // Start dispatcher with mock consumer for event-driven dispatch
+    await dispatcher.start(mockConsumer);
 
     // Insert a task message for test/worker
     queue.insert({
@@ -102,6 +108,9 @@ You are a test worker. When you receive a task, acknowledge it.`;
         body: 'Please run the test'
       }
     });
+
+    // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
+    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
 
     // Wait for dispatcher to detect and spawn
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -117,7 +126,8 @@ You are a test worker. When you receive a task, acknowledge it.`;
       spawnedType = msg?.type || null;
     });
 
-    await dispatcher.start();
+    // Start dispatcher with mock consumer for event-driven dispatch
+    await dispatcher.start(mockConsumer);
 
     // Insert an ask-response message (simulating HITL flow)
     queue.insert({
@@ -130,13 +140,17 @@ You are a test worker. When you receive a task, acknowledge it.`;
       }
     });
 
+    // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
+    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
+
     await new Promise(resolve => setTimeout(resolve, 300));
 
     assert.strictEqual(spawnedType, 'ask-response', 'Should spawn worker for ask-response messages');
   });
 
   test('should track active workers', async () => {
-    await dispatcher.start();
+    // Start dispatcher with mock consumer for event-driven dispatch
+    await dispatcher.start(mockConsumer);
 
     // Initially no active workers
     assert.strictEqual(dispatcher.getActiveWorkerCount(), 0);
@@ -149,6 +163,9 @@ You are a test worker. When you receive a task, acknowledge it.`;
       type: 'task',
       payload: { headline: 'Test', body: 'Test task' }
     });
+
+    // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
+    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
 
     // Wait for spawn
     await new Promise(resolve => setTimeout(resolve, 300));
