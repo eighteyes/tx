@@ -1,0 +1,103 @@
+/**
+ * SessionList.css
+ * Styles for session list sidebar component.
+ */
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.session-list__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #333;
+}
+
+.session-list__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.session-list__empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #666;
+}
+
+.session-list__empty .hint {
+  font-size: 0.875rem;
+  margin-top: 0.5rem;
+  color: #555;
+}
+
+.session-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Session Card */
+.session-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #222;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.session-card:hover {
+  background: #1a1a1a;
+}
+
+.session-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.session-card__id {
+  font-family: monospace;
+  font-size: 0.875rem;
+  color: #e5e5e5;
+}
+
+.session-card__time {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.session-card__delete {
+  background: transparent;
+  border: none;
+  color: #666;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.session-card:hover .session-card__delete {
+  opacity: 1;
+}
+
+.session-card__delete:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Button variants */
+.btn--sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}

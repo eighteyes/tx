@@ -1,0 +1,51 @@
+/**
+ * SessionInfo.css
+ * Styles for session info display.
+ */
+
+.session-info {
+  padding: 1rem;
+}
+
+.session-info__mesh {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.session-info__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.session-info__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.session-info__status-text {
+  font-size: 0.875rem;
+  text-transform: capitalize;
+}
+
+.session-info__details {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.session-info__details dt {
+  color: #666;
+  margin-top: 0.5rem;
+}
+
+.session-info__details dd {
+  margin: 0.125rem 0 0 0;
+  color: #e5e5e5;
+}
+
+.session-info__details .monospace {
+  font-family: monospace;
+}
