@@ -239,20 +239,26 @@ No historical data. No turn_1, turn_2 sections. No timestamps. No violation trac
 3. Session stays at `phase: complete` until next turn starts
 4. Next INIT wipes and resets
 
-## State Anomaly Handling
+## State Anomaly Handling (CRITICAL - ALWAYS STOP)
 
-When state is inconsistent or confusing, **ask for guidance** instead of silently ignoring.
+**When state is unclear or inconsistent: STOP IMMEDIATELY. DO NOT PROCEED.**
 
-**Anomaly types:**
+**Anomaly types that require stopping:**
 - Message doesn't match expected phase
 - Game/turn referenced doesn't match session
 - Required files missing from workspace
 - Multiple games active (unclear which is current)
 - Session state contradicts workspace state
+- Ambiguous or conflicting information in input
+
+**CRITICAL RULE: If you cannot determine with 100% certainty what should happen next, STOP and ask. Never guess. Never proceed with incomplete state.**
 
 **On anomaly detection:**
-1. DO NOT silently ignore
-2. Send ask-human to core with status report:
+1. STOP execution immediately
+2. DO NOT make assumptions about what to do
+3. DO NOT proceed to next phase
+4. DO NOT guess based on file existence
+5. Send ask-human to core with status report:
 
 ```yaml
 ---

@@ -133,3 +133,16 @@ contradiction_log: []
   #   attempted: "Jorim's hollow voice echoed..."
   #   violated: "Jorim's voice returned (Turn 24)"
   #   resolution: "Revised to 'Jorim's new voice, still uncertain...'"
+
+# Used factoids (real-world trivia LLMs drop)
+# LINT-FACTOIDS prevents reuse within campaign
+# Format: factoid + context for deduplication
+used_factoids: []
+  # - factoid: "Cats purr at 25Hz frequency, which has healing properties"
+  #   context: "cat_characteristics"
+  #   turn: 3
+  #   source: "Narrator mentions healing purr"
+  # - factoid: "Honey never spoils due to low moisture and acidity"
+  #   context: "food_preservation"
+  #   turn: 7
+  #   source: "Character discusses ancient honey in storage"

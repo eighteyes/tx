@@ -152,6 +152,7 @@ routing:
       oracle: "Validate continuity"
       scribe: "Compress turn state"
       dramaturg: "Analyze story context"
+      scene-crafter: "Outline scene structure"
       system: "Need mechanical resolution"
       editor: "Review prose"
     ask-human:

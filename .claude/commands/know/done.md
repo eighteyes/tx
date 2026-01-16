@@ -10,26 +10,21 @@ tags: [know, archive, complete]
 
 **Workflow**
 
-### 1. Detect Git Worktree Status (Optional)
+### 1. Detect Git Worktree Status
 
 **Steps**:
 1. Check if feature has an associated worktree:
    ```bash
-   WORKTREE_PATH=".ai/worktrees/<feature-name>"
-   HAS_WORKTREE=false
-   if [ -d "$WORKTREE_PATH" ]; then
-     HAS_WORKTREE=true
-   fi
+   git worktree list | grep "feature/<feature-name>"
    ```
 2. Determine current location:
    ```bash
    MAIN_WORKTREE=$(git worktree list | head -1 | awk '{print $1}')
    CURRENT_TOPLEVEL=$(git rev-parse --show-toplevel)
    ```
-3. **If worktree exists** (`HAS_WORKTREE=true`):
+3. **If worktree exists**:
    - If currently IN that worktree: Switch to main repo first
    - If in main or different worktree: Proceed from current location
-4. **If no worktree**: Skip to step 2 (Verify Feature Completion)
 
 ### 2. Verify Feature Completion
 
@@ -42,16 +37,14 @@ tags: [know, archive, complete]
 
 ### 3. Merge Feature Branch (if worktree exists)
 
-**Skip this step if `HAS_WORKTREE=false`**
-
 **Steps**:
 1. **Ensure in main repo**:
    ```bash
    cd $MAIN_WORKTREE
    ```
-2. **Sync .ai/know from worktree** (changes made in worktree):
+2. **Sync .ai/ from worktree** (if it hasn't been synced yet):
    ```bash
-   cp -r "$WORKTREE_PATH/.ai/know/<feature-name>/" .ai/know/<feature-name>/
+   cp -r ../<repo-name>-<feature-name>/.ai/know/<feature-name>/ .ai/know/<feature-name>/
    ```
 3. **Merge feature branch**:
    ```bash
@@ -61,14 +54,12 @@ tags: [know, archive, complete]
 4. **Ask user**: "Delete feature branch? [Yes/No]"
    - If Yes: `git branch -d feature/<feature-name>`
 
-### 4. Remove Git Worktree (if worktree exists)
-
-**Skip this step if `HAS_WORKTREE=false`**
+### 4. Remove Git Worktree (if exists)
 
 **Steps**:
 1. Remove the worktree:
    ```bash
-   git worktree remove "$WORKTREE_PATH"
+   git worktree remove ../<repo-name>-<feature-name>
    ```
 2. Verify removal was successful
 
@@ -102,12 +93,9 @@ Assistant: Checks completion, moves to archive, confirms success
 **Notes**
 - Features can be un-archived by manually moving them back
 - Archive maintains full history (proposal, todo, plan, spec)
-- **Worktree handling** (optional - only if `.ai/worktrees/<feature>/` exists):
-  - Worktree path: `.ai/worktrees/<feature-name>/`
-  - Branch naming: `feature/<feature-name>`
+- **Worktree handling**:
   - Automatically detects if feature was built in a worktree
   - Switches to main repo if currently in feature worktree
-  - Syncs `.ai/know/<feature>/` from worktree to main
   - Merges feature branch using `--no-ff` for clear history
   - Removes worktree after successful merge
-  - **Skips worktree steps** if no worktree exists (feature developed directly on main)
+  - Can run from main repo or any worktree (auto-navigates as needed)

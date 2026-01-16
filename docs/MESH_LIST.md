@@ -13,6 +13,7 @@ Production-ready meshes for general use.
 | `hybrid-workflow` | Combined ensemble and task distribution pattern | Active |
 | `mesh-builder` | Meta mesh that builds TX meshes from user requirements | Active |
 | `narrative-engine` | Stateless RPG with coordinator pattern. Traits are semantically weighted, damage calculated via embeddings | Active |
+| `rewriter` | Style extraction and text rewriting: extract voice from samples or rewrite text in target style | Active |
 | `research` | Web research mesh: interviewer gathers requirements, sourcer finds sources, analyst synthesizes | Active |
 | `structured-thinking` | Applies systematic reasoning frameworks to break down complex problems, analyze trade-offs | Active |
 | `task-distribution-analysis` | Analyst splits task into subtasks, experts analyze, synthesizer reviews | Active |
