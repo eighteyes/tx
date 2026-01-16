@@ -1,0 +1,19 @@
+.yaml-editor-wrapper {
+  border: 1px solid #dfe6e9;
+  border-radius: 4px;
+  overflow: hidden;
+  background: white;
+}
+
+/* Override Monaco defaults */
+.yaml-editor-wrapper .monaco-editor {
+  padding: 8px;
+}
+
+.yaml-editor-wrapper .monaco-editor .margin {
+  background-color: #f8f9fa;
+}
+
+.yaml-editor-wrapper .monaco-editor .line-numbers {
+  color: #95a5a6;
+}

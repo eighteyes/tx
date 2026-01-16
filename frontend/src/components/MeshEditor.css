@@ -1,0 +1,309 @@
+.mesh-editor {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.mesh-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #dfe6e9;
+}
+
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header-left h2 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #2c3e50;
+}
+
+.back-button {
+  background: none;
+  border: 1px solid #dfe6e9;
+  color: #2c3e50;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.back-button:hover {
+  background-color: #ecf0f1;
+  border-color: #bdc3c7;
+}
+
+.dirty-indicator {
+  color: #e74c3c;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.reset-button {
+  background: none;
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.reset-button:hover:not(:disabled) {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.reset-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.save-button {
+  background-color: #3498db;
+  border: none;
+  color: white;
+  padding: 0.5rem 1.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.save-button:hover:not(:disabled) {
+  background-color: #2980b9;
+}
+
+.save-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.mesh-description {
+  color: #636e72;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}
+
+.validation-errors {
+  background-color: #fff5f5;
+  border: 1px solid #feb2b2;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.validation-errors h4 {
+  margin: 0 0 0.5rem 0;
+  color: #e74c3c;
+  font-size: 0.875rem;
+}
+
+.validation-errors ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: #c0392b;
+  font-size: 0.875rem;
+}
+
+.editor-container {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Task 6.4 & 6.5: Editor Header with Mode Info */
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1rem 0 0;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #dfe6e9;
+}
+
+.mode-info {
+  display: flex;
+  align-items: center;
+}
+
+.info-badge {
+  font-size: 0.75rem;
+  color: #7f8c8d;
+  background-color: #ecf0f1;
+  padding: 0.375rem 0.75rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.editor-tabs {
+  display: flex;
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  color: #7f8c8d;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.tab:hover:not(:disabled) {
+  color: #2c3e50;
+  background-color: #ecf0f1;
+}
+
+.tab.tab-active {
+  color: #3498db;
+  border-bottom-color: #3498db;
+}
+
+.tab:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.tab:disabled:hover {
+  background-color: transparent;
+  color: inherit;
+}
+
+/* Active tab styling when disabled (current mode) */
+.tab.tab-active:disabled {
+  opacity: 1;
+  color: #3498db;
+  border-bottom-color: #3498db;
+}
+
+.loading,
+.error {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #dfe6e9;
+}
+
+.error {
+  color: #e74c3c;
+}
+
+.error button {
+  margin-top: 1rem;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.error button:hover {
+  background-color: #2980b9;
+}
+
+/* Task 8.4: Save Progress Indicator */
+.save-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: #ecf0f1;
+  z-index: 1001;
+}
+
+.save-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3498db, #2ecc71);
+  animation: progressIndeterminate 1.5s ease-in-out infinite;
+  width: 30%;
+}
+
+@keyframes progressIndeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Task 8.6: Validation Summary Panel */
+.validation-summary {
+  margin-bottom: 1.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.validation-summary-section {
+  padding: 1rem 1.25rem;
+}
+
+.validation-errors-section {
+  background-color: #fff5f5;
+  border: 1px solid #feb2b2;
+}
+
+.validation-errors-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #e74c3c;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.validation-errors-section ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #c0392b;
+  font-size: 0.875rem;
+}
+
+.validation-warnings-section {
+  background-color: #fffbeb;
+  border: 1px solid #fbd38d;
+}
+
+.validation-warnings-section h4 {
+  margin: 0 0 0.75rem 0;
+  color: #f39c12;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.validation-warnings-section ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #e67e22;
+  font-size: 0.875rem;
+}
+
+/* Task 8.7: Responsive Design Improvements */
+@media (max-width: 768px) {
+  .mesh-editor-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .editor-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+}

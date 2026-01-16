@@ -1,0 +1,223 @@
+.mesh-list {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.mesh-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.mesh-list-header h2 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #2c3e50;
+}
+
+.refresh-button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  transition: background-color 0.2s;
+}
+
+.refresh-button:hover {
+  background-color: #2980b9;
+}
+
+.mesh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.mesh-card {
+  background: white;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.mesh-card:hover {
+  border-color: #3498db;
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.15);
+  transform: translateY(-2px);
+}
+
+.mesh-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 0.75rem;
+}
+
+.mesh-card h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.mesh-badge {
+  background-color: #ecf0f1;
+  color: #7f8c8d;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.mesh-description {
+  color: #636e72;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 1rem 0;
+  min-height: 2.5rem;
+}
+
+.mesh-card-footer {
+  display: flex;
+  gap: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #ecf0f1;
+}
+
+.mesh-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: #7f8c8d;
+  font-size: 0.875rem;
+}
+
+.mesh-stat svg {
+  flex-shrink: 0;
+}
+
+.loading,
+.error,
+.empty {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #dfe6e9;
+}
+
+.loading {
+  color: #7f8c8d;
+  font-size: 1.125rem;
+}
+
+.error {
+  color: #e74c3c;
+}
+
+.error button {
+  margin-top: 1rem;
+  background-color: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.error button:hover {
+  background-color: #c0392b;
+}
+
+.empty {
+  color: #7f8c8d;
+}
+
+.empty p {
+  margin: 0;
+}
+
+/* Loading skeleton styles */
+.skeleton {
+  pointer-events: none;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.skeleton-text {
+  background-color: #ecf0f1;
+  border-radius: 4px;
+  height: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-title {
+  width: 60%;
+  height: 1.5rem;
+}
+
+.skeleton-description {
+  width: 90%;
+}
+
+.skeleton-small {
+  width: 40%;
+}
+
+/* Enhanced empty state */
+.empty-state-large {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px dashed #dfe6e9;
+}
+
+.empty-state-large svg {
+  margin-bottom: 1.5rem;
+  opacity: 0.5;
+}
+
+.empty-state-large h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.25rem;
+}
+
+.empty-state-large p {
+  color: #7f8c8d;
+  margin: 0.25rem 0;
+}
+
+.help-text {
+  font-size: 0.875rem;
+  font-style: italic;
+}
+
+/* Task 8.7: Responsive Design Improvements */
+@media (max-width: 768px) {
+  .mesh-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mesh-list-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+}
