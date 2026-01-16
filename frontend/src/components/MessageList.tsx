@@ -50,7 +50,13 @@ export function MessageList({ messages, loading, onRespond }: MessageListProps) 
   }
 
   return (
-    <div className="message-list" ref={listRef}>
+    <div
+      className="message-list"
+      ref={listRef}
+      role="log"
+      aria-live="polite"
+      aria-label="Message history"
+    >
       {messages.map((msg) => (
         <MessageBubble key={msg.id} message={msg} onRespond={onRespond} />
       ))}

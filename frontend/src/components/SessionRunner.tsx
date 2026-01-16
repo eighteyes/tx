@@ -194,7 +194,7 @@ export function SessionRunner() {
       />
 
       {/* Main Content - Messages */}
-      <main className="message-area">
+      <main className="message-area" role="main" aria-label="Chat messages">
         {error && (
           <div className="error-banner">
             {error}
@@ -212,7 +212,7 @@ export function SessionRunner() {
       </main>
 
       {/* Right Sidebar - Context */}
-      <aside className="context-sidebar">
+      <aside className="context-sidebar" role="complementary" aria-label="Session context">
         <h3>Context</h3>
 
         {isNarrativeMesh ? (

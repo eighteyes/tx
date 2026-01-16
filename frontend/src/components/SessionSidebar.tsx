@@ -60,7 +60,7 @@ export function SessionSidebar({
   );
 
   return (
-    <aside className="session-sidebar">
+    <aside className="session-sidebar" role="complementary" aria-label="Session controls">
       {/* Current Session Info */}
       <div className="session-sidebar__current">
         <h2 className="session-sidebar__mesh">{meshName}</h2>

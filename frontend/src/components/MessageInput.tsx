@@ -83,6 +83,8 @@ export function MessageInput({
           placeholder={placeholder}
           rows={3}
           disabled={isDisabled}
+          aria-label="Message input"
+          aria-multiline="true"
         />
         <button
           className="message-input__send"

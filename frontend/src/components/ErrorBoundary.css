@@ -1,0 +1,29 @@
+/**
+ * ErrorBoundary.css
+ */
+
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #0a0a0a;
+  color: #e5e5e5;
+}
+
+.error-boundary__content {
+  text-align: center;
+  padding: 2rem;
+  max-width: 400px;
+}
+
+.error-boundary__content h2 {
+  margin: 0 0 1rem;
+  color: #ef4444;
+}
+
+.error-boundary__message {
+  margin-bottom: 1.5rem;
+  color: #888;
+  font-size: 0.875rem;
+}
