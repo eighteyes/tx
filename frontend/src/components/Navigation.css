@@ -1,0 +1,94 @@
+/**
+ * Navigation.css
+ * Global navigation header styles.
+ */
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: #111;
+  border-bottom: 1px solid #333;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.nav__brand {
+  display: flex;
+  align-items: center;
+}
+
+.nav__logo {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #e5e5e5;
+  text-decoration: none;
+}
+
+.nav__logo:hover {
+  color: #fff;
+}
+
+.nav__links {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  margin-left: 2rem;
+}
+
+.nav__link {
+  color: #888;
+  text-decoration: none;
+  padding: 0.375rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.nav__link:hover {
+  color: #e5e5e5;
+  background: #1a1a1a;
+}
+
+.nav__link--active {
+  color: #e5e5e5;
+  background: #1a1a1a;
+}
+
+.nav__separator {
+  color: #444;
+  font-size: 0.875rem;
+}
+
+.nav__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Small button variant */
+.btn--sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .nav {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .nav__links {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: 0;
+    margin-top: 0.5rem;
+  }
+
+  .nav__actions {
+    margin-left: auto;
+  }
+}
