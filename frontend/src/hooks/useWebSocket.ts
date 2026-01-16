@@ -49,6 +49,7 @@ export function useWebSocket(
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messageQueue = useRef<Array<{ body: string; to?: string }>>([]);
+  const connectRef = useRef<(() => void) | null>(null);
 
   // Store callbacks in refs to avoid stale closures and unnecessary reconnects
   const onMessageRef = useRef(onMessage);
@@ -117,13 +118,18 @@ export function useWebSocket(
         reconnectAttempts.current++;
 
         reconnectTimeout.current = setTimeout(() => {
-          connect();
+          connectRef.current?.();
         }, delay);
       }
     };
 
     wsRef.current = ws;
   }, [sessionId, updateStatus, maxReconnectAttempts, baseReconnectDelay]);
+
+  // Keep connectRef in sync with connect function for recursive calls
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
@@ -157,7 +163,12 @@ export function useWebSocket(
   // Auto-connect when sessionId changes
   useEffect(() => {
     if (sessionId) {
-      connect();
+      // Schedule connect for next tick to avoid synchronous setState in effect
+      const timeoutId = setTimeout(connect, 0);
+      return () => {
+        clearTimeout(timeoutId);
+        disconnect();
+      };
     }
     return () => {
       disconnect();
