@@ -61,11 +61,13 @@ interface RequestContext {
 type RouteHandler = (ctx: RequestContext, deps: ServerDeps) => Promise<unknown>;
 
 interface ServerDeps {
-  storage: StorageProvider;
-  sessionManager: SessionManager;
-  workerPool: WorkerPool;
-  quotaManager: QuotaManager;
-  rateLimiter: RateLimiter;
+  // Optional in no-db mode
+  storage: StorageProvider | null;
+  sessionManager: SessionManager | null;
+  workerPool: WorkerPool | null;
+  quotaManager: QuotaManager | null;
+  rateLimiter: RateLimiter | null;
+  // Always available
   meshController: MeshController;
   workspaceController: WorkspaceController;
   logsController: LogsController;
@@ -107,6 +109,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'POST',
     pattern: '/v1/sessions',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager || !deps.quotaManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const { meshId, entryAgent, ttlSeconds } = ctx.body as {
         meshId: string;
         entryAgent?: string;
@@ -139,6 +145,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'GET',
     pattern: '/v1/sessions/:id',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
@@ -154,6 +164,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'DELETE',
     pattern: '/v1/sessions/:id',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager || !deps.quotaManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
@@ -172,6 +186,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'POST',
     pattern: '/v1/sessions/:id/hibernate',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
@@ -188,6 +206,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'POST',
     pattern: '/v1/sessions/:id/resume',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.resume(ctx.params.id);
       if (session.tenantId !== ctx.tenant.tenantId) {
         throw { status: 403, message: 'Access denied' };
@@ -201,6 +223,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'POST',
     pattern: '/v1/sessions/:id/messages',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager || !deps.storage || !deps.quotaManager) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
@@ -250,6 +276,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'GET',
     pattern: '/v1/sessions/:id/messages',
     handler: async (ctx, deps) => {
+      if (!deps.sessionManager || !deps.storage) {
+        throw { status: 503, message: 'Session management not available in no-db mode' };
+      }
+
       const session = await deps.sessionManager.get(ctx.params.id);
       if (!session) {
         throw { status: 404, message: 'Session not found' };
@@ -277,6 +307,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'GET',
     pattern: '/v1/usage',
     handler: async (ctx, deps) => {
+      if (!deps.quotaManager) {
+        throw { status: 503, message: 'Usage tracking not available in no-db mode' };
+      }
+
       const usage = deps.quotaManager.getUsage(ctx.tenant.tenantId);
       return {
         usage,
@@ -290,6 +324,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     method: 'GET',
     pattern: '/v1/stats',
     handler: async (ctx, deps) => {
+      if (!deps.workerPool || !deps.sessionManager) {
+        throw { status: 503, message: 'Stats not available in no-db mode' };
+      }
+
       const workerStats = deps.workerPool.getStats();
       const sessions = deps.sessionManager.getActiveSessions()
         .filter(s => s.tenantId === ctx.tenant.tenantId);
@@ -722,11 +760,11 @@ export async function server(options: ServerOptions): Promise<void> {
   const statsController = new StatsController(workDir, meshesDir);
 
   const deps: ServerDeps = {
-    storage: storage!,
-    sessionManager: sessionManager!,
-    workerPool: workerPool!,
-    quotaManager: quotaManager!,
-    rateLimiter: rateLimiter!,
+    storage,
+    sessionManager,
+    workerPool,
+    quotaManager,
+    rateLimiter,
     meshController,
     workspaceController,
     logsController,
@@ -785,11 +823,11 @@ export async function server(options: ServerOptions): Promise<void> {
       tenant = {
         tenantId: 'local',
         name: 'Local Development',
+        tier: 'enterprise' as const,
         quotas: {
           maxSessions: 999,
-          maxMessagesPerSession: 999,
           maxMessagesPerMinute: 999,
-          maxWorkerTimeMs: 999999,
+          maxConcurrentWorkers: 999,
         },
       };
     }
@@ -901,6 +939,12 @@ export async function server(options: ServerOptions): Promise<void> {
   const wss = new WebSocketServer({ server: httpServer });
 
   wss.on('connection', async (ws, req) => {
+    // Check if session management is available (WebSocket requires full mode)
+    if (!sessionManager || !storage || !quotaManager) {
+      ws.close(4503, 'Session management not available in no-db mode');
+      return;
+    }
+
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const match = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/stream$/);
 

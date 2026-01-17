@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { MeshList } from './components/MeshList';
 import { MeshEditor } from './components/MeshEditor';
+import { MeshActivity } from './components/MeshActivity';
 import { SessionRunner } from './components/SessionRunner';
 import { Workspace } from './components/Workspace';
 import { SessionsPage } from './components/SessionsPage';
@@ -23,6 +24,7 @@ function App() {
               {/* Mesh routes */}
               <Route path="/meshes" element={<MeshList />} />
               <Route path="/meshes/:meshName" element={<MeshEditor />} />
+              <Route path="/meshes/:meshName/activity" element={<MeshActivity />} />
               <Route path="/meshes/:meshName/run" element={<SessionRunner />} />
               <Route path="/meshes/:meshName/run/:sessionId" element={<SessionRunner />} />
 

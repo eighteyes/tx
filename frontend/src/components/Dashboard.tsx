@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardAPI, type DashboardStats } from '../api/dashboard';
+import { sessionsListAPI, type SessionSummary } from '../api/sessionsList';
 import './Dashboard.css';
 
 function formatBytes(bytes: number): string {
@@ -35,16 +36,36 @@ function formatTime(isoString: string): string {
   });
 }
 
+function formatRelativeTime(isoString: string): string {
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return formatTime(isoString);
+}
+
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadStats();
+    loadRecentSessions();
     // Refresh every 30 seconds
-    const interval = setInterval(loadStats, 30000);
+    const interval = setInterval(() => {
+      loadStats();
+      loadRecentSessions();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,6 +78,15 @@ export function Dashboard() {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadRecentSessions() {
+    try {
+      const data = await sessionsListAPI.listSessions({ limit: 5 });
+      setRecentSessions(data.sessions);
+    } catch {
+      // Ignore errors for recent sessions
     }
   }
 
@@ -171,48 +201,84 @@ export function Dashboard() {
                 <div
                   key={mesh.name}
                   className="dashboard__mesh-item"
-                  onClick={() => navigate(`/meshes/${mesh.name}`)}
+                  onClick={() => navigate(`/meshes/${mesh.name}/activity`)}
                 >
                   <span className="dashboard__mesh-name">{mesh.name}</span>
                   <span className="dashboard__mesh-agents">{mesh.agents} agents</span>
-                  <button
-                    className="btn btn--sm btn--success"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/meshes/${mesh.name}/run`);
-                    }}
-                  >
-                    Run
-                  </button>
+                  <div className="dashboard__mesh-actions">
+                    <button
+                      className="btn btn--sm btn--ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/meshes/${mesh.name}`);
+                      }}
+                    >
+                      Config
+                    </button>
+                    <button
+                      className="btn btn--sm btn--success"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/meshes/${mesh.name}/run`);
+                      }}
+                    >
+                      Run
+                    </button>
+                  </div>
                 </div>
               ))
             )}
           </div>
         </section>
 
-        {/* Recent Activity Panel */}
-        <section className="dashboard__panel dashboard__panel--activity">
+        {/* Recent Sessions Panel */}
+        <section className="dashboard__panel dashboard__panel--recent-sessions">
           <h2>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            Recent Activity
+            Recent Sessions
           </h2>
-          <div className="dashboard__activity-list">
-            {stats.recentActivity.length === 0 ? (
-              <p className="dashboard__empty">No recent activity</p>
+          <div className="dashboard__sessions-list">
+            {recentSessions.length === 0 ? (
+              <p className="dashboard__empty">No recent sessions</p>
             ) : (
-              stats.recentActivity.map((activity, i) => (
-                <div key={i} className="dashboard__activity-item">
-                  <span className={`dashboard__activity-type dashboard__activity-type--${activity.type}`}>
-                    {activity.type}
-                  </span>
-                  <span className="dashboard__activity-desc">{activity.description}</span>
-                  <span className="dashboard__activity-time">{formatTime(activity.timestamp)}</span>
+              recentSessions.map((session) => (
+                <div
+                  key={session.sessionId}
+                  className="dashboard__session-item"
+                  onClick={() => navigate(`/meshes/${session.meshId}/activity`)}
+                >
+                  <div className="dashboard__session-info">
+                    <span className="dashboard__session-mesh">{session.meshId}</span>
+                    <code className="dashboard__session-id">{session.sessionId.substring(0, 8)}</code>
+                  </div>
+                  <div className="dashboard__session-meta">
+                    <span
+                      className={`dashboard__session-status dashboard__session-status--${session.status}`}
+                    >
+                      {session.status}
+                    </span>
+                    <span className="dashboard__session-time">
+                      {formatRelativeTime(session.lastActivityAt)}
+                    </span>
+                  </div>
                 </div>
               ))
             )}
           </div>
+          {recentSessions.length > 0 && (
+            <div className="dashboard__panel-footer">
+              <button
+                className="btn btn--sm btn--ghost"
+                onClick={() => navigate('/sessions')}
+              >
+                View All Sessions
+              </button>
+            </div>
+          )}
         </section>
 
         {/* System Panel */}

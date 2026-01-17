@@ -63,9 +63,17 @@ export function Navigation() {
             <span className="nav__separator">|</span>
             <NavLink
               to={`/meshes/${currentMesh}`}
-              className={({ isActive }) => `nav__link nav__link--mesh ${isActive && !location.pathname.includes('/run') ? 'nav__link--active' : ''}`}
+              className={() => `nav__link nav__link--mesh ${location.pathname === `/meshes/${currentMesh}` ? 'nav__link--active' : ''}`}
             >
               {currentMesh}
+            </NavLink>
+
+            <span className="nav__separator">/</span>
+            <NavLink
+              to={`/meshes/${currentMesh}/activity`}
+              className={() => `nav__link ${location.pathname === `/meshes/${currentMesh}/activity` ? 'nav__link--active' : ''}`}
+            >
+              Activity
             </NavLink>
 
             {location.pathname.includes('/run') && (
