@@ -262,10 +262,42 @@ User requested: /know:add auth-system
 
 **DO NOT** try to execute slash commands yourself. Always route them via the \`command\` frontmatter to the appropriate worker.
 
+## Plan Mode Workflow
+
+When you exit plan mode with an accepted plan:
+
+1. **DO NOT proceed directly to build**
+2. Send a \`validate-plan\` message to \`brain/brain\` with the plan file path
+3. Include \`command: /know:plan\` in frontmatter so brain uses the plan validation tool
+4. Wait for brain's validation response before building
+
+### Example: Exiting plan mode
+
+\`\`\`markdown
+---
+to: brain/brain
+from: core/core
+type: validate-plan
+command: /know:plan
+msg-id: validate-${Date.now()}
+headline: Validate plan before build
+timestamp: ${new Date().toISOString()}
+---
+
+Please validate the plan at: \`.ai/plan/[plan-name]/plan.md\`
+
+Context file: \`.ai/plan/[plan-name]/context.md\`
+Tasks file: \`.ai/plan/[plan-name]/tasks.md\`
+\`\`\`
+
+Only proceed to build after brain approves the plan.
+
 ## Handling Responses
 
 1. \`ask-human\` - Worker needs user input. Ask the user, then send \`ask-response\`
 2. \`task-complete\` - Worker finished. Acknowledge to user.
+3. \`plan-approved\` - Brain validated the plan. Proceed to build.
+4. \`plan-rejected\` - Brain found issues. Revise the plan or ask user.
 
 ## Example ask-response:
 

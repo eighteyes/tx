@@ -1,0 +1,56 @@
+# test-fsm-injection/config.yaml
+# E2E Test Mesh - Validates FSM context variable injection
+#
+# Purpose:
+# - Prove FSM context variables appear in worker prompt
+# - Prove variable descriptions appear under variables
+# - Prove variables update between state transitions
+# - Prove worker can report variable values
+
+mesh: test-fsm-injection
+description: "FSM variable injection test mesh - validates context injection into prompts"
+
+agents:
+  - name: worker
+    model: haiku
+    prompt: worker.md
+
+entry_point: worker
+completion_agent: worker
+
+# FSM Configuration with context variables and descriptions
+fsm:
+  initial: start
+
+  # Context variables - these will be injected into prompts
+  context:
+    iteration: 0
+    workspace: /test/workspace
+    feature_name: test-feature
+    max_retries: 3
+
+  # Context descriptions - injected below variables
+  context_descriptions:
+    iteration: "Current iteration number, increments after each attempt"
+    workspace: "Isolated workspace path for this feature"
+    feature_name: "Name of the feature being worked on"
+    max_retries: "Maximum number of retry attempts allowed"
+
+  # State definitions
+  states:
+    start:
+      agents: [worker]
+      exit:
+        set:
+          iteration: "$iteration + 1"
+        run: next
+
+    next:
+      agents: [worker]
+      exit:
+        set:
+          iteration: "$iteration + 1"
+        run: complete
+
+    complete:
+      agents: [worker]

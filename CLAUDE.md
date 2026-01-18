@@ -8,7 +8,15 @@ Do NOT run `tx start` or you will be terminated.
 - `src/worker/` - SDK-based ephemeral workers
 - `meshes/` - Agent configs and prompts
 
+
+# Overview
+- USER interfaces with CLI via core agent.
+- Core sends messages which spawn meshes ( agent workflows ).
+- Meshes write back to core / user when finished or with questions.
 - System is event driven from file writes into the Consumer.
+
+# Docker Environment
+`/workspace/` is normal, disregard if it's an issue
 
 ## Key Learnings
 

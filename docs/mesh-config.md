@@ -16,7 +16,7 @@ Comprehensive reference for mesh configuration fields in TX V4. Each field docum
 
 ```yaml
 mesh: research
-mesh: dev-graded
+mesh: dev-quality
 mesh: narrative-engine
 ```
 
@@ -190,68 +190,12 @@ workspace:
 
 ---
 
-## Quality Stack
-
-### `graded`
-- **Type**: `boolean | GateType[]`
-- **Default**: `false`
-- **Values**:
-  - `false` - No quality evaluation
-  - `true` - Pre-flight decides gates, runs all available
-  - `['checklist', 'rubric']` - Only specified gates
-- **Behavior**: Enables quality stack for mesh with automatic iteration on failure.
-
-**Valid gate types**:
-| Gate | Type | Description |
-|------|------|-------------|
-| `checklist` | LLM | Task-type specific verification |
-| `rubric` | LLM | Dynamic criteria scoring from pre-flight |
-| `adversarial` | LLM | Challenge assumptions, find weaknesses |
-| `accuracy` | LLM | Source validation, first-party vs second-party |
-| `deterministic` | Code | Run tests, lint, type checks |
-| `summarizer` | LLM | Consensus from ensemble (weights by confidence) |
-
-```yaml
-graded: true
-
-# Or selective gates:
-graded:
-  - checklist
-  - adversarial
-```
-
-### `iteration`
-- **Type**: `object`
-- **Default**: `{ maxIterations: 3, onFail: 'loop' }`
-- **Behavior**: Controls quality gate failure behavior
-
-#### `iteration.maxIterations`
-- **Type**: `number`
-- **Default**: `3`
-- **Behavior**: Maximum retry attempts before failure
-
-#### `iteration.onFail`
-- **Type**: `'loop' | 'halt'`
-- **Default**: `'loop'`
-- **Behavior**:
-  - `loop` - Resume session with feedback, retry up to maxIterations
-  - `halt` - Stop immediately with error
-
-```yaml
-graded: true
-iteration:
-  maxIterations: 5
-  onFail: loop
-```
-
----
-
 ## Lifecycle Hooks
 
 ### `lifecycle`
 - **Type**: `object`
 - **Required**: No
-- **Behavior**: Explicit lifecycle hooks. Takes precedence over shorthands (`worktree`, `graded`).
+- **Behavior**: Explicit lifecycle hooks for pre/post worker execution. Takes precedence over `worktree` shorthand.
 
 #### `lifecycle.pre`
 - **Type**: `string[]`
@@ -268,6 +212,7 @@ iteration:
 **Available post-hooks**:
 - `worktree:cleanup` - Remove worktree
 - `commit:auto` - Spawn haiku agent to create commit
+- `brain-update` - Analyze work and document insights (side-effects, opportunities, tech debt)
 - `quality:evaluate` - Run full quality stack (legacy)
 - `quality:checklist` - Individual checklist gate
 - `quality:rubric` - Individual rubric gate
@@ -285,6 +230,7 @@ lifecycle:
     - quality:checklist
     - quality:rubric
     - commit:auto
+    - brain-update      # Document insights after commit
     - worktree:cleanup
 ```
 
@@ -385,6 +331,43 @@ rearmatter:
 
 ---
 
+## Context Propagation
+
+### `injectOriginalMessage`
+- **Type**: `boolean`
+- **Default**: `false`
+- **Behavior**: Injects the original task message (frontmatter + body) into downstream agent prompts in multi-agent workflows. Enables downstream agents to validate their work against original requirements without parsing upstream agent output.
+
+**Use case**: In a `dev-haiku` mesh, the sonnet validator can reference the original task to verify haiku's implementation matches the spec.
+
+**Injection format**: Appears as `## Original Task Message` section before upstream agent output.
+
+```yaml
+mesh: dev-haiku
+description: "Fast dev with validation"
+injectOriginalMessage: true  # Sonnet sees original task
+
+agents:
+  - name: haiku
+    model: haiku
+    prompt: haiku/prompt.md
+  - name: sonnet
+    model: sonnet
+    prompt: sonnet/prompt.md
+
+entry_point: haiku
+completion_agent: sonnet
+
+routing:
+  haiku:
+    complete:
+      sonnet: "Ready for validation"
+```
+
+**Note**: The entry point agent does NOT receive injection (it IS processing the original). Only downstream agents see the injected original message.
+
+---
+
 ## System & Type Fields
 
 ### `type`
@@ -401,6 +384,43 @@ rearmatter:
 # meshes/system/commit-agent/config.yaml
 system: true
 ```
+
+---
+
+## Documentation Fields
+
+### `playbook_notes`
+- **Type**: `string` (multiline)
+- **Required**: No
+- **Behavior**: Design rationale and architectural documentation embedded in the config. Explains WHY the mesh is built this way. Not processed by the system - purely for human/AI maintainers.
+
+**Purpose**: Preserve design intent, document alignment with principles/patterns, explain architectural choices.
+
+**When to use**:
+- Mesh follows specific methodology or playbook (e.g., Ralph, ensemble patterns)
+- Complex FSM or routing logic that benefits from explanation
+- Novel patterns that future maintainers should understand
+- Trade-offs or constraints that informed design decisions
+
+**Example**:
+```yaml
+playbook_notes: |
+  Ralph Playbook Implementation:
+
+  Context Efficiency:
+  - Prompts compressed from ~250 lines to ~40 lines (84% reduction)
+  - Decision trees replace narrative instruction
+
+  Autonomous Operation:
+  - Agents control routing via success_signal
+  - Clear "when to PASS" guidance prevents endless loops
+
+  Backpressure:
+  - Iteration limits enforce finite loops
+  - Quality gates provide objective criteria
+```
+
+**Related**: For runtime operational guidance, use `AGENTS.md` in the mesh directory (loaded by agents during execution).
 
 ---
 
@@ -422,14 +442,49 @@ Project configs override global configs with same mesh name.
 
 ---
 
+## Iteration Control
+
+### `iteration`
+- **Type**: `object`
+- **Default**: `{ maxIterations: 3, onFail: 'loop' }`
+- **Behavior**: Controls quality gate failure behavior (used with quality hooks)
+
+#### `iteration.maxIterations`
+- **Type**: `number`
+- **Default**: `3`
+- **Behavior**: Maximum retry attempts before failure
+
+#### `iteration.onFail`
+- **Type**: `'loop' | 'halt'`
+- **Default**: `'loop'`
+- **Behavior**:
+  - `loop` - Resume session with feedback, retry up to maxIterations
+  - `halt` - Stop immediately with error
+
+```yaml
+iteration:
+  maxIterations: 5
+  onFail: loop
+```
+
+---
+
 ## Complete Example
 
 ```yaml
-mesh: dev-graded
-description: "Developer mesh with grading and iteration for quality assurance"
+mesh: dev-quality
+description: "Developer mesh with quality hooks for output validation"
 
-# Quality stack
-graded: true
+# Lifecycle hooks for quality gates
+lifecycle:
+  pre:
+    - quality:preflight
+  post:
+    - quality:checklist
+    - quality:rubric
+    - commit:auto
+
+# Iteration control for quality retry
 iteration:
   maxIterations: 5
   onFail: loop

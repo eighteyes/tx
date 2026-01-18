@@ -162,7 +162,7 @@ describe('V4 SDK Lifecycle Tests', () => {
       };
 
       const runner = new SdkRunner(config, queue);
-      let startEventData: { id: string } | null = null;
+      let startEventData: any = null;
 
       runner.on('start', (data) => {
         startEventData = data;
@@ -170,8 +170,8 @@ describe('V4 SDK Lifecycle Tests', () => {
 
       await runner.run(); // No messages, completes immediately
 
-      assert.ok(startEventData, 'Start event should be emitted');
-      assert.strictEqual(startEventData?.id, workerId, 'Event should contain worker ID');
+      if (!startEventData) throw new Error('Start event should be emitted');
+      assert.strictEqual(startEventData.id, workerId, 'Event should contain worker ID');
     });
 
     it('should emit complete event with processing summary', async () => {
@@ -185,12 +185,7 @@ describe('V4 SDK Lifecycle Tests', () => {
       };
 
       const runner = new SdkRunner(config, queue);
-      let completeEventData: {
-        id: string;
-        messagesProcessed: number;
-        sessionId?: string;
-        output?: string;
-      } | null = null;
+      let completeEventData: any = null;
 
       runner.on('complete', (data) => {
         completeEventData = data;
@@ -198,9 +193,9 @@ describe('V4 SDK Lifecycle Tests', () => {
 
       const result = await runner.run();
 
-      assert.ok(completeEventData, 'Complete event should be emitted');
-      assert.strictEqual(completeEventData?.id, workerId, 'Complete event should have worker ID');
-      assert.strictEqual(completeEventData?.messagesProcessed, 0, 'Should report 0 messages processed');
+      if (!completeEventData) throw new Error('Complete event should be emitted');
+      assert.strictEqual(completeEventData.id, workerId, 'Complete event should have worker ID');
+      assert.strictEqual(completeEventData.messagesProcessed, 0, 'Should report 0 messages processed');
       assert.strictEqual(result.success, true, 'Run should succeed with no messages');
     });
 
@@ -419,8 +414,7 @@ describe('V4 SDK Lifecycle Tests', () => {
         model: 'haiku',
         systemPrompt: 'Timeout test',
         workDir: env.rootDir,
-        msgsDir: env.msgsDir,
-        timeout: 30000 // 30 seconds
+        msgsDir: env.msgsDir
       };
 
       const runner = new SdkRunner(config, queue);

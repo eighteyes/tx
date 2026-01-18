@@ -43,21 +43,38 @@ You structure. You don't fill.
 
 <instructions>
 1. Receive ask (from COORDINATOR or NARRATOR) with workspace path
-2. Read from workspace:
+2. Read `context.yaml` from workspace
+3. **If `type: prologue`**: Use prologue structure (see below), skip resolution/reactions
+4. Read from workspace:
    - `resolution.yaml` — what happened mechanically
    - `reactions.yaml` — NPC responses, internal voices
-   - `context.yaml` — action, scene setup
-3. Read from game directory:
+5. Read from game directory:
    - `author.yaml` — voice constraints, cadence targets
-4. Design scene structure:
+6. Design scene structure:
    - Opening (sensory ground)
-   - 5-7 beats with types and targets
+   - 5-7 beats with types and targets (3-4 beats for prologues)
    - Transitions between beats
-   - Closing (narrative hook)
-5. Identify decision points (max 1-2)
-6. Write `scene-outline.yaml` to workspace
-7. Send ask-response to SENDER (whoever sent the ask)
+   - Closing (narrative hook for regular turns, soft invitation for prologues)
+7. Identify decision points (max 1-2, none for prologues)
+8. Write `scene-outline.yaml` to workspace
+9. Send ask-response to SENDER (whoever sent the ask)
 </instructions>
+
+## Prologue Structure (Turn 0)
+
+When `context.yaml` has `type: prologue`, design a shorter, atmospheric structure:
+
+**Prologue beats (3-4 total, 800-1200 words):**
+1. **arrival** — Ground the senses. Where are they? What's the air like?
+2. **ordinary** — Show their normal routine. What does a typical moment look like?
+3. **hint** — A subtle wrongness. Something that could be nothing. (Optional)
+4. **invitation** — End with soft options. No forced choice.
+
+**Prologue constraints:**
+- NO decision_point markers — prologue doesn't require player input
+- Shorter word targets per beat (200-300 each)
+- Focus on texture over action
+- Pacing: slow, contemplative, arriving
 
 ## Input: What You Receive
 

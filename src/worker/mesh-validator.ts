@@ -17,7 +17,7 @@
  * ```
  */
 
-import type { SemanticModel } from '../shared/types.ts';
+import type { SemanticModel, EnsembleConfig, TaskDistributionConfig, AggregationStrategy } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 /**
@@ -80,18 +80,12 @@ export interface MeshConfigSchema {
   agents: MeshAgentConfig[];
   entry_point?: string;
   completion_agent?: string;
-  type?: 'persistent' | 'ephemeral';
-  auto_despawn?: boolean;
-  keepalive?: boolean;
-  grace_period_ms?: number;
-  topology?: 'static' | 'dynamic';
   routing?: MeshRouting;
   rearmatter?: RearmatterConfig;
   workspace?: WorkspaceConfigSchema;
-  brain?: boolean;
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
-  'clear-before'?: boolean;
+  ensemble?: EnsembleConfig;
 }
 
 /**
@@ -158,12 +152,24 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   worktree: { type: 'boolean' },
   // Lifecycle hooks
   lifecycle: { type: 'object' },
-  // Quality stack configuration (boolean or array of gate types)
-  // Note: 'graded' can be true, false, or array like ['checklist', 'adversarial']
-  // Type is 'boolean' but array is also accepted (validated specially in validateFieldTypes)
-  graded: { type: 'boolean' },  // Special validation accepts boolean | string[]
-  // Iteration config for graded meshes
+  // Iteration config for quality gates
   iteration: { type: 'object' },  // { maxIterations?: number, onFail?: 'loop' | 'halt' }
+  // FSM (Finite State Machine) configuration for workflow orchestration
+  fsm: { type: 'object' },  // FSMConfig: { initialState, states, transitions, context }
+  // Ensemble configuration: multiple agents on same task with result aggregation
+  ensemble: { type: 'object' },  // EnsembleConfig: { agents, aggregation_strategy, timeout_ms, ... }
+  // Task distribution configuration: spawner splits task into subtasks
+  task_distribution: { type: 'object' },  // TaskDistributionConfig: { spawner, subagents, reviewer, distribution_strategy, ... }
+  // Session continuation: persist context across messages
+  continuation: { type: 'boolean' },  // true | [agent1, agent2]  (also accepts array, validated specially)
+  // Inject original task message into downstream agents
+  injectOriginalMessage: { type: 'boolean' },
+  // Tool restriction policy
+  toolRestriction: { type: 'string', enum: ['unrestricted', 'mcp-only'] },
+  // Turn workspace (custom workspace template for turn-based games)
+  turn_workspace: { type: 'object' },
+  // Playbook notes for design rationale and documentation
+  playbook_notes: { type: 'string' },
 };
 
 /**
@@ -174,6 +180,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   model: { type: 'string', required: true, enum: ['opus', 'sonnet', 'haiku'] },
   prompt: { type: 'string', required: true },
   workspace: { type: 'object' },
+  description: { type: 'string' },  // Optional agent documentation
 };
 
 /**
@@ -221,6 +228,18 @@ export class MeshValidator {
       this.validateAgents(cfg.agents, errors, warnings, context);
     }
 
+    // Auto-default for single-agent meshes: set entry_point to the single agent
+    // Note: completion_agent is NOT auto-set to allow routing-based exit patterns
+    if (Array.isArray(cfg.agents) && cfg.agents.length === 1) {
+      const singleAgent = cfg.agents[0] as Record<string, unknown>;
+      const agentName = singleAgent.name as string;
+
+      if (!cfg.entry_point && agentName) {
+        cfg.entry_point = agentName;
+        log.debug('mesh-validator', `Auto-set entry_point to '${agentName}' for single-agent mesh${context}`);
+      }
+    }
+
     // Validate entry_point if present
     if (cfg.entry_point && Array.isArray(cfg.agents)) {
       this.validateEntryPoint(cfg.entry_point as string, cfg.agents, errors, warnings, context);
@@ -241,6 +260,31 @@ export class MeshValidator {
     // Validate rearmatter if present
     if (cfg.rearmatter) {
       this.validateRearmatter(cfg.rearmatter, errors, warnings, context);
+    }
+
+    // Validate FSM if present
+    if (cfg.fsm && Array.isArray(cfg.agents)) {
+      this.validateFSM(cfg.fsm, cfg.agents, errors, warnings, context);
+    }
+
+    // FSM requires routing
+    if (cfg.fsm && !cfg.routing) {
+      errors.push(`FSM requires 'routing' configuration${context}`);
+    }
+
+    // Validate multi-agent mesh routing
+    if (Array.isArray(cfg.agents) && cfg.agents.length > 1) {
+      this.validateMultiAgentRouting(cfg, errors, warnings, context);
+    }
+
+    // Validate FSM state agent routing
+    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents)) {
+      this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate task_distribution if present
+    if (cfg.task_distribution && Array.isArray(cfg.agents)) {
+      this.validateTaskDistribution(cfg.task_distribution, cfg.agents, errors, warnings, context);
     }
 
     // Check for unknown fields
@@ -299,24 +343,6 @@ export class MeshValidator {
       if (field === 'workspace' && actualType === 'string') {
         // Legacy string format - accept but warn
         warnings.push(`Field 'workspace' should be object format { path: "..." }, got string${context}. Legacy format still works but object format is preferred.`);
-        continue;
-      }
-
-      // Special case: graded can be boolean or array
-      if (field === 'graded') {
-        if (actualType !== 'boolean' && actualType !== 'array') {
-          warnings.push(`Field 'graded' should be boolean or array, got ${actualType}${context}`);
-        }
-        // If array, validate gate names
-        if (actualType === 'array') {
-          const validGates = ['summarizer', 'accuracy', 'checklist', 'rubric', 'adversarial', 'deterministic'];
-          const gates = value as string[];
-          for (const gate of gates) {
-            if (!validGates.includes(gate)) {
-              warnings.push(`Unknown gate type '${gate}' in graded array (valid: ${validGates.join(', ')})${context}`);
-            }
-          }
-        }
         continue;
       }
 
@@ -565,6 +591,344 @@ export class MeshValidator {
   }
 
   /**
+   * Validate FSM configuration (exit-based routing schema)
+   * Schema: docs/mesh-fsm-config.md
+   */
+  private static validateFSM(
+    fsm: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof fsm !== 'object' || fsm === null) {
+      errors.push(`fsm must be an object${context}`);
+      return;
+    }
+
+    const fsmObj = fsm as Record<string, unknown>;
+
+    // Validate required fields
+    if (!fsmObj.initial) {
+      errors.push(`fsm.initial is required${context}`);
+    } else if (typeof fsmObj.initial !== 'string') {
+      errors.push(`fsm.initial must be a string${context}`);
+    }
+
+    if (!fsmObj.states) {
+      errors.push(`fsm.states is required${context}`);
+    } else if (typeof fsmObj.states !== 'object' || Array.isArray(fsmObj.states) || fsmObj.states === null) {
+      errors.push(`fsm.states must be an object (not array)${context}`);
+    } else if (Object.keys(fsmObj.states).length === 0) {
+      errors.push(`fsm.states cannot be empty${context}`);
+    }
+
+    if (!fsmObj.scripts) {
+      errors.push(`fsm.scripts is required${context}`);
+    } else if (typeof fsmObj.scripts !== 'object' || Array.isArray(fsmObj.scripts) || fsmObj.scripts === null) {
+      errors.push(`fsm.scripts must be an object${context}`);
+    }
+
+    // Get agent names for reference validation
+    const agentNames = new Set(
+      agents
+        .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+        .map(a => a.name as string)
+    );
+
+    // Validate states (object/map, not array)
+    const stateNames = new Set<string>();
+    if (typeof fsmObj.states === 'object' && fsmObj.states !== null && !Array.isArray(fsmObj.states)) {
+      const statesObj = fsmObj.states as Record<string, unknown>;
+
+      for (const [stateName, stateValue] of Object.entries(statesObj)) {
+        stateNames.add(stateName);
+        const prefix = `fsm.states.${stateName}`;
+
+        if (!stateValue || typeof stateValue !== 'object' || Array.isArray(stateValue)) {
+          errors.push(`${prefix} must be an object${context}`);
+          continue;
+        }
+
+        const state = stateValue as Record<string, unknown>;
+
+        // Validate agents field (optional array)
+        if (state.agents !== undefined) {
+          if (!Array.isArray(state.agents)) {
+            errors.push(`${prefix}.agents must be an array${context}`);
+          } else {
+            for (const agent of state.agents) {
+              if (typeof agent !== 'string') {
+                errors.push(`${prefix}.agents must contain strings${context}`);
+              } else if (!agentNames.has(agent)) {
+                warnings.push(`${prefix}.agents: '${agent}' not found in mesh agents${context}`);
+              }
+            }
+          }
+        }
+
+        // Validate state type (optional, defaults to 'normal')
+        // NOTE: state.type is DEPRECATED in favor of state.ensemble.type
+        if (state.type !== undefined) {
+          if (typeof state.type !== 'string') {
+            errors.push(`${prefix}.type must be a string${context}`);
+          } else if (!['normal', 'ensemble'].includes(state.type)) {
+            errors.push(`${prefix}.type must be 'normal' or 'ensemble', got '${state.type}'${context}`);
+          } else if (state.type === 'ensemble') {
+            // Warn about deprecated pattern
+            warnings.push(`${prefix}: 'type: ensemble' is deprecated. Use 'ensemble: { type: parallel }' instead${context}`);
+          }
+        }
+
+        // Validate subtask flag (optional boolean) - DEPRECATED
+        if (state.subtask !== undefined) {
+          if (typeof state.subtask !== 'boolean') {
+            errors.push(`${prefix}.subtask must be a boolean${context}`);
+          } else {
+            warnings.push(`${prefix}: 'subtask: true' is deprecated. Use explicit ensemble routing instead${context}`);
+          }
+        }
+
+        // Validate ensemble configuration (new structure: ensemble.type === 'parallel')
+        const hasLegacyEnsembleType = state.type === 'ensemble';
+        const hasNewEnsembleConfig = state.ensemble !== undefined && typeof state.ensemble === 'object' && state.ensemble !== null && !Array.isArray(state.ensemble);
+
+        // Check for type: ensemble without ensemble config (legacy error)
+        if (hasLegacyEnsembleType && !state.ensemble) {
+          errors.push(`${prefix}: type 'ensemble' requires 'ensemble' configuration${context}`);
+        }
+
+        if (state.ensemble !== undefined) {
+          if (typeof state.ensemble !== 'object' || state.ensemble === null || Array.isArray(state.ensemble)) {
+            errors.push(`${prefix}.ensemble must be an object${context}`);
+          } else {
+            const ensemble = state.ensemble as Record<string, unknown>;
+            const ensemblePrefix = `${prefix}.ensemble`;
+
+            // Validate ensemble.type (required for new config, optional for legacy)
+            if (ensemble.type !== undefined) {
+              if (ensemble.type !== 'parallel') {
+                errors.push(`${ensemblePrefix}.type must be 'parallel', got '${ensemble.type}'${context}`);
+              }
+            } else if (!hasLegacyEnsembleType) {
+              // New ensemble config without type field should have type: parallel
+              warnings.push(`${ensemblePrefix}: missing 'type' field. Add 'type: parallel' for clarity${context}`);
+            }
+
+            // Validate that either agents array OR (agent + count) is provided, not both
+            const hasAgents = ensemble.agents !== undefined;
+            const hasAgentWithCount = ensemble.agent !== undefined;
+
+            if (!hasAgents && !hasAgentWithCount) {
+              errors.push(`${ensemblePrefix}: must specify either 'agents' array OR 'agent' with 'count'${context}`);
+            } else if (hasAgents && hasAgentWithCount) {
+              errors.push(`${ensemblePrefix}: cannot specify both 'agents' array AND 'agent' with 'count'${context}`);
+            }
+
+            // Validate agents array
+            if (hasAgents) {
+              if (!Array.isArray(ensemble.agents)) {
+                errors.push(`${ensemblePrefix}.agents must be an array${context}`);
+              } else {
+                if (ensemble.agents.length === 0) {
+                  errors.push(`${ensemblePrefix}.agents cannot be empty${context}`);
+                }
+                for (const agent of ensemble.agents) {
+                  if (typeof agent !== 'string') {
+                    errors.push(`${ensemblePrefix}.agents must contain strings${context}`);
+                  } else if (!agentNames.has(agent)) {
+                    warnings.push(`${ensemblePrefix}.agents: '${agent}' not found in mesh agents${context}`);
+                  }
+                }
+              }
+            }
+
+            // Validate agent + count pattern
+            if (hasAgentWithCount) {
+              if (typeof ensemble.agent !== 'string') {
+                errors.push(`${ensemblePrefix}.agent must be a string${context}`);
+              } else if (!agentNames.has(ensemble.agent)) {
+                warnings.push(`${ensemblePrefix}.agent: '${ensemble.agent}' not found in mesh agents${context}`);
+              }
+
+              // Count is required when using agent pattern
+              if (ensemble.count === undefined) {
+                errors.push(`${ensemblePrefix}: 'count' is required when using 'agent' pattern${context}`);
+              } else {
+                // Count can be number or string (variable reference like $parallelism)
+                const countType = typeof ensemble.count;
+                if (countType !== 'number' && countType !== 'string') {
+                  errors.push(`${ensemblePrefix}.count must be a number or variable reference (string)${context}`);
+                } else if (countType === 'number' && (ensemble.count as number) < 1) {
+                  errors.push(`${ensemblePrefix}.count must be >= 1${context}`);
+                } else if (countType === 'string' && !(ensemble.count as string).startsWith('$')) {
+                  errors.push(`${ensemblePrefix}.count as string must be a variable reference (start with $)${context}`);
+                }
+              }
+            }
+
+            // Validate aggregation strategy (required)
+            const validAggregations: AggregationStrategy[] = ['concat', 'deduplicate', 'voting', 'consensus', 'custom'];
+            if (!ensemble.aggregation) {
+              errors.push(`${ensemblePrefix}.aggregation is required${context}`);
+            } else if (typeof ensemble.aggregation !== 'string') {
+              errors.push(`${ensemblePrefix}.aggregation must be a string${context}`);
+            } else if (!validAggregations.includes(ensemble.aggregation as AggregationStrategy)) {
+              errors.push(`${ensemblePrefix}.aggregation must be one of [${validAggregations.join(', ')}], got '${ensemble.aggregation}'${context}`);
+            }
+
+            // Validate timeout_ms (optional)
+            if (ensemble.timeout_ms !== undefined) {
+              if (typeof ensemble.timeout_ms !== 'number') {
+                errors.push(`${ensemblePrefix}.timeout_ms must be a number${context}`);
+              } else if (ensemble.timeout_ms < 100 || ensemble.timeout_ms > 600000) {
+                errors.push(`${ensemblePrefix}.timeout_ms must be between 100 and 600000${context}`);
+              }
+            }
+
+            // Validate fault_tolerance (optional)
+            if (ensemble.fault_tolerance !== undefined) {
+              if (typeof ensemble.fault_tolerance !== 'object' || ensemble.fault_tolerance === null) {
+                errors.push(`${ensemblePrefix}.fault_tolerance must be an object${context}`);
+              } else {
+                const ft = ensemble.fault_tolerance as Record<string, unknown>;
+
+                if (ft.min_success_count !== undefined) {
+                  if (typeof ft.min_success_count !== 'number') {
+                    errors.push(`${ensemblePrefix}.fault_tolerance.min_success_count must be a number${context}`);
+                  } else if (ft.min_success_count < 1) {
+                    errors.push(`${ensemblePrefix}.fault_tolerance.min_success_count must be >= 1${context}`);
+                  }
+                }
+
+                if (ft.retry_failed !== undefined && typeof ft.retry_failed !== 'boolean') {
+                  errors.push(`${ensemblePrefix}.fault_tolerance.retry_failed must be a boolean${context}`);
+                }
+
+                // Check for unknown fault_tolerance fields
+                const knownFTFields = ['min_success_count', 'retry_failed'];
+                for (const field of Object.keys(ft)) {
+                  if (!knownFTFields.includes(field)) {
+                    warnings.push(`Unknown ${ensemblePrefix}.fault_tolerance field '${field}'${context}`);
+                  }
+                }
+              }
+            }
+
+            // Check for unknown ensemble fields
+            const knownEnsembleFields = ['type', 'agents', 'agent', 'count', 'aggregation', 'timeout_ms', 'fault_tolerance'];
+            for (const field of Object.keys(ensemble)) {
+              if (!knownEnsembleFields.includes(field)) {
+                warnings.push(`Unknown ${ensemblePrefix} field '${field}'${context}`);
+              }
+            }
+          }
+        }
+
+        // Validate exit block (optional, but critical for routing)
+        if (state.exit !== undefined) {
+          if (typeof state.exit !== 'object' || state.exit === null || Array.isArray(state.exit)) {
+            errors.push(`${prefix}.exit must be an object${context}`);
+          } else {
+            const exit = state.exit as Record<string, unknown>;
+
+            // Validate exit.when (array of condition/target pairs)
+            if (exit.when !== undefined) {
+              if (!Array.isArray(exit.when)) {
+                errors.push(`${prefix}.exit.when must be an array${context}`);
+              } else {
+                for (let i = 0; i < exit.when.length; i++) {
+                  const whenClause = exit.when[i];
+                  if (typeof whenClause !== 'object' || whenClause === null) {
+                    errors.push(`${prefix}.exit.when[${i}] must be an object${context}`);
+                    continue;
+                  }
+                  const clause = whenClause as Record<string, unknown>;
+                  if (!clause.condition) {
+                    errors.push(`${prefix}.exit.when[${i}].condition is required${context}`);
+                  }
+                  if (!clause.target) {
+                    errors.push(`${prefix}.exit.when[${i}].target is required${context}`);
+                  } else if (typeof clause.target === 'string' && stateNames.size > 0) {
+                    // Will validate target state exists after all states are processed
+                  }
+                }
+              }
+            }
+
+            // Validate exit.default (fallback state name)
+            if (exit.default !== undefined) {
+              if (typeof exit.default !== 'string') {
+                errors.push(`${prefix}.exit.default must be a string${context}`);
+              }
+            }
+          }
+        }
+      }
+
+      // Validate when clause targets and defaults reference valid states
+      for (const [stateName, stateValue] of Object.entries(statesObj)) {
+        if (!stateValue || typeof stateValue !== 'object') continue;
+        const state = stateValue as Record<string, unknown>;
+        const prefix = `fsm.states.${stateName}`;
+
+        if (state.exit && typeof state.exit === 'object') {
+          const exit = state.exit as Record<string, unknown>;
+
+          if (Array.isArray(exit.when)) {
+            for (let i = 0; i < exit.when.length; i++) {
+              const clause = exit.when[i] as Record<string, unknown>;
+              if (typeof clause.target === 'string' && !stateNames.has(clause.target)) {
+                errors.push(`${prefix}.exit.when[${i}].target '${clause.target}' not found in states${context}`);
+              }
+            }
+          }
+
+          if (typeof exit.default === 'string' && !stateNames.has(exit.default)) {
+            errors.push(`${prefix}.exit.default '${exit.default}' not found in states${context}`);
+          }
+        }
+      }
+    }
+
+    // Validate initial references a valid state
+    if (typeof fsmObj.initial === 'string' && stateNames.size > 0) {
+      if (!stateNames.has(fsmObj.initial)) {
+        errors.push(`fsm.initial '${fsmObj.initial}' not found in states${context}`);
+      }
+    }
+
+    // Validate context if present
+    if (fsmObj.context !== undefined) {
+      if (typeof fsmObj.context !== 'object' || fsmObj.context === null || Array.isArray(fsmObj.context)) {
+        errors.push(`fsm.context must be an object${context}`);
+      }
+    }
+
+    // Validate context_descriptions if present
+    if (fsmObj.context_descriptions !== undefined) {
+      if (typeof fsmObj.context_descriptions !== 'object' || fsmObj.context_descriptions === null || Array.isArray(fsmObj.context_descriptions)) {
+        errors.push(`fsm.context_descriptions must be an object${context}`);
+      } else {
+        // Validate all values are strings
+        for (const [key, value] of Object.entries(fsmObj.context_descriptions)) {
+          if (typeof value !== 'string') {
+            errors.push(`fsm.context_descriptions.${key} must be a string${context}`);
+          }
+        }
+      }
+    }
+
+    // Check for unknown fsm fields
+    const knownFSMFields = ['initial', 'states', 'context', 'context_descriptions', 'scripts'];
+    for (const field of Object.keys(fsmObj)) {
+      if (!knownFSMFields.includes(field)) {
+        warnings.push(`Unknown fsm field '${field}'${context}`);
+      }
+    }
+  }
+
+  /**
    * Check for unknown fields
    */
   private static checkUnknownFields(
@@ -628,5 +992,255 @@ export class MeshValidator {
       totalErrors,
       totalWarnings
     };
+  }
+
+  /**
+   * Validate task distribution configuration
+   */
+  private static validateTaskDistribution(
+    config: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (!config || typeof config !== 'object') {
+      errors.push(`Invalid task_distribution config${context}: must be a JSON object`);
+      return;
+    }
+
+    const distribution = config as Record<string, unknown>;
+    const agentNames = (agents as Record<string, unknown>[]).map(a => a.name);
+
+    // Validate spawner exists
+    if (!distribution.spawner || typeof distribution.spawner !== 'string') {
+      errors.push(`Task distribution config${context}: 'spawner' is required and must be a string`);
+      return;
+    }
+
+    if (!agentNames.includes(distribution.spawner as string)) {
+      errors.push(`Task distribution spawner '${distribution.spawner}' not found in mesh agents${context}`);
+    }
+
+    // Validate reviewer exists
+    if (!distribution.reviewer || typeof distribution.reviewer !== 'string') {
+      errors.push(`Task distribution config${context}: 'reviewer' is required and must be a string`);
+      return;
+    }
+
+    if (!agentNames.includes(distribution.reviewer as string)) {
+      errors.push(`Task distribution reviewer '${distribution.reviewer}' not found in mesh agents${context}`);
+    }
+
+    // Validate subagents array
+    if (!distribution.subagents || !Array.isArray(distribution.subagents) || distribution.subagents.length === 0) {
+      errors.push(`Task distribution config${context}: 'subagents' must be a non-empty array`);
+      return;
+    }
+
+    // Validate all subagents exist
+    for (const agent of distribution.subagents as string[]) {
+      if (!agentNames.includes(agent)) {
+        errors.push(`Task distribution subagent '${agent}' not found in mesh agents${context}`);
+      }
+    }
+
+    // Validate distribution_strategy
+    const validStrategies = ['equal', 'weighted', 'adaptive', 'custom'];
+    if (!distribution.distribution_strategy || !validStrategies.includes(distribution.distribution_strategy as string)) {
+      errors.push(`Task distribution config${context}: 'distribution_strategy' must be one of: ${validStrategies.join(', ')}`);
+    }
+
+    // For custom strategy, distribution_prompt must be provided
+    if (distribution.distribution_strategy === 'custom' && !distribution.distribution_prompt) {
+      errors.push(`Task distribution config${context}: custom distribution strategy requires 'distribution_prompt'`);
+    }
+
+    // Validate subtask_count if present
+    if (distribution.subtask_count !== undefined) {
+      const count = distribution.subtask_count as number;
+      if (typeof count !== 'number' || count < 1) {
+        errors.push(`Task distribution config${context}: 'subtask_count' must be >= 1`);
+      }
+    }
+
+    // Validate timeout_ms if present
+    if (distribution.timeout_ms !== undefined) {
+      const timeout = distribution.timeout_ms as number;
+      if (typeof timeout !== 'number' || timeout < 100 || timeout > 600000) {
+        errors.push(`Task distribution config${context}: 'timeout_ms' must be between 100 and 600000`);
+      }
+    }
+
+    // Validate allow_partial_failure if present
+    if (distribution.allow_partial_failure !== undefined && typeof distribution.allow_partial_failure !== 'boolean') {
+      errors.push(`Task distribution config${context}: 'allow_partial_failure' must be a boolean`);
+    }
+  }
+
+  /**
+   * Validate routing configuration for multi-agent meshes
+   *
+   * Multi-agent meshes should have routing configuration to define message flow.
+   * Without routing, agents don't know where to send their messages.
+   *
+   * Note: Ensemble agents are excluded from warnings since their output is
+   * collected by EnsembleCoordinator, not routed via messages.
+   */
+  private static validateMultiAgentRouting(
+    config: Record<string, unknown>,
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    const agents = config.agents as unknown[];
+    const routing = config.routing as Record<string, unknown> | undefined;
+    const fsm = config.fsm as Record<string, unknown> | undefined;
+
+    // Multi-agent mesh without any routing is an error
+    if (!routing) {
+      errors.push(`Multi-agent mesh missing routing configuration${context}`);
+      return;
+    }
+
+    // Collect ensemble agents (they don't need routing)
+    const ensembleAgents = new Set<string>();
+    if (fsm && typeof fsm.states === 'object' && fsm.states !== null) {
+      const statesObj = fsm.states as Record<string, unknown>;
+      for (const [, stateValue] of Object.entries(statesObj)) {
+        if (!stateValue || typeof stateValue !== 'object') continue;
+        const state = stateValue as Record<string, unknown>;
+
+        // Check for ensemble state (both legacy state.type === 'ensemble' and new state.ensemble.type === 'parallel')
+        const isLegacyEnsemble = state.type === 'ensemble';
+        const isNewEnsemble = state.ensemble !== undefined &&
+          typeof state.ensemble === 'object' &&
+          state.ensemble !== null &&
+          (state.ensemble as Record<string, unknown>).type === 'parallel';
+
+        if ((isLegacyEnsemble || isNewEnsemble) && state.ensemble) {
+          const ensemble = state.ensemble as Record<string, unknown>;
+          if (Array.isArray(ensemble.agents)) {
+            for (const agent of ensemble.agents) {
+              if (typeof agent === 'string') ensembleAgents.add(agent);
+            }
+          }
+          if (typeof ensemble.agent === 'string') {
+            ensembleAgents.add(ensemble.agent);
+          }
+        }
+      }
+    }
+
+    // Get agent names
+    const agentNames = agents
+      .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+      .map(a => a.name as string);
+
+    // Check each agent has routing (warning only - some patterns like ensemble don't need it)
+    for (const agentName of agentNames) {
+      if (!routing[agentName]) {
+        // Skip ensemble agents - they don't need explicit routing
+        if (ensembleAgents.has(agentName)) continue;
+
+        warnings.push(`Agent '${agentName}' has no routing configuration${context}`);
+      }
+    }
+  }
+
+  /**
+   * Validate FSM state agent routing
+   *
+   * Ensures agents referenced in FSM states have appropriate routing:
+   * - Ensemble state agents: Do NOT need routing (handled by EnsembleCoordinator)
+   * - Normal state agents: SHOULD have routing to define message destinations
+   *
+   * FSM handles state transitions, but routing handles message destinations.
+   * These are complementary: FSM says "go to synthesize state", routing says
+   * "send task-complete to core/core".
+   */
+  private static validateFSMStateRouting(
+    fsm: unknown,
+    routing: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof fsm !== 'object' || fsm === null) return;
+    if (typeof routing !== 'object' || routing === null) return;
+
+    const fsmObj = fsm as Record<string, unknown>;
+    const routingObj = routing as Record<string, unknown>;
+
+    if (!fsmObj.states || typeof fsmObj.states !== 'object') return;
+
+    const statesObj = fsmObj.states as Record<string, unknown>;
+
+    // Collect agents by state type
+    const ensembleAgents = new Set<string>();
+    const normalStateAgents = new Set<string>();
+
+    for (const [stateName, stateValue] of Object.entries(statesObj)) {
+      if (!stateValue || typeof stateValue !== 'object') continue;
+      const state = stateValue as Record<string, unknown>;
+
+      // Check if this is an ensemble state (both legacy and new structure)
+      const isLegacyEnsembleState = state.type === 'ensemble';
+      const isNewEnsembleState = state.ensemble !== undefined &&
+        typeof state.ensemble === 'object' &&
+        state.ensemble !== null &&
+        (state.ensemble as Record<string, unknown>).type === 'parallel';
+      const isEnsembleState = isLegacyEnsembleState || isNewEnsembleState;
+
+      if (isEnsembleState && state.ensemble) {
+        // Collect ensemble agents - they don't need routing
+        const ensemble = state.ensemble as Record<string, unknown>;
+        if (Array.isArray(ensemble.agents)) {
+          for (const agent of ensemble.agents) {
+            if (typeof agent === 'string') {
+              ensembleAgents.add(agent);
+            }
+          }
+        }
+        if (typeof ensemble.agent === 'string') {
+          ensembleAgents.add(ensemble.agent);
+        }
+      } else {
+        // Normal state - collect agents that should have routing
+        if (Array.isArray(state.agents)) {
+          for (const agent of state.agents) {
+            if (typeof agent === 'string') {
+              normalStateAgents.add(agent);
+            }
+          }
+        }
+      }
+    }
+
+    // Validate normal state agents have routing
+    for (const agentName of normalStateAgents) {
+      // Skip if agent is also used in ensemble state (ensemble takes precedence)
+      if (ensembleAgents.has(agentName)) continue;
+
+      if (!routingObj[agentName]) {
+        // Normal state agents should have routing to define where their messages go
+        warnings.push(
+          `FSM state uses agent '${agentName}' but agent has no routing configuration${context}. ` +
+          `Normal state agents should have routing to define message destinations.`
+        );
+      }
+    }
+
+    // Validate ensemble agents have routing (recommended for new ensemble.type: parallel config)
+    // Ensemble agents should have routing to define where their completion messages go
+    for (const agentName of ensembleAgents) {
+      if (!routingObj[agentName]) {
+        warnings.push(
+          `Ensemble agent '${agentName}' should have routing configuration${context}. ` +
+          `Add routing for ensemble agents to define completion message destinations.`
+        );
+      }
+    }
   }
 }

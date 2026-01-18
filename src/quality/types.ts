@@ -17,14 +17,6 @@ export type GateType =
   | 'deterministic'; // Run tests, lint, type checks
 
 /**
- * Graded config in mesh config
- * - false: No quality stack (default)
- * - true: Pre-flight decides stack
- * - string[]: These gates required, pre-flight may add more
- */
-export type GradedConfig = boolean | GateType[];
-
-/**
  * Fail action for evaluation stages
  */
 export type FailAction = 'loop' | 'flag' | 'halt';
@@ -173,7 +165,7 @@ export const DEFAULT_QUALITY_CONFIG: QualityStackConfig = {
 
 /**
  * Gate execution order
- * Determines the order gates run when using graded: true
+ * Determines the order gates run when using quality lifecycle hooks
  */
 export const GATE_ORDER: GateType[] = [
   'summarizer',

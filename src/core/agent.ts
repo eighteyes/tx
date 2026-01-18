@@ -11,6 +11,7 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import readline from 'node:readline';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { MessageConsumer } from './consumer.ts';
@@ -252,5 +253,100 @@ export class CoreAgent extends EventEmitter {
 
   getQueue(): MessageQueue {
     return this.queue;
+  }
+
+  /**
+   * Handle /parallel command - execute multiple tasks concurrently on the same agent
+   *
+   * Usage: /parallel mesh/agent "task 1" "task 2" "task 3"
+   *
+   * This writes N message files simultaneously, triggering the dispatcher
+   * to spawn N workers in parallel for the same agent.
+   */
+  handleParallelCommand(agentId: string, tasks: string[]): void {
+    if (!agentId || tasks.length === 0) {
+      console.log(`[core] Usage: /parallel <agent-id> "task 1" "task 2" ...`);
+      console.log(`[core] Example: /parallel dev/worker "implement auth" "add tests"`);
+      return;
+    }
+
+    // Validate agent ID format (mesh/agent)
+    if (!agentId.includes('/')) {
+      console.log(`[core] Invalid agent ID format. Expected: mesh/agent, got: ${agentId}`);
+      return;
+    }
+
+    console.log(`\n[core] ⚡ Parallel execution: ${tasks.length} tasks → ${agentId}`);
+
+    const timestamp = Date.now();
+    const messagesWritten: string[] = [];
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const msgId = `parallel-${timestamp}-${crypto.randomUUID().slice(0, 8)}`;
+
+      try {
+        this.writeParallelMessage(agentId, task, msgId, i + 1, tasks.length);
+        messagesWritten.push(msgId);
+        console.log(`[core]   → Task ${i + 1}: ${task.substring(0, 50)}${task.length > 50 ? '...' : ''}`);
+      } catch (error) {
+        log.error('core', 'Failed to write parallel message', {
+          agentId,
+          taskIndex: i,
+          error: (error as Error).message,
+        });
+        console.log(`[core] ✗ Failed to write task ${i + 1}: ${(error as Error).message}`);
+      }
+    }
+
+    console.log(`[core] ✓ ${messagesWritten.length}/${tasks.length} tasks dispatched\n`);
+
+    this.emit('parallel-dispatch', {
+      agentId,
+      taskCount: tasks.length,
+      messagesWritten,
+    });
+  }
+
+  /**
+   * Write a single task message to the msgs directory
+   */
+  private writeParallelMessage(
+    agentId: string,
+    taskBody: string,
+    msgId: string,
+    taskIndex: number,
+    totalTasks: number
+  ): void {
+    const timestamp = Date.now();
+    const toSafe = agentId.replace(/\//g, '-');
+    const filename = `${timestamp}-task-core-core--${toSafe}-${msgId}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    const headline = `Parallel task ${taskIndex}/${totalTasks}`;
+
+    const messageContent = `---
+to: ${agentId}
+from: core/core
+type: task
+msg-id: ${msgId}
+headline: ${headline}
+timestamp: ${new Date().toISOString()}
+parallel-batch: ${totalTasks}
+parallel-index: ${taskIndex}
+---
+
+${taskBody}
+`;
+
+    fs.writeFileSync(filepath, messageContent);
+
+    log.info('core', 'Wrote parallel task message', {
+      agentId,
+      msgId,
+      taskIndex,
+      totalTasks,
+      filepath,
+    });
   }
 }

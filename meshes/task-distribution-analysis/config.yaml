@@ -1,0 +1,38 @@
+mesh: task-distribution-analysis
+description: "Analyst splits task into subtasks, experts analyze, synthesizer reviews"
+
+agents:
+  - name: analyst
+    model: sonnet
+    prompt: prompts/analyst.md
+
+  - name: domain-expert-1
+    model: sonnet
+    prompt: prompts/domain-expert.md
+
+  - name: domain-expert-2
+    model: sonnet
+    prompt: prompts/domain-expert.md
+
+  - name: domain-expert-3
+    model: sonnet
+    prompt: prompts/domain-expert.md
+
+  - name: domain-expert-4
+    model: sonnet
+    prompt: prompts/domain-expert.md
+
+  - name: synthesizer
+    model: opus
+    prompt: prompts/synthesizer.md
+
+entry_point: analyst
+
+task_distribution:
+  spawner: analyst
+  subagents: [domain-expert-1, domain-expert-2, domain-expert-3, domain-expert-4]
+  reviewer: synthesizer
+  distribution_strategy: equal
+  subtask_count: 4
+  timeout_ms: 180000
+  allow_partial_failure: false

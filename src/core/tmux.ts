@@ -12,6 +12,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { log } from '../shared/logger.ts';
 
+/** Helper to sleep for a given number of milliseconds */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 const execAsync = promisify(exec);
 
 /** Valid tmux session name pattern: alphanumeric, underscore, hyphen */
@@ -72,6 +77,56 @@ export class TmuxSession {
       await execAsync(`tmux kill-session -t '${this.name}'`);
       return true;
     } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Source a tmux configuration file for this session
+   */
+  async sourceConfig(configPath: string): Promise<boolean> {
+    log.debug('tmux', 'sourceConfig called', { session: this.name, configPath });
+
+    try {
+      let hostPath = configPath;
+
+      // If path doesn't exist (e.g., Docker path mismatch), try to resolve relative to CLI installation
+      if (!fs.existsSync(configPath)) {
+        log.debug('tmux', 'Config path does not exist, trying alt path', { configPath });
+
+        // Get CLI installation directory (where this code is actually running)
+        const cliRoot = path.resolve(__dirname, '../..');
+        const filename = path.basename(configPath);
+        const altPath = path.join(cliRoot, filename);
+
+        log.debug('tmux', 'Checking alt path', { cliRoot, filename, altPath });
+
+        if (fs.existsSync(altPath)) {
+          hostPath = altPath;
+          log.info('tmux', 'Using alt config path', { original: configPath, resolved: hostPath });
+        } else {
+          log.error('tmux', 'Config file not found', { path: configPath, altPath });
+          return false;
+        }
+      } else {
+        log.debug('tmux', 'Config path exists', { hostPath });
+      }
+
+      const cmd = `tmux source-file '${hostPath}'`;
+      log.debug('tmux', 'Executing source-file command', { cmd, session: this.name });
+
+      const result = await execAsync(cmd);
+      log.info('tmux', 'Successfully sourced config', { path: hostPath, stdout: result.stdout, stderr: result.stderr });
+      return true;
+    } catch (err: any) {
+      log.error('tmux', 'Failed to source config', {
+        session: this.name,
+        path: configPath,
+        error: err.message,
+        stderr: err.stderr,
+        stdout: err.stdout,
+        code: err.code
+      });
       return false;
     }
   }
@@ -358,8 +413,25 @@ export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
   }
 
   // Send the prompt using literal mode for accuracy
-  tmux.sendLiteral(prompt);
-  tmux.sendEnter();
+  const sent = tmux.sendLiteral(prompt);
+  if (!sent) {
+    log.warn('injector', 'Failed to send literal text');
+    return false;
+  }
+
+  // Pause 500ms before sending Enter to allow tmux to process
+  try {
+    execSync('sleep 0.5', { stdio: 'pipe' });
+  } catch {
+    log.warn('injector', 'Sleep failed (non-fatal)');
+  }
+
+  const entered = tmux.sendEnter();
+  if (!entered) {
+    log.warn('injector', 'Failed to send Enter key');
+    return false;
+  }
+
   return true;
 }
 
@@ -371,4 +443,75 @@ export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
 export function injectFile(tmux: TmuxSession, filepath: string): boolean {
   const message = `Read and follow the instructions in: ${filepath}`;
   return injectPrompt(tmux, message);
+}
+
+/**
+ * Get the client activity timestamp from tmux
+ * Returns Unix timestamp of last client input
+ */
+export function getClientActivity(tmux: TmuxSession): number {
+  try {
+    const result = execSync(
+      `tmux display-message -t '${tmux.name}' -p '#{client_activity}'`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    return parseInt(result, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Check if user is currently typing in the tmux session
+ *
+ * Samples client_activity, waits for debounce period, then checks if activity changed.
+ * If activity timestamp changed during wait, user is still typing.
+ */
+export async function isUserTyping(tmux: TmuxSession, debounceMs = 5000): Promise<boolean> {
+  const activity = getClientActivity(tmux);
+  const now = Math.floor(Date.now() / 1000);
+
+  // If last activity was more than debounceMs ago, user is idle
+  if ((now - activity) * 1000 >= debounceMs) {
+    return false;
+  }
+
+  // Recent activity detected, wait and check if it continues
+  await sleep(debounceMs);
+  const newActivity = getClientActivity(tmux);
+
+  // Still typing if activity changed during the wait
+  return newActivity !== activity;
+}
+
+/**
+ * Wait for user to stop typing before proceeding
+ *
+ * Polls client_activity with debounce until user is idle, or max wait exceeded.
+ * Returns true if user is idle, false if timeout reached (will inject anyway).
+ */
+export async function waitForUserIdle(
+  tmux: TmuxSession,
+  options: { debounceMs?: number; maxWaitMs?: number } = {}
+): Promise<boolean> {
+  const debounceMs = options.debounceMs ?? parseInt(process.env.TX_INJECT_DEBOUNCE_MS || '5000', 10);
+  const maxWaitMs = options.maxWaitMs ?? parseInt(process.env.TX_INJECT_MAX_WAIT_MS || '60000', 10);
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const typing = await isUserTyping(tmux, debounceMs);
+
+    if (!typing) {
+      log.debug('tmux', 'User is idle, proceeding with injection');
+      return true;  // User is idle
+    }
+
+    log.debug('tmux', 'User still typing, waiting...', {
+      elapsed: Date.now() - startTime,
+      maxWait: maxWaitMs
+    });
+  }
+
+  log.warn('tmux', 'Max wait exceeded, injecting anyway', { maxWaitMs });
+  return false;  // Timed out but will inject anyway
 }

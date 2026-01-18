@@ -321,12 +321,12 @@ Respond with ONLY the JSON object, no other text.`;
       ? Math.max(1, Math.round(response.estimatedToolCalls))
       : 10;
 
-    // Build output (requiredGates will be set by caller based on graded config)
+    // Build output (requiredGates will be set by caller based on lifecycle config)
     return {
       taskType,
       checklist,
       rubric,
-      requiredGates: [], // Set by dispatcher based on graded config
+      requiredGates: [], // Set by dispatcher based on lifecycle config
       suggestedGates,
       effortLevel,
       estimatedToolCalls,

@@ -3,11 +3,9 @@
  *
  * Responsibilities:
  * - Resolve lifecycle hooks from mesh config shorthands
- * - Handle worktree: true, graded: true, and explicit lifecycle
+ * - Handle worktree: true and explicit lifecycle
  * - Single source of truth for lifecycle expansion logic
  */
-
-import { type GateType, type GradedConfig } from '../quality/types.ts';
 
 /**
  * Mesh config fields relevant to lifecycle resolution
@@ -17,10 +15,9 @@ export interface LifecycleResolvableConfig {
     pre?: string[];
     post?: string[];
   };
-  graded?: GradedConfig;
   worktree?: boolean;
   iteration?: {
-    onFail?: 'stop' | 'retry';
+    onFail?: 'stop' | 'retry' | 'loop' | 'halt';
     maxIterations?: number;
   };
 }
@@ -35,10 +32,8 @@ export interface ResolvedLifecycle {
 
 /**
  * Resolve lifecycle hooks from config
- * Supports multiple shorthands that expand to lifecycle hooks:
+ * Supports shorthands that expand to lifecycle hooks:
  * - worktree: true → worktree:create + commit:auto (cleanup via /know:done)
- * - graded: true → quality:preflight + individual quality gates
- * - graded: ['checklist', 'rubric'] → quality:preflight + specific gates
  * Explicit lifecycle overrides all shorthands
  */
 export function resolveLifecycle(config: LifecycleResolvableConfig): ResolvedLifecycle | undefined {
@@ -53,43 +48,6 @@ export function resolveLifecycle(config: LifecycleResolvableConfig): ResolvedLif
   // Build lifecycle from shorthands
   const pre: string[] = [];
   const post: string[] = [];
-
-  // graded: true/array shorthand → individual quality gate hooks
-  if (config.graded) {
-    pre.push('quality:preflight');
-
-    // Determine which gates to use
-    const gates: GateType[] = Array.isArray(config.graded) ? config.graded : [
-      'checklist',
-      'rubric',
-      'adversarial',
-      'accuracy',
-      'summarizer',
-      'deterministic',
-    ];
-
-    // Add each gate as an individual hook
-    for (const gate of gates) {
-      let hookName = `quality:${gate}`;
-
-      // Only add iteration config to gates that can fail (not summarizer)
-      if (gate !== 'summarizer') {
-        const configParts: string[] = [];
-        if (config.iteration?.onFail) {
-          configParts.push(`onFail=${config.iteration.onFail}`);
-        }
-        if (config.iteration?.maxIterations) {
-          configParts.push(`maxIterations=${config.iteration.maxIterations}`);
-        }
-
-        if (configParts.length > 0) {
-          hookName += ':' + configParts.join(',');
-        }
-      }
-
-      post.push(hookName);
-    }
-  }
 
   // worktree: true shorthand
   // NOTE: worktree:cleanup is NOT automatic - user runs /know:done to merge and cleanup

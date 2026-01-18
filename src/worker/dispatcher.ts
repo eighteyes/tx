@@ -9,15 +9,16 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
-import { MessageQueue } from '../queue/index.ts';
+import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type { SemanticModel, WorkerConfig } from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
-import { WorkspaceManager, PromptInjector, type WorkspaceConfig } from '../workspace/index.ts';
+import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
 import {
   LifecycleHooks,
   QualityIterationError,
@@ -25,13 +26,16 @@ import {
   QualityExhaustedError,
   type HookContext,
 } from './hooks.ts';
+import { StuckAgentDetector, type StuckAgentConfig, type ActiveWorkerInfo } from './stuck-detector.ts';
 import { MeshValidator } from './mesh-validator.ts';
 import {
-  type GradedConfig,
   type PreflightOutput,
 } from '../quality/index.ts';
 import type { ParityReminderEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
+import { EnsembleCoordinator } from './ensemble-coordinator.ts';
+import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -87,35 +91,36 @@ type MeshAgentRouting = Record<string, MeshRoutingDestination>;
 type MeshRouting = Record<string, MeshAgentRouting>;
 
 /**
- * Iteration config for graded meshes
+ * Iteration config for quality gates
  */
 interface IterationConfig {
   maxIterations?: number;  // Max re-runs on quality failure (default: 3)
   onFail?: 'loop' | 'halt';  // What to do on quality failure (default: loop)
 }
 
-interface ContinuationConfig {
-  type: 'session' | 'none';       // session = auto-resume, none = fresh each time
-  // Phase 2:
-  // compress_turn_count?: number; // Summarize after N turns
-}
+// continuation field: boolean | string[] | undefined
+// - true = all agents persist sessions
+// - string[] = only listed agents persist sessions
+// - undefined/false = no session persistence
 
 interface MeshConfig {
   mesh: string;
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
+  completion_agent?: string;  // Agent that sends task-complete to core
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
-  continuation?: ContinuationConfig;  // Session continuation config
+  continuation?: boolean | string[];  // true = all, array = specific agents, omit = none
   lifecycle?: {
     pre?: string[];   // Pre-hooks executed before worker spawn
     post?: string[];  // Post-hooks executed after worker completion
   };
   routing?: MeshRouting;  // Agent routing tables
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
-  graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
-  iteration?: IterationConfig;  // Iteration config for graded meshes
+  iteration?: IterationConfig;  // Iteration config for quality gates
+  fsm?: FSMConfig;  // FSM config for workflow orchestration
+  ensemble?: EnsembleConfig;  // Ensemble execution config
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -131,6 +136,8 @@ export interface DispatcherConfig {
   workDir: string;
   msgsDir: string;
   meshesDir: string;
+  lowMode?: boolean;
+  ultraLowMode?: boolean;
 }
 
 /**
@@ -175,19 +182,34 @@ interface AskResponseMessageEvent {
  * Active worker state
  */
 interface ActiveWorker {
+  workerId: string;  // Unique instance ID (agentId-uuid) for parallel execution
   runner: SdkRunner;
   machine: WorkerStateMachine;
   startedAt: number;
   hookContext: HookContext;  // Lifecycle hook context (includes quality state)
   startedPromise?: Promise<void>;  // Resolves when FSM 'start' transition completes
+  lastOutputAt?: number;  // Timestamp of last output (for stuck detection)
+}
+
+/**
+ * Suspended session state (worker killed, awaiting resume)
+ */
+interface SuspendedSession {
+  sessionId: string;
+  reason: 'ask-human';
+  suspendedAt: number;
+  targetAgent: string;  // Who the ask-human was sent to (e.g., "core/core")
+  meshName: string;
+  agentConfig: AgentConfig;
 }
 
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
   private running = false;
-  private activeWorkers: Map<string, ActiveWorker> = new Map();
+  private activeWorkers: Map<string, ActiveWorker[]> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
+  private meshFSMs: Map<string, MeshFSM> = new Map();  // mesh name -> FSM instance
   private stateFile: string;
   private workspaceManager: WorkspaceManager;
   private promptInjector: PromptInjector;
@@ -198,8 +220,12 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
+  private sessionMetrics: Map<string, SessionMetrics> = new Map();
+  private suspendedSessions: Map<string, SuspendedSession> = new Map();
+  private stuckDetector: StuckAgentDetector;
+  private ensembleCoordinator: EnsembleCoordinator;
 
-  constructor(config: DispatcherConfig, queue: MessageQueue) {
+  constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
     this.config = config;
     this.queue = queue;
@@ -207,31 +233,47 @@ export class WorkerDispatcher extends EventEmitter {
     this.workspaceManager = new WorkspaceManager(config.workDir);
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
+    this.stuckDetector = new StuckAgentDetector(stuckConfig);
+    this.ensembleCoordinator = new EnsembleCoordinator();
+
+    // Wire stuck detector events to dispatcher
+    this.stuckDetector.on('agent:nudged', (data) => {
+      this.emit('agent:nudged', data);
+    });
+    this.stuckDetector.on('agent:escalated', (data) => {
+      // Clean up active worker on escalation
+      this.activeWorkers.delete(data.agentId);
+      this.writeWorkerState();
+      this.emit('agent:escalated', data);
+    });
   }
 
   private writeWorkerState(): void {
     const state = {
-      workers: Array.from(this.activeWorkers.entries()).map(([id, w]) => {
-        const status = w.machine.getStatus();
-        const baseState = {
-          id,
-          status,
-          startedAt: w.startedAt,
-          messagesProcessed: w.machine.getMessagesProcessed(),
-          duration: w.machine.getDuration()
-        };
-
-        // Add awaiting-specific fields if in awaiting state
-        if (status === 'awaiting') {
-          return {
-            ...baseState,
-            awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
-            awaitDuration: w.machine.getAwaitDuration()
+      workers: Array.from(this.activeWorkers.entries()).flatMap(([agentId, workers]) =>
+        workers.map((w) => {
+          const status = w.machine.getStatus();
+          const baseState = {
+            id: w.workerId,  // Use unique workerId instead of agentId
+            agentId,
+            status,
+            startedAt: w.startedAt,
+            messagesProcessed: w.machine.getMessagesProcessed(),
+            duration: w.machine.getDuration()
           };
-        }
 
-        return baseState;
-      }),
+          // Add awaiting-specific fields if in awaiting state
+          if (status === 'awaiting') {
+            return {
+              ...baseState,
+              awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
+              awaitDuration: w.machine.getAwaitDuration()
+            };
+          }
+
+          return baseState;
+        })
+      ),
       updatedAt: Date.now(),
     };
     try {
@@ -239,6 +281,108 @@ export class WorkerDispatcher extends EventEmitter {
     } catch {
       // Ignore write errors
     }
+  }
+
+  /**
+   * Check if an agent should have session continuation enabled
+   */
+  private shouldContinueAgent(agentName: string, continuation: boolean | string[] | undefined): boolean {
+    if (!continuation) return false;
+    if (continuation === true) return true;
+    if (Array.isArray(continuation)) return continuation.includes(agentName);
+    return false;
+  }
+
+  // ============================================================================
+  // Worker Instance Management (Array-based for Runtime Parallelism)
+  // ============================================================================
+
+  /**
+   * Add a worker instance to the active workers map
+   * Generates a unique workerId for parallel execution tracking
+   */
+  private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId'>): string {
+    const workerId = `${agentId}-${crypto.randomUUID().slice(0, 8)}`;
+    const workerWithId: ActiveWorker = { ...worker, workerId };
+
+    const workers = this.activeWorkers.get(agentId) || [];
+    workers.push(workerWithId);
+    this.activeWorkers.set(agentId, workers);
+
+    log.debug('dispatcher', 'Added active worker', {
+      workerId,
+      agentId,
+      totalWorkersForAgent: workers.length,
+    });
+
+    return workerId;
+  }
+
+  /**
+   * Remove a specific worker instance by workerId
+   * Returns true if worker was found and removed
+   */
+  private removeActiveWorker(agentId: string, workerId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers) return false;
+
+    const filtered = workers.filter(w => w.workerId !== workerId);
+
+    if (filtered.length === workers.length) {
+      // Worker not found
+      return false;
+    }
+
+    if (filtered.length === 0) {
+      this.activeWorkers.delete(agentId);
+    } else {
+      this.activeWorkers.set(agentId, filtered);
+    }
+
+    log.debug('dispatcher', 'Removed active worker', {
+      workerId,
+      agentId,
+      remainingWorkersForAgent: filtered.length,
+    });
+
+    return true;
+  }
+
+  /**
+   * Get a specific worker by workerId (searches across all agents)
+   */
+  private getWorkerByWorkerId(workerId: string): { agentId: string; worker: ActiveWorker } | undefined {
+    for (const [agentId, workers] of this.activeWorkers) {
+      const worker = workers.find(w => w.workerId === workerId);
+      if (worker) {
+        return { agentId, worker };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Get the first worker for an agent (for backwards compatibility)
+   * Used when a specific workerId is not available
+   */
+  private getFirstWorkerForAgent(agentId: string): ActiveWorker | undefined {
+    const workers = this.activeWorkers.get(agentId);
+    return workers?.[0];
+  }
+
+  /**
+   * Get all workers for an agent
+   */
+  getActiveWorkersForAgent(agentId: string): ActiveWorker[] {
+    return this.activeWorkers.get(agentId) || [];
+  }
+
+  /**
+   * Check if agent has any active workers
+   */
+  hasActiveWorkers(agentId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    return workers !== undefined && workers.length > 0;
   }
 
   /**
@@ -284,19 +428,132 @@ export class WorkerDispatcher extends EventEmitter {
       };
       consumer.on('parity-reminder', this.boundParityReminderHandler);
     }
+
+    // Start stuck agent detector
+    this.stuckDetector.start(() => this.getActiveWorkersForDetector());
   }
 
   /**
-   * Handle incoming worker message - spawn worker if not already running
+   * Validate message against FSM rules (if mesh has FSM)
+   * Called for ALL message types before type-specific routing happens.
+   *
+   * This is the central FSM validation point. It should be called by the
+   * consumer before emitting core-message or worker-message events.
+   *
+   * @param senderAgentId - Agent that sent the message (e.g., "ralph-loop/ralph-build")
+   * @param targetAgentId - Target agent (e.g., "ralph-loop/ralph-build" or "core/core")
+   * @param messageType - Message type (task-complete, ask, ask-human, etc.)
+   * @param messageFrontmatter - Parsed frontmatter from message
+   * @param rearmatter - Parsed rearmatter (optional, contains success_signal etc.)
+   * @returns true if message passes validation, false if rejected
+   */
+  async validateMessageWithFSM(
+    senderAgentId: string,
+    targetAgentId: string,
+    messageType: string,
+    messageFrontmatter: Record<string, unknown>,
+    rearmatter?: Record<string, unknown>
+  ): Promise<boolean> {
+    const [meshName] = senderAgentId.split('/');
+    if (!meshName) {
+      // No mesh = no FSM validation needed
+      return true;
+    }
+
+    const fsm = this.meshFSMs.get(meshName);
+    if (!fsm || !fsm.isInitialized()) {
+      // No FSM = no validation needed
+      return true;
+    }
+
+    try {
+      // Validate message and potentially transition FSM
+      const transitioned = await fsm.handleMessage(
+        senderAgentId,
+        targetAgentId,
+        messageType,
+        messageFrontmatter,
+        rearmatter
+      );
+
+      if (!transitioned) {
+        log.error('dispatcher', 'FSM validation rejected message', {
+          meshName,
+          from: senderAgentId,
+          to: targetAgentId,
+          type: messageType,
+        });
+
+        // Emit mesh halt event
+        this.emit('mesh:halt', {
+          meshName,
+          reason: 'FSM validation failed',
+          message: 'Agent routing violates state machine rules',
+        });
+
+        return false;
+      }
+
+      log.debug('dispatcher', 'FSM validation passed', {
+        meshName,
+        from: senderAgentId,
+        to: targetAgentId,
+        type: messageType,
+        newState: fsm.getCurrentState(),
+      });
+
+      return true;
+    } catch (error) {
+      // Script failures are fatal - halt the mesh
+      log.error('dispatcher', 'FSM validation failed fatally', {
+        meshName,
+        error: (error as Error).message,
+      });
+
+      this.emit('mesh:halt', {
+        meshName,
+        reason: 'FSM script failure',
+        error: (error as Error).message,
+      });
+
+      return false;
+    }
+  }
+
+  /**
+   * Get active workers in format needed by stuck detector
+   * Returns all worker instances (flattened from array-based tracking)
+   */
+  private getActiveWorkersForDetector(): Map<string, ActiveWorkerInfo> {
+    const result = new Map<string, ActiveWorkerInfo>();
+    for (const [_agentId, workers] of this.activeWorkers) {
+      for (const worker of workers) {
+        result.set(worker.workerId, {
+          runner: worker.runner,
+          machine: worker.machine,
+          startedAt: worker.startedAt,
+          hookContext: worker.hookContext,
+          lastOutputAt: worker.lastOutputAt,
+        });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Handle incoming worker message - spawn worker for each message
+   * Allows concurrent workers for the same agentId (runtime parallelism)
    */
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
 
-    // Skip if worker already running
-    if (this.activeWorkers.has(agentId)) {
-      log.debug('dispatcher', `Worker already running, message queued`, { agentId });
-      return;
-    }
+    // NOTE: Per-agent lock REMOVED for runtime parallelism
+    // Multiple workers can now run concurrently for the same agentId
+    const currentWorkers = this.activeWorkers.get(agentId) || [];
+    log.debug('dispatcher', `Worker message received`, {
+      agentId,
+      currentWorkerCount: currentWorkers.length
+    });
 
     // Parse mesh/agent from agentId
     const [meshName, agentName] = agentId.split('/');
@@ -305,10 +562,52 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    const meshConfig = this.meshConfigs.get(meshName);
+    let meshConfig = this.meshConfigs.get(meshName);
     if (!meshConfig) {
-      log.error('dispatcher', `Mesh not found`, { meshName, agentId });
-      return;
+      // Try JIT loading before failing
+      log.info('dispatcher', 'Mesh not loaded, attempting JIT load', { meshName, agentId });
+      const loaded = this.tryLoadMeshOnDemand(meshName);
+      if (!loaded) {
+        log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
+        return;
+      }
+      meshConfig = this.meshConfigs.get(meshName);
+      if (!meshConfig) {
+        log.error('dispatcher', 'Mesh loaded but config missing', { meshName, agentId });
+        return;
+      }
+    }
+
+    // Check for FSM ensemble state (both legacy type: ensemble and new ensemble.type: parallel)
+    const fsm = this.meshFSMs.get(meshName);
+    if (fsm && fsm.isInitialized()) {
+      const currentState = fsm.getCurrentStateConfig();
+      // Detect ensemble state using both patterns:
+      // - Legacy: currentState.type === 'ensemble'
+      // - New: currentState.ensemble?.type === 'parallel'
+      const isLegacyEnsemble = currentState?.type === 'ensemble';
+      const isNewEnsemble = currentState?.ensemble?.type === 'parallel';
+      if (isLegacyEnsemble || isNewEnsemble) {
+        log.info('dispatcher', `Detected ensemble state, delegating to handleEnsembleState`, {
+          meshName,
+          state: currentState?.name,
+          agentId,
+          ensembleType: isLegacyEnsemble ? 'legacy' : 'new',
+        });
+        this.handleEnsembleState(meshName, currentState!, fsm).catch((error) => {
+          log.error('dispatcher', `Ensemble state handling failed`, {
+            meshName,
+            state: currentState?.name,
+            error: (error as Error).message,
+          });
+          this.emit('mesh:halt', {
+            meshName,
+            reason: 'Ensemble execution failure',
+            error: (error as Error).message,
+          });
+        });
+        return;
+      }
     }
 
     const agent = meshConfig.agents.find(a => a.name === agentName);
@@ -324,11 +623,13 @@ export class WorkerDispatcher extends EventEmitter {
   /**
    * Handle message revision - interrupt active worker and resume with revised content
    * This enables mid-flight corrections when message files are edited.
+   * Note: With parallelism, revisions affect the first worker for the agent
    */
   private async handleRevisionMessage(event: RevisionMessageEvent): Promise<void> {
     const { agentId, content, headline } = event;
 
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent (revision applies to oldest running worker)
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       log.warn('dispatcher', `Revision received but no active worker found`, {
         agentId,
@@ -439,11 +740,16 @@ export class WorkerDispatcher extends EventEmitter {
    * 2. Transition it to awaiting state
    * 3. For ask-human: interrupt the worker and inject steering prompt
    * 4. Set up timeout for await
+   *
+   * NOTE: FSM validation now happens centrally in validateMessageWithFSM()
+   * before this handler is called. This handler only manages worker state.
+   * Note: With parallelism, asks affect the first worker for the agent
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
     const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
 
-    const activeWorker = this.activeWorkers.get(senderAgentId);
+    // Get first worker for this agent
+    const activeWorker = this.getFirstWorkerForAgent(senderAgentId);
     if (!activeWorker) {
       log.debug('dispatcher', `Ask message but no active worker found`, {
         from: senderAgentId,
@@ -452,7 +758,7 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    const { machine, runner } = activeWorker;
+    const { machine, runner, workerId } = activeWorker;
     const currentStatus = machine.getStatus();
 
     // Get session ID for resume
@@ -488,7 +794,7 @@ export class WorkerDispatcher extends EventEmitter {
         await machine.addAwaitTarget(targetAgentId);
       } else if (currentStatus === 'running' || currentStatus === 'idle') {
         // Enter awaiting state
-        log.info('dispatcher', `Worker entering await state`, {
+        log.debug('dispatcher', `Worker entering await state`, {
           from: senderAgentId,
           to: targetAgentId,
           type: messageType,
@@ -510,46 +816,63 @@ export class WorkerDispatcher extends EventEmitter {
           type: messageType,
         });
 
-        // For ask-human messages: interrupt worker and inject steering
-        // This prevents the worker from continuing and writing task-complete
+        // For ask-human messages: KILL the worker immediately
+        // Worker will be resumed when human responds (FSM handles this)
         if (messageType === 'ask-human') {
-          log.info('dispatcher', `Interrupting worker for ask-human`, {
+          log.info('dispatcher', `Killing worker for ask-human (will resume on response)`, {
             from: senderAgentId,
             sessionId: sessionId.slice(0, 8),
           });
 
           try {
-            // Interrupt the current query
-            await runner.interrupt();
+            // Extract mesh and agent info for later resume
+            const [meshName, agentName] = senderAgentId.split('/');
+            const meshConfig = this.meshConfigs.get(meshName);
+            const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
 
-            this.emit('worker:interrupt', {
-              agentId: senderAgentId,
+            if (!agentConfig) {
+              log.error('dispatcher', `Cannot suspend: agent config not found`, {
+                from: senderAgentId,
+                meshName,
+                agentName,
+              });
+              return;
+            }
+
+            // Store session for later resume
+            this.suspendedSessions.set(senderAgentId, {
               sessionId,
               reason: 'ask-human',
+              suspendedAt: Date.now(),
+              targetAgent: targetAgentId,
+              meshName,
+              agentConfig,
             });
 
-            // Resume with steering prompt that blocks further work
-            const steeringPrompt = this.buildAskHumanSteeringPrompt();
+            // Kill the worker - no steering, no resume, just stop
+            runner.kill();
 
-            log.info('dispatcher', `Resuming with ask-human steering`, {
+            this.emit('worker:suspended', {
+              agentId: senderAgentId,
+              workerId,
+              sessionId,
+              reason: 'ask-human',
+              targetAgent: targetAgentId,
+            });
+
+            // Remove from active workers using workerId
+            this.removeActiveWorker(senderAgentId, workerId);
+
+            log.info('dispatcher', `Worker killed and suspended`, {
               from: senderAgentId,
+              workerId,
               sessionId: sessionId.slice(0, 8),
             });
-
-            // Resume the session with steering - this will complete when human responds
-            // The 'complete' event will fire but FSM guard will block it if still awaiting
-            const result = await runner.resume(sessionId, steeringPrompt);
-
-            if (!result.success) {
-              log.warn('dispatcher', `Ask-human steering resume returned error`, {
-                from: senderAgentId,
-                error: result.error,
-              });
-            }
-          } catch (interruptError) {
-            log.error('dispatcher', `Failed to interrupt/steer ask-human`, {
+          } catch (killError) {
+            log.error('dispatcher', `Failed to kill worker for ask-human`, {
               from: senderAgentId,
-              error: (interruptError as Error).message,
+              workerId,
+              error: (killError as Error).message,
             });
           }
         }
@@ -559,6 +882,20 @@ export class WorkerDispatcher extends EventEmitter {
           to: targetAgentId,
           currentStatus,
         });
+      }
+
+      // Track incoming ask on target agent (if not ask-human and target exists)
+      if (messageType !== 'ask-human') {
+        const targetWorker = this.getFirstWorkerForAgent(targetAgentId);
+        if (targetWorker) {
+          const msgId = event.msgId || `${senderAgentId}->${targetAgentId}-${Date.now()}`;
+          targetWorker.machine.addIncomingAsk(senderAgentId, msgId);
+          log.debug('dispatcher', `Tracked incoming ask on target`, {
+            from: senderAgentId,
+            to: targetAgentId,
+            msgId,
+          });
+        }
       }
 
       this.writeWorkerState();
@@ -589,6 +926,155 @@ The system will resume your session when the human responds.`;
   }
 
   /**
+   * Resume a suspended session with human response
+   * Creates a new runner and resumes the stored session
+   */
+  private async resumeSuspendedSession(
+    agentId: string,
+    suspended: SuspendedSession,
+    responseContent: string,
+    headline?: string
+  ): Promise<void> {
+    const { sessionId, meshName, agentConfig } = suspended;
+
+    log.info('dispatcher', `Resuming suspended session`, {
+      agentId,
+      sessionId: sessionId.slice(0, 8),
+      meshName,
+      suspendedFor: Date.now() - suspended.suspendedAt,
+    });
+
+    try {
+      // Remove from suspended
+      this.suspendedSessions.delete(agentId);
+
+      // Build the resume prompt with human response
+      const resumePrompt = headline
+        ? `## Human Response: ${headline}\n\n${responseContent}`
+        : `## Human Response\n\n${responseContent}`;
+
+      // Create new runner config (minimal - session has system prompt)
+      const runnerConfig: SdkRunnerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        systemPrompt: '',  // Not needed for resume - session has it
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+        sessionId,  // Resume existing session
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      // Create a new FSM for the resumed worker
+      const meshConfig = this.meshConfigs.get(meshName);
+      const isCompletionAgent = agentConfig.name === meshConfig?.completion_agent;
+      const workerConfig: WorkerConfig = {
+        id: agentId,
+        model: agentConfig.model,
+        prompt: agentConfig.prompt,
+        workDir: this.config.workDir,
+      };
+      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agentConfig.name, 300000, isCompletionAgent);
+
+      // Create hook context
+      const meshInstance = `${meshName}-${Date.now()}`;
+      const hookContext: HookContext = {
+        meshInstance,
+        meshName,
+        agentName: agentConfig.name,
+        workDir: this.config.workDir,
+        agentId,
+        agentConfig,
+        taskId: `${agentId}-resume-${Date.now()}`,
+        taskBody: resumePrompt,
+        msgsDir: this.config.msgsDir,
+      };
+
+      // Store in active workers and get the generated workerId
+      const workerId = this.addActiveWorker(agentId, {
+        runner,
+        machine,
+        startedAt: Date.now(),
+        hookContext,
+      });
+
+      // Set up minimal event handlers
+      runner.on('complete', async (data) => {
+        log.info('dispatcher', `Resumed worker completed`, {
+          agentId,
+          workerId,
+          sessionId: sessionId.slice(0, 8),
+        });
+        this.removeActiveWorker(agentId, workerId);
+        await machine.complete(data);
+        this.emit('worker:complete', {
+          ...data,
+          transitionName: 'complete',
+        });
+        this.writeWorkerState();
+
+        // Check for pending continuation messages (self-addressed or from other agents)
+        const pendingMsg = this.queue.peekOne(agentId);
+        if (pendingMsg && this.running) {
+          log.info('dispatcher', `Continuation message found after resumed worker completion, spawning next iteration`, {
+            agentId,
+            from: pendingMsg.from_agent,
+            type: pendingMsg.type,
+            isSelfLoop: pendingMsg.from_agent === agentId,
+          });
+
+          setTimeout(() => {
+            if (this.running && !this.hasActiveWorkers(agentId)) {
+              this.spawnWorker(meshName, agentConfig);
+            }
+          }, 100);
+        }
+      });
+
+      runner.on('error', (error) => {
+        log.error('dispatcher', `Resumed worker error`, {
+          agentId,
+          workerId,
+          error: error.message,
+        });
+        this.removeActiveWorker(agentId, workerId);
+        this.emit('worker:error', { id: agentId, error: error.message });
+        this.writeWorkerState();
+      });
+
+      // Start the FSM (use process.pid as the runner pid)
+      await machine.start(process.pid);
+
+      this.emit('worker:resumed', {
+        agentId,
+        sessionId,
+        suspendedFor: Date.now() - suspended.suspendedAt,
+      });
+
+      // Resume the session with human response
+      const result = await runner.resume(sessionId, resumePrompt);
+
+      if (!result.success) {
+        log.error('dispatcher', `Resume failed`, {
+          agentId,
+          error: result.error,
+        });
+      }
+
+      this.writeWorkerState();
+    } catch (error) {
+      log.error('dispatcher', `Failed to resume suspended session`, {
+        agentId,
+        error: (error as Error).message,
+      });
+      // Clean up on failure - remove all workers for this agent
+      this.suspendedSessions.delete(agentId);
+      // For cleanup, we delete the entire array for this agent
+      this.activeWorkers.delete(agentId);
+    }
+  }
+
+  /**
    * Handle ask-response message - resume awaiting worker
    * When an agent responds to an ask:
    * 1. Find the worker that's awaiting this response (by to field)
@@ -598,7 +1084,23 @@ The system will resume your session when the human responds.`;
   private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content } = event;
 
-    const activeWorker = this.activeWorkers.get(awaitingAgentId);
+    // Check for suspended session (killed due to ask-human)
+    const suspended = this.suspendedSessions.get(awaitingAgentId);
+    if (suspended && respondingAgentId === 'core/core') {
+      log.info('dispatcher', `Human response received for suspended session`, {
+        from: respondingAgentId,
+        to: awaitingAgentId,
+        sessionId: suspended.sessionId.slice(0, 8),
+        suspendedFor: Date.now() - suspended.suspendedAt,
+      });
+
+      // Resume the suspended session with human response
+      await this.resumeSuspendedSession(awaitingAgentId, suspended, content, event.headline);
+      return;
+    }
+
+    // Get first worker for awaiting agent
+    const activeWorker = this.getFirstWorkerForAgent(awaitingAgentId);
     if (!activeWorker) {
       log.debug('dispatcher', `Ask-response but no active worker found`, {
         from: respondingAgentId,
@@ -646,6 +1148,18 @@ The system will resume your session when the human responds.`;
         content,
         headline: event.headline,
       });
+
+      // Remove incoming ask from responding agent
+      const respondingWorker = this.getFirstWorkerForAgent(respondingAgentId);
+      if (respondingWorker) {
+        const msgId = event.msgId || `${awaitingAgentId}->${respondingAgentId}`;
+        respondingWorker.machine.removeIncomingAsk(awaitingAgentId, msgId);
+        log.debug('dispatcher', `Removed incoming ask from responder`, {
+          from: respondingAgentId,
+          to: awaitingAgentId,
+          msgId,
+        });
+      }
 
       // Remove responder from awaiting set
       const allReceived = await machine.receiveResponse(respondingAgentId);
@@ -769,7 +1283,8 @@ The system will resume your session when the human responds.`;
   private async handleParityReminder(event: ParityReminderEvent): Promise<void> {
     const { agentId, pendingAsks, deletedFile } = event;
 
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       log.warn('dispatcher', `Pending asks/tasks reminder: no active worker found`, {
         agentId,
@@ -875,18 +1390,20 @@ The system will resume your session when the human responds.`;
    * Handle await timeout - transition worker to error state
    */
   private async handleAwaitTimeout(agentId: string): Promise<void> {
-    const activeWorker = this.activeWorkers.get(agentId);
+    // Get first worker for this agent (the one in awaiting state)
+    const activeWorker = this.getFirstWorkerForAgent(agentId);
     if (!activeWorker) {
       return;
     }
 
-    const { machine } = activeWorker;
+    const { machine, workerId } = activeWorker;
     if (machine.getStatus() !== 'awaiting') {
       return;  // Already transitioned out of awaiting
     }
 
     log.warn('dispatcher', `Await timeout expired`, {
       agentId,
+      workerId,
       awaitingResponses: Array.from(machine.getAwaitingResponses()),
       awaitDuration: machine.getAwaitDuration(),
     });
@@ -899,13 +1416,14 @@ The system will resume your session when the human responds.`;
         awaitingResponses: Array.from(machine.getAwaitingResponses()),
       });
 
-      // Cleanup
-      this.activeWorkers.delete(agentId);
+      // Cleanup using workerId
+      this.removeActiveWorker(agentId, workerId);
       this.askResponseBuffer.delete(agentId);
       this.writeWorkerState();
     } catch (error) {
       log.error('dispatcher', `Failed to handle await timeout`, {
         agentId,
+        workerId,
         error: (error as Error).message,
       });
     }
@@ -941,9 +1459,14 @@ The system will resume your session when the human responds.`;
       this.boundParityReminderHandler = null;
     }
 
-    // Kill all active workers
-    for (const [_id, { runner }] of this.activeWorkers) {
-      runner.kill();
+    // Stop stuck agent detector
+    this.stuckDetector.stop();
+
+    // Kill all active workers (iterate through all instances)
+    for (const [_agentId, workers] of this.activeWorkers) {
+      for (const worker of workers) {
+        worker.runner.kill();
+      }
     }
     this.activeWorkers.clear();
     this.askResponseBuffer.clear();
@@ -982,13 +1505,26 @@ The system will resume your session when the human responds.`;
         msgsDir: this.config.msgsDir,
       };
 
-      // Resolve lifecycle hooks (worktree: true, graded: true, or explicit lifecycle)
+      // Initialize session metrics if first worker in this mesh instance
+      if (meshInstance && !this.sessionMetrics.has(meshInstance)) {
+        this.sessionMetrics.set(meshInstance, {
+          meshInstance,
+          meshName: meshConfig?.mesh || meshName,
+          workers: [],
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          totalCostUsd: 0,
+          totalDurationMs: 0,
+          workerCount: 0,
+          startedAt: Date.now(),
+        });
+      }
+
+      // Resolve lifecycle hooks (worktree: true or explicit lifecycle)
       log.info('dispatcher', 'Resolving lifecycle hooks', {
         agentId,
         hasMeshConfig: !!meshConfig,
         meshName: meshConfig?.mesh,
-        hasGraded: meshConfig?.graded !== undefined,
-        gradedValue: meshConfig?.graded,
         hasWorktree: meshConfig?.worktree !== undefined,
         hasLifecycle: meshConfig?.lifecycle !== undefined,
       });
@@ -1002,7 +1538,7 @@ The system will resume your session when the human responds.`;
         post: lifecycle?.post || [],
       });
 
-      // Execute pre-hooks if configured (includes quality:preflight for graded meshes)
+      // Execute pre-hooks if configured
       if (lifecycle?.pre && lifecycle.pre.length > 0) {
         log.info('dispatcher', `Executing pre-hooks for ${agentId}`, {
           hooks: lifecycle.pre,
@@ -1081,6 +1617,31 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
+      // Inject FSM context if mesh has FSM config
+      const fsm = this.meshFSMs.get(meshName);
+      if (fsm && fsm.isInitialized()) {
+        const currentStateConfig = fsm.getCurrentStateConfig();
+        if (currentStateConfig) {
+          const status = fsm.getStatus();
+          const fsmContext: FSMInjectionContext = {
+            meshName,
+            currentState: status.currentState,
+            stateConfig: currentStateConfig,
+            availableTransitions: status.availableTransitions,
+            context: status.context,
+            contextDescriptions: fsm.getContextDescriptions(),
+            gateRetries: status.gateRetries,
+          };
+          systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
+          log.debug('dispatcher', 'Injected FSM context into prompt', {
+            agentId,
+            currentState: status.currentState,
+          });
+
+          // NOTE: subtask injection removed - ensemble agents now use explicit routing
+          // instead of file-based SUBTASK markers. See: ensemble.type: parallel in config.
+        }
+      }
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 
@@ -1095,9 +1656,18 @@ The system will resume your session when the human responds.`;
       }
 
       // Create worker config
+      let model = agent.model;
+      if (this.config.ultraLowMode) {
+        model = 'haiku' as SemanticModel;
+        log.info('dispatcher', `[ULTRA-LOW MODE] Forced model for ${agentId}`, {from: agent.model, to: model});
+      } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
+        model = (model as string).replace('opus', 'sonnet') as SemanticModel;
+        log.info('dispatcher', `[LOW MODE] Demoted model for ${agentId}`, {from: agent.model, to: model});
+      }
+
       const workerConfig: WorkerConfig = {
         id: agentId,
-        model: agent.model,
+        model: model as SemanticModel,
         prompt: systemPrompt
       };
 
@@ -1168,6 +1738,47 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
+      // Inject rearmatter config if present
+      if (meshConfig?.rearmatter) {
+        systemPrompt = this.promptInjector.injectRearmatter(systemPrompt, meshConfig.rearmatter);
+        log.info('dispatcher', `Injected rearmatter instructions into system prompt`, {
+          agentId,
+          fields: meshConfig.rearmatter.fields || [],
+        });
+      }
+
+      // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
+      const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
+      const promptMetadata: Record<string, unknown> = {
+        taskId,
+        agentName: agent.name,
+        timestamp: new Date().toISOString(),
+      };
+      if (featureName) {
+        promptMetadata.featureName = featureName;
+      }
+      if (fsmState) {
+        promptMetadata.fsmState = fsmState;
+      }
+      if (hookContext.worktreePath) {
+        promptMetadata.worktreePath = hookContext.worktreePath;
+      }
+
+      try {
+        await this.promptInjector.savePrompt(
+          meshName,
+          agent.name,
+          systemPrompt,
+          '', // userPrompt (empty for now, could be populated from message if needed)
+          promptMetadata
+        );
+      } catch (error) {
+        log.warn('dispatcher', 'Failed to save prompt (non-fatal)', {
+          agentId,
+          error: String(error),
+        });
+      }
+
       // Load MCP environment variables if agent has MCP servers
       let mcpServers = agent.mcpServers;
       if (mcpServers && Object.keys(mcpServers).length > 0) {
@@ -1200,7 +1811,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Check for session continuation
       let sessionId: string | undefined;
-      if (meshConfig?.continuation?.type === 'session') {
+      if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)) {
         const existingSession = this.queue.getConversationId(agentId);
         if (existingSession) {
           sessionId = existingSession;
@@ -1249,7 +1860,19 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         this.emit('worker:start', data);
       });
 
+      // Variable to store workerId once the worker is registered
+      // This allows event handlers to properly track this specific instance
+      let registeredWorkerId: string | null = null;
+
       worker.on('output', (data) => {
+        // Track last output time for stuck detection
+        // Note: We need to find this specific worker by workerId
+        if (registeredWorkerId) {
+          const result = this.getWorkerByWorkerId(registeredWorkerId);
+          if (result) {
+            result.worker.lastOutputAt = Date.now();
+          }
+        }
         this.emit('worker:output', data);
       });
 
@@ -1278,8 +1901,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // We hold the FSM.complete() until AFTER post-hooks pass to avoid race conditions
       // with quality gate iteration loops
       worker.on('complete', async (data) => {
-        const activeWorker = this.activeWorkers.get(agentId);
+        // Get this specific worker by workerId
+        const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
+        const activeWorker = workerInfo?.worker;
         const workerHookContext = activeWorker?.hookContext || hookContext;
+        const currentWorkerId = registeredWorkerId || 'unknown';
 
         // Wait for FSM 'start' transition to complete before proceeding
         // This fixes race condition when queue is empty (0 messages processed)
@@ -1361,12 +1987,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 // No sessionId available - fall back to legacy respawn behavior
                 log.warn('dispatcher', 'No sessionId available, falling back to respawn', {
                   agentId,
+                  workerId: currentWorkerId,
                   iteration: workerHookContext.qualityIteration,
                 });
 
                 // Complete FSM first to avoid race condition
                 await machine.complete(data);
-                this.activeWorkers.delete(agentId);
+                this.removeActiveWorker(agentId, currentWorkerId);
                 this.askResponseBuffer.delete(agentId);
                 this.writeWorkerState();
 
@@ -1388,13 +2015,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             if (error instanceof QualityHaltError) {
               log.warn('dispatcher', 'Quality stack HALT - stopping immediately', {
                 agentId,
+                workerId: currentWorkerId,
                 taskId: workerHookContext.taskId,
                 feedback: error.feedback,
               });
 
               // Complete FSM before emitting events
               await machine.complete(data);
-              this.activeWorkers.delete(agentId);
+              this.removeActiveWorker(agentId, currentWorkerId);
               this.askResponseBuffer.delete(agentId);
               this.writeWorkerState();
 
@@ -1446,7 +2074,35 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Check if this is a protocol violation (completing with pending asks)
           if (errorMsg.includes('PROTOCOL VIOLATION') || errorMsg.includes('outstanding asks')) {
-            log.warn('dispatcher', `BLOCKED: task-complete while asks pending`, {
+            // Check if it's unanswered INCOMING asks (need to remind/escalate)
+            if (errorMsg.includes('unanswered incoming asks')) {
+              const incomingAsks = machine.getIncomingAsks();
+              const reminderCount = machine.getIncomingAskReminderCount();
+
+              log.warn('dispatcher', `BLOCKED: task-complete with unanswered incoming asks`, {
+                agentId,
+                incomingAsks: incomingAsks.map(a => `${a.from} (${a.msgId})`),
+                reminderCount,
+              });
+
+              // Check if we've exceeded max reminders
+              if (reminderCount >= 3) {
+                // Force error after 3 reminders
+                if (activeWorker) {
+                  await this.forceErrorForUnansweredAsks(agentId, activeWorker, incomingAsks, currentWorkerId);
+                }
+                return;
+              }
+
+              // Inject reminder and continue
+              if (activeWorker) {
+                await this.injectIncomingAskReminder(agentId, activeWorker, incomingAsks, reminderCount);
+              }
+              return;
+            }
+
+            // Otherwise, it's OUTGOING asks (awaiting responses) - just block
+            log.warn('dispatcher', `BLOCKED: task-complete while awaiting responses`, {
               agentId,
               error: errorMsg,
               currentState: machine.getStatus(),
@@ -1468,12 +2124,33 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           throw completeError;
         }
 
-        this.activeWorkers.delete(agentId);
+        // Accumulate worker metrics into session metrics
+        if (data.metrics && workerHookContext.meshInstance) {
+          const session = this.sessionMetrics.get(workerHookContext.meshInstance);
+          if (session) {
+            const workerMetrics: WorkerMetrics = {
+              ...data.metrics,
+              completedAt: Date.now(),
+            };
+            session.workers.push(workerMetrics);
+            session.totalInputTokens += data.metrics.totalInputTokens;
+            session.totalOutputTokens += data.metrics.totalOutputTokens;
+            session.totalCostUsd += data.metrics.totalCostUsd;
+            session.workerCount++;
+          }
+        }
+
+        this.removeActiveWorker(agentId, currentWorkerId);
         this.askResponseBuffer.delete(agentId);
+        this.stuckDetector.clearNudgeTracking(agentId);
         this.writeWorkerState();
 
+        // Check if mesh session is complete
+        this.checkSessionComplete(workerHookContext.meshInstance);
+
         // Save session ID for continuation (if enabled and session captured)
-        if (meshConfig?.continuation?.type === 'session' && data.sessionId) {
+        const agentName = agentId.split('/')[1];
+        if (this.shouldContinueAgent(agentName, meshConfig?.continuation) && data.sessionId) {
           this.queue.setConversationId(agentId, data.sessionId);
           log.info('dispatcher', `Session saved for ${agentId}`, {
             sessionId: data.sessionId.slice(0, 8) + '...'
@@ -1491,15 +2168,36 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         this.emit('worker:complete', {
           ...data,
+          workerId: currentWorkerId,
           transitionName: 'complete',
           qualityResult: workerHookContext.qualityPreflight
             ? { iterations: workerHookContext.qualityIteration || 1, passed: true }
             : undefined,
         });
+
+        // Check for pending continuation messages (self-addressed or from other agents)
+        // This handles the case where an agent sends a message to itself to continue iterating
+        const pendingMsg = this.queue.peekOne(agentId);
+        if (pendingMsg && this.running) {
+          log.info('dispatcher', `Continuation message found after completion, spawning next iteration`, {
+            agentId,
+            from: pendingMsg.from_agent,
+            type: pendingMsg.type,
+            isSelfLoop: pendingMsg.from_agent === agentId,
+          });
+
+          // Schedule next iteration (slight delay to allow state to settle)
+          setTimeout(() => {
+            if (this.running && !this.hasActiveWorkers(agentId)) {
+              this.spawnWorker(meshName, agent);
+            }
+          }, 100);
+        }
       });
 
       // Error transition with retry logic
       worker.on('error', async (data) => {
+        const errorWorkerId = registeredWorkerId || 'unknown';
         await machine.error(data.error);
 
         // Check if we can retry
@@ -1512,11 +2210,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         if (canRetry) {
           log.info('dispatcher', `Retrying worker`, {
             agentId,
+            workerId: errorWorkerId,
             attempt: machine.currentContext.retryCount + 1,
             maxRetries: machine.currentContext.maxRetries
           });
 
           await machine.retry();
+          // Remove current worker before respawning
+          this.removeActiveWorker(agentId, errorWorkerId);
           // Recursively spawn again, but check if dispatcher is still running
           setTimeout(() => {
             if (this.running) {
@@ -1526,22 +2227,26 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             }
           }, 1000);
         } else {
-          log.error('dispatcher', `Worker exhausted retries`, { agentId });
-          this.activeWorkers.delete(agentId);
+          log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
+          this.removeActiveWorker(agentId, errorWorkerId);
           this.askResponseBuffer.delete(agentId);
           this.writeWorkerState();
         }
 
-        this.emit('worker:error', { ...data, transitionName: 'error' });
+        this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
       });
 
-      this.activeWorkers.set(agentId, {
+      // Add worker to active workers with unique workerId for parallel execution
+      const workerId = this.addActiveWorker(agentId, {
         runner: worker,
         machine,
         startedAt: Date.now(),
         hookContext,
         startedPromise,  // Add promise to track 'start' completion
       });
+      // Set the registeredWorkerId so event handlers can reference it
+      registeredWorkerId = workerId;
+      log.debug('dispatcher', `Worker registered`, { agentId, workerId });
       this.writeWorkerState();
 
       // Run the worker (async, don't await)
@@ -1571,6 +2276,203 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         error: (error as Error).message
       });
       this.emit('error', { agentId, error: (error as Error).message });
+    }
+  }
+
+  /**
+   * Normalize FSM config to support both array and object-style states
+   * Transforms object-style states: { state_name: {...} } → array: [{ name: state_name, ...}]
+   */
+  private normalizeFSMConfig(fsm: any): FSMConfig {
+    // If states is already an array, return as-is
+    if (Array.isArray(fsm.states)) {
+      return fsm as FSMConfig;
+    }
+
+    // Transform object-style states to array-style
+    const states: any[] = [];
+    for (const [stateName, stateConfig] of Object.entries(fsm.states || {})) {
+      const normalized: any = { name: stateName, ...(stateConfig as any) };
+
+      // Transform 'agents' array → coordinator + participants
+      if (normalized.agents) {
+        const agentList = normalized.agents as string[];
+        normalized.coordinator = agentList[0];
+        if (agentList.length > 1) {
+          normalized.participants = agentList.slice(1);
+        }
+        delete normalized.agents;
+      }
+
+      states.push(normalized);
+    }
+
+    return {
+      initialState: fsm.initial || fsm.initialState,
+      states,
+      transitions: fsm.transitions || [],
+      context: fsm.context,
+      context_descriptions: fsm.context_descriptions,
+    } as FSMConfig;
+  }
+
+  /**
+   * Try to load a mesh on-demand when a message arrives for an unloaded mesh
+   * Searches project meshes/ and global TX_ROOT/meshes/
+   * Returns true if mesh was loaded successfully
+   */
+  private tryLoadMeshOnDemand(meshName: string): boolean {
+    try {
+      const searchDirs: Array<{ dir: string; isGlobal: boolean }> = [];
+
+      // Project meshes
+      if (fs.existsSync(this.config.meshesDir)) {
+        searchDirs.push({ dir: this.config.meshesDir, isGlobal: false });
+      }
+
+      // Global TX_ROOT meshes
+      const globalMeshDir = process.env.TX_ROOT
+        ? path.join(process.env.TX_ROOT, 'meshes')
+        : null;
+      if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
+        searchDirs.push({ dir: globalMeshDir, isGlobal: true });
+      }
+
+      // Search for mesh directory and config file
+      for (const { dir: searchRoot, isGlobal } of searchDirs) {
+        // Try direct: meshes/{meshName}/config.yaml
+        const directPath = path.join(searchRoot, meshName);
+        if (fs.existsSync(directPath)) {
+          const configPath = this.findConfigInDir(directPath);
+          if (configPath) {
+            log.info('dispatcher', 'Found mesh config (JIT)', { meshName, configPath });
+            this.loadMeshConfigFromFile(configPath, directPath, isGlobal);
+
+            // Initialize FSM if needed
+            const config = this.meshConfigs.get(meshName);
+            if (config?.fsm) {
+              this.initializeSingleFSM(meshName, config);
+            }
+
+            return true;
+          }
+        }
+
+        // Try nested: meshes/{category}/{meshName}/config.yaml
+        const categories = fs.readdirSync(searchRoot, { withFileTypes: true })
+          .filter(e => e.isDirectory() && !e.name.startsWith('.'));
+
+        for (const category of categories) {
+          const nestedPath = path.join(searchRoot, category.name, meshName);
+          if (fs.existsSync(nestedPath)) {
+            const configPath = this.findConfigInDir(nestedPath);
+            if (configPath) {
+              log.info('dispatcher', 'Found mesh config (JIT, nested)', { meshName, configPath, category: category.name });
+              this.loadMeshConfigFromFile(configPath, nestedPath, isGlobal);
+
+              // Initialize FSM if needed
+              const config = this.meshConfigs.get(meshName);
+              if (config?.fsm) {
+                this.initializeSingleFSM(meshName, config);
+              }
+
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
+    } catch (error) {
+      log.error('dispatcher', 'JIT mesh load failed', {
+        meshName,
+        error: (error as Error).message,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Find config file in directory (prioritize YAML over JSON)
+   * Returns absolute path to config file, or null if not found
+   */
+  private findConfigInDir(dir: string): string | null {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
+      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
+
+      if (yamlConfig) {
+        return path.join(dir, yamlConfig.name);
+      } else if (jsonConfig) {
+        return path.join(dir, jsonConfig.name);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Initialize FSM for a single mesh (called during JIT loading)
+   */
+  private initializeSingleFSM(meshName: string, config: MeshConfig): void {
+    try {
+      const fsm = new MeshFSM(
+        meshName,
+        config.fsm!,
+        this.queue.getDatabase(),
+        config._basePath || this.config.workDir
+      );
+
+      // Wire FSM events (same as initializeFSMs)
+      fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
+        log.debug('mesh-fsm', 'State transition', {
+          meshName: event.meshName,
+          from: event.from,
+          to: event.to,
+          trigger: event.trigger,
+          triggerAgent: event.triggerAgent,
+        });
+        this.emit('fsm:transition', event);
+      });
+
+      fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
+        log.debug('mesh-fsm', 'Gate check', {
+          meshName: event.meshName,
+          state: event.state,
+          passed: event.passed,
+          retryCount: event.retryCount,
+        });
+        this.emit('fsm:gate-check', event);
+      });
+
+      fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
+        if (!event.success) {
+          log.error('mesh-fsm', 'Script failed', {
+            meshName: event.meshName,
+            scriptType: event.scriptType,
+            scriptPath: event.scriptPath,
+            error: event.error,
+          });
+        }
+        this.emit('fsm:script-run', event);
+      });
+
+      // Initialize the FSM
+      fsm.initialize().catch(error => {
+        log.error('mesh-fsm', 'Failed to initialize FSM (JIT)', {
+          meshName,
+          error: (error as Error).message,
+        });
+      });
+
+      this.meshFSMs.set(meshName, fsm);
+    } catch (error) {
+      log.error('dispatcher', 'Failed to create FSM (JIT)', {
+        meshName,
+        error: (error as Error).message,
+      });
     }
   }
 
@@ -1614,12 +2516,81 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       for (const { dir: meshRoot, isGlobal } of meshRoots) {
         this.scanMeshDir(meshRoot, isGlobal, 0);
       }
+
+      // Initialize FSMs for meshes that have fsm config
+      this.initializeFSMs();
     } catch (error) {
       log.error('dispatcher', 'Failed to load mesh configs', {
         error: (error as Error).message,
         stack: (error as Error).stack
       });
       this.emit('error', { error: `Failed to load mesh configs: ${(error as Error).message}` });
+    }
+  }
+
+  /**
+   * Initialize FSM instances for meshes with fsm config
+   */
+  private initializeFSMs(): void {
+    for (const [meshName, config] of this.meshConfigs) {
+      if (!config.fsm) continue;
+
+      try {
+        const fsm = new MeshFSM(
+          meshName,
+          config.fsm,
+          this.queue.getDatabase(),
+          config._basePath || this.config.workDir  // Use mesh directory for script resolution
+        );
+
+        // Wire FSM events for observability
+        fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
+          log.debug('mesh-fsm', 'State transition', {
+            meshName: event.meshName,
+            from: event.from,
+            to: event.to,
+            trigger: event.trigger,
+            triggerAgent: event.triggerAgent,
+          });
+          this.emit('fsm:transition', event);
+        });
+
+        fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
+          log.debug('mesh-fsm', 'Gate check', {
+            meshName: event.meshName,
+            state: event.state,
+            passed: event.passed,
+            retryCount: event.retryCount,
+          });
+          this.emit('fsm:gate-check', event);
+        });
+
+        fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
+          if (!event.success) {
+            log.error('mesh-fsm', 'Script failed', {
+              meshName: event.meshName,
+              scriptType: event.scriptType,
+              scriptPath: event.scriptPath,
+              error: event.error,
+            });
+          }
+          this.emit('fsm:script-run', event);
+        });
+
+        // Initialize the FSM (loads or creates state)
+        fsm.initialize().catch(error => {
+          log.error('mesh-fsm', 'Failed to initialize FSM', {
+            meshName,
+            error: (error as Error).message,
+          });
+        });
+
+        this.meshFSMs.set(meshName, fsm);
+      } catch (error) {
+        log.error('dispatcher', `Failed to create FSM for mesh: ${meshName}`, {
+          error: (error as Error).message,
+        });
+      }
     }
   }
 
@@ -1673,7 +2644,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       const validation = MeshValidator.validate(rawConfig, filename);
 
       if (!validation.valid) {
-        log.error('dispatcher', `Invalid mesh config: ${filename}`, {
+        log.error('dispatcher', `Invalid mesh config: ${rawConfig.mesh || filename}`, {
+          mesh: rawConfig.mesh,
           configPath,
           errors: validation.errors
         });
@@ -1685,13 +2657,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         return;
       }
 
-      // Log warnings but still load the config
-      if (validation.warnings.length > 0) {
-        log.warn('dispatcher', `Mesh config warnings: ${filename}`, {
-          warnings: validation.warnings
-        });
-      }
-
+      // Validation passed (warnings are silent unless there are errors)
       const config = validation.config as MeshConfig;
 
       // Don't override project configs with global ones
@@ -1699,19 +2665,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         return;
       }
 
+      // Transform FSM config if needed (object-style states → array-style)
+      if (config.fsm) {
+        config.fsm = this.normalizeFSMConfig(config.fsm);
+      }
+
       // Store base path for relative prompt resolution
       config._basePath = basePath;
 
       this.meshConfigs.set(config.mesh, config);
-      log.info('dispatcher', `Loaded mesh: ${config.mesh}`, {
-        source: isGlobal ? 'global' : 'project',
-        basePath,
-        agents: config.agents.map(a => a.name),
-        warnings: validation.warnings.length,
-        graded: config.graded,
-        worktree: config.worktree,
-        hasLifecycle: !!config.lifecycle,
-      });
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
     } catch (error) {
       log.error('dispatcher', `Failed to parse mesh config: ${filename}`, {
@@ -1776,18 +2738,23 @@ ${output}
    */
   private injectRoutingInstructions(
     systemPrompt: string,
-    routing: AgentRouting,
+    routing: Record<string, Record<string, string>>,
     meshName: string
   ): string {
     const lines: string[] = [];
     lines.push('\n\n## Message Routing\n');
     lines.push('When you complete your work, route your response message based on the outcome:\n');
 
-    for (const [status, dest] of Object.entries(routing)) {
-      const targetAgent = dest.to === 'core' ? 'core/core' : dest.to;
+    for (const [status, destinations] of Object.entries(routing)) {
       lines.push(`\n**Status: \`${status}\`**`);
-      lines.push(`- Send message to: \`${targetAgent}\``);
-      lines.push(`- Reason: ${dest.reason}`);
+      
+      for (const [destination, reason] of Object.entries(destinations)) {
+        const targetAgent = destination === 'core' ? 'core/core' : 
+                           destination.includes('/') ? destination : 
+                           `${meshName}/${destination}`;
+        lines.push(`- Send message to: \`${targetAgent}\``);
+        lines.push(`  Reason: ${reason}`);
+      }
     }
 
     lines.push('\n\nSet the `to` field in your message frontmatter based on which status applies.');
@@ -1797,57 +2764,53 @@ ${output}
 
   /**
    * Extract routing config for a specific agent from mesh config
-   * Transforms mesh format: { status: { destination: "reason" } }
-   * To runner format: { status: { to: destination, reason: "reason" } }
+   * Returns routing in format: { status: { destination: "reason" } }
    */
   private extractAgentRouting(
     meshName: string,
     agentName: string,
     meshConfig?: MeshConfig
-  ): AgentRouting | undefined {
+  ): Record<string, Record<string, string>> | undefined {
     if (!meshConfig?.routing) return undefined;
 
     const agentRouting = meshConfig.routing[agentName];
     if (!agentRouting) return undefined;
 
-    // Transform mesh config format to SdkRunner format
-    const result: AgentRouting = {};
-
-    for (const [status, destinations] of Object.entries(agentRouting)) {
-      // Each status maps to { destination_agent: "reason" }
-      // Take the first (usually only) destination
-      const entries = Object.entries(destinations);
-      if (entries.length === 0) continue;
-
-      const [destination, reason] = entries[0];
-
-      // Build full agent path if not already qualified
-      // "core" -> "core/core", "sourcer" -> "research/sourcer"
-      const to = destination.includes('/')
-        ? destination
-        : destination === 'core'
-          ? 'core/core'
-          : `${meshName}/${destination}`;
-
-      result[status] = { to, reason };
-    }
-
-    // Only return if we have any routes
-    return Object.keys(result).length > 0 ? result : undefined;
+    // Return raw routing config (status -> destination -> reason)
+    return Object.keys(agentRouting).length > 0 ? agentRouting : undefined;
   }
 
   /**
-   * Get active worker count
+   * Get total active worker count across all agents
    */
   getActiveWorkerCount(): number {
-    return this.activeWorkers.size;
+    let count = 0;
+    for (const workers of this.activeWorkers.values()) {
+      count += workers.length;
+    }
+    return count;
   }
 
   /**
-   * Get list of active worker IDs
+   * Get list of active agent IDs (not worker IDs)
+   * For backwards compatibility - returns unique agentIds that have workers
    */
   getActiveWorkerIds(): string[] {
     return Array.from(this.activeWorkers.keys());
+  }
+
+  /**
+   * Get list of all active worker instance IDs
+   * Returns unique workerIds for all running workers
+   */
+  getAllActiveWorkerIds(): string[] {
+    const ids: string[] = [];
+    for (const workers of this.activeWorkers.values()) {
+      for (const worker of workers) {
+        ids.push(worker.workerId);
+      }
+    }
+    return ids;
   }
 
   /**
@@ -1858,19 +2821,23 @@ ${output}
   }
 
   /**
-   * Get worker state machine by agent ID
+   * Get worker state machine by agent ID (returns first worker's machine)
    */
   getWorkerMachine(agentId: string): WorkerStateMachine | undefined {
-    return this.activeWorkers.get(agentId)?.machine;
+    const workers = this.activeWorkers.get(agentId);
+    return workers?.[0]?.machine;
   }
 
   /**
    * Get all active worker state machines
+   * Returns machines keyed by workerId for unique identification
    */
   getAllWorkerMachines(): Map<string, WorkerStateMachine> {
     const machines = new Map<string, WorkerStateMachine>();
-    for (const [id, worker] of this.activeWorkers) {
-      machines.set(id, worker.machine);
+    for (const workers of this.activeWorkers.values()) {
+      for (const worker of workers) {
+        machines.set(worker.workerId, worker.machine);
+      }
     }
     return machines;
   }
@@ -1881,4 +2848,715 @@ ${output}
   getWorkspaceManager(): WorkspaceManager {
     return this.workspaceManager;
   }
+
+  /**
+   * Check if a mesh session is complete (no active workers from that mesh)
+   * If complete, log session metrics and cleanup
+   */
+  private checkSessionComplete(meshInstance: string | undefined): void {
+    if (!meshInstance) return;
+
+    const session = this.sessionMetrics.get(meshInstance);
+    if (!session) return;
+
+    // Check if any workers from this mesh are still active (flatten arrays)
+    const activeInMesh = Array.from(this.activeWorkers.values())
+      .flat()
+      .some(w => w.hookContext?.meshInstance === meshInstance);
+
+    if (!activeInMesh) {
+      session.completedAt = Date.now();
+      session.totalDurationMs = session.completedAt - session.startedAt;
+
+      // Log session summary
+      log.sessionComplete(session);
+
+      // Emit event for external consumers
+      this.emit('session:complete', session);
+
+      // Cleanup
+      this.sessionMetrics.delete(meshInstance);
+    }
+  }
+
+  // ============================================================================
+  // Ensemble State Handling
+  // ============================================================================
+  // NOTE: getNextStateConfig method removed - it was only used for subtask injection
+  // which has been deprecated in favor of explicit routing for ensemble agents.
+
+  /**
+   * Handle an FSM state of type 'ensemble'
+   * Spawns all ensemble agents in parallel, waits for completion, aggregates results,
+   * then runs exit routing.
+   */
+  private async handleEnsembleState(
+    meshName: string,
+    stateConfig: FSMStateConfig,
+    fsm: MeshFSM
+  ): Promise<void> {
+    const { ensemble } = stateConfig;
+    if (!ensemble) {
+      log.error('dispatcher', 'Ensemble state missing ensemble config', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    // Determine agents to spawn
+    const agentsToSpawn = ensemble.agents
+      || Array(this.resolveEnsembleCount(ensemble.count, fsm)).fill(ensemble.agent!);
+
+    if (agentsToSpawn.length === 0) {
+      log.error('dispatcher', 'No agents to spawn for ensemble state', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    // Get task from queue - peek at the first agent's queue or mesh queue
+    const firstAgent = agentsToSpawn[0];
+    const agentId = `${meshName}/${firstAgent}`;
+    const task = this.queue.peekOne(agentId);
+    if (!task) {
+      log.warn('dispatcher', 'No task for ensemble state', {
+        meshName,
+        state: stateConfig.name,
+        agentId,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'Starting ensemble execution', {
+      meshName,
+      state: stateConfig.name,
+      agents: agentsToSpawn,
+      aggregation: ensemble.aggregation,
+    });
+
+    // Start ensemble tracking
+    const ensembleConfig: EnsembleConfig = {
+      agents: agentsToSpawn,
+      aggregation_strategy: ensemble.aggregation,
+      timeout_ms: ensemble.timeout_ms,
+      fault_tolerance: ensemble.fault_tolerance,
+    };
+
+    const ensembleId = this.ensembleCoordinator.startEnsemble(
+      meshName,
+      ensembleConfig,
+      task
+    );
+
+    // Consume task from queue
+    this.queue.pollOne(agentId);
+
+    this.emit('ensemble:start', {
+      ensembleId,
+      meshName,
+      state: stateConfig.name,
+      agents: agentsToSpawn,
+    });
+
+    // Spawn all agents in parallel
+    const spawnPromises = agentsToSpawn.map((agentName, idx) =>
+      this.spawnEnsembleAgentForFSM(
+        meshName,
+        agentName,
+        ensembleId,
+        fsm,
+        task,
+        stateConfig,
+        idx
+      )
+    );
+
+    await Promise.allSettled(spawnPromises);
+
+    // Wait for completion or timeout
+    const timeout = ensemble.timeout_ms || 120000;
+    const startTime = Date.now();
+
+    // Poll until ensemble is complete or timeout
+    while (!this.ensembleCoordinator.isComplete(ensembleId)) {
+      if (Date.now() - startTime > timeout) {
+        log.warn('dispatcher', 'Ensemble timeout reached', {
+          meshName,
+          ensembleId,
+          timeout,
+        });
+        break;
+      }
+      // Brief pause before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Aggregate results
+    const result = await this.ensembleCoordinator.getAggregatedResult(ensembleId);
+    if (!result) {
+      log.error('dispatcher', 'Ensemble aggregation failed', {
+        meshName,
+        ensembleId,
+      });
+      this.emit('ensemble:error', {
+        ensembleId,
+        meshName,
+        error: 'Aggregation failed',
+      });
+      this.ensembleCoordinator.completeEnsemble(ensembleId);
+      return;
+    }
+
+    log.info('dispatcher', 'Ensemble aggregation complete', {
+      meshName,
+      ensembleId,
+      success: result.metadata.success,
+      strategy: result.metadata.strategy,
+    });
+
+    // Set result in FSM context
+    fsm.updateContext({
+      ENSEMBLE_OUTPUT: result.output,
+      ENSEMBLE_METADATA: result.metadata,
+    });
+
+    this.emit('ensemble:aggregated', {
+      ensembleId,
+      meshName,
+      output: result.output.slice(0, 500),
+      metadata: result.metadata,
+    });
+
+    // Run exit block with aggregated result
+    await this.processFSMExit(meshName, fsm, stateConfig);
+
+    // Cleanup
+    this.ensembleCoordinator.completeEnsemble(ensembleId);
+
+    this.emit('ensemble:complete', {
+      ensembleId,
+      meshName,
+      state: stateConfig.name,
+    });
+  }
+
+  /**
+   * Spawn an ensemble agent for FSM execution
+   * Similar to spawnWorker but designed for parallel ensemble execution
+   */
+  private async spawnEnsembleAgentForFSM(
+    meshName: string,
+    agentName: string,
+    ensembleId: string,
+    fsm: MeshFSM,
+    task: Message,
+    stateConfig: FSMStateConfig,
+    index: number
+  ): Promise<void> {
+    const meshConfig = this.meshConfigs.get(meshName);
+    const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+
+    if (!agentConfig) {
+      log.error('dispatcher', 'Ensemble agent not found in mesh config', {
+        meshName,
+        agentName,
+        ensembleId,
+      });
+      this.ensembleCoordinator.recordAgentResult(
+        ensembleId,
+        agentName,
+        '',
+        'Agent not found in mesh config'
+      );
+      return;
+    }
+
+    const timeout = stateConfig.ensemble?.timeout_ms || 120000;
+    const agentId = `${meshName}/${agentName}`;
+
+    try {
+      log.info('dispatcher', 'Spawning ensemble agent', {
+        agentId,
+        ensembleId,
+        index,
+      });
+
+      this.ensembleCoordinator.registerAgentStart(ensembleId, agentName);
+
+      // Build prompt path - resolve relative to mesh basePath or workDir
+      let promptPath: string | null = null;
+
+      if (meshConfig?._basePath) {
+        const meshRelativePath = path.join(meshConfig._basePath, agentConfig.prompt);
+        if (fs.existsSync(meshRelativePath)) {
+          promptPath = meshRelativePath;
+        }
+      }
+
+      if (!promptPath) {
+        const workDirPath = path.join(this.config.workDir, agentConfig.prompt);
+        if (fs.existsSync(workDirPath)) {
+          promptPath = workDirPath;
+        }
+      }
+
+      if (!promptPath) {
+        throw new Error(`Prompt not found: ${agentConfig.prompt}`);
+      }
+
+      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+
+      // Inject preamble
+      const agentCount = meshConfig?.agents?.length ?? 1;
+      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
+
+      // Inject messaging protocol
+      systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
+
+      // Inject FSM context if available
+      const currentStateConfig = fsm.getCurrentStateConfig();
+      if (currentStateConfig) {
+        const status = fsm.getStatus();
+        // Inject ensemble index into context for differentiated messaging
+        const contextWithIndex = {
+          ...status.context,
+          ENSEMBLE_INDEX: index,
+          ENSEMBLE_TOTAL: stateConfig.ensemble?.agents?.length ||
+            (stateConfig.ensemble?.count ?
+              this.resolveEnsembleCount(stateConfig.ensemble.count, fsm) : 1),
+        };
+        const fsmContext: FSMInjectionContext = {
+          meshName,
+          currentState: status.currentState,
+          stateConfig: currentStateConfig,
+          availableTransitions: status.availableTransitions,
+          context: contextWithIndex,
+          contextDescriptions: fsm.getContextDescriptions(),
+          gateRetries: status.gateRetries,
+        };
+        systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
+      }
+
+      // Apply model transformations based on mode
+      let model = agentConfig.model;
+      if (this.config.ultraLowMode) {
+        model = 'haiku' as SemanticModel;
+      } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
+        model = (model as string).replace('opus', 'sonnet') as SemanticModel;
+      }
+
+      // Create runner config
+      const runnerConfig: SdkRunnerConfig = {
+        id: agentId,
+        model: model,
+        systemPrompt,
+        workDir: this.config.workDir,
+        msgsDir: this.config.msgsDir,
+        mcpServers: agentConfig.mcpServers,
+        toolRestriction: meshConfig?.toolRestriction,
+      };
+
+      const runner = new SdkRunner(runnerConfig, this.queue);
+
+      let result = '';
+      let error: string | undefined;
+
+      // Set up event handlers
+      runner.on('output', (data) => {
+        result += data.data || '';
+      });
+
+      runner.on('error', (data) => {
+        error = data.error;
+      });
+
+      runner.on('complete', (data) => {
+        if (data.output) {
+          result = data.output;
+        }
+      });
+
+      // Run with timeout
+      await Promise.race([
+        runner.run(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
+        ),
+      ]);
+
+      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, result, error);
+
+      log.debug('dispatcher', 'Ensemble agent completed', {
+        agentName,
+        ensembleId,
+        resultLength: result.length,
+        hasError: !!error,
+      });
+    } catch (err) {
+      const errorMessage = (err as Error).message;
+      this.ensembleCoordinator.recordAgentResult(
+        ensembleId,
+        agentName,
+        '',
+        errorMessage
+      );
+      log.warn('dispatcher', 'Ensemble agent failed', {
+        agentName,
+        ensembleId,
+        error: errorMessage,
+      });
+    }
+  }
+
+  /**
+   * Resolve ensemble count from config
+   * Can be a literal number or a $variable reference to FSM context
+   */
+  private resolveEnsembleCount(count: number | string | undefined, fsm: MeshFSM): number {
+    if (typeof count === 'number') return count;
+
+    if (typeof count === 'string') {
+      // Resolve from FSM context: $subtask_count
+      const varName = count.startsWith('$') ? count.slice(1) : count;
+      const value = fsm.getContext()[varName];
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = parseInt(value, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      log.warn('dispatcher', 'Could not resolve ensemble count from context', {
+        varName,
+        value,
+        fallback: 3,
+      });
+      return 3;  // default fallback
+    }
+
+    return 3;  // default
+  }
+
+  /**
+   * Process FSM exit block after ensemble completion
+   * Runs gates, set, when/run/default routing, and transitions to next state
+   */
+  private async processFSMExit(
+    meshName: string,
+    fsm: MeshFSM,
+    stateConfig: FSMStateConfig
+  ): Promise<void> {
+    const exit = stateConfig.exit;
+    if (!exit) {
+      log.warn('dispatcher', 'No exit config for state, cannot route', {
+        meshName,
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'Processing FSM exit', {
+      meshName,
+      state: stateConfig.name,
+      hasGates: !!exit.gates,
+      hasWhen: !!exit.when,
+      hasRun: !!exit.run,
+      hasDefault: !!exit.default,
+    });
+
+    // Process exit.set first if present (extract values before routing)
+    if (exit.set) {
+      log.debug('dispatcher', 'Setting exit context variables', {
+        meshName,
+        state: stateConfig.name,
+        vars: Object.keys(exit.set),
+      });
+      fsm.updateContext(exit.set as Record<string, unknown>);
+    }
+
+    // Evaluate routing using FSM's evaluateExitRouting
+    const context = fsm.getContext();
+    const nextState = await fsm.evaluateExitRouting(exit, context);
+
+    if (!nextState) {
+      log.error('dispatcher', 'FSM exit routing failed - no valid next state', {
+        meshName,
+        currentState: stateConfig.name,
+      });
+      this.emit('mesh:halt', {
+        meshName,
+        reason: 'Exit routing failed',
+        state: stateConfig.name,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'FSM exit routing determined next state', {
+      meshName,
+      currentState: stateConfig.name,
+      nextState,
+    });
+
+    // Transition to next state
+    const transitioned = await fsm.transitionTo(
+      nextState,
+      'ensemble-complete',
+      'dispatcher'
+    );
+
+    if (transitioned) {
+      log.info('dispatcher', 'FSM transitioned after ensemble', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+      });
+
+      this.emit('fsm:transition', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+        trigger: 'ensemble-complete',
+        triggerAgent: 'dispatcher',
+        timestamp: Date.now(),
+      });
+
+      // Trigger next state's agent with aggregated content
+      await this.triggerNextStateAgent(meshName, fsm, nextState, context);
+    } else {
+      log.error('dispatcher', 'FSM transition failed', {
+        meshName,
+        from: stateConfig.name,
+        to: nextState,
+      });
+    }
+  }
+
+  /**
+   * Trigger the next state's agent by writing a message with aggregated content
+   * This bridges ensemble completion to the synthesizer/next agent
+   */
+  private async triggerNextStateAgent(
+    meshName: string,
+    fsm: MeshFSM,
+    nextState: string,
+    context: Record<string, unknown>
+  ): Promise<void> {
+    // Get the next state's configuration
+    const nextStateConfig = fsm.getStateConfig(nextState);
+    if (!nextStateConfig) {
+      log.warn('dispatcher', 'No state config for next state, skipping agent trigger', {
+        meshName,
+        nextState,
+      });
+      return;
+    }
+
+    // Determine the target agent - use first agent in the state
+    const targetAgents = nextStateConfig.agents || [];
+    if (targetAgents.length === 0) {
+      log.debug('dispatcher', 'Next state has no agents, skipping trigger', {
+        meshName,
+        nextState,
+      });
+      return;
+    }
+
+    const targetAgent = targetAgents[0];
+    const targetAgentId = `${meshName}/${targetAgent}`;
+
+    // Get ENSEMBLE_OUTPUT from context
+    const ensembleOutput = context.ENSEMBLE_OUTPUT as string || '';
+    const ensembleMetadata = context.ENSEMBLE_METADATA as Record<string, unknown> || {};
+
+    // Generate message ID
+    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = Date.now();
+    const toSafe = targetAgentId.replace(/\//g, '-');
+    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    // Build message content with aggregated output
+    const messageContent = `---
+to: ${targetAgentId}
+from: dispatcher/ensemble
+type: task
+msg-id: ${msgId}
+headline: Ensemble aggregation complete
+timestamp: ${new Date().toISOString()}
+---
+
+# Aggregated Ensemble Results
+
+The following content has been collected and aggregated from parallel ensemble agents.
+
+${ensembleOutput}
+
+---
+**Aggregation Metadata:**
+- Strategy: ${ensembleMetadata.strategy || 'unknown'}
+- Agent Count: ${ensembleMetadata.agent_count || 'unknown'}
+- Success: ${ensembleMetadata.success ?? 'unknown'}
+`;
+
+    try {
+      fs.writeFileSync(filepath, messageContent);
+      log.info('dispatcher', 'Wrote message to trigger next state agent', {
+        meshName,
+        nextState,
+        targetAgent,
+        msgId,
+        filepath,
+        outputLength: ensembleOutput.length,
+      });
+    } catch (err) {
+      log.error('dispatcher', 'Failed to write trigger message', {
+        meshName,
+        nextState,
+        targetAgent,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Inject reminder about unanswered incoming asks
+   * Escalating prompts based on reminder count
+   */
+  private async injectIncomingAskReminder(
+    agentId: string,
+    worker: ActiveWorker,
+    incomingAsks: Array<{ from: string; msgId: string }>,
+    currentReminderCount: number
+  ): Promise<void> {
+    const { machine, runner } = worker;
+    const sessionId = runner.getSessionId();
+
+    if (!sessionId) {
+      log.error('dispatcher', 'Cannot inject reminder without session ID', { agentId });
+      return;
+    }
+
+    // Increment reminder count
+    const newReminderCount = machine.incrementIncomingAskReminder();
+
+    const askList = incomingAsks.map(a => `- **${a.from}** (msg-id: ${a.msgId})`).join('\n');
+
+    const reminderPrompts = [
+      // Reminder 1: Gentle
+      `## System Notice: Unanswered Ask Messages
+
+You have received ask messages that require responses:
+
+${askList}
+
+**You cannot complete this task until you respond to these asks.**
+
+Please send ask-response messages to each agent listed above before attempting to complete.
+
+If you don't have the information to respond, you can:
+1. Send an ask-response explaining what information you need
+2. Send an ask-human to escalate
+3. Continue working to gather the needed information
+
+What would you like to do?`,
+
+      // Reminder 2: Firm
+      `## IMPORTANT: Completion Blocked - Unanswered Asks
+
+**ATTENTION**: You attempted to complete but have ${incomingAsks.length} unanswered ask message(s):
+
+${askList}
+
+**This is your second reminder.**
+
+You MUST send ask-response messages to all agents above before you can complete.
+
+**Required Action**: Send ask-response to each agent immediately.`,
+
+      // Reminder 3: Final warning
+      `## FINAL WARNING: Session Termination Imminent
+
+**CRITICAL**: You have ${incomingAsks.length} unanswered ask message(s):
+
+${askList}
+
+**This is your FINAL warning.**
+
+If you attempt to complete again without responding to these asks, your session will be **TERMINATED** and the task will be marked as **FAILED**.
+
+**Send ask-response messages NOW.**`
+    ];
+
+    const prompt = reminderPrompts[Math.min(newReminderCount - 1, reminderPrompts.length - 1)];
+
+    log.info('dispatcher', `Injecting incoming ask reminder (attempt ${newReminderCount})`, {
+      agentId,
+      reminderCount: newReminderCount,
+      incomingAsks: incomingAsks.map(a => a.from),
+    });
+
+    this.emit('worker:incoming-ask-reminder', {
+      agentId,
+      reminderCount: newReminderCount,
+      incomingAsks,
+    });
+
+    try {
+      // Interrupt current run and resume with reminder
+      await runner.interrupt();
+      const result = await runner.resume(sessionId, prompt);
+
+      if (!result.success) {
+        log.error('dispatcher', 'Reminder injection failed', {
+          agentId,
+          error: result.error,
+        });
+      }
+    } catch (error) {
+      log.error('dispatcher', 'Failed to inject incoming ask reminder', {
+        agentId,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
+   * Force error state after 3 failed reminder attempts
+   */
+  private async forceErrorForUnansweredAsks(
+    agentId: string,
+    worker: ActiveWorker,
+    incomingAsks: Array<{ from: string; msgId: string }>,
+    workerId: string
+  ): Promise<void> {
+    const { machine, runner } = worker;
+    const askList = incomingAsks.map(a => `${a.from} (${a.msgId})`).join(', ');
+
+    log.error('dispatcher', 'Forcing error after max reminders about unanswered asks', {
+      agentId,
+      workerId,
+      incomingAsks: askList,
+      reminderAttempts: 3,
+    });
+
+    // Kill the worker
+    runner.kill();
+
+    // Transition to error state
+    await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);
+
+    // Clean up using workerId for proper removal
+    this.removeActiveWorker(agentId, workerId);
+    this.writeWorkerState();
+
+    this.emit('worker:error', {
+      id: agentId,
+      workerId,
+      error: `Unanswered incoming asks after 3 reminders: [${askList}]`,
+      transitionName: 'error',
+    });
+
+    log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId, workerId });
+  }
+
 }

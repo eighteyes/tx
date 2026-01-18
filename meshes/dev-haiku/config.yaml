@@ -1,0 +1,149 @@
+# dev-haiku/config.yaml
+# FSM Test Mesh - Demonstrates state tracking with haiku agents
+# Inspired by narrative-engine coordinator pattern
+
+mesh: dev-haiku
+description: "FSM state tracking validation with haiku agents. Tests deterministic state transitions, gate validation, and context injection."
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    # FSM coordinator - manages state, routing, and completion
+
+  - name: worker
+    model: haiku
+    prompt: worker/prompt.md
+    # Task executor - exploration and implementation work
+
+  - name: reviewer
+    model: haiku
+    prompt: reviewer/prompt.md
+    # Quality reviewer - validates work
+
+entry_point: coordinator
+completion_agent: coordinator
+continuation: [coordinator]
+
+# Inject original task message into downstream agent prompts
+injectOriginalMessage: true
+
+# FSM Configuration - System-managed state machine
+fsm:
+  initial: init
+
+  context:
+    iteration: 0
+    files_explored: 0
+    lines_written: 0
+    review_score: 0
+
+  states:
+    # ============================================================
+    # INIT: Entry point
+    # ============================================================
+    init:
+      agents: [coordinator]
+      entry:
+        run: init-state
+      exit:
+        when:
+          - condition: "true"
+            target: explore
+        default: explore
+
+    # ============================================================
+    # EXPLORE: Discovery phase
+    # ============================================================
+    explore:
+      agents: [worker]
+      entry:
+        gates:
+          worker:
+            - exploration-ready
+      exit:
+        run: increment-iteration
+        when:
+          - condition: "true"
+            target: plan
+        default: plan
+
+    # ============================================================
+    # PLAN: Planning phase
+    # ============================================================
+    plan:
+      agents: [coordinator]
+      entry:
+        gates:
+          coordinator:
+            - plan-ready
+      exit:
+        when:
+          - condition: "true"
+            target: implement
+        default: implement
+
+    # ============================================================
+    # IMPLEMENT: Implementation phase
+    # ============================================================
+    implement:
+      agents: [worker]
+      entry:
+        gates:
+          worker:
+            - code-ready
+      exit:
+        run: increment-iteration
+        when:
+          - condition: "true"
+            target: review
+        default: review
+
+    # ============================================================
+    # REVIEW: Quality review phase
+    # ============================================================
+    review:
+      agents: [reviewer]
+      entry:
+        gates:
+          reviewer:
+            - review-passed
+      exit:
+        when:
+          - condition: "true"
+            target: complete
+        default: complete
+
+    # ============================================================
+    # TERMINAL STATE
+    # ============================================================
+    complete:
+      agents: [coordinator]
+
+  # ========================================================================
+  # FSM VALIDATION SCRIPTS
+  # ========================================================================
+  scripts:
+    init-state: |
+      echo "Initializing FSM state"
+      exit 0
+
+    increment-iteration: |
+      echo "Incrementing iteration"
+      exit 0
+
+    exploration-ready: |
+      echo "Checking exploration readiness"
+      exit 0
+
+    plan-ready: |
+      echo "Checking plan readiness"
+      exit 0
+
+    code-ready: |
+      echo "Checking code readiness"
+      exit 0
+
+    review-passed: |
+      echo "Checking review status"
+      exit 0

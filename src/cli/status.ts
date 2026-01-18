@@ -69,7 +69,11 @@ export async function status(workDir?: string): Promise<StatusResult> {
   };
 }
 
-export function printStatus(result: StatusResult): void {
+export function printStatus(result: StatusResult, json = false): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   console.log('\n=== TX V4 Status ===\n');
 
   // Core status

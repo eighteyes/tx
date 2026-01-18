@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { SessionMetrics } from './types.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -141,6 +142,35 @@ class Logger {
    */
   getActivityFile(): string {
     return this.activityFile;
+  }
+
+  /**
+   * Log mesh session metrics summary
+   */
+  sessionComplete(session: SessionMetrics): void {
+    const entry: LogEntry = {
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      component: 'session',
+      message: 'Mesh session complete',
+      data: {
+        meshInstance: session.meshInstance,
+        meshName: session.meshName,
+        workerCount: session.workerCount,
+        totalInputTokens: session.totalInputTokens,
+        totalOutputTokens: session.totalOutputTokens,
+        totalCostUsd: session.totalCostUsd.toFixed(4),
+        durationMs: session.totalDurationMs,
+        workers: session.workers.map(w => ({
+          agentId: w.agentId,
+          model: w.model,
+          inputTokens: w.totalInputTokens,
+          outputTokens: w.totalOutputTokens,
+          costUsd: w.totalCostUsd.toFixed(4),
+        })),
+      },
+    };
+    this.write(entry);
   }
 }
 

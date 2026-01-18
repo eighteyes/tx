@@ -17,9 +17,15 @@ agents:
 
 entry_point: worker
 
-# Enable git worktree isolation
+# Enable git worktree isolation with brain insights
 # Requires 'feature:' in task frontmatter
-worktree: true
+lifecycle:
+  pre:
+    - worktree:create
+  post:
+    - commit:auto
+    - brain-update
+    - worktree:cleanup
 
 workspace:
   path: ".ai/output/{task-id}/"

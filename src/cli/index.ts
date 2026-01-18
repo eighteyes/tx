@@ -14,6 +14,7 @@ import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
 import { server } from './server.ts';
+import { validateMesh } from './validate-mesh.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -22,6 +23,12 @@ dotenv.config({ quiet: true });
 // Initialize logger with correct work directory early (before error handlers)
 const workDir = process.env.TX_CWD || process.cwd();
 log.init(workDir, 'debug');
+
+// Ignore EPIPE on stdout (happens when tmux detaches or terminal closes)
+process.stdout.on('error', (err: any) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
 
 // Global exception handlers
 process.on('uncaughtException', (error: Error) => {
@@ -87,17 +94,18 @@ const HELP = {
   main: `TX V4 - Multi-agent orchestration CLI
 
 Commands:
-  tx start       Start core agent (attaches to tmux)
-  tx stop        Stop core agent
-  tx status      Show system status
-  tx server      Start HTTP/WebSocket server (multi-tenant)
-  tx run         Headless mesh REPL (no core)
-  tx msg         View messages
-  tx logs        View logs
-  tx spy         Real-time activity stream
-  tx tasks       View task queue
-  tx prompt      Show built prompt for agent
-  tx tool        Search and web utilities
+  tx start          Start core agent (attaches to tmux)
+  tx stop           Stop core agent
+  tx status         Show system status
+  tx server         Start HTTP/WebSocket server (multi-tenant)
+  tx run            Headless mesh REPL (no core)
+  tx msg            View messages
+  tx logs           View logs
+  tx spy            Real-time activity stream
+  tx tasks          View task queue
+  tx prompt         Show built prompt for agent
+  tx tool           Search and web utilities
+  tx validate-mesh  Validate mesh configuration
 
 Run 'tx <command> -h' for command-specific options.`,
 
@@ -135,7 +143,9 @@ Usage: tx start [options]
 
 Options:
   -c, --continue     Resume previous Claude session
-  --model <model>    Model to use (e.g., opus, sonnet)`,
+  --model <model>    Model to use (e.g., opus, sonnet)
+  --low              Use cost-effective models (replaces opus with sonnet)
+  --ultra-low        Use ultra low cost mode (forces haiku for everything)`,
 
   msg: `tx msg - View messages
 
@@ -258,6 +268,34 @@ API Endpoints:
   GET    /v1/meshes/:name          Get mesh config (no-db compatible)
   PUT    /v1/meshes/:name          Update mesh (no-db compatible)
   POST   /v1/meshes/:name/validate Validate mesh (no-db compatible)`,
+
+  'validate-mesh': `tx validate-mesh - Validate mesh configuration
+
+Usage: tx validate-mesh <mesh-name|path> [options]
+
+Arguments:
+  mesh-name     Name of mesh in meshes/ directory
+  path          Direct path to config.yaml file
+
+Options:
+  --strict      Treat warnings as errors
+
+Examples:
+  tx validate-mesh mesh-builder
+  tx validate-mesh meshes/dev/config.yaml
+  tx validate-mesh my-mesh --strict
+
+Validates:
+  - Required fields (mesh, agents, entry_point)
+  - Agent configuration (name, model, prompt)
+  - Routing block structure and targets
+  - FSM states and transitions (if present)
+  - Config field types and values
+  - Unknown/deprecated fields
+
+Exit codes:
+  0 - Valid configuration
+  1 - Validation failed (errors or warnings in strict mode)`,
 };
 
 function showHelp(cmd: string): void {
@@ -273,14 +311,16 @@ async function main() {
       if (wantsHelp) { showHelp('start'); break; }
       await start(undefined, {
         continue: Boolean(flags.c || flags.continue),
-        model: flags.model as string | undefined
+        model: flags.model as string | undefined,
+        low: Boolean(flags.low),
+        ultraLow: Boolean(flags.ultraLow)
       });
       break;
 
     case 'status':
-      if (wantsHelp) { console.log('tx status - Show system status'); break; }
+      if (wantsHelp) { console.log('tx status - Show system status\n\nOptions:\n  --json    Output as JSON (for programmatic use)'); break; }
       const result = await status();
-      printStatus(result);
+      printStatus(result, Boolean(flags.json));
       break;
 
     case 'run':
@@ -323,7 +363,6 @@ async function main() {
         since: flags.since as string,
         before: flags.before as string,
         limit: flags.n as string || flags.limit as string,
-        follow: Boolean(flags.f || flags.follow),
         json: Boolean(flags.json),
         interactive: !flags.noInteractive,
         verbose: Boolean(flags.v || flags.verbose),
@@ -408,6 +447,13 @@ async function main() {
         lang: flags.l as string || flags.lang as string,
         timestamps: Boolean(flags.T || flags.timestamps),
         providers: Boolean(flags.providers)
+      });
+      break;
+
+    case 'validate-mesh':
+      if (wantsHelp || !args[0]) { showHelp('validate-mesh'); break; }
+      await validateMesh(args[0], {
+        strict: Boolean(flags.strict)
       });
       break;
 

@@ -1,0 +1,109 @@
+# dev-mesh/config.yaml
+# Task-analyzed routing to domain specialists
+# Coordinator picks specialists based on spec analysis
+
+mesh: dev-mesh
+description: |
+  Smart-routing dev coordinator with domain specialists.
+
+  INPUT REQUIREMENTS:
+  - If spec-graph entity: include entity ID (e.g., feature:auth-flow)
+  - If one-off: include relevant file paths in message body
+  - Missing both = coordinator will ask-human for clarification
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    # Analyzes spec, picks specialists, tracks responses, assembles
+
+  - name: architect
+    model: opus
+    prompt: architect/prompt.md
+    # Big picture, missing specs, system boundaries
+
+  - name: frontend
+    model: opus
+    prompt: frontend/prompt.md
+    # Pages, routes, state management, full features
+
+  - name: ui-components
+    model: sonnet
+    prompt: ui-components/prompt.md
+    # Isolated components, styling, accessibility
+
+  - name: backend
+    model: opus
+    prompt: backend/prompt.md
+    # API, services, data layer
+
+  - name: implementer
+    model: sonnet
+    prompt: implementer/prompt.md
+    # Scripts, CLI tools, utilities, non-web code
+
+  - name: tester
+    model: sonnet
+    prompt: tester/prompt.md
+    # Test generation, coverage
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+    # Code review, security audit
+
+entry_point: coordinator
+completion_agent: coordinator
+
+routing:
+  coordinator:
+    ask:
+      architect: "Analyze system boundaries, fill spec gaps"
+      frontend: "Implement frontend feature"
+      ui-components: "Build isolated component"
+      backend: "Implement API/service"
+      implementer: "Implement script/utility/CLI"
+      tester: "Generate tests"
+      reviewer: "Review implementation"
+    ask-human:
+      core: "Need clarification"
+    complete:
+      core: "All work assembled and delivered"
+
+  architect:
+    ask-response:
+      coordinator: "System analysis complete"
+
+  frontend:
+    ask:
+      ui-components: "Need component built first"
+      backend: "Need API endpoint"
+    ask-response:
+      coordinator: "Frontend implementation complete"
+
+  ui-components:
+    ask-response:
+      coordinator: "Component complete"
+      frontend: "Component ready for integration"
+
+  backend:
+    ask-response:
+      coordinator: "Backend implementation complete"
+      frontend: "API ready for consumption"
+
+  implementer:
+    ask-response:
+      coordinator: "Implementation complete"
+
+  tester:
+    ask-response:
+      coordinator: "Tests generated"
+
+  reviewer:
+    ask:
+      frontend: "Fix frontend issues"
+      backend: "Fix backend issues"
+      ui-components: "Fix component issues"
+      implementer: "Fix script/utility issues"
+    ask-response:
+      coordinator: "Review complete"

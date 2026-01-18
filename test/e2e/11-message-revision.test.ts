@@ -32,7 +32,7 @@ describe('Message Revision Flow', () => {
 
   describe('Consumer Revision Detection', () => {
     it('should emit worker-message event for new messages with event type', async () => {
-      let receivedEvent: { event?: string; agentId?: string } | null = null;
+      let receivedEvent: any = null;
 
       consumer.on('worker-message', (event) => {
         receivedEvent = event;
@@ -49,18 +49,13 @@ describe('Message Revision Flow', () => {
 
       await sleep(300);
 
-      assert.ok(receivedEvent, 'Should receive worker-message event');
+      if (!receivedEvent) throw new Error('Should receive worker-message event');
       assert.strictEqual(receivedEvent.event, 'new', 'Should have event type "new"');
       assert.strictEqual(receivedEvent.agentId, 'test/worker', 'Should have correct agentId');
     });
 
     it('should emit revision-message event when file is edited', async () => {
-      let revisionEvent: {
-        filepath?: string;
-        agentId?: string;
-        content?: string;
-        headline?: string;
-      } | null = null;
+      let revisionEvent: any = null;
 
       consumer.on('revision-message', (event) => {
         revisionEvent = event;
@@ -94,7 +89,7 @@ Revised content with updated instructions.
 
       await sleep(300);
 
-      assert.ok(revisionEvent, 'Should receive revision-message event');
+      if (!revisionEvent) throw new Error('Should receive revision-message event');
       assert.strictEqual(revisionEvent.agentId, 'test/worker', 'Should have correct agentId');
       assert.strictEqual(revisionEvent.headline, 'Revised headline', 'Should have revised headline');
       assert.ok(
@@ -200,7 +195,7 @@ Revised response.
 
   describe('Consumer Event Types', () => {
     it('should include event type in core-message events', async () => {
-      let coreEvent: { event?: string } | null = null;
+      let coreEvent: any = null;
 
       consumer.on('core-message', (event) => {
         coreEvent = event;
@@ -216,7 +211,7 @@ Revised response.
 
       await sleep(300);
 
-      assert.ok(coreEvent, 'Should receive core-message event');
+      if (!coreEvent) throw new Error('Should receive core-message event');
       assert.strictEqual(coreEvent.event, 'new', 'Should have event type');
     });
   });

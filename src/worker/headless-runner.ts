@@ -6,7 +6,7 @@
  * - Build system prompt with MESSAGING_PROTOCOL injection
  * - Spawn and keep SdkRunner alive for stateful conversation
  * - Provide interface for sending messages
- * - Execute quality lifecycle hooks if mesh is graded
+ * - Execute quality lifecycle hooks
  */
 
 import fs from 'node:fs';
@@ -27,7 +27,6 @@ import {
 import type { SemanticModel } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
-import { type GradedConfig } from '../quality/index.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 
 interface AgentConfig {
@@ -38,7 +37,7 @@ interface AgentConfig {
 }
 
 /**
- * Iteration config for graded meshes
+ * Iteration config for quality gates
  */
 interface IterationConfig {
   maxIterations?: number;  // Max re-runs on quality failure (default: 3)
@@ -51,9 +50,8 @@ interface MeshConfig {
   agents: AgentConfig[];
   entry_point?: string;
   toolRestriction?: ToolRestriction;
-  graded?: GradedConfig;  // Quality stack config: true, false, or array of gate types
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit
-  iteration?: IterationConfig;  // Iteration config for graded meshes
+  iteration?: IterationConfig;  // Iteration config for quality gates
   lifecycle?: {
     pre?: string[];
     post?: string[];
@@ -130,7 +128,7 @@ export class HeadlessRunner extends EventEmitter {
 
   /**
    * Start the worker (persistent mode)
-   * @param taskBody - Optional task body for preflight analysis (used when graded: true)
+   * @param taskBody - Optional task body for preflight analysis
    */
   async start(taskBody?: string): Promise<void> {
     if (this.running) return;
@@ -166,8 +164,6 @@ export class HeadlessRunner extends EventEmitter {
     log.info('headless-runner', 'Resolving lifecycle hooks', {
       agentId,
       meshName: this.meshConfig.mesh,
-      hasGraded: this.meshConfig.graded !== undefined,
-      gradedValue: this.meshConfig.graded,
       hasWorktree: this.meshConfig.worktree !== undefined,
       worktreeValue: this.meshConfig.worktree,
       featureName: this.hookContext.featureName,
@@ -183,7 +179,7 @@ export class HeadlessRunner extends EventEmitter {
       post: lifecycle?.post || [],
     });
 
-    // Execute pre-hooks (includes quality:preflight for graded meshes)
+    // Execute pre-hooks
     if (lifecycle?.pre && lifecycle.pre.length > 0) {
       log.info('headless-runner', 'Executing pre-hooks', {
         agentId,
@@ -450,7 +446,7 @@ export class HeadlessRunner extends EventEmitter {
       this.hookContext.qualityIteration = this.currentIteration;
     }
 
-    // Execute post-hooks (includes quality gates for graded meshes)
+    // Execute post-hooks
     if (lifecycle?.post && lifecycle.post.length > 0 && this.hookContext) {
       log.info('headless-runner', 'Executing post-hooks', {
         agentId,

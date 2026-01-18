@@ -22,6 +22,11 @@ export type WorkerState =
   | { status: 'complete'; config: WorkerConfig; startedAt: number; endedAt: number; result: WorkerResult }
   | { status: 'error'; config: WorkerConfig; startedAt: number; endedAt: number; error: string };
 
+export interface IncomingAsk {
+  from: string;
+  msgId: string;
+}
+
 export interface WorkerContext extends Context {
   readonly id: string;
   readonly createdAt: number;
@@ -38,6 +43,10 @@ export interface WorkerContext extends Context {
   awaitTimeout: number;
   /** Whether this worker is the completion agent (parity gates only apply to completion agent) */
   readonly isCompletionAgent: boolean;
+  /** Incoming asks that this worker has received and not yet responded to */
+  incomingAsks: Set<IncomingAsk>;
+  /** Count of reminders sent about unanswered incoming asks */
+  incomingAskReminderCount: number;
 }
 
 export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext> {
@@ -51,7 +60,9 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       maxRetries: 3,
       retryCount: 0,
       awaitTimeout,
-      isCompletionAgent
+      isCompletionAgent,
+      incomingAsks: new Set(),
+      incomingAskReminderCount: 0
     });
 
     this.setupGuards();
@@ -100,6 +111,16 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
         return { valid: false, reason: `Cannot complete from ${from.status}` };
       }
+
+      // Check for unanswered incoming asks
+      if (context.incomingAsks.size > 0) {
+        const pending = Array.from(context.incomingAsks).map(a => `${a.from} (${a.msgId})`).join(', ');
+        return {
+          valid: false,
+          reason: `PROTOCOL VIOLATION: Cannot complete with unanswered incoming asks: [${pending}]`
+        };
+      }
+
       // Only block completion for the completion_agent when awaiting responses
       // Other agents can complete back to their parent without waiting
       if (context.isCompletionAgent && from.status === 'awaiting') {
@@ -176,7 +197,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async initialize(): Promise<void> {
     const from = this.state;
     if (from.status !== 'pending') {
-      log.warn('fsm', `Cannot initialize from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot initialize from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -193,7 +214,8 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async start(pid: number): Promise<void> {
     const from = this.state;
     if (from.status !== 'initializing') {
-      throw new Error(`Cannot start from ${from.status}`);
+      log.warn('sys-fsm', `Cannot start from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      return;
     }
 
     await this.transition('start', {
@@ -210,7 +232,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async markIdle(message?: Message): Promise<void> {
     const from = this.state;
     if (from.status !== 'running') {
-      log.warn('fsm', `Cannot idle from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot idle from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -231,7 +253,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async processNext(): Promise<void> {
     const from = this.state;
     if (from.status !== 'idle') {
-      log.warn('fsm', `Cannot resume from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot resume from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -249,7 +271,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async complete(result: WorkerResult): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
-      log.warn('fsm', `Cannot complete from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot complete from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -276,12 +298,12 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async error(errorMessage: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'initializing') {
-      log.warn('fsm', `Cannot error from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot error from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
     // Log error state entry with full context for debugging
-    log.error('fsm', `Worker entering error state`, {
+    log.error('sys-fsm', `Worker entering error state`, {
       entityId: this.id,
       fromStatus: from.status,
       errorMessage,
@@ -307,16 +329,15 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async retry(): Promise<void> {
     const from = this.state;
     if (from.status !== 'error') {
-      log.warn('fsm', `Cannot retry from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot retry from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
-    // Check retry limit BEFORE incrementing
-    if (this.context.retryCount >= this.context.maxRetries) {
-      throw new Error(`Max retries exceeded: ${this.context.maxRetries}`);
-    }
-
     this.context.retryCount++;
+    if (this.context.retryCount > this.context.maxRetries) {
+      log.warn('sys-fsm', `Max retries exceeded: ${this.context.maxRetries}`, { entityId: this.id });
+      return;
+    }
 
     await this.transition('retry', {
       status: 'initializing',
@@ -335,7 +356,8 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async enterAwait(targetAgent: string, sessionId: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'idle') {
-      throw new Error(`Cannot await from ${from.status}`);
+      log.warn('sys-fsm', `Cannot await from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
+      return;
     }
 
     // Store session ID for resume
@@ -360,7 +382,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async addAwaitTarget(targetAgent: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('fsm', `Cannot add await target from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
+      log.warn('sys-fsm', `Cannot add await target from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
       return;
     }
 
@@ -388,7 +410,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async receiveResponse(respondingAgent: string): Promise<boolean> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('fsm', `Cannot receive response from ${from.status}, ignoring`, { entityId: this.id, status: from.status, respondingAgent });
+      log.warn('sys-fsm', `Cannot receive response from ${from.status}, ignoring`, { entityId: this.id, status: from.status, respondingAgent });
       return false;
     }
 
@@ -425,7 +447,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async awaitTimeoutError(): Promise<void> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('fsm', `Cannot timeout from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('sys-fsm', `Cannot timeout from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -492,5 +514,47 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
    */
   getConfig(): WorkerConfig {
     return this.state.config;
+  }
+
+  /**
+   * Add an incoming ask that this worker must respond to
+   */
+  addIncomingAsk(from: string, msgId: string): void {
+    this.context.incomingAsks.add({ from, msgId });
+  }
+
+  /**
+   * Remove an incoming ask (after response sent)
+   */
+  removeIncomingAsk(from: string, msgId: string): void {
+    // Find and remove matching ask
+    for (const ask of this.context.incomingAsks) {
+      if (ask.from === from && ask.msgId === msgId) {
+        this.context.incomingAsks.delete(ask);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Get all incoming asks
+   */
+  getIncomingAsks(): IncomingAsk[] {
+    return Array.from(this.context.incomingAsks);
+  }
+
+  /**
+   * Increment incoming ask reminder count
+   */
+  incrementIncomingAskReminder(): number {
+    this.context.incomingAskReminderCount++;
+    return this.context.incomingAskReminderCount;
+  }
+
+  /**
+   * Get incoming ask reminder count
+   */
+  getIncomingAskReminderCount(): number {
+    return this.context.incomingAskReminderCount;
   }
 }

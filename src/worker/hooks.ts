@@ -15,7 +15,6 @@ import type { MessageQueue } from '../queue/index.ts';
 import {
   createStackFromConfig,
   createPreflightGate,
-  type GradedConfig,
   type GateType,
   type PreflightOutput,
   type StackResult,
@@ -63,6 +62,7 @@ export interface HookContext {
   workDir: string;
   worktreePath?: string;   // Set by worktree:create hook
   worktreeBranch?: string; // Set by worktree:create hook
+  featureName?: string;    // Feature name for worktree
 
   // Quality context (set by quality:preflight, used by quality:evaluate)
   qualityPreflight?: PreflightOutput;
@@ -211,7 +211,11 @@ export class LifecycleHooks {
         return;
       }
 
-      const systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+      // Load and inject messaging protocol
+      const basePrompt = fs.readFileSync(promptPath, 'utf-8');
+      const { PromptInjector } = await import('../workspace/injector.ts');
+      const injector = new PromptInjector();
+      const systemPrompt = injector.injectMessagingProtocol(basePrompt);
 
       const runnerConfig: SdkRunnerConfig = {
         id: `commit-agent-${context.meshInstance}`,
@@ -253,14 +257,176 @@ export class LifecycleHooks {
           } else if (nothingMatch) {
             log.info('hooks', 'Nothing to commit', { meshInstance: context.meshInstance });
           } else if (blockedMatch) {
+            const reason = blockedMatch[1];
             log.warn('hooks', 'Commit blocked', {
-              reason: blockedMatch[1],
+              reason,
               meshInstance: context.meshInstance,
             });
+
+            // Write message to core - commit failed
+            const msgsDir = context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs');
+            const timestamp = Math.floor(Date.now() / 1000);
+            const msgId = `commit-blocked-${context.meshInstance}`;
+            const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+            const filepath = path.join(msgsDir, filename);
+
+            const content = `---
+to: core/core
+from: hooks/commit
+type: update
+msg-id: ${msgId}
+headline: Commit blocked - ${context.meshName}
+timestamp: ${new Date().toISOString()}
+---
+
+# Commit Hook Blocked
+
+The commit hook was unable to create a commit for mesh instance \`${context.meshInstance}\`.
+
+**Reason**: ${reason}
+
+**Mesh**: ${context.meshName}/${context.agentName}
+**Work Directory**: ${commitWorkDir}
+
+Please review the changes and resolve the issue manually.
+`;
+
+            fs.writeFileSync(filepath, content);
+            log.info('hooks', 'Wrote commit blocked message', { filepath });
           }
         }
       } catch (error) {
         log.error('hooks', 'Commit agent failed', {
+          meshInstance: context.meshInstance,
+          error: (error as Error).message,
+        });
+
+        // Write error message to core
+        const msgsDir = context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs');
+        const timestamp = Math.floor(Date.now() / 1000);
+        const msgId = `commit-error-${context.meshInstance}`;
+        const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+        const filepath = path.join(msgsDir, filename);
+
+        const content = `---
+to: core/core
+from: hooks/commit
+type: update
+msg-id: ${msgId}
+headline: Commit hook error - ${context.meshName}
+timestamp: ${new Date().toISOString()}
+---
+
+# Commit Hook Error
+
+The commit hook encountered an error while processing mesh instance \`${context.meshInstance}\`.
+
+**Error**: ${(error as Error).message}
+
+**Mesh**: ${context.meshName}/${context.agentName}
+**Work Directory**: ${commitWorkDir}
+
+Please review the logs and handle this manually.
+`;
+
+        try {
+          fs.writeFileSync(filepath, content);
+          log.info('hooks', 'Wrote commit error message', { filepath });
+        } catch (writeErr) {
+          log.error('hooks', 'Failed to write commit error message', {
+            error: (writeErr as Error).message,
+          });
+        }
+      }
+    });
+
+    // Brain update hook - sends work summary to brain mesh for analysis
+    this.addPostHook('brain-update', async (context) => {
+      const brainWorkDir = context.worktreePath || this.workDir;
+
+      log.info('hooks', 'Sending work analysis to brain mesh', {
+        meshInstance: context.meshInstance,
+        workDir: brainWorkDir,
+      });
+
+      try {
+        // Get git diff and work summary
+        const { execSync } = await import('node:child_process');
+
+        let gitDiff = '';
+        let workSummary = '';
+
+        try {
+          // Get staged changes if any, otherwise get all changes
+          gitDiff = execSync('git diff --cached', { cwd: brainWorkDir, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+          if (!gitDiff.trim()) {
+            gitDiff = execSync('git diff HEAD', { cwd: brainWorkDir, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+          }
+        } catch (error) {
+          log.warn('hooks', 'Failed to get git diff', {
+            error: (error as Error).message,
+          });
+          gitDiff = '(Unable to retrieve git diff)';
+        }
+
+        // Extract work summary from worker output if available
+        if (context.workerOutput) {
+          const summaryMatch = context.workerOutput.match(/## Summary\s+([\s\S]*?)(?=\n##|\n---|\n\[|$)/i);
+          workSummary = summaryMatch ? summaryMatch[1].trim() : context.workerOutput.slice(0, 500);
+        } else {
+          workSummary = context.taskBody || '(No task description available)';
+        }
+
+        // Build task message for brain
+        const taskBody = `# Work Analysis Request
+
+## Task Context
+- **Task ID**: ${context.taskId || 'unknown'}
+- **Agent**: ${context.agentName || 'unknown'}
+- **Mesh**: ${context.meshName || 'unknown'}
+
+## Work Summary
+${workSummary}
+
+## Git Diff
+\`\`\`diff
+${gitDiff}
+\`\`\`
+
+---
+
+Analyze these changes and document in your workspace:
+- **Side Effects**: Unintended consequences, breaking changes, performance/security implications
+- **Opportunities**: Refactoring, generalization, related features to add
+- **Tech Debt**: TODOs, missing error handling, testing gaps, code smells
+`;
+
+        // Insert task message for brain mesh
+        const timestamp = Math.floor(Date.now() / 1000);
+        const msgId = `brain-update-${context.taskId || Date.now()}`;
+        const filename = `${timestamp}-task-core-core--brain-brain-${msgId}.md`;
+        const filepath = path.join(context.msgsDir || path.join(this.workDir, '.ai', 'tx', 'msgs'), filename);
+
+        const content = `---
+to: brain/brain
+from: core/core
+type: task
+msg-id: ${msgId}
+headline: Analyze completed work - ${context.meshName}/${context.agentName}
+timestamp: ${new Date().toISOString()}
+---
+
+${taskBody}
+`;
+
+        fs.writeFileSync(filepath, content);
+        log.info('hooks', 'Brain update message sent', {
+          meshInstance: context.meshInstance,
+          filepath,
+        });
+
+      } catch (error) {
+        log.error('hooks', 'Brain update hook failed', {
           meshInstance: context.meshInstance,
           error: (error as Error).message,
         });

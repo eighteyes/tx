@@ -1,0 +1,126 @@
+# test-fsm-validation/config.yaml
+# E2E Test Mesh - Validates FSM state management, persistence, and routing
+#
+# Purpose:
+# - Prove state persists in SQLite between worker invocations
+# - Prove invalid transitions are rejected (message blocked)
+# - Prove gates halt transitions until satisfied
+# - Prove context variables update and persist
+# - Prove state controls which agents can be contacted
+
+mesh: test-fsm-validation
+description: "FSM validation test mesh - 3-state workflow with gates and context tracking"
+
+agents:
+  - name: planner
+    model: haiku
+    prompt: planner.md
+    # Handles planning state - analyzes requirements
+
+  - name: implementer
+    model: haiku
+    prompt: implementer.md
+    # Handles implementation state - writes code
+
+  - name: reviewer
+    model: haiku
+    prompt: reviewer.md
+    # Handles review state - validates output
+
+entry_point: planner
+completion_agent: reviewer
+
+# FSM Configuration
+fsm:
+  initial: planning
+
+  # Context variables - these should persist and accumulate
+  context:
+    iteration: 0
+    checkpoints: ""
+    last_agent: ""
+    total_transitions: 0
+
+  # State definitions
+  states:
+    # ============================================================
+    # PLANNING: Initial state - only planner agent allowed
+    # ============================================================
+    planning:
+      agents: [planner]
+      onEnter: scripts/on-enter-planning.sh
+      exit:
+        # Set context variables when exiting
+        set:
+          iteration: "$iteration + 1"
+          checkpoints: "planning-done"
+          last_agent: "planner"
+          total_transitions: "$total_transitions + 1"
+        # Gate: planner must indicate readiness
+        gates:
+          planner:
+            - plan-ready
+        # Exit routing
+        when:
+          - condition: "$iteration >= 1"
+            target: implementation
+        default: implementation
+
+    # ============================================================
+    # IMPLEMENTATION: Only implementer agent allowed
+    # ============================================================
+    implementation:
+      agents: [implementer]
+      # Entry gates - validate BEFORE entering state
+      entry_gates:
+        - check-plan-exists
+      onEnter: scripts/on-enter-implementation.sh
+      exit:
+        set:
+          iteration: "$iteration + 1"
+          checkpoints: "$checkpoints,implementation-done"
+          last_agent: "implementer"
+          total_transitions: "$total_transitions + 1"
+        gates:
+          implementer:
+            - code-ready
+        when:
+          - condition: "$iteration >= 2"
+            target: review
+        default: review
+
+    # ============================================================
+    # REVIEW: Final state - only reviewer agent allowed
+    # ============================================================
+    review:
+      agents: [reviewer]
+      entry_gates:
+        - check-code-exists
+      onEnter: scripts/on-enter-review.sh
+      exit:
+        set:
+          checkpoints: "$checkpoints,review-done"
+          last_agent: "reviewer"
+          total_transitions: "$total_transitions + 1"
+        # No gates - review can complete freely
+        default: complete
+
+    # ============================================================
+    # COMPLETE: Terminal state
+    # ============================================================
+    complete:
+      agents: [reviewer]
+
+  # Script definitions
+  scripts:
+    # Gate: Check if planning output exists
+    plan-ready: scripts/gate-plan-ready.sh
+
+    # Gate: Check if implementation output exists
+    code-ready: scripts/gate-code-ready.sh
+
+    # Entry gate: Verify plan artifact exists before implementation
+    check-plan-exists: scripts/gate-check-plan-exists.sh
+
+    # Entry gate: Verify code artifact exists before review
+    check-code-exists: scripts/gate-check-code-exists.sh

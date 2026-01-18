@@ -91,12 +91,32 @@ describe('V4 Mesh Validator Test', () => {
       assert.strictEqual(result.valid, true, `Errors: ${result.errors.join(', ')}`);
     });
 
-    test('should warn about missing entry_point', () => {
+    test('should auto-set entry_point for single-agent mesh', () => {
       const config: MeshConfigSchema = {
         mesh: 'test',
         agents: [
           { name: 'worker', model: 'haiku', prompt: 'prompts/worker.md' }
         ]
+      };
+      const result = MeshValidator.validate(config);
+      assert.strictEqual(result.valid, true);
+      // Single-agent meshes auto-default entry_point, so no warning
+      assert.ok(!result.warnings.some(w => w.includes('No entry_point specified')));
+      // Config should have entry_point auto-set
+      assert.strictEqual(result.config?.entry_point, 'worker');
+    });
+
+    test('should warn about missing entry_point for multi-agent mesh', () => {
+      const config: MeshConfigSchema = {
+        mesh: 'test',
+        agents: [
+          { name: 'worker1', model: 'haiku', prompt: 'prompts/worker.md' },
+          { name: 'worker2', model: 'haiku', prompt: 'prompts/worker.md' }
+        ],
+        routing: {
+          worker1: { complete: { worker2: 'Continue' } },
+          worker2: { complete: { core: 'Done' } }
+        }
       };
       const result = MeshValidator.validate(config);
       assert.strictEqual(result.valid, true);
@@ -330,6 +350,65 @@ describe('V4 Mesh Validator Test', () => {
     });
   });
 
+  describe('validate - FSM and routing dependency', () => {
+    test('should fail if FSM exists without routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }],
+        fsm: {
+          initial: 'start',
+          states: {
+            start: {
+              agents: ['worker']
+            }
+          },
+          scripts: {}
+        }
+      });
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes("FSM requires 'routing' configuration")));
+    });
+
+    test('should pass if FSM exists with routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }],
+        routing: {
+          worker: {
+            complete: {
+              worker: 'Continue work'
+            }
+          }
+        },
+        fsm: {
+          initial: 'start',
+          states: {
+            start: {
+              agents: ['worker']
+            }
+          },
+          scripts: {}
+        }
+      });
+      assert.strictEqual(result.valid, true);
+    });
+
+    test('should pass if routing exists without FSM', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }],
+        routing: {
+          worker: {
+            complete: {
+              worker: 'Continue work'
+            }
+          }
+        }
+      });
+      assert.strictEqual(result.valid, true);
+    });
+  });
+
   describe('validateAll', () => {
     test('should validate multiple configs', () => {
       const configs = new Map<string, unknown>();
@@ -347,6 +426,193 @@ describe('V4 Mesh Validator Test', () => {
       assert.strictEqual(result.totalErrors, 1);
       assert.ok(result.results.get('valid')?.valid);
       assert.ok(!result.results.get('invalid')?.valid);
+    });
+  });
+
+  describe('validate - multi-agent routing validation', () => {
+    test('should fail if multi-agent mesh has no routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'worker1', model: 'haiku', prompt: 'test.md' },
+          { name: 'worker2', model: 'haiku', prompt: 'test.md' }
+        ]
+      });
+      assert.strictEqual(result.valid, false);
+      assert.ok(result.errors.some(e => e.includes('Multi-agent mesh missing routing configuration')));
+    });
+
+    test('should pass if multi-agent mesh has routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'worker1', model: 'haiku', prompt: 'test.md' },
+          { name: 'worker2', model: 'haiku', prompt: 'test.md' }
+        ],
+        routing: {
+          worker1: { complete: { worker2: 'Continue' } },
+          worker2: { complete: { core: 'Done' } }
+        }
+      });
+      assert.strictEqual(result.valid, true);
+    });
+
+    test('should warn if agent has no routing in multi-agent mesh', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'worker1', model: 'haiku', prompt: 'test.md' },
+          { name: 'worker2', model: 'haiku', prompt: 'test.md' }
+        ],
+        routing: {
+          worker1: { complete: { core: 'Done' } }
+          // worker2 has no routing
+        }
+      });
+      assert.strictEqual(result.valid, true);
+      assert.ok(result.warnings.some(w => w.includes("Agent 'worker2' has no routing configuration")));
+    });
+
+    test('should not require routing for single-agent mesh', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md' }]
+      });
+      assert.strictEqual(result.valid, true);
+      assert.ok(!result.errors.some(e => e.includes('routing')));
+    });
+  });
+
+  describe('validate - FSM state agent routing', () => {
+    test('should not warn about ensemble agents without routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'coordinator', model: 'haiku', prompt: 'test.md' },
+          { name: 'reviewer1', model: 'sonnet', prompt: 'test.md' },
+          { name: 'reviewer2', model: 'sonnet', prompt: 'test.md' },
+          { name: 'synthesizer', model: 'sonnet', prompt: 'test.md' }
+        ],
+        routing: {
+          coordinator: { complete: { core: 'Subtasks created' } },
+          synthesizer: { complete: { core: 'Done' } }
+          // reviewer1 and reviewer2 have no routing - but they're ensemble agents
+        },
+        fsm: {
+          initial: 'start',
+          states: {
+            start: {
+              agents: ['coordinator'],
+              exit: { default: 'review' }
+            },
+            review: {
+              type: 'ensemble',
+              ensemble: {
+                agents: ['reviewer1', 'reviewer2'],
+                aggregation: 'concat'
+              },
+              exit: { default: 'synthesize' }
+            },
+            synthesize: {
+              agents: ['synthesizer'],
+              exit: { default: 'complete' }
+            },
+            complete: {
+              agents: ['core']
+            }
+          },
+          scripts: {}
+        }
+      });
+      assert.strictEqual(result.valid, true);
+      // Should not warn about reviewer1 or reviewer2 - they're ensemble agents
+      assert.ok(!result.warnings.some(w => w.includes("reviewer1") && w.includes("no routing")));
+      assert.ok(!result.warnings.some(w => w.includes("reviewer2") && w.includes("no routing")));
+    });
+
+    test('should warn about normal state agents without routing', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'coordinator', model: 'haiku', prompt: 'test.md' },
+          { name: 'processor', model: 'sonnet', prompt: 'test.md' },
+          { name: 'finalizer', model: 'sonnet', prompt: 'test.md' }
+        ],
+        routing: {
+          coordinator: { complete: { processor: 'Hand off' } },
+          finalizer: { complete: { core: 'Done' } }
+          // processor has no routing but is used in normal state
+        },
+        fsm: {
+          initial: 'start',
+          states: {
+            start: {
+              agents: ['coordinator'],
+              exit: { default: 'process' }
+            },
+            process: {
+              agents: ['processor'],  // Normal state, not ensemble
+              exit: { default: 'finalize' }
+            },
+            finalize: {
+              agents: ['finalizer'],
+              exit: { default: 'complete' }
+            },
+            complete: {
+              agents: ['core']
+            }
+          },
+          scripts: {}
+        }
+      });
+      assert.strictEqual(result.valid, true);
+      // Should warn about processor - it's a normal state agent without routing
+      assert.ok(result.warnings.some(w => w.includes("processor") && w.includes("no routing")));
+    });
+
+    test('should handle ensemble with single agent + count pattern', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [
+          { name: 'coordinator', model: 'haiku', prompt: 'test.md' },
+          { name: 'worker', model: 'sonnet', prompt: 'test.md' },
+          { name: 'synthesizer', model: 'sonnet', prompt: 'test.md' }
+        ],
+        routing: {
+          coordinator: { complete: { core: 'Subtasks created' } },
+          synthesizer: { complete: { core: 'Done' } }
+          // worker has no routing - but it's used as ensemble agent with count
+        },
+        fsm: {
+          initial: 'start',
+          states: {
+            start: {
+              agents: ['coordinator'],
+              exit: { default: 'work' }
+            },
+            work: {
+              type: 'ensemble',
+              ensemble: {
+                agent: 'worker',  // Single agent spawned multiple times
+                count: 3,
+                aggregation: 'concat'
+              },
+              exit: { default: 'synthesize' }
+            },
+            synthesize: {
+              agents: ['synthesizer'],
+              exit: { default: 'complete' }
+            },
+            complete: {
+              agents: ['core']
+            }
+          },
+          scripts: {}
+        }
+      });
+      assert.strictEqual(result.valid, true);
+      // Should not warn about worker - it's an ensemble agent
+      assert.ok(!result.warnings.some(w => w.includes("worker") && w.includes("no routing")));
     });
   });
 });

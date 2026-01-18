@@ -13,45 +13,46 @@ agents:
     # Does NOT do creative work
 
   - name: dramaturg
-    model: haiku
+    model: sonnet
     prompt: dramaturg/prompt.md
-    # Story-aware outcome suggestions
+    # phase 1 - Story-aware outcome suggestions
     # Reads arc context, suggests weight adjustments
+
+  - name: scene-crafter
+    model: sonnet
+    prompt: scene-crafter/prompt.md
+    # phase 1 - Scene structure, beats, transitions, pacing
+    # Identifies decision points for player agency
 
   - name: system
     model: sonnet
     prompt: system/prompt.md
-    # Mechanics engine, outcome tables, trait tracking
+    # phase 2 - Mechanics engine, outcome tables, trait tracking
     # Accepts dramaturg notes for story-aware weighting
 
   - name: cast
     model: sonnet
     prompt: cast/prompt.md
-    # NPC voices, reactions, character consistency
-
-  - name: scene-crafter
-    model: haiku
-    prompt: scene-crafter/prompt.md
-    # Scene structure, beats, transitions, pacing
-    # Identifies decision points for player agency
+    # phase 2 - NPC voices, reactions, character consistency
 
   - name: narrator
     model: opus
     prompt: narrator/prompt.md
-    # Prose rendering with staged build (1.5-2k words)
+    # phase 2,3 - Prose rendering with staged build (1.5-2k words)
     # Orchestrates dramaturg, system, cast, scene-crafter
     # Handles mid-turn player decisions
 
-  - name: oracle
-    model: haiku
-    prompt: oracle/prompt.md
-    # Continuity validation against established facts
 
   - name: editor
-    model: sonnet
+    model: opus
     prompt: editor/prompt.md
     # Adversarial prose review against author.yaml
-    # Only fires if oracle passes
+    # Works with narrator in phase 3
+
+  - name: oracle
+    model: sonnet
+    prompt: oracle/prompt.md
+    # Continuity validation + knowledge queries for entity data
 
   - name: scribe
     model: haiku
@@ -59,23 +60,103 @@ agents:
     # Context compression, state management, game canon promotion
     # Only fires if editor passes (or max iterations)
 
+  # ==========================================
+  # LINT LADDER - Parallel mechanical linters
+  # ==========================================
+
+  - name: lint-coordinator
+    model: haiku
+    prompt: linters/lint-coordinator.md
+    # Orchestrates parallel dispatch to all linters
+    # Aggregates violations into violations.yaml
+    # Forwards to editor for holistic review
+
+  - name: lint-forbidden-words
+    model: haiku
+    prompt: linters/forbidden-words.md
+    # Mechanical: "suddenly", "seemed", "very", etc.
+    # Concordance overuse detection
+
+  - name: lint-patterns
+    model: sonnet
+    prompt: linters/patterns.md
+    # Creative: "She realized", "Fear washed over", etc.
+    # Patterns that need narrator rewrite
+
+  - name: lint-ai-tells
+    model: haiku
+    prompt: linters/ai-tells.md
+    # Mechanical: "amidst", "whilst", "orbs", etc.
+    # Simple word swaps
+
+  - name: lint-cadence
+    model: sonnet
+    prompt: linters/cadence.md
+    # Creative: Sentence length distribution
+    # Rhythm analysis
+
+  - name: lint-dialogue
+    model: haiku
+    prompt: linters/dialogue.md
+    # Mechanical: Tags, adverbs
+    # Coherence check
+
+  - name: lint-litotes
+    model: sonnet
+    prompt: linters/litotes.md
+    # Creative: "not X, but Y" patterns
+    # Budget: 1-2 per scene
+
+  - name: lint-metaphor
+    model: sonnet
+    prompt: linters/metaphor.md
+    # Creative: Repeated sensory channels
+    # One peak expression per channel per scene
+
+  - name: lint-body-first
+    model: sonnet
+    prompt: linters/body-first.md
+    # Creative: Scene opening physical grounding
+    # Body before thought
+
 entry_point: coordinator
 completion_agent: coordinator
 
-# Session persistence
-continuation:
-  type: session
+# Session persistence (only coordinator tracks state across turns)
+continuation: true
 
-# Coordinator supervises, narrator orchestrates sub-agents
+# Phase-based routing with direct agent communication
+# Phase 1: DRAMATURG + SCENE-CRAFTER (prep)
+# Phase 2: NARRATOR + SYSTEM + CAST (render)
+# Phase 3: LINT-COORDINATOR → 8 LINTERS (parallel) → EDITOR → NARRATOR (review loop)
+# Coordinator kicks off each phase, agents communicate directly within phase
+#
+# Lint Ladder Flow:
+#   Coordinator → lint-coordinator
+#                 ↓
+#       [8 linters in parallel]
+#                 ↓
+#       lint-coordinator aggregates → violations.yaml
+#                 ↓
+#              Editor (holistic review)
+#                 ↓
+#       Editor ↔ Narrator (revision loop, up to 3 iterations)
+#                 ↓
+#       Editor → Coordinator (CLEAN or MAX_ITERATIONS)
+
 routing:
   coordinator:
     ask:
-      narrator: "Advance game / render prose / make new game"
+      narrator: "Render prose (phase 2)"
+      lint-coordinator: "Lint prose (phase 3 - parallel linters)"
       oracle: "Validate continuity"
-      editor: "Review prose against author.yaml"
       scribe: "Compress turn state"
+      dramaturg: "Analyze story context"
+      scene-crafter: "Outline scene structure"
+      system: "Need mechanical resolution"
+      editor: "Review prose"
     ask-human:
-      core: "Need player input"
+      core: "Need player input OR game state anomaly"
     complete:
       core: "Turn complete, prose delivered"
 
@@ -85,10 +166,12 @@ routing:
       system: "Need mechanical resolution"
       cast: "Need character reactions"
       scene-crafter: "Outline scene structure"
+      oracle: "Knowledge query"              # NEW: Query entity data during prose generation
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
-      coordinator: "Prose rendered"
+      coordinator: "Initial prose rendered"
+      editor: "Revised prose ready"  # Direct response to editor in phase 3
 
   dramaturg:
     ask-response:
@@ -109,22 +192,77 @@ routing:
       coordinator: "Prep outline complete"
 
   oracle:
+    ask:
+      narrator: "fix violations"
     ask-response:
       coordinator: "Continuity validation complete"
+      narrator: "Knowledge query response"     # NEW: Return entity data to narrator
+
+  # ==========================================
+  # LINT LADDER ROUTING
+  # ==========================================
+
+  lint-coordinator:
+    ask:
+      lint-forbidden-words: "Check forbidden words"
+      lint-patterns: "Check patterns"
+      lint-ai-tells: "Check AI tells"
+      lint-cadence: "Check cadence"
+      lint-dialogue: "Check dialogue"
+      lint-litotes: "Check litotes"
+      lint-metaphor: "Check metaphor"
+      lint-body-first: "Check body-first"
+    ask-response:
+      editor: "Violations aggregated"
+
+  lint-forbidden-words:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-patterns:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-ai-tells:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-cadence:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-dialogue:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-litotes:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-metaphor:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-body-first:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  # ==========================================
+  # EDITOR (now receives from lint-coordinator)
+  # ==========================================
 
   editor:
+    ask:
+      narrator: "Fix violations"  # Direct ask to narrator for revisions
     ask-response:
-      coordinator: "Prose review complete"
+      coordinator: "Review complete (CLEAN or max iterations)"
 
   scribe:
     ask-response:
       coordinator: "Turn compression complete"
 
-# Editor iteration config
-iteration:
-  editor_narrator_loop:
-    maxIterations: 3
-    onMaxReached: proceed_with_flag  # Don't block, flag for human review
+# Editor manages its own iteration loop (max 3)
+# Coordinator only sees: phase started → phase complete
 
 # Workspace configuration
 # Base workspace for agents (doesn't require game context)

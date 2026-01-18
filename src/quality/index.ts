@@ -7,7 +7,6 @@
 // Core types
 export type {
   GateType,
-  GradedConfig,
   FailAction,
   EvalStage,
   QualityStackConfig,

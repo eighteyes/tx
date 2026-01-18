@@ -72,6 +72,7 @@ export abstract class StateMachine<S, C extends Context> extends EventEmitter {
   protected history: StateTransition<S>[];
   protected validators: Map<string, Guard<S, C>[]>;
   protected middleware: Middleware<S, C>[];
+  public lastTransitionAt: number;
 
   constructor(id: string, initialState: S, context: C) {
     super();
@@ -81,6 +82,7 @@ export abstract class StateMachine<S, C extends Context> extends EventEmitter {
     this.history = [];
     this.validators = new Map();
     this.middleware = [];
+    this.lastTransitionAt = Date.now();
   }
 
   /** Public read-only access to current state */
@@ -133,13 +135,15 @@ export abstract class StateMachine<S, C extends Context> extends EventEmitter {
     // Atomic state update
     const previousState = this.state;
     this.state = nextState;
+    const now = Date.now();
+    this.lastTransitionAt = now;
 
     // Record in history
     this.history.push({
       from: previousState,
       to: nextState,
       transitionName,
-      timestamp: Date.now(),
+      timestamp: now,
       metadata
     });
 
