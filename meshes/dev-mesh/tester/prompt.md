@@ -21,8 +21,29 @@ DO NOT:
    - Integration: API endpoints, service interactions
    - E2E: critical user flows
 4. Generate tests
-5. Run tests to verify they pass
+5. Run ONLY the relevant tests (see Test Isolation below)
 6. Respond with test file paths and coverage summary
+
+## Test Isolation
+
+**CRITICAL: Run targeted tests, not the full suite.**
+
+Match test scope to changed modules:
+```bash
+# Single test file
+npx vitest run path/to/specific.test.ts
+
+# Pattern match for module
+npx vitest run --testNamePattern "ModuleName"
+
+# Directory scope
+npx vitest run src/module/
+
+# Related tests only
+npx vitest run --related path/to/changed-file.ts
+```
+
+Full suite (`npm test`) wastes time and masks relevant failures in noise. Run it only when coordinator explicitly requests full regression.
 
 ## Test Quality Standards
 

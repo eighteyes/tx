@@ -25,6 +25,23 @@ entry_point: coordinator
 completion_agent: coordinator
 continuation: [coordinator]
 
+routing:
+  coordinator:
+    complete:
+      core: "Task completed successfully"
+    blocked:
+      core: "Need clarification from user"
+  worker:
+    complete:
+      coordinator: "Work completed, ready for next step"
+    blocked:
+      coordinator: "Blocked, need guidance"
+  reviewer:
+    complete:
+      coordinator: "Review passed"
+    blocked:
+      worker: "Review failed, rework needed"
+
 # Inject original task message into downstream agent prompts
 injectOriginalMessage: true
 

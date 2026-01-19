@@ -16,6 +16,23 @@ agents:
 
 entry_point: literature-review
 
+routing:
+  literature-review:
+    complete:
+      core: "Research complete"
+    blocked:
+      core: "Need more information"
+  interviews:
+    complete:
+      literature-review: "Interview analysis complete"
+    blocked:
+      literature-review: "Need guidance"
+  statistics:
+    complete:
+      literature-review: "Statistical analysis complete"
+    blocked:
+      literature-review: "Need guidance"
+
 ensemble:
   coordinator: literature-review
   agents: [literature-review, interviews, statistics]

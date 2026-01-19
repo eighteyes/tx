@@ -18,6 +18,13 @@ agents:
 entry_point: worker
 completion_agent: worker
 
+routing:
+  worker:
+    complete:
+      core: "Task complete"
+    blocked:
+      core: "Need input"
+
 # FSM Configuration with context variables and descriptions
 fsm:
   initial: start
@@ -43,14 +50,25 @@ fsm:
       exit:
         set:
           iteration: "$iteration + 1"
-        run: next
+        when:
+          - condition: "true"
+            target: next
+        default: next
 
     next:
       agents: [worker]
       exit:
         set:
           iteration: "$iteration + 1"
-        run: complete
+        when:
+          - condition: "true"
+            target: complete
+        default: complete
 
     complete:
       agents: [worker]
+
+  # Required scripts section
+  scripts:
+    validate: |
+      exit 0

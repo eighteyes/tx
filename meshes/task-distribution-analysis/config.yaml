@@ -28,6 +28,38 @@ agents:
 
 entry_point: analyst
 
+routing:
+  analyst:
+    complete:
+      synthesizer: "Analysis distributed"
+    blocked:
+      core: "Need clarification"
+  domain-expert-1:
+    complete:
+      analyst: "Expert analysis complete"
+    blocked:
+      analyst: "Need more info"
+  domain-expert-2:
+    complete:
+      analyst: "Expert analysis complete"
+    blocked:
+      analyst: "Need more info"
+  domain-expert-3:
+    complete:
+      analyst: "Expert analysis complete"
+    blocked:
+      analyst: "Need more info"
+  domain-expert-4:
+    complete:
+      analyst: "Expert analysis complete"
+    blocked:
+      analyst: "Need more info"
+  synthesizer:
+    complete:
+      core: "Synthesis complete"
+    blocked:
+      analyst: "Need refinement"
+
 task_distribution:
   spawner: analyst
   subagents: [domain-expert-1, domain-expert-2, domain-expert-3, domain-expert-4]

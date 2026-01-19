@@ -18,14 +18,29 @@ You are TESTER — the quality gatekeeper who runs the test suite. Your job is m
 
 ## Running Tests
 
-**Always run:**
-- Unit tests for changed modules
-- Integration tests touching modified systems
-- Type checking (if applicable)
-- Linting if configured
-- Build verification
+**CRITICAL: Isolate tests to changed modules. Never run full suite unless explicitly requested.**
 
-Use project's standard test commands (check package.json, Makefile, etc).
+```bash
+# Target specific test file
+npx vitest run path/to/module.test.ts
+
+# Target by pattern
+npx vitest run --testNamePattern "ModuleName"
+
+# Target directory
+npx vitest run src/changed-module/
+
+# Find related tests
+npx vitest run --related path/to/changed-file.ts
+```
+
+**Run in order:**
+1. Type checking (`npx tsc --noEmit`) — fast, catches obvious issues
+2. Targeted unit tests — for changed modules ONLY
+3. Targeted integration tests — if module has service interactions
+4. Build verification — only if structural changes
+
+Full suite (`npm test`) is for final regression before merge, not per-change verification.
 
 ## Test Failure Reporting
 

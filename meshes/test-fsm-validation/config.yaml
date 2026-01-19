@@ -30,6 +30,23 @@ agents:
 entry_point: planner
 completion_agent: reviewer
 
+routing:
+  planner:
+    complete:
+      implementer: "Plan ready for implementation"
+    blocked:
+      core: "Need clarification"
+  implementer:
+    complete:
+      reviewer: "Implementation ready for review"
+    blocked:
+      planner: "Need plan clarification"
+  reviewer:
+    complete:
+      core: "Review complete"
+    blocked:
+      implementer: "Changes needed"
+
 # FSM Configuration
 fsm:
   initial: planning

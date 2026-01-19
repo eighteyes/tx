@@ -28,6 +28,38 @@ agents:
 
 entry_point: spawner
 
+routing:
+  spawner:
+    complete:
+      synthesizer: "Subtasks spawned"
+    blocked:
+      core: "Need task clarification"
+  worker-1:
+    complete:
+      spawner: "Work complete"
+    blocked:
+      spawner: "Blocked"
+  worker-2:
+    complete:
+      spawner: "Work complete"
+    blocked:
+      spawner: "Blocked"
+  analyzer-1:
+    complete:
+      synthesizer: "Analysis complete"
+    blocked:
+      spawner: "Need more data"
+  analyzer-2:
+    complete:
+      synthesizer: "Analysis complete"
+    blocked:
+      spawner: "Need more data"
+  synthesizer:
+    complete:
+      core: "Synthesis complete"
+    blocked:
+      spawner: "Need refinement"
+
 task_distribution:
   spawner: spawner
   subagents: [worker-1, worker-2]

@@ -19,3 +19,25 @@ agents:
     prompt: writer/prompt.md
 
 entry_point: worker
+
+routing:
+  worker:
+    complete:
+      core: "Worker completed"
+    blocked:
+      core: "Worker blocked"
+  asker:
+    complete:
+      core: "Asker completed"
+    blocked:
+      core: "Asker blocked"
+  looper:
+    complete:
+      core: "Looper completed"
+    blocked:
+      core: "Looper blocked"
+  writer:
+    complete:
+      core: "Writer completed"
+    blocked:
+      core: "Writer blocked"
