@@ -57,6 +57,13 @@ export function Navigation() {
           Logs
         </NavLink>
 
+        <NavLink
+          to="/core"
+          className={({ isActive }) => `nav__link nav__link--core ${isActive ? 'nav__link--active' : ''}`}
+        >
+          Core Agent
+        </NavLink>
+
         {/* Mesh breadcrumb when viewing a specific mesh */}
         {currentMesh && (
           <>

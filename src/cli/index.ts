@@ -313,7 +313,10 @@ async function main() {
         continue: Boolean(flags.c || flags.continue),
         model: flags.model as string | undefined,
         low: Boolean(flags.low),
-        ultraLow: Boolean(flags.ultraLow)
+        ultraLow: Boolean(flags.ultraLow),
+        serve: Boolean(flags.serve),
+        servePort: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
+        serveHost: flags.H as string || flags.host as string,
       });
       break;
 

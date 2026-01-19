@@ -8,6 +8,7 @@ import { SessionRunner } from './components/SessionRunner';
 import { Workspace } from './components/Workspace';
 import { SessionsPage } from './components/SessionsPage';
 import { LogsViewer } from './components/LogsViewer';
+import { CoreChat } from './components/CoreChat';
 import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -36,6 +37,9 @@ function App() {
 
               {/* Logs viewer */}
               <Route path="/logs" element={<LogsViewer />} />
+
+              {/* Core Agent Web Interface */}
+              <Route path="/core" element={<CoreChat />} />
             </Routes>
           </Layout>
         </Router>

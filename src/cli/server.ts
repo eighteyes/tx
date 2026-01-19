@@ -36,6 +36,7 @@ import { WorkspaceController, PathNotFoundError, PathSecurityError } from '../co
 import { LogsController } from '../controllers/logs-controller.ts';
 import { SessionsController } from '../controllers/sessions-controller.ts';
 import { StatsController } from '../controllers/stats-controller.ts';
+import { CoreWebSocketHandler } from '../core/core-websocket.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,7 @@ interface ServerOptions {
   concurrency?: number;
   authEnabled?: boolean;
   noDb?: boolean;
+  embedded?: boolean; // When true, returns shutdown fn instead of setting signal handlers
 }
 
 interface RequestContext {
@@ -678,7 +680,7 @@ function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<
 /**
  * Start tx-server
  */
-export async function server(options: ServerOptions): Promise<void> {
+export async function server(options: ServerOptions): Promise<(() => Promise<void>) | void> {
   const port = options.port || parseInt(process.env.TX_SERVER_PORT || '6000', 10);
   const host = options.host || process.env.TX_SERVER_HOST || '0.0.0.0';
   const concurrency = options.concurrency || parseInt(process.env.TX_WORKER_CONCURRENCY || '10', 10);
@@ -935,25 +937,44 @@ export async function server(options: ServerOptions): Promise<void> {
     }
   });
 
-  // Create WebSocket server
-  const wss = new WebSocketServer({ server: httpServer });
+  // Create persistent core WebSocket handler (handles /v1/core/stream)
+  const coreWsHandler = new CoreWebSocketHandler({
+    coreConfig: {
+      workDir: workDir,
+      msgsDir: path.join(workDir, '.ai', 'tx', 'msgs'),
+      meshesDir: meshesDir,
+      model: 'sonnet',
+    },
+  });
+  coreWsHandler.attach(httpServer);
+  log.info('server', 'Core WebSocket handler attached', { path: '/v1/core/stream' });
 
-  wss.on('connection', async (ws, req) => {
+  // Create WebSocket server for session streams (handles /v1/sessions/:id/stream)
+  const wss = new WebSocketServer({ noServer: true });
+
+  // Upgrade HTTP requests to WebSocket for session streams
+  httpServer.on('upgrade', (request, socket, head) => {
+    const url = new URL(request.url || '/', `http://${request.headers.host}`);
+    const match = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/stream$/);
+
+    // If it matches session stream path, handle with wss
+    if (match) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request, match[1]); // Pass sessionId as third arg
+      });
+    }
+    // If not a session stream and not handled by core handler, close the socket
+    // Note: core handler uses its own WebSocketServer which has its own upgrade handler
+  });
+
+  wss.on('connection', async (ws, req, sessionIdParam?: string) => {
     // Check if session management is available (WebSocket requires full mode)
     if (!sessionManager || !storage || !quotaManager) {
       ws.close(4503, 'Session management not available in no-db mode');
       return;
     }
 
-    const url = new URL(req.url || '/', `http://${req.headers.host}`);
-    const match = url.pathname.match(/^\/v1\/sessions\/([^/]+)\/stream$/);
-
-    if (!match) {
-      ws.close(4400, 'Invalid WebSocket path');
-      return;
-    }
-
-    const sessionId = match[1];
+    const sessionId = sessionIdParam as string;
 
     // Authenticate WebSocket
     const authResult = auth.authenticate(req);
@@ -1033,9 +1054,12 @@ export async function server(options: ServerOptions): Promise<void> {
     });
   });
 
-  // Graceful shutdown
+  // Graceful shutdown (exported for embedded use)
   const shutdown = async () => {
     log.info('server', 'Shutting down...');
+
+    // Shutdown core WebSocket handler
+    await coreWsHandler.shutdown();
 
     wss.close();
     httpServer.close();
@@ -1047,12 +1071,17 @@ export async function server(options: ServerOptions): Promise<void> {
       sessionManager!.stop();
       await storage!.close();
     }
-
-    process.exit(0);
   };
 
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  // Only set up signal handlers if running standalone
+  if (!options.embedded) {
+    const standaloneShutdown = async () => {
+      await shutdown();
+      process.exit(0);
+    };
+    process.on('SIGINT', standaloneShutdown);
+    process.on('SIGTERM', standaloneShutdown);
+  }
 
   // Start listening
   httpServer.listen(port, host, () => {
@@ -1072,6 +1101,12 @@ export async function server(options: ServerOptions): Promise<void> {
     WS     /v1/sessions/:id/stream   Real-time stream
 `;
 
+    const coreEndpoints = `
+  Core Agent (Persistent):
+    WS     /v1/core/stream           Persistent core agent WebSocket
+    WEB    /core                     Web interface for core agent
+`;
+
     const config = noDb ? `
   Configuration:
     MODE:                 no-db (static serving + mesh CRUD only)
@@ -1087,7 +1122,7 @@ export async function server(options: ServerOptions): Promise<void> {
 
     console.log(`
   tx-server running on http://${host}:${port}
-${sessionEndpoints}
+${sessionEndpoints}${coreEndpoints}
   Mesh Management:
     GET    /v1/meshes                List all meshes
     GET    /v1/meshes/:name          Get mesh config
@@ -1095,4 +1130,9 @@ ${sessionEndpoints}
     POST   /v1/meshes/:name/validate Validate mesh config
 ${config}`);
   });
+
+  // Return shutdown function for embedded mode
+  if (options.embedded) {
+    return shutdown;
+  }
 }

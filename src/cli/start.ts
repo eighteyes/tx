@@ -12,12 +12,16 @@ import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/in
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
+import { server as startServer } from './server.ts';
 
 export interface StartOptions {
   continue?: boolean;
   model?: string;  // claude model: opus, sonnet, haiku
   low?: boolean;   // low cost mode (opus -> sonnet)
   ultraLow?: boolean; // ultra low cost mode (all -> haiku)
+  serve?: boolean; // start HTTP server alongside core agent
+  servePort?: number; // server port (default: 9898)
+  serveHost?: string; // server host (default: 0.0.0.0)
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -378,6 +382,21 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   await dispatcher.start(consumer);
 
+  // Start full HTTP/WebSocket server if --serve flag is set
+  let serverShutdown: (() => Promise<void>) | null = null;
+  if (options?.serve) {
+    const port = options.servePort ?? 8088;
+    const host = options.serveHost || '0.0.0.0';
+    const shutdownFn = await startServer({
+      port,
+      host,
+      embedded: true, // Returns shutdown fn instead of setting signal handlers
+    });
+    if (typeof shutdownFn === 'function') {
+      serverShutdown = shutdownFn;
+    }
+  }
+
   console.log('\n✅ TX V4 services ready!');
   console.log('Attaching to session... (Ctrl+B D to detach)\n');
 
@@ -417,6 +436,12 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Stop self-healing components
   staleCleaner.stop();
   deadlockDetector.stop();
+
+  // Stop server if running
+  if (serverShutdown) {
+    await serverShutdown();
+    log.info('server', 'Server stopped');
+  }
 
   await dispatcher.stop(consumer);
   await consumer.stop();
