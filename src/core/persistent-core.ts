@@ -12,12 +12,11 @@
  */
 
 import { EventEmitter } from 'node:events';
-import path from 'node:path';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { query, type SDKResultMessage, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import type { SemanticModel } from '../shared/types.ts';
+import { buildCorePrompt } from '../prompt/core.js';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -87,135 +86,18 @@ export class PersistentCore extends EventEmitter {
 
   /**
    * Get the system prompt for the persistent core agent
+   * Uses the unified core prompt with optional web UI extensions
    */
   private getSystemPrompt(): string {
-    const meshList = this.buildMeshList();
+    // Web UI-specific additions (placeholder for future capabilities)
+    const uiExtensions = `## Web Interface Notes
 
-    return `# TX V4 Core Agent (Web Interface)
+This core agent is running in the web interface. The UI will display ask-human requests and wait for user responses.`;
 
-You are the core agent for TX, running in the browser interface. You coordinate work by writing messages to meshes.
-
-## CRITICAL: How Work Gets Done
-
-When the user asks you to do something like "run tests" or "build the feature":
-- DO NOT run shell commands yourself
-- WRITE A TASK MESSAGE to the appropriate mesh
-- The message triggers a worker agent to handle it
-
-**"run X" = write a task message to mesh X**
-
-## Available Meshes
-
-${meshList}
-
-## Message Directory: ${this.config.msgsDir}/
-
-## How to Start Work
-
-Write a \`task\` message to trigger a worker:
-
-\`\`\`markdown
----
-to: test/worker
-from: core/core
-type: task
-msg-id: task-${Date.now()}
-headline: Run the tests
-timestamp: ${new Date().toISOString()}
----
-
-Please run the test suite and report results.
-\`\`\`
-
-Save to: \`${this.config.msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
-
-## Handling Responses
-
-1. \`ask-human\` - Worker needs user input. The web UI will display this and wait for user response.
-2. \`task-complete\` - Worker finished. Display result to user.
-
-## Example ask-response:
-
-\`\`\`markdown
----
-to: test/worker
-from: core/core
-type: ask-response
-msg-id: resp-123
-headline: User response
----
-
-The user said: [their response here]
-\`\`\`
-
-You are now active. When user asks to run something, write a task message.
-`;
-  }
-
-  /**
-   * Build mesh list from available mesh configs
-   */
-  private buildMeshList(): string {
-    const meshesDir = this.config.meshesDir;
-
-    if (!fs.existsSync(meshesDir)) {
-      return '- No meshes available';
-    }
-
-    const meshConfigs: Array<{
-      mesh: string;
-      description?: string;
-      entry_point?: string;
-    }> = [];
-
-    const scanDir = (dir: string, depth: number = 0) => {
-      if (depth > 2) return;
-      if (!fs.existsSync(dir)) return;
-
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      // Check for YAML config
-      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
-      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
-
-      if (yamlConfig) {
-        try {
-          const YAML = require('yaml');
-          const content = fs.readFileSync(path.join(dir, yamlConfig.name), 'utf-8');
-          const config = YAML.parse(content);
-          meshConfigs.push(config);
-        } catch {
-          // Skip invalid configs
-        }
-      } else if (jsonConfig) {
-        try {
-          const content = fs.readFileSync(path.join(dir, 'config.json'), 'utf-8');
-          const config = JSON.parse(content);
-          meshConfigs.push(config);
-        } catch {
-          // Skip invalid configs
-        }
-      }
-
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          scanDir(path.join(dir, entry.name), depth + 1);
-        }
-      }
-    };
-
-    scanDir(meshesDir);
-
-    if (meshConfigs.length === 0) {
-      return '- No meshes available';
-    }
-
-    return meshConfigs
-      .map(mesh => {
-        const entryPoint = mesh.entry_point || 'worker';
-        return `- \`${mesh.mesh}\` - ${mesh.description || 'No description'}\n  Route to: \`${mesh.mesh}/${entryPoint}\``;
-      })
-      .join('\n\n');
+    return buildCorePrompt(
+      { msgsDir: this.config.msgsDir, meshesDir: this.config.meshesDir },
+      uiExtensions
+    );
   }
 
   /**

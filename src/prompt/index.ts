@@ -6,6 +6,10 @@
 export { PromptBuilder } from './builder.js';
 export type { PromptContext, PromptSection, BuildOptions } from './types.js';
 
+// Core agent prompt
+export { buildCorePrompt, buildMeshList } from './core.js';
+export type { CorePromptConfig } from './core.js';
+
 // Convenience functions
 import { PromptBuilder } from './builder.js';
 import type { PromptContext, BuildOptions } from './types.js';
