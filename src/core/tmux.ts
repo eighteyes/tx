@@ -380,21 +380,31 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
   }
 
   const lines = output.split('\n').filter(l => l.trim());
-  const lastLine = lines[lines.length - 1] || '';
 
-  // Check for active processing
-  if (/esc to interrupt/i.test(lastLine) || /esc to cancel/i.test(lastLine)) {
+  // Filter out border/visual lines (box-drawing characters)
+  const contentLines = lines.filter(l => !/^[─━═┃│┌┐└┘├┤┬┴┼╭╮╯╰\-|+]+$/.test(l.trim()));
+
+  // Check last N lines since UI elements may appear after prompt
+  const lastNLines = contentLines.slice(-5);
+  const lastLine = lastNLines[lastNLines.length - 1] || '';
+
+  // Check for active processing in any of the last N lines
+  const escPattern = /esc to (interrupt|cancel)/i;
+  if (lastNLines.some(line => escPattern.test(line))) {
     log.debug('tmux', 'Claude busy: esc prompt visible');
     return false;
   }
 
   // Check for idle prompt - Claude Code uses ⏵⏵, also check > and ❯
-  const isIdle = /[>❯⏵]\s*$/.test(lastLine) || /bypass permissions/i.test(lastLine);
+  const promptPattern = /[>❯⏵]\s*$/;
+  const bypassPattern = /bypass permissions/i;
+  const isIdle = lastNLines.some(line => promptPattern.test(line) || bypassPattern.test(line));
 
   if (!isIdle && idleCheckLogCount <= 10) {
     log.info('tmux', 'Claude not idle', {
       lastLine: JSON.stringify(lastLine.slice(-80)),
-      lineCount: lines.length
+      lineCount: lines.length,
+      contentLineCount: contentLines.length
     });
   }
 
