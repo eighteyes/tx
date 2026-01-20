@@ -15,6 +15,9 @@ import { tool } from './tool.ts';
 import { run } from './run.ts';
 import { server } from './server.ts';
 import { validateMesh } from './validate-mesh.ts';
+import { login } from './login.ts';
+import { logout } from './logout.ts';
+import { deploy } from './deploy.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -106,6 +109,9 @@ Commands:
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
   tx validate-mesh  Validate mesh configuration
+  tx login          Authenticate with tx-server
+  tx logout         Clear stored credentials
+  tx deploy         Deploy mesh to Cloud Run
 
 Run 'tx <command> -h' for command-specific options.`,
 
@@ -296,6 +302,59 @@ Validates:
 Exit codes:
   0 - Valid configuration
   1 - Validation failed (errors or warnings in strict mode)`,
+
+  login: `tx login - Authenticate with tx-server
+
+Usage: tx login [options]
+
+Options:
+  --email <email>       Email address (prompts if not provided)
+  --password <pass>     Password (prompts if not provided)
+  --server <url>        tx-server URL (default: TX_SERVER_URL or https://api.tx.dev)
+
+Examples:
+  tx login
+  tx login --email user@example.com
+  tx login --server https://custom.tx.dev
+
+Environment:
+  TX_SERVER_URL         Default server URL
+  TX_CREDENTIALS_PATH   Override credentials path (default: ~/.tx/credentials.json)
+
+Credentials are saved with 0600 permissions for security.`,
+
+  logout: `tx logout - Clear stored credentials
+
+Usage: tx logout
+
+Clears locally stored credentials and invalidates the refresh token
+on the server (if reachable).
+
+Example:
+  tx logout`,
+
+  deploy: `tx deploy - Deploy mesh to Cloud Run
+
+Usage: tx deploy <mesh> [options]
+
+Arguments:
+  mesh          Name of mesh in meshes/ directory
+
+Options:
+  --region <region>     GCP region (default: us-central1)
+  --version <version>   Version tag (auto-generated if not provided)
+
+Examples:
+  tx deploy research
+  tx deploy my-mesh --region europe-west1
+  tx deploy dev --version v1.2.0
+
+Prerequisites:
+  - Must be logged in (run "tx login" first)
+  - Mesh must exist in meshes/ directory with config.yaml
+
+The command packages your mesh, uploads it to tx-server, and waits
+for the deployment to complete. On success, displays the service URL.`,
 };
 
 function showHelp(cmd: string): void {
@@ -457,6 +516,29 @@ async function main() {
       if (wantsHelp || !args[0]) { showHelp('validate-mesh'); break; }
       await validateMesh(args[0], {
         strict: Boolean(flags.strict)
+      });
+      break;
+
+    case 'login':
+      if (wantsHelp) { showHelp('login'); break; }
+      await login({
+        email: flags.email as string,
+        password: flags.password as string,
+        server: flags.server as string,
+      });
+      break;
+
+    case 'logout':
+      if (wantsHelp) { showHelp('logout'); break; }
+      await logout();
+      break;
+
+    case 'deploy':
+      if (wantsHelp) { showHelp('deploy'); break; }
+      const deployMeshName = args.filter(a => !a.startsWith('-'))[0];
+      await deploy(deployMeshName, {
+        region: flags.region as string,
+        version: flags.version as string,
       });
       break;
 

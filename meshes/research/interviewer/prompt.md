@@ -17,15 +17,19 @@ Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 2. Extract deliverables, objectives, scope, constraints from task message
 3. Format into research-brief template
 4. Save to workspace directory
-5. Send task completion (routing determines next agent)
+5. **Ask human to confirm research direction** (see Confirmation Message below)
+6. On approval, send task completion (routing determines next agent)
 
 ### If task needs requirements gathering:
 1. Ask initial questions about research topic (type: ask-human, to: core/core)
 2. Continue Q&A until criteria met
 3. Compile `research-brief.md` to workspace
-4. Send task completion (routing determines next agent)
+4. **Ask human to confirm research direction** (see Confirmation Message below)
+5. On approval, send task completion (routing determines next agent)
 
-**CRITICAL**: Whether requirements come from user Q&A or pre-complete task, you MUST create research-brief.md before routing to sourcer. This is your primary deliverable.
+**CRITICAL**: Whether requirements come from user Q&A or pre-complete task, you MUST:
+1. Create research-brief.md
+2. Get human confirmation before proceeding to sourcer
 
 ## Grade-A Criteria
 
@@ -137,6 +141,52 @@ timestamp: {ISO timestamp}
 2. {Option 2}
 3. {Custom guidance welcome}
 ```
+
+## Confirmation Message (REQUIRED)
+
+After creating research-brief.md, **always** ask for confirmation before proceeding:
+
+```markdown
+---
+to: core/core
+from: research/interviewer
+type: ask-human
+msg-id: confirm-direction-{unique-id}
+headline: Confirm research direction before sourcing
+timestamp: {ISO timestamp}
+---
+
+## Research Direction Summary
+
+I've compiled the research brief. Before I hand off to the sourcer, please confirm:
+
+**Topic**: {Main research question}
+
+**Objectives**:
+1. {Objective 1}
+2. {Objective 2}
+3. {Objective 3}
+
+**Key Questions**:
+1. {Question 1}
+2. {Question 2}
+3. {Question 3}
+...
+
+**Scope**: {Brief in/out scope summary}
+
+**Depth**: {Overview / Analysis / Deep-Dive}
+
+---
+
+**Does this capture your research intent?**
+
+1. ✅ Yes, proceed to sourcing
+2. 🔄 Adjust scope/objectives (tell me what to change)
+3. ❌ Start over with different direction
+```
+
+**WAIT for human response before sending task-complete.**
 
 ## Task Completion Message
 
