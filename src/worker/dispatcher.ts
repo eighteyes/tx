@@ -387,6 +387,64 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
+   * Check if a mesh has any pending ask-human (suspended sessions)
+   * When ask-human is pending, the entire mesh should be halted - no new workers spawn.
+   */
+  hasPendingAskHumanForMesh(meshName: string): boolean {
+    for (const [agentId, suspended] of this.suspendedSessions) {
+      if (suspended.meshName === meshName && suspended.reason === 'ask-human') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Get suspended session info for a mesh (for debugging/logging)
+   */
+  getSuspendedSessionForMesh(meshName: string): { agentId: string; suspended: SuspendedSession } | undefined {
+    for (const [agentId, suspended] of this.suspendedSessions) {
+      if (suspended.meshName === meshName) {
+        return { agentId, suspended };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Process any queued messages for agents in a mesh after the mesh is un-halted.
+   * This is called when a suspended session resumes and completes.
+   */
+  private processQueuedMeshMessages(meshName: string): void {
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (!meshConfig) return;
+
+    log.info('dispatcher', `Processing queued messages for un-halted mesh`, { meshName });
+
+    // Check each agent in the mesh for queued messages
+    for (const agent of meshConfig.agents) {
+      const agentId = `${meshName}/${agent.name}`;
+      const pendingMsg = this.queue.peekOne(agentId);
+
+      if (pendingMsg && !this.hasActiveWorkers(agentId)) {
+        log.info('dispatcher', `Found queued message for mesh agent, spawning worker`, {
+          agentId,
+          meshName,
+          from: pendingMsg.from_agent,
+          type: pendingMsg.type,
+        });
+
+        // Use setTimeout to avoid blocking the current handler
+        setTimeout(() => {
+          if (this.running && !this.hasActiveWorkers(agentId) && !this.hasPendingAskHumanForMesh(meshName)) {
+            this.spawnWorker(meshName, agent);
+          }
+        }, 100);
+      }
+    }
+  }
+
+  /**
    * Start the dispatcher - subscribes to consumer events for worker messages
    */
   async start(consumer?: EventEmitter): Promise<void> {
@@ -560,6 +618,27 @@ export class WorkerDispatcher extends EventEmitter {
     const [meshName, agentName] = agentId.split('/');
     if (!meshName || !agentName) {
       log.error('dispatcher', `Invalid agentId format`, { agentId });
+      return;
+    }
+
+    // MESH HALT: Check if mesh has pending ask-human
+    // When ask-human is pending, the entire mesh is halted - no new workers spawn.
+    // Messages remain queued and will be processed after human responds.
+    if (this.hasPendingAskHumanForMesh(meshName)) {
+      const suspendedInfo = this.getSuspendedSessionForMesh(meshName);
+      log.info('dispatcher', `Mesh halted due to pending ask-human, message queued`, {
+        agentId,
+        meshName,
+        suspendedAgent: suspendedInfo?.agentId,
+        suspendedAt: suspendedInfo?.suspended.suspendedAt,
+        reason: 'Waiting for human response before processing new messages',
+      });
+      this.emit('mesh:halted-message', {
+        agentId,
+        meshName,
+        reason: 'pending-ask-human',
+        suspendedAgent: suspendedInfo?.agentId,
+      });
       return;
     }
 
@@ -1039,6 +1118,11 @@ The system will resume your session when the human responds.`;
             }
           }, 100);
         }
+
+        // MESH UN-HALT: Process any messages that were queued while mesh was halted
+        // This runs after the resumed worker completes, checking all agents in the mesh
+        this.emit('mesh:unhalted', { meshName, reason: 'ask-human-resolved' });
+        this.processQueuedMeshMessages(meshName);
       });
 
       runner.on('error', (error) => {
@@ -1050,6 +1134,10 @@ The system will resume your session when the human responds.`;
         this.removeActiveWorker(agentId, workerId);
         this.emit('worker:error', { id: agentId, error: error.message });
         this.writeWorkerState();
+
+        // Even on error, the mesh is now un-halted - process queued messages
+        this.emit('mesh:unhalted', { meshName, reason: 'ask-human-resolved-with-error' });
+        this.processQueuedMeshMessages(meshName);
       });
 
       // Start the FSM (use process.pid as the runner pid)
