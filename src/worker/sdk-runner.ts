@@ -8,6 +8,11 @@ import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult, QueryMetrics, WorkerMetrics } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
+import {
+  isUsagePolicyError,
+  handleUsagePolicyError,
+  type UsagePolicyViolationError,
+} from './usage-policy-error.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -58,6 +63,7 @@ export class SdkRunner extends EventEmitter {
   private currentQuery: ReturnType<typeof query> | null = null;
   private queryMetrics: QueryMetrics[] = [];
   private startedAt: number = 0;
+  private currentUserPrompt: string = '';  // Track for error context capture
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -129,6 +135,7 @@ export class SdkRunner extends EventEmitter {
         });
 
         const userPrompt = this.buildUserPrompt(taskMessage);
+        this.currentUserPrompt = userPrompt;  // Track for error context capture
 
         // Determine tool configuration based on restriction policy
         // 'mcp-only': Disable all built-in tools, only MCP tools available
@@ -330,6 +337,40 @@ export class SdkRunner extends EventEmitter {
         code?: number | string;
         exitCode?: number;
       };
+
+      // Check for Usage Policy errors - handle with HITL instead of crashing
+      if (isUsagePolicyError(err)) {
+        log.warn('sdk-runner', 'Usage Policy error detected, sending ask-human', { workerId });
+
+        const usagePolicyError = handleUsagePolicyError(
+          err,
+          workerId,
+          this.currentUserPrompt,
+          sessionOutput,
+          this.config.msgsDir,
+          this.currentSessionId,
+          `task-${Date.now()}`
+        );
+
+        log.activity('usage-policy', workerId, `HITL requested: ${usagePolicyError.askHumanFilepath}`);
+
+        // Emit special event for usage policy errors
+        this.emit('usage-policy-error', {
+          id: workerId,
+          error: err.message,
+          askHumanFilepath: usagePolicyError.askHumanFilepath,
+          sessionId: this.currentSessionId,
+          context: usagePolicyError.context,
+        });
+
+        // Return with specific error type so caller knows this is a HITL situation
+        return {
+          success: false,
+          messagesProcessed: totalProcessed,
+          error: `Usage Policy Error (ask-human sent): ${err.message}`,
+          sessionId: this.currentSessionId || undefined,
+        };
+      }
 
       // Build detailed error context for debugging
       const errorContext: Record<string, unknown> = {
@@ -597,6 +638,40 @@ export class SdkRunner extends EventEmitter {
         code?: number | string;
         exitCode?: number;
       };
+
+      // Check for Usage Policy errors - handle with HITL instead of crashing
+      if (isUsagePolicyError(err)) {
+        log.warn('sdk-runner', 'Usage Policy error detected during resume, sending ask-human', { workerId });
+
+        const usagePolicyError = handleUsagePolicyError(
+          err,
+          workerId,
+          feedback,  // Use the feedback as the prompt context
+          sessionOutput,
+          this.config.msgsDir,
+          sessionId,
+          `resume-${Date.now()}`
+        );
+
+        log.activity('usage-policy', workerId, `HITL requested (resume): ${usagePolicyError.askHumanFilepath}`);
+
+        // Emit special event for usage policy errors
+        this.emit('usage-policy-error', {
+          id: workerId,
+          error: err.message,
+          askHumanFilepath: usagePolicyError.askHumanFilepath,
+          sessionId,
+          context: usagePolicyError.context,
+        });
+
+        // Return with specific error type so caller knows this is a HITL situation
+        return {
+          success: false,
+          messagesProcessed: 0,
+          error: `Usage Policy Error (ask-human sent): ${err.message}`,
+          sessionId,
+        };
+      }
 
       // Build detailed error context for debugging
       const errorContext: Record<string, unknown> = {

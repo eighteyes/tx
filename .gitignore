@@ -9,3 +9,7 @@ node_modules
 .env
 .docker-build/Dockerfile
 .claude/settings.local.json
+
+# Playwright test artifacts
+playwright-report/
+test-results/

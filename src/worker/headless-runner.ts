@@ -240,6 +240,16 @@ export class HeadlessRunner extends EventEmitter {
       this.running = false;
     });
 
+    // Handle usage policy errors - propagate the event so callers can react
+    this.runner.on('usage-policy-error', (data) => {
+      log.warn('headless-runner', 'Usage Policy error - HITL requested', {
+        agentId,
+        askHumanFilepath: data.askHumanFilepath,
+      });
+      this.emit('usage-policy-error', data);
+      // Don't set running = false - let the HITL flow handle it
+    });
+
     log.info('headless-runner', 'Starting worker', {
       agentId,
       model: this.agentConfig.model,
@@ -386,6 +396,17 @@ export class HeadlessRunner extends EventEmitter {
     this.runner.on('error', (data) => {
       this.emit('error', data);
       this.running = false;
+    });
+
+    // Handle usage policy errors - propagate the event so callers can react
+    this.runner.on('usage-policy-error', (data) => {
+      log.warn('headless-runner', 'Usage Policy error during iteration - HITL requested', {
+        agentId,
+        iteration: this.currentIteration,
+        askHumanFilepath: data.askHumanFilepath,
+      });
+      this.emit('usage-policy-error', data);
+      // Don't set running = false - let the HITL flow handle it
     });
 
     log.info('headless-runner', 'Starting worker (iteration)', {

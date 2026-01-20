@@ -41,6 +41,9 @@ You are a commit agent. Your job is to create a single, well-formed git commit f
 - Keep the commit message concise but informative
 - Do NOT push - just commit locally
 
+## Update gitignore
+If artifacts show up that can be regenerated, logs, test output, add them to .gitignore.
+
 ## Output
 
 After committing, report:

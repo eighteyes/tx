@@ -30,3 +30,14 @@ export {
   type ActiveWorkerInfo,
   DEFAULT_STUCK_CONFIG
 } from './stuck-detector.ts';
+
+// Export usage policy error handling
+export {
+  isUsagePolicyError,
+  handleUsagePolicyError,
+  captureErrorContext,
+  writeUsagePolicyAskHuman,
+  UsagePolicyViolationError,
+  type UsagePolicyErrorContext,
+  type AskHumanOptions,
+} from './usage-policy-error.ts';
