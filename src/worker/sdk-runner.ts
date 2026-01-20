@@ -385,7 +385,14 @@ export class SdkRunner extends EventEmitter {
     return parts.join('\n');
   }
 
-  kill(): void {
+  kill(reason?: string): void {
+    const workerId = this.config.id;
+    log.warn('sdk-runner', 'Killing worker', {
+      workerId,
+      reason: reason || 'unspecified',
+      sessionId: this.currentSessionId?.slice(0, 8),
+      wasRunning: this.running,
+    });
     if (this.abortController) {
       this.abortController.abort();
     }

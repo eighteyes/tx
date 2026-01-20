@@ -398,7 +398,7 @@ export class MessageRouter extends EventEmitter {
       });
 
       // Kill the worker
-      runner.kill();
+      runner.kill(`ask-human: ${senderAgentId} suspending for human response to ${targetAgentId}`);
 
       this.emit('worker:suspended', {
         agentId: senderAgentId,

@@ -850,7 +850,7 @@ export class WorkerDispatcher extends EventEmitter {
             });
 
             // Kill the worker - no steering, no resume, just stop
-            runner.kill();
+            runner.kill('ask-human: suspending for human response');
 
             this.emit('worker:suspended', {
               agentId: senderAgentId,
@@ -1463,9 +1463,9 @@ The system will resume your session when the human responds.`;
     this.stuckDetector.stop();
 
     // Kill all active workers (iterate through all instances)
-    for (const [_agentId, workers] of this.activeWorkers) {
+    for (const [agentId, workers] of this.activeWorkers) {
       for (const worker of workers) {
-        worker.runner.kill();
+        worker.runner.kill(`shutdown: dispatcher stopping, agentId=${agentId}`);
       }
     }
     this.activeWorkers.clear();
@@ -3540,7 +3540,7 @@ If you attempt to complete again without responding to these asks, your session 
     });
 
     // Kill the worker
-    runner.kill();
+    runner.kill(`unanswered-asks: ${agentId} failed to respond to [${askList}] after 3 reminders`);
 
     // Transition to error state
     await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);

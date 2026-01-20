@@ -287,7 +287,7 @@ export class HeadlessRunner extends EventEmitter {
    */
   async stop(): Promise<void> {
     if (this.runner) {
-      this.runner.kill();
+      this.runner.kill(`headless-stop: ${this.getAgentId()} manual stop`);
       this.runner = null;
     }
     this.running = false;
@@ -309,7 +309,7 @@ export class HeadlessRunner extends EventEmitter {
 
     // Stop current runner
     if (this.runner) {
-      this.runner.kill();
+      this.runner.kill(`headless-restart: ${agentId} quality iteration ${this.currentIteration}/${this.maxIterations}`);
       this.runner = null;
     }
 

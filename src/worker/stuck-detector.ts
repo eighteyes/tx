@@ -371,7 +371,7 @@ Respond NOW.`
     });
 
     // Kill the worker
-    runner.kill();
+    runner.kill(`stuck-escalation: ${agentId} stuck (${reason}) after ${nudgeCount} nudges, duration=${formatDuration(duration)}`);
 
     // Clean up tracking
     this.nudgeCounts.delete(agentId);

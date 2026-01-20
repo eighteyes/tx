@@ -226,6 +226,21 @@ export class TmuxSession {
       return '';
     }
   }
+
+  /**
+   * Capture current pane content with escape sequences (colors)
+   */
+  captureWithColors(lines: number = 100): string {
+    try {
+      const output = execSync(
+        `tmux capture-pane -t '${this.name}' -p -e -S -${lines}`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      return output;
+    } catch {
+      return '';
+    }
+  }
 }
 
 /**
@@ -360,26 +375,55 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
 // Debug counter for idle check logging
 let idleCheckLogCount = 0;
 
+// Walked-away detection state
+let previousLastLine: string | null = null;
+let previousLineFirstSeen: number = 0;
+let lastLineChangeTime: number = 0;
+
+// Timeouts for walked-away detection
+const WALKED_AWAY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes same line = walked away
+const TYPING_THRESHOLD_MS = 2000; // Line changes within 2s = likely typing
+
+/**
+ * Reset idle detection state after successful injection
+ * Prevents stale walked-away state from carrying over
+ */
+export function resetIdleState(): void {
+  previousLastLine = null;
+  previousLineFirstSeen = 0;
+  lastLineChangeTime = 0;
+  idleCheckLogCount = 0;
+}
+
 /**
  * Check if Claude is idle and ready for message injection
  *
- * Returns true if:
- * - Prompt is visible (ends with >)
- * - No active processing indicators
+ * ONLY inject when:
+ * - Empty prompt visible (❯ with nothing after, or only autocomplete/dim text)
+ * - No busy indicator
+ *
+ * Autocomplete detection: text after prompt with dim escape code (\x1b[2m) is OK
+ * User-typed text: non-dim text after prompt = NOT OK to inject
  */
 export function isClaudeIdle(tmux: TmuxSession): boolean {
-  const output = tmux.capture(5);  // Just last 5 lines
+  const now = Date.now();
+
+  // Capture WITH escape codes to detect autocomplete (dim text)
+  const colorOutput = tmux.captureWithColors(5);
+
+  // Also get plain text for logging
+  const plainOutput = tmux.capture(5);
 
   // Log raw capture for debugging (first 5 attempts only)
   if (idleCheckLogCount < 5) {
     idleCheckLogCount++;
     log.info('tmux', 'Raw capture debug', {
-      raw: JSON.stringify(output.slice(-150)),
-      bytes: output.length
+      raw: JSON.stringify(plainOutput.slice(-150)),
+      bytes: plainOutput.length
     });
   }
 
-  const lines = output.split('\n').filter(l => l.trim());
+  const lines = plainOutput.split('\n').filter(l => l.trim());
 
   // Filter out border/visual lines (box-drawing characters)
   const contentLines = lines.filter(l => !/^[─━═┃│┌┐└┘├┤┬┴┼╭╮╯╰\-|+]+$/.test(l.trim()));
@@ -388,6 +432,13 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
   const lastNLines = contentLines.slice(-5);
   const lastLine = lastNLines[lastNLines.length - 1] || '';
 
+  // Track line changes for walked-away logging (informational only)
+  if (lastLine !== previousLastLine) {
+    lastLineChangeTime = now;
+    previousLastLine = lastLine;
+    previousLineFirstSeen = now;
+  }
+
   // Check for active processing in any of the last N lines
   const escPattern = /esc to (interrupt|cancel)/i;
   if (lastNLines.some(line => escPattern.test(line))) {
@@ -395,20 +446,89 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     return false;
   }
 
-  // Check for idle prompt - Claude Code uses ⏵⏵, also check > and ❯
-  const promptPattern = /[>❯⏵]\s*$/;
+  // Check for bypass permissions prompt
   const bypassPattern = /bypass permissions/i;
-  const isIdle = lastNLines.some(line => promptPattern.test(line) || bypassPattern.test(line));
+  if (lastNLines.some(line => bypassPattern.test(line))) {
+    return true;
+  }
 
-  if (!isIdle && idleCheckLogCount <= 10) {
-    log.info('tmux', 'Claude not idle', {
+  // Check for idle prompt with color-aware autocomplete detection
+  // Find prompt line in color output and check if text after is dim (autocomplete)
+  const colorLines = colorOutput.split('\n');
+
+  for (const colorLine of colorLines.slice(-10)) {
+    // Look for prompt character (❯ encoded as UTF-8 in escape output)
+    // The prompt shows as: [reset codes]❯ [cursor][dim]autocomplete_text
+    const hasPrompt = colorLine.includes('❯') || colorLine.includes('⏵') ||
+                      colorLine.includes('\u276f') || // ❯
+                      /M-bM-\^]M-\//.test(colorLine); // UTF-8 encoded ❯
+
+    if (!hasPrompt) continue;
+
+    // Found a prompt line - check what's after it
+    // Dim text escape codes: \x1b[2m or \x1b[0;2m
+    // If there's text after prompt that's NOT preceded by dim code, user is typing
+
+    // Split on the prompt character position
+    const promptMatch = colorLine.match(/([❯⏵>]|M-bM-\^]M-\/)\s*/);
+    if (!promptMatch) continue;
+
+    const afterPrompt = colorLine.slice(colorLine.indexOf(promptMatch[0]) + promptMatch[0].length);
+
+    // Strip escape codes to get plain text
+    const plainAfter = afterPrompt.replace(/\x1b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
+
+    if (!plainAfter) {
+      // Nothing after prompt (or only whitespace) - idle
+      log.debug('tmux', 'Claude idle: empty prompt');
+      return true;
+    }
+
+    // Check if the text after prompt is all dim (autocomplete)
+    // Dim starts with \x1b[2m or \x1b[0;2m, shown as ^[[2m or ^[[0;2m in cat -v
+    const hasDimCode = /(\x1b\[2m|\x1b\[0;2m|\^\[\[2m|\^\[\[0;2m)/.test(afterPrompt);
+
+    // Check for cursor position (reverse video ^[[7m) - text before cursor is typed
+    const cursorMatch = afterPrompt.match(/\x1b\[7m|\^\[\[7m/);
+
+    if (cursorMatch) {
+      // Cursor is on the line - check if it's at the start (no typed text)
+      const beforeCursor = afterPrompt.slice(0, afterPrompt.indexOf(cursorMatch[0]));
+      const plainBefore = beforeCursor.replace(/\x1b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
+
+      if (!plainBefore) {
+        // Cursor at start, everything after is autocomplete - idle
+        log.debug('tmux', 'Claude idle: cursor at start, only autocomplete');
+        return true;
+      } else {
+        // User has typed text before cursor - not idle
+        log.debug('tmux', 'Claude not idle: typed text detected', {
+          plainBefore: plainBefore.slice(0, 30)
+        });
+        return false;
+      }
+    }
+
+    // No cursor found - if all text is dim, it's autocomplete
+    if (hasDimCode) {
+      log.debug('tmux', 'Claude idle: all dim text (autocomplete)');
+      return true;
+    }
+
+    // Non-dim text after prompt - user typed something
+    log.debug('tmux', 'Claude not idle: non-dim text after prompt');
+    return false;
+  }
+
+  // No prompt found - not idle
+  if (idleCheckLogCount <= 10) {
+    log.info('tmux', 'Claude not idle: no prompt found', {
       lastLine: JSON.stringify(lastLine.slice(-80)),
       lineCount: lines.length,
-      contentLineCount: contentLines.length
     });
   }
 
-  return isIdle;
+  return false;
 }
 
 /**
@@ -441,6 +561,9 @@ export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
     log.warn('injector', 'Failed to send Enter key');
     return false;
   }
+
+  // Reset idle detection state after successful injection
+  resetIdleState();
 
   return true;
 }
