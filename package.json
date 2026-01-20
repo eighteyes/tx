@@ -9,6 +9,7 @@
     "build": "tsc",
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:e2e": "node --import tsx --test test/e2e/*.ts",
+    "test:frontend": "cd frontend && npx playwright test",
     "start": "node --import tsx src/cli/index.ts start",
     "status": "node --import tsx src/cli/index.ts status",
     "dev": "node --import tsx src/cli/index.ts server"
