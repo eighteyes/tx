@@ -198,7 +198,8 @@ interface SuspendedSession {
   sessionId: string;
   reason: 'ask-human';
   suspendedAt: number;
-  targetAgent: string;  // Who the ask-human was sent to (e.g., "core/core")
+  targetAgents: Set<string>;  // All agents we're awaiting responses from (e.g., Set<"core/core">)
+  pendingResponseCount: number;  // Number of responses still awaited
   meshName: string;
   agentConfig: AgentConfig;
 }
@@ -839,12 +840,19 @@ export class WorkerDispatcher extends EventEmitter {
               return;
             }
 
-            // Store session for later resume
+            // Get the count of pending ask-humans for this agent from the queue
+            // This tells us how many responses we need to wait for before resuming
+            const pendingAsks = this.queue.getPendingAsks(senderAgentId);
+            const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
+            const pendingCount = pendingAskHumans.length;
+
+            // Store session for later resume with pending count
             this.suspendedSessions.set(senderAgentId, {
               sessionId,
               reason: 'ask-human',
               suspendedAt: Date.now(),
-              targetAgent: targetAgentId,
+              targetAgents: new Set([targetAgentId]),
+              pendingResponseCount: pendingCount,
               meshName,
               agentConfig,
             });
@@ -857,7 +865,8 @@ export class WorkerDispatcher extends EventEmitter {
               workerId,
               sessionId,
               reason: 'ask-human',
-              targetAgent: targetAgentId,
+              pendingResponseCount: pendingCount,
+              targetAgents: [targetAgentId],
             });
 
             // Remove from active workers using workerId
@@ -867,6 +876,7 @@ export class WorkerDispatcher extends EventEmitter {
               from: senderAgentId,
               workerId,
               sessionId: sessionId.slice(0, 8),
+              pendingResponseCount: pendingCount,
             });
           } catch (killError) {
             log.error('dispatcher', `Failed to kill worker for ask-human`, {
@@ -1087,15 +1097,59 @@ The system will resume your session when the human responds.`;
     // Check for suspended session (killed due to ask-human)
     const suspended = this.suspendedSessions.get(awaitingAgentId);
     if (suspended && respondingAgentId === 'core/core') {
+      // Buffer this response
+      if (!this.askResponseBuffer.has(awaitingAgentId)) {
+        this.askResponseBuffer.set(awaitingAgentId, []);
+      }
+      this.askResponseBuffer.get(awaitingAgentId)!.push({
+        from: respondingAgentId,
+        content,
+        headline: event.headline,
+      });
+
+      // Check SQLite for current pending ask count (source of truth)
+      // The consumer's resolvePendingAsk was already called, so the count reflects the response
+      const remainingPendingAsks = this.queue.getPendingAsks(awaitingAgentId)
+        .filter(a => a.to_agent === 'core/core');
+      const remainingCount = remainingPendingAsks.length;
+
       log.info('dispatcher', `Human response received for suspended session`, {
         from: respondingAgentId,
         to: awaitingAgentId,
         sessionId: suspended.sessionId.slice(0, 8),
         suspendedFor: Date.now() - suspended.suspendedAt,
+        remainingPendingAsks: remainingCount,
+        bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
       });
 
-      // Resume the suspended session with human response
-      await this.resumeSuspendedSession(awaitingAgentId, suspended, content, event.headline);
+      // Only resume when ALL pending ask-humans to core/core have been resolved
+      if (remainingCount === 0) {
+        // Get all buffered responses
+        const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
+
+        log.info('dispatcher', `All ask-human responses received, resuming suspended session`, {
+          from: respondingAgentId,
+          to: awaitingAgentId,
+          sessionId: suspended.sessionId.slice(0, 8),
+          responseCount: bufferedResponses.length,
+        });
+
+        // Build combined content from all responses
+        const combinedContent = this.buildBatchedAskResponseContent(bufferedResponses);
+
+        // Clear buffer before resume
+        this.askResponseBuffer.delete(awaitingAgentId);
+
+        // Resume the suspended session with all human responses
+        await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
+          bufferedResponses.length > 1 ? `${bufferedResponses.length} Human Responses` : event.headline);
+      } else {
+        log.info('dispatcher', `Buffered response, waiting for ${remainingCount} more`, {
+          from: respondingAgentId,
+          to: awaitingAgentId,
+          remainingPendingAsks: remainingCount,
+        });
+      }
       return;
     }
 
@@ -1272,6 +1326,34 @@ The system will resume your session when the human responds.`;
 
       parts.push('\n**Action**: Process all responses above and continue with your task.');
     }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Build batched content from multiple ask-human responses
+   * Used when resuming a suspended session that was waiting for multiple human responses
+   */
+  private buildBatchedAskResponseContent(responses: Array<{ from: string; content: string; headline?: string }>): string {
+    if (responses.length === 1) {
+      // Single response - just return the content
+      return responses[0].content;
+    }
+
+    // Multiple responses - build a combined document
+    const parts: string[] = [];
+    parts.push(`# Human Responses (${responses.length} total)\n`);
+    parts.push('All requested human responses have arrived:\n');
+
+    for (let i = 0; i < responses.length; i++) {
+      const response = responses[i];
+      parts.push(`\n## Response ${i + 1}${response.headline ? `: ${response.headline}` : ''}\n`);
+      parts.push(response.content);
+      parts.push('\n');
+    }
+
+    parts.push('\n---\n');
+    parts.push('**All responses received.** You may now continue with your task.');
 
     return parts.join('\n');
   }

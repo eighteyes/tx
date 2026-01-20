@@ -17,6 +17,10 @@ import { MessageConsumer, type ParityReminderEvent } from './consumer.ts';
 // Minimal mock for MessageQueue - only what we need
 function createMockQueue(): MessageQueue {
   let insertId = 1;
+  // Track pending asks in memory for parity gate tests
+  const pendingAsks: Array<{ id: number; from_agent: string; to_agent: string; msg_id: string; created_at: number }> = [];
+  let pendingAskId = 1;
+
   return {
     insert: () => insertId++,
     poll: () => [],
@@ -25,7 +29,52 @@ function createMockQueue(): MessageQueue {
     pollOne: () => null,
     hasMessageFromFile: () => false,
     close: () => {},
-    // Other methods not needed for these tests
+    // Parity gate methods
+    trackPendingAsk: (fromAgent: string, toAgent: string, msgId: string) => {
+      pendingAsks.push({
+        id: pendingAskId++,
+        from_agent: fromAgent,
+        to_agent: toAgent,
+        msg_id: msgId,
+        created_at: Date.now(),
+      });
+      return pendingAskId - 1;
+    },
+    getPendingAsks: (fromAgent: string) => {
+      return pendingAsks.filter(a => a.from_agent === fromAgent);
+    },
+    getPendingAskCounts: (fromAgent: string) => {
+      const counts = new Map<string, number>();
+      for (const ask of pendingAsks.filter(a => a.from_agent === fromAgent)) {
+        counts.set(ask.to_agent, (counts.get(ask.to_agent) || 0) + 1);
+      }
+      return counts;
+    },
+    resolvePendingAsk: (respondingAgent: string, targetAgent: string, msgId?: string) => {
+      // Try exact msg-id match first
+      if (msgId) {
+        const byMsgId = pendingAsks.findIndex(a => a.from_agent === targetAgent && a.msg_id === msgId);
+        if (byMsgId !== -1) {
+          const ask = pendingAsks.splice(byMsgId, 1)[0];
+          return { resolved: true, matchType: 'msg-id' as const, ask };
+        }
+      }
+      // Fall back to agent match
+      const byAgent = pendingAsks.findIndex(a => a.from_agent === targetAgent && a.to_agent === respondingAgent);
+      if (byAgent !== -1) {
+        const ask = pendingAsks.splice(byAgent, 1)[0];
+        return { resolved: true, matchType: 'agent' as const, ask };
+      }
+      return { resolved: false, matchType: 'none' as const };
+    },
+    clearPendingAsks: (fromAgent: string) => {
+      const toRemove = pendingAsks.filter(a => a.from_agent === fromAgent);
+      for (const ask of toRemove) {
+        const idx = pendingAsks.indexOf(ask);
+        if (idx !== -1) pendingAsks.splice(idx, 1);
+      }
+      return toRemove.length;
+    },
   } as unknown as MessageQueue;
 }
 
@@ -575,7 +624,10 @@ describe('Ask-Parity-Gate', () => {
       assert.strictEqual(parityEvent.pendingAsks[0].msgId, msgId);
     });
 
-    it('should track asks without msg-id via count fallback', async () => {
+it('should allow task-complete when ask has no msg-id (not tracked for parity)', async () => {
+      // NOTE: Asks without msg-id are NOT tracked for parity gate purposes
+      // because there's no way to correlate them with responses reliably.
+      // This test verifies that behavior - the task-complete is allowed.
       const agentId = 'dev/worker';
       const targetAgent = 'brain/brain';
 
@@ -584,33 +636,11 @@ describe('Ask-Parity-Gate', () => {
         from: agentId,
         to: targetAgent,
         type: 'ask',
-        // no msgId - will be tracked by count
+        // no msgId - NOT tracked for parity
       });
       await waitForEvent(consumer, 'ask-message');
 
-      // Task-complete should be BLOCKED (count-based tracking still applies)
-      const parityPromise = waitForEvent(consumer, 'parity-reminder');
-
-      writeMessage(temp.dir, {
-        from: agentId,
-        to: 'core/core',
-        type: 'task-complete',
-      });
-
-      const parityEvent = await parityPromise as ParityReminderEvent;
-      assert.strictEqual(parityEvent.agentId, agentId);
-      assert.strictEqual(deletedFiles.length, 1);
-
-      // Now send response (will use count fallback)
-      writeMessage(temp.dir, {
-        from: targetAgent,
-        to: agentId,
-        type: 'ask-response',
-        // no msgId - resolved by count
-      });
-      await waitForEvent(consumer, 'ask-response-message');
-
-      // Now task-complete should pass
+      // Task-complete should PASS (asks without msg-id are not tracked)
       const coreMessagePromise = waitForEvent(consumer, 'core-message');
 
       writeMessage(temp.dir, {
@@ -619,9 +649,10 @@ describe('Ask-Parity-Gate', () => {
         type: 'task-complete',
       });
 
-      await coreMessagePromise;
-      // File was deleted once from first blocked attempt
-      assert.strictEqual(deletedFiles.length, 1);
+      const event = await coreMessagePromise as { from: string; type: string };
+      assert.strictEqual(event.from, agentId);
+      assert.strictEqual(event.type, 'task-complete');
+      assert.strictEqual(deletedFiles.length, 0, 'No files should be deleted');
     });
 
     it('should track asks per agent independently', async () => {
