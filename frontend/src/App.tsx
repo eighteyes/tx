@@ -10,7 +10,7 @@ import { SessionsPage } from './components/SessionsPage';
 import { LogsViewer } from './components/LogsViewer';
 import { CoreChat } from './components/CoreChat';
 import { ToastProvider } from './components/Toast';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary, RouteErrorBoundary } from './components/ErrorBoundary';
 
 function App() {
   return (
@@ -20,26 +20,66 @@ function App() {
           <Layout>
             <Routes>
               {/* Dashboard - Home */}
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={
+                <RouteErrorBoundary name="Dashboard">
+                  <Dashboard />
+                </RouteErrorBoundary>
+              } />
 
               {/* Mesh routes */}
-              <Route path="/meshes" element={<MeshList />} />
-              <Route path="/meshes/:meshName" element={<MeshEditor />} />
-              <Route path="/meshes/:meshName/activity" element={<MeshActivity />} />
-              <Route path="/meshes/:meshName/run" element={<SessionRunner />} />
-              <Route path="/meshes/:meshName/run/:sessionId" element={<SessionRunner />} />
+              <Route path="/meshes" element={
+                <RouteErrorBoundary name="Mesh List">
+                  <MeshList />
+                </RouteErrorBoundary>
+              } />
+              <Route path="/meshes/:meshName" element={
+                <RouteErrorBoundary name="Mesh Editor">
+                  <MeshEditor />
+                </RouteErrorBoundary>
+              } />
+              <Route path="/meshes/:meshName/activity" element={
+                <RouteErrorBoundary name="Mesh Activity">
+                  <MeshActivity />
+                </RouteErrorBoundary>
+              } />
+              <Route path="/meshes/:meshName/run" element={
+                <RouteErrorBoundary name="Session Runner">
+                  <SessionRunner />
+                </RouteErrorBoundary>
+              } />
+              <Route path="/meshes/:meshName/run/:sessionId" element={
+                <RouteErrorBoundary name="Session Runner">
+                  <SessionRunner />
+                </RouteErrorBoundary>
+              } />
 
               {/* Workspace file browser */}
-              <Route path="/workspace" element={<Workspace />} />
+              <Route path="/workspace" element={
+                <RouteErrorBoundary name="Workspace">
+                  <Workspace />
+                </RouteErrorBoundary>
+              } />
 
               {/* Sessions list */}
-              <Route path="/sessions" element={<SessionsPage />} />
+              <Route path="/sessions" element={
+                <RouteErrorBoundary name="Sessions">
+                  <SessionsPage />
+                </RouteErrorBoundary>
+              } />
 
               {/* Logs viewer */}
-              <Route path="/logs" element={<LogsViewer />} />
+              <Route path="/logs" element={
+                <RouteErrorBoundary name="Logs Viewer">
+                  <LogsViewer />
+                </RouteErrorBoundary>
+              } />
 
               {/* Core Agent Web Interface */}
-              <Route path="/core" element={<CoreChat />} />
+              <Route path="/core" element={
+                <RouteErrorBoundary name="Core Chat">
+                  <CoreChat />
+                </RouteErrorBoundary>
+              } />
             </Routes>
           </Layout>
         </Router>

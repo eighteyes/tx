@@ -759,7 +759,7 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
   const workspaceController = new WorkspaceController(workDir);
   const logsController = new LogsController(workDir);
   const sessionsController = new SessionsController(workDir);
-  const statsController = new StatsController(workDir, meshesDir);
+  const statsController = new StatsController(workDir, meshesDir, noDb);
 
   const deps: ServerDeps = {
     storage,

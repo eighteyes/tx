@@ -9,7 +9,7 @@ import { log } from '../../shared/logger.ts';
 
 export const createLoggingMiddleware = <S, C extends Context>(entityType: string): Middleware<S, C> => ({
   pre: async (from, to, transitionName, context) => {
-    log.info('fsm', `Transition starting: ${transitionName}`, {
+    log.info('tx-fsm', `Transition starting: ${transitionName}`, {
       entityId: (context as any).id,
       entityType,
       from: (from as any).status,
@@ -18,7 +18,7 @@ export const createLoggingMiddleware = <S, C extends Context>(entityType: string
   },
 
   post: async (from, to, transitionName, context) => {
-    log.info('fsm', `Transition complete: ${transitionName}`, {
+    log.info('tx-fsm', `Transition complete: ${transitionName}`, {
       entityId: (context as any).id,
       entityType,
       from: (from as any).status,

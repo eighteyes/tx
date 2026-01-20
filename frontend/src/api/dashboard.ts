@@ -3,6 +3,22 @@ import axios from 'axios';
 const API_BASE = '/v1';
 
 /**
+ * Server mode information
+ */
+export interface ServerMode {
+  mode: 'full' | 'no-db';
+  features: {
+    sessions: boolean;
+    workers: boolean;
+    stats: boolean;
+    meshCrud: boolean;
+    workspace: boolean;
+    logs: boolean;
+    coreAgent: boolean;
+  };
+}
+
+/**
  * System statistics
  */
 export interface SystemStats {
@@ -54,6 +70,7 @@ export interface ActivityItem {
  * Dashboard statistics
  */
 export interface DashboardStats {
+  server?: ServerMode;
   system: SystemStats;
   meshes: MeshStats;
   sessions: SessionStats;

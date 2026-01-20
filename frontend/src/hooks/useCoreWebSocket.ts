@@ -48,8 +48,9 @@ interface UseCoreWebSocketOptions {
   onAskHuman?: (msgId: string, question: string) => void;
   onError?: (error: string) => void;
   onStatusChange?: (status: CoreStatus) => void;
-  maxReconnectAttempts?: number;
+  onReconnecting?: (attempt: number, delay: number) => void;
   baseReconnectDelay?: number;
+  maxReconnectDelay?: number;
 }
 
 interface UseCoreWebSocketReturn {
@@ -74,8 +75,9 @@ export function useCoreWebSocket(
     onAskHuman,
     onError,
     onStatusChange,
-    maxReconnectAttempts = 5,
+    onReconnecting,
     baseReconnectDelay = 1000,
+    maxReconnectDelay = 30000,
   } = options;
 
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
@@ -88,24 +90,29 @@ export function useCoreWebSocket(
   const reconnectAttempts = useRef(0);
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
+  const manualDisconnect = useRef(false);
 
   // Store callbacks in refs
   const onOutputRef = useRef(onOutput);
   const onAskHumanRef = useRef(onAskHuman);
   const onErrorRef = useRef(onError);
   const onStatusChangeRef = useRef(onStatusChange);
+  const onReconnectingRef = useRef(onReconnecting);
 
   useEffect(() => {
     onOutputRef.current = onOutput;
     onAskHumanRef.current = onAskHuman;
     onErrorRef.current = onError;
     onStatusChangeRef.current = onStatusChange;
-  }, [onOutput, onAskHuman, onError, onStatusChange]);
+    onReconnectingRef.current = onReconnecting;
+  }, [onOutput, onAskHuman, onError, onStatusChange, onReconnecting]);
 
   // Connect to WebSocket
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
+    // Reset manual disconnect flag when explicitly connecting
+    manualDisconnect.current = false;
     setConnectionStatus('connecting');
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -190,19 +197,29 @@ export function useCoreWebSocket(
       setConnectionStatus('disconnected');
       wsRef.current = null;
 
-      // Auto-reconnect with exponential backoff
-      if (reconnectAttempts.current < maxReconnectAttempts) {
-        const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts.current);
-        reconnectAttempts.current++;
-
-        reconnectTimeout.current = setTimeout(() => {
-          connectRef.current?.();
-        }, delay);
+      // Don't auto-reconnect if manually disconnected
+      if (manualDisconnect.current) {
+        return;
       }
+
+      // Auto-reconnect with exponential backoff (no hard limit)
+      // Delay: 1s, 2s, 4s, 8s, 16s, then capped at maxReconnectDelay (30s)
+      const delay = Math.min(
+        baseReconnectDelay * Math.pow(2, reconnectAttempts.current),
+        maxReconnectDelay
+      );
+      reconnectAttempts.current++;
+
+      // Notify callback about reconnection attempt
+      onReconnectingRef.current?.(reconnectAttempts.current, delay);
+
+      reconnectTimeout.current = setTimeout(() => {
+        connectRef.current?.();
+      }, delay);
     };
 
     wsRef.current = ws;
-  }, [maxReconnectAttempts, baseReconnectDelay]);
+  }, [baseReconnectDelay, maxReconnectDelay]);
 
   // Keep connectRef in sync
   useEffect(() => {
@@ -215,11 +232,13 @@ export function useCoreWebSocket(
       clearTimeout(reconnectTimeout.current);
       reconnectTimeout.current = null;
     }
-    reconnectAttempts.current = maxReconnectAttempts; // Prevent auto-reconnect
+    // Set flag to prevent auto-reconnect
+    manualDisconnect.current = true;
+    reconnectAttempts.current = 0;
     wsRef.current?.close();
     wsRef.current = null;
     setConnectionStatus('disconnected');
-  }, [maxReconnectAttempts]);
+  }, []);
 
   // Send a user message
   const sendMessage = useCallback((content: string) => {

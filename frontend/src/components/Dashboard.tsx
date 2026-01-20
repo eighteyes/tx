@@ -112,9 +112,25 @@ export function Dashboard() {
   if (!stats) return null;
 
   const memoryPercent = Math.round((stats.system.memory.used / stats.system.memory.total) * 100);
+  const isNoDbMode = stats.server?.mode === 'no-db';
 
   return (
     <div className="dashboard">
+      {/* No-DB Mode Banner */}
+      {isNoDbMode && (
+        <div className="dashboard__mode-banner dashboard__mode-banner--no-db" role="alert">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>
+            <strong>No-DB Mode:</strong> Session management and worker features are disabled.
+            Only mesh editing, workspace browsing, and logs are available.
+          </span>
+        </div>
+      )}
+
       <header className="dashboard__header">
         <h1>TX Dashboard</h1>
         <p className="dashboard__subtitle">Multi-agent mesh orchestration platform</p>

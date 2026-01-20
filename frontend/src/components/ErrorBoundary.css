@@ -11,19 +11,65 @@
   color: #e5e5e5;
 }
 
+/* Inline mode for route-level boundaries */
+.error-boundary--inline {
+  min-height: auto;
+  padding: 2rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #333;
+  margin: 1rem;
+}
+
+.error-boundary__icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
 .error-boundary__content {
   text-align: center;
   padding: 2rem;
-  max-width: 400px;
+  max-width: 500px;
 }
 
 .error-boundary__content h2 {
   margin: 0 0 1rem;
   color: #ef4444;
+  font-size: 1.25rem;
 }
 
 .error-boundary__message {
   margin-bottom: 1.5rem;
   color: #888;
   font-size: 0.875rem;
+  word-break: break-word;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.error-boundary__details {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.error-boundary__details summary {
+  cursor: pointer;
+  color: #666;
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.error-boundary__details pre {
+  background: #111;
+  padding: 1rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  overflow-x: auto;
+  max-height: 200px;
+  color: #ef4444;
 }

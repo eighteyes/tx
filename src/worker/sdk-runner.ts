@@ -222,6 +222,8 @@ export class SdkRunner extends EventEmitter {
                 log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
                 log.activity('tools', workerId, toolNames);
                 sessionOutput.push(`[Tools: ${toolNames}]`);
+                // Emit output for stuck detection - tool calls are activity
+                this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
               }
               break;
 
@@ -522,6 +524,8 @@ export class SdkRunner extends EventEmitter {
               log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
               log.activity('tools', workerId, toolNames);
               sessionOutput.push(`[Tools: ${toolNames}]`);
+              // Emit output for stuck detection - tool calls are activity
+              this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
             }
             break;
 

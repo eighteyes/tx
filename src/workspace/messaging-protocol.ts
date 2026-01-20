@@ -18,14 +18,24 @@ Example: \`1733901000-task-complete-brain-brain--core-core-abc123.md\`
 
 \`\`\`yaml
 ---
+# Required fields
 to: mesh/agent           # Recipient (e.g., brain/brain, core/core)
 from: mesh/agent         # Sender (your agent ID)
 type: task | task-complete | ask | ask-response | ask-human
 msg-id: unique-id        # For correlation
+
+# Common fields
 headline: Brief summary  # Human-readable
 timestamp: ISO-8601      # When created
 status: complete | error | blocked  # Outcome status (for routing)
-command: /slash:command  # Optional: triggers slash command on recipient
+
+# Optional fields
+command: /slash:command  # Triggers slash command on recipient
+feature: feature-name    # For worktree-enabled meshes
+session-id: abc123       # Resume existing session (continuation)
+model: haiku | sonnet | opus  # Override agent's default model
+priority: high | normal | low  # Message priority (default: normal)
+headless: true           # Run without prompt injection (queue only)
 ---
 
 Message body content here.

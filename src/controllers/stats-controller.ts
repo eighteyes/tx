@@ -48,9 +48,26 @@ export interface SessionStats {
 }
 
 /**
+ * Server mode information
+ */
+export interface ServerMode {
+  mode: 'full' | 'no-db';
+  features: {
+    sessions: boolean;
+    workers: boolean;
+    stats: boolean;
+    meshCrud: boolean;
+    workspace: boolean;
+    logs: boolean;
+    coreAgent: boolean;
+  };
+}
+
+/**
  * Dashboard statistics
  */
 export interface DashboardStats {
+  server: ServerMode;
   system: SystemStats;
   meshes: MeshStats;
   sessions: SessionStats;
@@ -67,10 +84,30 @@ export interface DashboardStats {
 export class StatsController {
   private workDir: string;
   private meshesDir: string;
+  private noDb: boolean;
 
-  constructor(workDir: string, meshesDir: string) {
+  constructor(workDir: string, meshesDir: string, noDb: boolean = false) {
     this.workDir = workDir;
     this.meshesDir = meshesDir;
+    this.noDb = noDb;
+  }
+
+  /**
+   * Get server mode information
+   */
+  getServerMode(): ServerMode {
+    return {
+      mode: this.noDb ? 'no-db' : 'full',
+      features: {
+        sessions: !this.noDb,
+        workers: !this.noDb,
+        stats: !this.noDb,
+        meshCrud: true,
+        workspace: true,
+        logs: true,
+        coreAgent: !this.noDb,
+      },
+    };
   }
 
   /**
@@ -263,6 +300,7 @@ export class StatsController {
     ]);
 
     return {
+      server: this.getServerMode(),
       system,
       meshes,
       sessions,

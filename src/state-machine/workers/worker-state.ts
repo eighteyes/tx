@@ -197,7 +197,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async initialize(): Promise<void> {
     const from = this.state;
     if (from.status !== 'pending') {
-      log.warn('sys-fsm', `Cannot initialize from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot initialize from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -214,7 +214,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async start(pid: number): Promise<void> {
     const from = this.state;
     if (from.status !== 'initializing') {
-      log.warn('sys-fsm', `Cannot start from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot start from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -232,7 +232,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async markIdle(message?: Message): Promise<void> {
     const from = this.state;
     if (from.status !== 'running') {
-      log.warn('sys-fsm', `Cannot idle from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot idle from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -253,7 +253,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async processNext(): Promise<void> {
     const from = this.state;
     if (from.status !== 'idle') {
-      log.warn('sys-fsm', `Cannot resume from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot resume from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -271,7 +271,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async complete(result: WorkerResult): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
-      log.warn('sys-fsm', `Cannot complete from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot complete from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
@@ -298,12 +298,12 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async error(errorMessage: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'initializing') {
-      log.warn('sys-fsm', `Cannot error from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot error from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
     // Log error state entry with full context for debugging
-    log.error('sys-fsm', `Worker entering error state`, {
+    log.error('tx-fsm', `Worker entering error state`, {
       entityId: this.id,
       fromStatus: from.status,
       errorMessage,
@@ -329,13 +329,13 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async retry(): Promise<void> {
     const from = this.state;
     if (from.status !== 'error') {
-      log.warn('sys-fsm', `Cannot retry from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot retry from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 
     this.context.retryCount++;
     if (this.context.retryCount > this.context.maxRetries) {
-      log.warn('sys-fsm', `Max retries exceeded: ${this.context.maxRetries}`, { entityId: this.id });
+      log.warn('tx-fsm', `Max retries exceeded: ${this.context.maxRetries}`, { entityId: this.id });
       return;
     }
 
@@ -356,7 +356,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async enterAwait(targetAgent: string, sessionId: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'idle') {
-      log.warn('sys-fsm', `Cannot await from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
+      log.warn('tx-fsm', `Cannot await from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
       return;
     }
 
@@ -382,7 +382,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async addAwaitTarget(targetAgent: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('sys-fsm', `Cannot add await target from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
+      log.warn('tx-fsm', `Cannot add await target from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
       return;
     }
 
@@ -410,7 +410,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async receiveResponse(respondingAgent: string): Promise<boolean> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('sys-fsm', `Cannot receive response from ${from.status}, ignoring`, { entityId: this.id, status: from.status, respondingAgent });
+      log.warn('tx-fsm', `Cannot receive response from ${from.status}, ignoring`, { entityId: this.id, status: from.status, respondingAgent });
       return false;
     }
 
@@ -447,7 +447,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async awaitTimeoutError(): Promise<void> {
     const from = this.state;
     if (from.status !== 'awaiting') {
-      log.warn('sys-fsm', `Cannot timeout from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      log.warn('tx-fsm', `Cannot timeout from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
       return;
     }
 

@@ -477,7 +477,7 @@ export class WorkerDispatcher extends EventEmitter {
       );
 
       if (!transitioned) {
-        log.error('dispatcher', 'FSM validation rejected message', {
+        log.error('mesh-fsm', 'FSM validation rejected message', {
           meshName,
           from: senderAgentId,
           to: targetAgentId,
@@ -494,7 +494,7 @@ export class WorkerDispatcher extends EventEmitter {
         return false;
       }
 
-      log.debug('dispatcher', 'FSM validation passed', {
+      log.debug('mesh-fsm', 'FSM validation passed', {
         meshName,
         from: senderAgentId,
         to: targetAgentId,
@@ -505,7 +505,7 @@ export class WorkerDispatcher extends EventEmitter {
       return true;
     } catch (error) {
       // Script failures are fatal - halt the mesh
-      log.error('dispatcher', 'FSM validation failed fatally', {
+      log.error('mesh-fsm', 'FSM validation failed fatally', {
         meshName,
         error: (error as Error).message,
       });
@@ -1633,7 +1633,7 @@ The system will resume your session when the human responds.`;
             gateRetries: status.gateRetries,
           };
           systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
-          log.debug('dispatcher', 'Injected FSM context into prompt', {
+          log.debug('mesh-fsm', 'Injected FSM context into prompt', {
             agentId,
             currentState: status.currentState,
           });
@@ -1655,8 +1655,15 @@ The system will resume your session when the human responds.`;
         log.info('dispatcher', `Created workspace for task`, { agentId, taskId, dir: workspace.dir });
       }
 
-      // Create worker config
-      let model = agent.model;
+      // Create worker config - frontmatter model override takes priority
+      const frontmatterModel = nextMsg?.payload?.model as string | undefined;
+      let model = frontmatterModel || agent.model;
+      if (frontmatterModel) {
+        log.info('dispatcher', `Using explicit model from frontmatter for ${agentId}`, {
+          from: agent.model,
+          to: frontmatterModel
+        });
+      }
       if (this.config.ultraLowMode) {
         model = 'haiku' as SemanticModel;
         log.info('dispatcher', `[ULTRA-LOW MODE] Forced model for ${agentId}`, {from: agent.model, to: model});
@@ -1809,9 +1816,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
       }
 
-      // Check for session continuation
+      // Check for session continuation - explicit frontmatter takes priority
       let sessionId: string | undefined;
-      if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)) {
+      const frontmatterSessionId = nextMsg?.payload?.['session-id'] as string | undefined;
+      if (frontmatterSessionId) {
+        sessionId = frontmatterSessionId;
+        log.info('dispatcher', `Using explicit session-id from frontmatter for ${agentId}`, {
+          sessionId: sessionId.slice(0, 8) + '...'
+        });
+      } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)) {
         const existingSession = this.queue.getConversationId(agentId);
         if (existingSession) {
           sessionId = existingSession;
@@ -2469,7 +2482,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       this.meshFSMs.set(meshName, fsm);
     } catch (error) {
-      log.error('dispatcher', 'Failed to create FSM (JIT)', {
+      log.error('mesh-fsm', 'Failed to create FSM (JIT)', {
         meshName,
         error: (error as Error).message,
       });
@@ -2587,7 +2600,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         this.meshFSMs.set(meshName, fsm);
       } catch (error) {
-        log.error('dispatcher', `Failed to create FSM for mesh: ${meshName}`, {
+        log.error('mesh-fsm', `Failed to create FSM for mesh: ${meshName}`, {
           error: (error as Error).message,
         });
       }
@@ -3255,7 +3268,7 @@ ${output}
       return;
     }
 
-    log.info('dispatcher', 'Processing FSM exit', {
+    log.info('mesh-fsm', 'Processing FSM exit', {
       meshName,
       state: stateConfig.name,
       hasGates: !!exit.gates,
@@ -3266,7 +3279,7 @@ ${output}
 
     // Process exit.set first if present (extract values before routing)
     if (exit.set) {
-      log.debug('dispatcher', 'Setting exit context variables', {
+      log.debug('mesh-fsm', 'Setting exit context variables', {
         meshName,
         state: stateConfig.name,
         vars: Object.keys(exit.set),
@@ -3279,7 +3292,7 @@ ${output}
     const nextState = await fsm.evaluateExitRouting(exit, context);
 
     if (!nextState) {
-      log.error('dispatcher', 'FSM exit routing failed - no valid next state', {
+      log.error('mesh-fsm', 'FSM exit routing failed - no valid next state', {
         meshName,
         currentState: stateConfig.name,
       });
@@ -3291,7 +3304,7 @@ ${output}
       return;
     }
 
-    log.info('dispatcher', 'FSM exit routing determined next state', {
+    log.info('mesh-fsm', 'FSM exit routing determined next state', {
       meshName,
       currentState: stateConfig.name,
       nextState,
@@ -3305,7 +3318,7 @@ ${output}
     );
 
     if (transitioned) {
-      log.info('dispatcher', 'FSM transitioned after ensemble', {
+      log.info('mesh-fsm', 'FSM transitioned after ensemble', {
         meshName,
         from: stateConfig.name,
         to: nextState,
@@ -3323,7 +3336,7 @@ ${output}
       // Trigger next state's agent with aggregated content
       await this.triggerNextStateAgent(meshName, fsm, nextState, context);
     } else {
-      log.error('dispatcher', 'FSM transition failed', {
+      log.error('mesh-fsm', 'FSM transition failed', {
         meshName,
         from: stateConfig.name,
         to: nextState,

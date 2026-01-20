@@ -9,6 +9,35 @@
   margin: 0 auto;
 }
 
+/* Server Mode Banner */
+.dashboard__mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.dashboard__mode-banner svg {
+  flex-shrink: 0;
+}
+
+.dashboard__mode-banner strong {
+  font-weight: 600;
+}
+
+.dashboard__mode-banner--no-db {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+}
+
+.dashboard__mode-banner--no-db svg {
+  color: #fbbf24;
+}
+
 .dashboard__loading,
 .dashboard__error {
   display: flex;

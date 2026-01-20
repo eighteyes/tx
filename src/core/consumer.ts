@@ -463,6 +463,9 @@ ${body}
           status: parsed.frontmatter.status,
           command: parsed.frontmatter.command,
           feature: parsed.frontmatter.feature,  // For worktree-enabled meshes
+          'session-id': parsed.frontmatter['session-id'],  // Resume existing session
+          model: parsed.frontmatter.model,  // Override agent model
+          priority: parsed.frontmatter.priority,  // Message priority
           body: parsed.body,
           rearmatter: parsed.rearmatter,
           filepath

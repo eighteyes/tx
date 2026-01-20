@@ -66,7 +66,7 @@ export const DEFAULT_STUCK_CONFIG: StuckAgentConfig = {
   idleTimeoutMs: 300000,      // 5 minutes
   activityCheckMs: 30000,     // 30 seconds
   maxNudges: 3,
-  nudgeIntervalMs: 120000,    // 2 minutes
+  nudgeIntervalMs: 300000,    // 5 minutes
   finalGracePeriodMs: 120000, // 2 minutes
 };
 
