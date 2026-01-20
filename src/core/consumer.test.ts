@@ -596,6 +596,110 @@ describe('Ask-Parity-Gate', () => {
     });
   });
 
+  describe('Scenario 6: ask-response should NOT emit worker-message', () => {
+    it('should emit ONLY ask-response-message, NOT worker-message for ask-response', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'ask-exclusive-001';
+
+      // 1. Worker sends ask first
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'brain/brain',
+        type: 'ask',
+        msgId,
+        body: 'Question requiring response'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // 2. Brain responds - should emit ONLY ask-response-message
+      const askResponsePromise = waitForEvent(consumer, 'ask-response-message');
+      const noWorkerMessagePromise = expectNoEvent(consumer, 'worker-message', 500);
+
+      writeMessage(temp.dir, {
+        from: 'brain/brain',
+        to: agentId,
+        type: 'ask-response',
+        msgId,
+        body: 'The answer is 42'
+      });
+
+      // Verify ask-response-message is emitted
+      const event = await askResponsePromise as { from: string; to: string; msgId: string };
+      assert.strictEqual(event.from, 'brain/brain');
+      assert.strictEqual(event.to, agentId);
+      assert.strictEqual(event.msgId, msgId);
+
+      // Verify worker-message was NOT emitted (this would cause duplicate worker spawn)
+      await noWorkerMessagePromise;
+    });
+
+    it('should NOT spawn duplicate coordinator when prep agents respond', async () => {
+      // This tests the root cause bug: parallel prep responses should NOT spawn workers
+      const coordinatorId = 'dev/coordinator';
+      const prepAgent1 = 'dev/prep-1';
+      const prepAgent2 = 'dev/prep-2';
+      const msgId1 = 'prep-ask-001';
+      const msgId2 = 'prep-ask-002';
+
+      // Track all emitted events
+      const emittedEvents: string[] = [];
+      consumer.on('ask-message', () => emittedEvents.push('ask-message'));
+      consumer.on('ask-response-message', () => emittedEvents.push('ask-response-message'));
+      consumer.on('worker-message', () => emittedEvents.push('worker-message'));
+
+      // 1. Coordinator sends parallel asks to two prep agents
+      writeMessage(temp.dir, {
+        from: coordinatorId,
+        to: prepAgent1,
+        type: 'ask',
+        msgId: msgId1,
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      writeMessage(temp.dir, {
+        from: coordinatorId,
+        to: prepAgent2,
+        type: 'ask',
+        msgId: msgId2,
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Clear event tracking before responses
+      emittedEvents.length = 0;
+
+      // 2. Both prep agents respond - should NOT spawn workers
+      const response1Promise = waitForEvent(consumer, 'ask-response-message');
+      writeMessage(temp.dir, {
+        from: prepAgent1,
+        to: coordinatorId,
+        type: 'ask-response',
+        msgId: msgId1,
+        body: 'Prep 1 done'
+      });
+      await response1Promise;
+
+      const response2Promise = waitForEvent(consumer, 'ask-response-message');
+      writeMessage(temp.dir, {
+        from: prepAgent2,
+        to: coordinatorId,
+        type: 'ask-response',
+        msgId: msgId2,
+        body: 'Prep 2 done'
+      });
+      await response2Promise;
+
+      // Wait a bit to ensure no late worker-message events
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Verify: should have exactly 2 ask-response-message events, ZERO worker-message events
+      const askResponseCount = emittedEvents.filter(e => e === 'ask-response-message').length;
+      const workerMessageCount = emittedEvents.filter(e => e === 'worker-message').length;
+
+      assert.strictEqual(askResponseCount, 2, 'Should emit exactly 2 ask-response-message events');
+      assert.strictEqual(workerMessageCount, 0, 'Should emit ZERO worker-message events (this was the bug)');
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should handle ask-human messages the same as ask messages', async () => {
       const agentId = 'dev/worker';

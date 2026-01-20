@@ -587,6 +587,7 @@ ${body}
           headline: parsed.frontmatter.headline,
           msgId
         });
+        return;  // ask-response handled - do NOT fall through to worker-message
       }
 
       if (toAgent === 'core/core') {
