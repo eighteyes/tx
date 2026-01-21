@@ -139,14 +139,19 @@ export async function refreshAccessToken(creds: Credentials): Promise<Credential
   const data = await response.json() as {
     accessToken: string;
     refreshToken?: string;
-    expiresAt: number;
+    expiresAt: number | string;
   };
+
+  // Server returns expiresAt as ISO string, convert to Unix timestamp
+  const expiresAt = typeof data.expiresAt === 'string'
+    ? Math.floor(new Date(data.expiresAt).getTime() / 1000)
+    : data.expiresAt;
 
   const updatedCreds: Credentials = {
     ...creds,
     accessToken: data.accessToken,
     refreshToken: data.refreshToken || creds.refreshToken,
-    expiresAt: data.expiresAt,
+    expiresAt,
   };
 
   // Save updated credentials

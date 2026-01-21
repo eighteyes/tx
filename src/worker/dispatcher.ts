@@ -196,12 +196,13 @@ interface ActiveWorker {
  */
 interface SuspendedSession {
   sessionId: string;
-  reason: 'ask-human';
+  reason: 'ask-human' | 'await-response';  // ask-human = explicitly killed, await-response = exited while awaiting
   suspendedAt: number;
   targetAgents: Set<string>;  // All agents we're awaiting responses from (e.g., Set<"core/core">)
   pendingResponseCount: number;  // Number of responses still awaited
   meshName: string;
   agentConfig: AgentConfig;
+  hookContext?: HookContext;  // Preserved for await-response resumption
 }
 
 export class WorkerDispatcher extends EventEmitter {
@@ -1182,63 +1183,121 @@ The system will resume your session when the human responds.`;
   private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content } = event;
 
-    // Check for suspended session (killed due to ask-human)
+    // Check for suspended session
     const suspended = this.suspendedSessions.get(awaitingAgentId);
-    if (suspended && respondingAgentId === 'core/core') {
-      // Buffer this response
-      if (!this.askResponseBuffer.has(awaitingAgentId)) {
-        this.askResponseBuffer.set(awaitingAgentId, []);
-      }
-      this.askResponseBuffer.get(awaitingAgentId)!.push({
-        from: respondingAgentId,
-        content,
-        headline: event.headline,
-      });
+    if (suspended) {
+      // Handle ask-human responses (from core/core)
+      if (suspended.reason === 'ask-human' && respondingAgentId === 'core/core') {
+        // Buffer this response
+        if (!this.askResponseBuffer.has(awaitingAgentId)) {
+          this.askResponseBuffer.set(awaitingAgentId, []);
+        }
+        this.askResponseBuffer.get(awaitingAgentId)!.push({
+          from: respondingAgentId,
+          content,
+          headline: event.headline,
+        });
 
-      // Check SQLite for current pending ask count (source of truth)
-      // The consumer's resolvePendingAsk was already called, so the count reflects the response
-      const remainingPendingAsks = this.queue.getPendingAsks(awaitingAgentId)
-        .filter(a => a.to_agent === 'core/core');
-      const remainingCount = remainingPendingAsks.length;
+        // Check SQLite for current pending ask count (source of truth)
+        // The consumer's resolvePendingAsk was already called, so the count reflects the response
+        const remainingPendingAsks = this.queue.getPendingAsks(awaitingAgentId)
+          .filter(a => a.to_agent === 'core/core');
+        const remainingCount = remainingPendingAsks.length;
 
-      log.info('dispatcher', `Human response received for suspended session`, {
-        from: respondingAgentId,
-        to: awaitingAgentId,
-        sessionId: suspended.sessionId.slice(0, 8),
-        suspendedFor: Date.now() - suspended.suspendedAt,
-        remainingPendingAsks: remainingCount,
-        bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
-      });
-
-      // Only resume when ALL pending ask-humans to core/core have been resolved
-      if (remainingCount === 0) {
-        // Get all buffered responses
-        const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
-
-        log.info('dispatcher', `All ask-human responses received, resuming suspended session`, {
+        log.info('dispatcher', `Human response received for suspended session`, {
           from: respondingAgentId,
           to: awaitingAgentId,
           sessionId: suspended.sessionId.slice(0, 8),
-          responseCount: bufferedResponses.length,
+          suspendedFor: Date.now() - suspended.suspendedAt,
+          remainingPendingAsks: remainingCount,
+          bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
         });
 
-        // Build combined content from all responses
-        const combinedContent = this.buildBatchedAskResponseContent(bufferedResponses);
+        // Only resume when ALL pending ask-humans to core/core have been resolved
+        if (remainingCount === 0) {
+          // Get all buffered responses
+          const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
 
-        // Clear buffer before resume
-        this.askResponseBuffer.delete(awaitingAgentId);
+          log.info('dispatcher', `All ask-human responses received, resuming suspended session`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            sessionId: suspended.sessionId.slice(0, 8),
+            responseCount: bufferedResponses.length,
+          });
 
-        // Resume the suspended session with all human responses
-        await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
-          bufferedResponses.length > 1 ? `${bufferedResponses.length} Human Responses` : event.headline);
-      } else {
-        log.info('dispatcher', `Buffered response, waiting for ${remainingCount} more`, {
+          // Build combined content from all responses
+          const combinedContent = this.buildBatchedAskResponseContent(bufferedResponses);
+
+          // Clear buffer before resume
+          this.askResponseBuffer.delete(awaitingAgentId);
+
+          // Resume the suspended session with all human responses
+          await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
+            bufferedResponses.length > 1 ? `${bufferedResponses.length} Human Responses` : event.headline);
+        } else {
+          log.info('dispatcher', `Buffered response, waiting for ${remainingCount} more`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            remainingPendingAsks: remainingCount,
+          });
+        }
+        return;
+      }
+
+      // Handle agent-to-agent ask-responses for sessions suspended due to exiting while awaiting
+      if (suspended.reason === 'await-response' && suspended.targetAgents.has(respondingAgentId)) {
+        // Buffer this response
+        if (!this.askResponseBuffer.has(awaitingAgentId)) {
+          this.askResponseBuffer.set(awaitingAgentId, []);
+        }
+        this.askResponseBuffer.get(awaitingAgentId)!.push({
+          from: respondingAgentId,
+          content,
+          headline: event.headline,
+        });
+
+        // Remove responder from target agents
+        suspended.targetAgents.delete(respondingAgentId);
+        suspended.pendingResponseCount = suspended.targetAgents.size;
+
+        log.info('dispatcher', `Agent response received for suspended session`, {
           from: respondingAgentId,
           to: awaitingAgentId,
-          remainingPendingAsks: remainingCount,
+          sessionId: suspended.sessionId.slice(0, 8),
+          suspendedFor: Date.now() - suspended.suspendedAt,
+          remainingTargetAgents: Array.from(suspended.targetAgents),
+          bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
         });
+
+        // Resume when all awaited agents have responded
+        if (suspended.targetAgents.size === 0) {
+          const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
+
+          log.info('dispatcher', `All agent responses received, resuming suspended session`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            sessionId: suspended.sessionId.slice(0, 8),
+            responseCount: bufferedResponses.length,
+          });
+
+          // Build combined content from all responses
+          const combinedContent = this.buildAskResponsePrompt(bufferedResponses);
+
+          // Clear buffer before resume
+          this.askResponseBuffer.delete(awaitingAgentId);
+
+          // Resume the suspended session
+          await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
+            bufferedResponses.length > 1 ? `${bufferedResponses.length} Responses Received` : event.headline);
+        } else {
+          log.info('dispatcher', `Buffered response, waiting for ${suspended.targetAgents.size} more agents`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            remainingTargetAgents: Array.from(suspended.targetAgents),
+          });
+        }
+        return;
       }
-      return;
     }
 
     // Get first worker for awaiting agent
@@ -2245,6 +2304,57 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 error: (error as Error).message,
               });
             }
+          }
+        }
+
+        // Check if worker is awaiting responses - if so, suspend instead of completing
+        // This handles the case where the SDK subprocess exits naturally while the FSM is in 'awaiting' state
+        const currentStatus = machine.getStatus();
+        if (currentStatus === 'awaiting') {
+          const sessionId = data.sessionId;
+          if (sessionId) {
+            const awaitingResponses = machine.getAwaitingResponses();
+            log.info('dispatcher', `Worker exited while awaiting - suspending session`, {
+              agentId,
+              workerId: currentWorkerId,
+              sessionId: sessionId.slice(0, 8),
+              awaitingResponses: Array.from(awaitingResponses),
+            });
+
+            // Save to suspendedSessions (same mechanism as ask-human)
+            this.suspendedSessions.set(agentId, {
+              sessionId,
+              reason: 'await-response',
+              suspendedAt: Date.now(),
+              targetAgents: new Set(awaitingResponses),
+              pendingResponseCount: awaitingResponses.size,
+              meshName,
+              agentConfig: agent,
+              hookContext: workerHookContext,
+            });
+
+            // Remove from activeWorkers but DON'T complete FSM - keep it in awaiting state
+            this.removeActiveWorker(agentId, currentWorkerId);
+            this.writeWorkerState();
+
+            this.emit('worker:suspended', {
+              agentId,
+              workerId: currentWorkerId,
+              sessionId,
+              reason: 'await-response',
+              pendingResponseCount: awaitingResponses.size,
+              targetAgents: Array.from(awaitingResponses),
+            });
+
+            // Don't complete FSM - wait for ask-response to resume
+            return;
+          } else {
+            log.warn('dispatcher', `Worker exited while awaiting but no sessionId - cannot suspend`, {
+              agentId,
+              workerId: currentWorkerId,
+              awaitingResponses: Array.from(machine.getAwaitingResponses()),
+            });
+            // Fall through to normal completion with validation error
           }
         }
 
