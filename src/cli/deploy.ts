@@ -94,11 +94,64 @@ async function packageMesh(meshDir: string): Promise<Buffer> {
   return buffer;
 }
 
+interface MeshInfo {
+  id: string;
+  name: string;
+}
+
+/**
+ * Get or create mesh by name
+ * Returns the mesh UUID for deployment
+ */
+async function getOrCreateMesh(
+  meshName: string,
+  creds: Credentials
+): Promise<MeshInfo> {
+  const serverUrl = creds.serverUrl || getServerUrl();
+
+  // Try to find existing mesh by name
+  const listResponse = await fetch(`${serverUrl}/v1/meshes`, {
+    headers: {
+      'Authorization': `Bearer ${creds.accessToken}`,
+    },
+  });
+
+  if (!listResponse.ok) {
+    throw new Error(`Failed to list meshes: HTTP ${listResponse.status}`);
+  }
+
+  const listData = await listResponse.json() as { meshes: MeshInfo[] };
+  const existingMesh = listData.meshes.find(m => m.name === meshName);
+
+  if (existingMesh) {
+    return existingMesh;
+  }
+
+  // Create new mesh
+  const createResponse = await fetch(`${serverUrl}/v1/meshes`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${creds.accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: meshName }),
+  });
+
+  if (!createResponse.ok) {
+    const errorData = await createResponse.json().catch(() => ({})) as { error?: string };
+    throw new Error(errorData.error || `Failed to create mesh: HTTP ${createResponse.status}`);
+  }
+
+  const createData = await createResponse.json() as { mesh: MeshInfo };
+  return createData.mesh;
+}
+
 /**
  * Upload mesh tarball to tx-server
  */
 async function uploadMesh(
   tarball: Buffer,
+  meshId: string,
   meshName: string,
   creds: Credentials,
   options: DeployOptions
@@ -109,11 +162,11 @@ async function uploadMesh(
   const boundary = `----TxDeployBoundary${Date.now()}`;
   const parts: Buffer[] = [];
 
-  // Add mesh name field
+  // Add mesh ID field (UUID)
   parts.push(Buffer.from(
     `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="meshName"\r\n\r\n` +
-    `${meshName}\r\n`
+    `Content-Disposition: form-data; name="meshId"\r\n\r\n` +
+    `${meshId}\r\n`
   ));
 
   // Add region field if specified
@@ -137,7 +190,7 @@ async function uploadMesh(
   // Add tarball file
   parts.push(Buffer.from(
     `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="mesh"; filename="${meshName}.tar.gz"\r\n` +
+    `Content-Disposition: form-data; name="tarball"; filename="${meshName}.tar.gz"\r\n` +
     `Content-Type: application/gzip\r\n\r\n`
   ));
   parts.push(tarball);
@@ -162,8 +215,8 @@ async function uploadMesh(
     throw new Error(errorData.error || `HTTP ${response.status}`);
   }
 
-  const data = await response.json() as { deploymentId: string };
-  return data;
+  const data = await response.json() as { deployment: { id: string } };
+  return { deploymentId: data.deployment.id };
 }
 
 /**
@@ -260,6 +313,10 @@ export async function deploy(meshName: string, options: DeployOptions = {}): Pro
   console.log('');
 
   try {
+    // Get or create mesh registration
+    console.log('  🔍 Registering mesh...');
+    const mesh = await getOrCreateMesh(meshName, creds);
+
     // Package mesh
     console.log('  📦 Packaging mesh...');
     const tarball = await packageMesh(validation.meshDir!);
@@ -267,7 +324,7 @@ export async function deploy(meshName: string, options: DeployOptions = {}): Pro
 
     // Upload and start deployment
     console.log('  ☁️  Uploading to tx-server...');
-    const { deploymentId } = await uploadMesh(tarball, meshName, creds, options);
+    const { deploymentId } = await uploadMesh(tarball, mesh.id, meshName, creds, options);
 
     // Poll for completion
     console.log('');

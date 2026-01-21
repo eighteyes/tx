@@ -11,7 +11,7 @@ export interface Message {
   from_agent: string;
   to_agent: string;
   type: string;
-  status?: 'pending' | 'delivered';
+  status?: 'pending' | 'delivered' | 'interrupted' | 'failed';
   payload: Record<string, unknown>;
   source_file?: string;
   created_at?: number;
@@ -44,6 +44,17 @@ export interface PendingAsk {
   to_agent: string;
   msg_id: string;
   created_at?: number;
+}
+
+export interface SuspendedSessionData {
+  agentId: string;
+  sessionId: string;
+  reason: 'ask-human' | 'await-response' | 'crash';
+  suspendedAt: number;
+  meshName: string;
+  targetAgents?: string[];
+  hookContext?: string;  // JSON serialized
+  pendingCount: number;
 }
 
 export class MessageQueue {
@@ -109,6 +120,17 @@ export class MessageQueue {
       CREATE INDEX IF NOT EXISTS idx_pending_from ON pending_asks(from_agent);
       CREATE INDEX IF NOT EXISTS idx_pending_to ON pending_asks(to_agent);
       CREATE INDEX IF NOT EXISTS idx_pending_msgid ON pending_asks(msg_id);
+
+      CREATE TABLE IF NOT EXISTS suspended_sessions (
+        agent_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        suspended_at INTEGER NOT NULL,
+        mesh_name TEXT NOT NULL,
+        target_agents TEXT,
+        hook_context TEXT,
+        pending_count INTEGER DEFAULT 0
+      );
     `);
   }
 
@@ -438,11 +460,68 @@ export class MessageQueue {
   /**
    * Mark all pending messages as failed (stale from previous run)
    * Called on startup - pending messages from crashed sessions are undeliverable
+   * @deprecated Use markPendingAsInterrupted() for crash recovery
    */
   markPendingAsFailed(): number {
     const result = this.db.prepare(`
       UPDATE messages SET status = 'failed', delivered_at = ?
       WHERE status = 'pending'
+    `).run(Date.now());
+    return result.changes;
+  }
+
+  /**
+   * Mark all pending messages as interrupted (from unclean shutdown)
+   * Called on startup when a crash is detected - these messages can be recovered
+   */
+  markPendingAsInterrupted(): number {
+    const result = this.db.prepare(`
+      UPDATE messages SET status = 'interrupted', delivered_at = ?
+      WHERE status = 'pending'
+    `).run(Date.now());
+    return result.changes;
+  }
+
+  /**
+   * Get all interrupted messages (for recovery)
+   */
+  getInterruptedMessages(): Message[] {
+    const rows = this.db.prepare(`
+      SELECT id, from_agent, to_agent, type, status, payload, source_file, created_at, delivered_at
+      FROM messages WHERE status = 'interrupted'
+      ORDER BY created_at DESC
+    `).all() as MessageRow[];
+
+    return rows.map(row => ({
+      id: row.id,
+      from_agent: row.from_agent,
+      to_agent: row.to_agent,
+      type: row.type,
+      status: row.status as 'interrupted',
+      payload: JSON.parse(row.payload),
+      created_at: row.created_at,
+      delivered_at: row.delivered_at ?? undefined
+    }));
+  }
+
+  /**
+   * Mark interrupted messages as failed (user chose to discard)
+   */
+  markInterruptedAsFailed(): number {
+    const result = this.db.prepare(`
+      UPDATE messages SET status = 'failed', delivered_at = ?
+      WHERE status = 'interrupted'
+    `).run(Date.now());
+    return result.changes;
+  }
+
+  /**
+   * Re-queue interrupted messages as pending (user chose to resume)
+   */
+  requeueInterruptedMessages(): number {
+    const result = this.db.prepare(`
+      UPDATE messages SET status = 'pending', delivered_at = NULL
+      WHERE status = 'interrupted'
     `).run(Date.now());
     return result.changes;
   }
@@ -585,6 +664,107 @@ export class MessageQueue {
    */
   clearPendingAsk(id: number): void {
     this.db.prepare('DELETE FROM pending_asks WHERE id = ?').run(id);
+  }
+
+  // ============================================
+  // Crash Recovery: Suspended Sessions
+  // ============================================
+
+  /**
+   * Suspend a session (persist to SQLite for crash recovery)
+   */
+  suspendSession(agentId: string, data: Omit<SuspendedSessionData, 'agentId'>): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO suspended_sessions
+        (agent_id, session_id, reason, suspended_at, mesh_name, target_agents, hook_context, pending_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      agentId,
+      data.sessionId,
+      data.reason,
+      data.suspendedAt,
+      data.meshName,
+      data.targetAgents ? JSON.stringify(data.targetAgents) : null,
+      data.hookContext || null,
+      data.pendingCount
+    );
+  }
+
+  /**
+   * Get a suspended session by agent ID
+   */
+  getSuspendedSession(agentId: string): SuspendedSessionData | null {
+    const row = this.db.prepare(`
+      SELECT agent_id, session_id, reason, suspended_at, mesh_name, target_agents, hook_context, pending_count
+      FROM suspended_sessions WHERE agent_id = ?
+    `).get(agentId) as {
+      agent_id: string;
+      session_id: string;
+      reason: string;
+      suspended_at: number;
+      mesh_name: string;
+      target_agents: string | null;
+      hook_context: string | null;
+      pending_count: number;
+    } | undefined;
+
+    if (!row) return null;
+
+    return {
+      agentId: row.agent_id,
+      sessionId: row.session_id,
+      reason: row.reason as SuspendedSessionData['reason'],
+      suspendedAt: row.suspended_at,
+      meshName: row.mesh_name,
+      targetAgents: row.target_agents ? JSON.parse(row.target_agents) : undefined,
+      hookContext: row.hook_context || undefined,
+      pendingCount: row.pending_count,
+    };
+  }
+
+  /**
+   * Resume (delete) a suspended session
+   */
+  resumeSession(agentId: string): void {
+    this.db.prepare('DELETE FROM suspended_sessions WHERE agent_id = ?').run(agentId);
+  }
+
+  /**
+   * List all suspended sessions
+   */
+  listSuspendedSessions(): SuspendedSessionData[] {
+    const rows = this.db.prepare(`
+      SELECT agent_id, session_id, reason, suspended_at, mesh_name, target_agents, hook_context, pending_count
+      FROM suspended_sessions ORDER BY suspended_at DESC
+    `).all() as Array<{
+      agent_id: string;
+      session_id: string;
+      reason: string;
+      suspended_at: number;
+      mesh_name: string;
+      target_agents: string | null;
+      hook_context: string | null;
+      pending_count: number;
+    }>;
+
+    return rows.map(row => ({
+      agentId: row.agent_id,
+      sessionId: row.session_id,
+      reason: row.reason as SuspendedSessionData['reason'],
+      suspendedAt: row.suspended_at,
+      meshName: row.mesh_name,
+      targetAgents: row.target_agents ? JSON.parse(row.target_agents) : undefined,
+      hookContext: row.hook_context || undefined,
+      pendingCount: row.pending_count,
+    }));
+  }
+
+  /**
+   * Clear all suspended sessions
+   */
+  clearAllSuspendedSessions(): number {
+    const result = this.db.prepare('DELETE FROM suspended_sessions').run();
+    return result.changes;
   }
 }
 

@@ -146,6 +146,18 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   await tmux.create(cwd);
   await new Promise(resolve => setTimeout(resolve, 500));
 
+  // PID file for crash detection
+  const pidFile = path.join(dataDir, '.pid');
+  const wasUnclean = fs.existsSync(pidFile);
+  if (wasUnclean) {
+    const oldPid = fs.readFileSync(pidFile, 'utf-8').trim();
+    log.warn('start', `Detected unclean shutdown (PID ${oldPid})`);
+    console.warn(`⚠️  Detected unclean shutdown from previous session (PID ${oldPid})`);
+    console.warn(`   Run 'tx recover' to view/resume interrupted work.\n`);
+  }
+  // Write current PID
+  fs.writeFileSync(pidFile, String(process.pid));
+
   // Load tmux config if it exists (check work dir first, then TX_ROOT)
   let tmuxConf = path.join(cwd, '.tmux.conf');
   if (!fs.existsSync(tmuxConf)) {
@@ -173,13 +185,25 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const dbPath = path.join(dataDir, 'queue.db');
   const queue = new MessageQueue(dbPath);
 
-  const staleCount = queue.markPendingAsFailed();
-  if (staleCount > 0) {
-    log.info('start', `Marked ${staleCount} stale pending messages as failed`);
+  // Handle stale pending messages based on shutdown type
+  if (wasUnclean) {
+    // Unclean shutdown: mark messages as interrupted (recoverable)
+    const staleCount = queue.markPendingAsInterrupted();
+    if (staleCount > 0) {
+      log.info('start', `Marked ${staleCount} pending messages as interrupted (recoverable)`);
+      console.log(`[recovery] ${staleCount} interrupted message(s) from previous session`);
+    }
+  } else {
+    // Clean shutdown: mark messages as failed (normal cleanup)
+    const staleCount = queue.markPendingAsFailed();
+    if (staleCount > 0) {
+      log.info('start', `Marked ${staleCount} stale pending messages as failed`);
+    }
   }
-  queue.clearAllSessions();
+  // Note: Sessions are preserved across restarts for crash recovery
+  // Previously: queue.clearAllSessions() - removed to support resume
 
-  log.info('start', 'Cleared pending messages and sessions');
+  log.info('start', 'Processed pending messages from previous session');
 
   // Initialize session store for session awareness
   const sessionsDbPath = path.join(dataDir, 'sessions.db');
@@ -467,6 +491,12 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   queue.close();
   sessionStore.close();
 
+  // Clean shutdown - remove PID file (crash recovery won't trigger on next start)
+  if (fs.existsSync(pidFile)) {
+    fs.unlinkSync(pidFile);
+    log.info('start', 'PID file removed (clean shutdown)');
+  }
+
   console.log(`[core] Consumer stopped. Claude session still running.`);
   console.log(`[core] Re-attach: tmux attach -t ${sessionName}`);
   console.log(`[core] Kill: tmux kill-session -t ${sessionName}`);
@@ -486,6 +516,13 @@ export async function stop(workDir?: string): Promise<void> {
     console.log('✓ TX stopped');
   } else {
     console.log('TX is not running');
+  }
+
+  // Clean shutdown - remove PID file
+  const dataDir = path.join(cwd, '.ai', 'tx', 'data');
+  const pidFile = path.join(dataDir, '.pid');
+  if (fs.existsSync(pidFile)) {
+    fs.unlinkSync(pidFile);
   }
 
   // Reset terminal state (fixes mouse mode, raw mode, escape sequence corruption)

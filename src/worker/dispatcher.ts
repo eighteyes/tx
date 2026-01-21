@@ -458,6 +458,52 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
+   * Restore suspended sessions from the queue (for crash recovery)
+   * Called on startup to restore in-memory state from SQLite persistence
+   */
+  restoreSuspendedSessions(): void {
+    const suspended = this.queue.listSuspendedSessions();
+
+    for (const s of suspended) {
+      // Find the mesh config and agent config
+      const meshConfig = this.meshConfigs.get(s.meshName);
+      const [, agentName] = s.agentId.split('/');
+      const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+
+      if (!agentConfig) {
+        log.warn('dispatcher', 'Cannot restore suspended session: agent config not found', {
+          agentId: s.agentId,
+          meshName: s.meshName,
+        });
+        continue;
+      }
+
+      // Restore to in-memory map
+      this.suspendedSessions.set(s.agentId, {
+        sessionId: s.sessionId,
+        reason: s.reason as 'ask-human' | 'await-response',
+        suspendedAt: s.suspendedAt,
+        targetAgents: new Set(s.targetAgents || []),
+        pendingResponseCount: s.pendingCount,
+        meshName: s.meshName,
+        agentConfig,
+        hookContext: s.hookContext ? JSON.parse(s.hookContext) : undefined,
+      });
+
+      log.info('dispatcher', 'Restored suspended session', {
+        agentId: s.agentId,
+        sessionId: s.sessionId.slice(0, 8),
+        reason: s.reason,
+        suspendedFor: Date.now() - s.suspendedAt,
+      });
+    }
+
+    if (suspended.length > 0) {
+      log.info('dispatcher', `Restored ${suspended.length} suspended session(s) from previous run`);
+    }
+  }
+
+  /**
    * Start the dispatcher - subscribes to consumer events for worker messages
    */
   async start(consumer?: EventEmitter): Promise<void> {
@@ -465,6 +511,9 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Load all mesh configs
     this.loadMeshConfigs();
+
+    // Restore suspended sessions from SQLite (crash recovery)
+    this.restoreSuspendedSessions();
 
     this.running = true;
     this.emit('start');
@@ -938,15 +987,27 @@ export class WorkerDispatcher extends EventEmitter {
             const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
             const pendingCount = pendingAskHumans.length;
 
-            // Store session for later resume with pending count
+            const suspendedAt = Date.now();
+
+            // Store session for later resume with pending count (in-memory)
             this.suspendedSessions.set(senderAgentId, {
               sessionId,
               reason: 'ask-human',
-              suspendedAt: Date.now(),
+              suspendedAt,
               targetAgents: new Set([targetAgentId]),
               pendingResponseCount: pendingCount,
               meshName,
               agentConfig,
+            });
+
+            // Persist to SQLite for crash recovery
+            this.queue.suspendSession(senderAgentId, {
+              sessionId,
+              reason: 'ask-human',
+              suspendedAt,
+              meshName,
+              targetAgents: [targetAgentId],
+              pendingCount,
             });
 
             // Kill the worker - no steering, no resume, just stop
@@ -1047,8 +1108,9 @@ The system will resume your session when the human responds.`;
     });
 
     try {
-      // Remove from suspended
+      // Remove from suspended (in-memory and SQLite)
       this.suspendedSessions.delete(agentId);
+      this.queue.resumeSession(agentId);
 
       // Build the resume prompt with human response
       const resumePrompt = headline

@@ -19,6 +19,7 @@ import { login } from './login.ts';
 import { logout } from './logout.ts';
 import { deploy } from './deploy.ts';
 import { session } from './session.ts';
+import { recover } from './recover.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -101,6 +102,7 @@ Commands:
   tx start          Start core agent (attaches to tmux)
   tx stop           Stop core agent
   tx status         Show system status
+  tx recover        View and resume interrupted work from crashes
   tx server         Start HTTP/WebSocket server (multi-tenant)
   tx run            Headless mesh REPL (no core)
   tx msg            View messages
@@ -388,6 +390,34 @@ Examples:
   tx session brain get 3 --summary
   tx session brain search "auth flow"
   tx session brain prune --older-than 365d --dry-run`,
+
+  recover: `tx recover - View and resume interrupted work from crashes
+
+Usage: tx recover [action] [options]
+
+Actions:
+  (none)    Show recovery status (default)
+  list      Detailed recovery info with queue stats
+  resume    Re-queue interrupted messages as pending
+  discard   Mark interrupted as failed, clear suspended sessions
+
+Options:
+  --json    Output as JSON
+
+Examples:
+  tx recover              # Show status
+  tx recover list         # Detailed view
+  tx recover resume       # Re-queue work
+  tx recover discard      # Discard and clear
+
+Crash Recovery:
+  When TX crashes or is killed unexpectedly, the system:
+  1. Detects the unclean shutdown on next start (via PID file)
+  2. Marks pending messages as 'interrupted' (not 'failed')
+  3. Preserves session IDs for worker resume
+
+  Use 'tx recover resume' to re-queue interrupted messages,
+  or 'tx recover discard' to abandon them.`,
 };
 
 function showHelp(cmd: string): void {
@@ -578,6 +608,13 @@ async function main() {
     case 'session':
       if (wantsHelp) { showHelp('session'); break; }
       await session(args);
+      break;
+
+    case 'recover':
+      if (wantsHelp) { showHelp('recover'); break; }
+      await recover(args.filter(a => !a.startsWith('-')), {
+        json: Boolean(flags.json),
+      });
       break;
 
     default:

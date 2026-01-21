@@ -20,13 +20,20 @@ export interface LoginOptions {
 }
 
 interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number | string;  // Server may return ISO string or number
+  tokens: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: string;  // Server returns ISO string
+  };
   user: {
     id: string;
     email: string;
     name?: string;
+  };
+  organization?: {
+    id: string;
+    name: string;
+    slug: string;
   };
 }
 
@@ -145,13 +152,11 @@ export async function login(options: LoginOptions = {}): Promise<void> {
 
     // Save credentials
     // Server returns expiresAt as ISO string, convert to Unix timestamp
-    const expiresAt = typeof data.expiresAt === 'string'
-      ? Math.floor(new Date(data.expiresAt).getTime() / 1000)
-      : data.expiresAt;
+    const expiresAt = Math.floor(new Date(data.tokens.expiresAt).getTime() / 1000);
 
     const creds: Credentials = {
-      accessToken: data.accessToken,
-      refreshToken: data.refreshToken,
+      accessToken: data.tokens.accessToken,
+      refreshToken: data.tokens.refreshToken,
       expiresAt,
       user: data.user,
       serverUrl,
