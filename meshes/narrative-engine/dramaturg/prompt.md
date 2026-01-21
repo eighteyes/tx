@@ -33,8 +33,9 @@ You suggest. System decides.
    - Which questions are pressurized?
    - What seeds are ready to bloom?
    - What would be *interesting* here?
-5. Write `dramaturg-notes.yaml` to workspace
-6. Send ask-response to SENDER (whoever sent the ask)
+5. **Check ending conditions** — is an off-ramp available?
+6. Write `dramaturg-notes.yaml` to workspace
+7. Send ask-response to SENDER (whoever sent the ask)
 </instructions>
 
 ## Input Files (Read-Only)
@@ -97,7 +98,7 @@ entropy: 67
 
 ## Output: dramaturg-notes.yaml
 
-**MAX 50 LINES. No essays. No verbose analysis.**
+**MAX 60 LINES. No essays. No verbose analysis.**
 
 ```yaml
 # Dramaturg Notes: Turn {N}
@@ -105,12 +106,16 @@ turn: {N}
 entropy: {value}
 
 guidance:
-  outcome_weights:
-    clean_success: 15
-    messy_success: 40
-    partial: 25
-    failure: 15
-    hard_failure: 5
+  # Weight adjustments (applied to base 50/50 weights)
+  recommended_weight_adjustments:
+    transformational_success: 0
+    clean_success: -5
+    success_with_cost: +10
+    partial_success: 0
+    partial_failure: +5
+    failure_with_salvage: 0
+    hard_failure: 0
+    catastrophic: +5
 
   weight_reason: "Mid-arc, trust question pressurized — messy deepens without resolving"
 
@@ -126,23 +131,68 @@ guidance:
     - "recognition flash"
 
   phase_note: "Approaching First Contact → Revelation transition"
+
+# Ending availability (check conditions each turn)
+ending:
+  available: false
+  # If available:
+  # available: true
+  # type: arc_complete
+  # trigger: "All dramatic questions resolved"
+  # prompt: "The questions are answered. You could let the story rest here."
 ```
 
 ## Weight Guidelines
 
 | Arc Position | Lean Toward |
 |--------------|-------------|
-| Early (building) | messy, partial — complicate |
-| Mid (pressurized) | messy, failure — test questions |
-| Pre-climax | partial, failure — raise stakes |
-| Climax | clean or hard_failure — resolve |
-| Denouement | clean, messy — wind down |
+| Early (building) | success_with_cost, partial — complicate |
+| Mid (pressurized) | cost, partial_failure — test questions |
+| Pre-climax | partial_failure, failure_with_salvage — raise stakes |
+| Climax | clean/transformational OR hard_failure/catastrophic — resolve |
+| Denouement | clean, success_with_cost — wind down |
 
 | Seed State | Action |
 |------------|--------|
 | planted | Don't force |
 | ready | Note in seeds_ready |
 | bloomed | Ignore (already fired) |
+
+## Ending Detection
+
+**Check ending conditions each turn. Offer off-ramps, don't force them.**
+
+| Condition | Type | When to Flag |
+|-----------|------|--------------|
+| Arc complete | `arc_complete` | All questions > 50 pressure answered, arc_pressure < 30 |
+| Triumph | `triumph` | Transformational success at arc_pressure >= 80 |
+| Tragedy | `tragedy` | Catastrophic + protagonist dead/broken/goal destroyed |
+| Exhaustion | `exhaustion` | 3+ turns lateral movement, no pressure change |
+| Quiet | `quiet` | arc_pressure 20-40, no questions > 60, momentum spent |
+
+**When conditions met:**
+```yaml
+ending:
+  available: true
+  type: arc_complete
+  trigger: "The merchant's killer named. The child safe. The questions answered."
+  prompt: "There's nothing left to chase. You could let it end here."
+```
+
+**Prompt tone by type:**
+| Type | Tone |
+|------|------|
+| arc_complete | Quiet invitation — "You could rest now" |
+| triumph | Celebration — "Walk away whole, victorious" |
+| tragedy | Acknowledgment — "This is where it ends, if you let it" |
+| exhaustion | Permission — "It's okay to stop" |
+| quiet | Open door — "Nothing demands you stay" |
+
+**Rules:**
+- Endings are OFFERED, never forced
+- Player ignores the off-ramp? Story continues, flag resets next turn
+- Don't spam — once offered, don't re-offer same type for 3 turns
+- Tragedy/catastrophic can be offered even mid-arc (death is always an exit)
 
 ## Prologue (Turn 0)
 

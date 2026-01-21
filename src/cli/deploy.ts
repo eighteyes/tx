@@ -15,7 +15,36 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import tar from 'tar';
-import { getValidCredentials, getServerUrl, type Credentials } from './credentials.ts';
+import { getValidCredentials, getServerUrl, refreshAccessToken, saveCredentials, type Credentials } from './credentials.ts';
+
+/**
+ * Fetch with automatic 401 retry after token refresh
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  creds: Credentials
+): Promise<{ response: Response; creds: Credentials }> {
+  let response = await fetch(url, options);
+
+  if (response.status === 401) {
+    // Try refreshing token
+    const refreshedCreds = await refreshAccessToken(creds);
+
+    // Retry with new token
+    const newOptions = {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${refreshedCreds.accessToken}`,
+      },
+    };
+    response = await fetch(url, newOptions);
+    return { response, creds: refreshedCreds };
+  }
+
+  return { response, creds };
+}
 
 export interface DeployOptions {
   region?: string;
@@ -30,9 +59,24 @@ export interface DeployResult {
   status?: string;
 }
 
+type ServerDeploymentStatus = 'pending' | 'uploading' | 'building' | 'deploying' | 'active' | 'failed' | 'rolled_back';
+
+interface DeploymentStatusResponse {
+  deployment: {
+    id: string;
+    status: ServerDeploymentStatus;
+    serviceUrl?: string;
+    statusMessage?: string;
+  };
+  build?: {
+    status?: string;
+    logsUrl?: string;
+  };
+}
+
 interface DeploymentStatus {
   id: string;
-  status: 'pending' | 'building' | 'deploying' | 'running' | 'failed';
+  status: ServerDeploymentStatus;
   serviceUrl?: string;
   error?: string;
   logs?: string[];
@@ -101,20 +145,24 @@ interface MeshInfo {
 
 /**
  * Get or create mesh by name
- * Returns the mesh UUID for deployment
+ * Returns the mesh UUID for deployment and potentially refreshed credentials
  */
 async function getOrCreateMesh(
   meshName: string,
   creds: Credentials
-): Promise<MeshInfo> {
+): Promise<{ mesh: MeshInfo; creds: Credentials }> {
   const serverUrl = creds.serverUrl || getServerUrl();
 
   // Try to find existing mesh by name
-  const listResponse = await fetch(`${serverUrl}/v1/meshes`, {
-    headers: {
-      'Authorization': `Bearer ${creds.accessToken}`,
+  const { response: listResponse, creds: updatedCreds } = await fetchWithRetry(
+    `${serverUrl}/v1/meshes`,
+    {
+      headers: {
+        'Authorization': `Bearer ${creds.accessToken}`,
+      },
     },
-  });
+    creds
+  );
 
   if (!listResponse.ok) {
     throw new Error(`Failed to list meshes: HTTP ${listResponse.status}`);
@@ -124,18 +172,22 @@ async function getOrCreateMesh(
   const existingMesh = listData.meshes.find(m => m.name === meshName);
 
   if (existingMesh) {
-    return existingMesh;
+    return { mesh: existingMesh, creds: updatedCreds };
   }
 
   // Create new mesh
-  const createResponse = await fetch(`${serverUrl}/v1/meshes`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${creds.accessToken}`,
-      'Content-Type': 'application/json',
+  const { response: createResponse, creds: finalCreds } = await fetchWithRetry(
+    `${serverUrl}/v1/meshes`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${updatedCreds.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: meshName }),
     },
-    body: JSON.stringify({ name: meshName }),
-  });
+    updatedCreds
+  );
 
   if (!createResponse.ok) {
     const errorData = await createResponse.json().catch(() => ({})) as { error?: string };
@@ -143,7 +195,7 @@ async function getOrCreateMesh(
   }
 
   const createData = await createResponse.json() as { mesh: MeshInfo };
-  return createData.mesh;
+  return { mesh: createData.mesh, creds: finalCreds };
 }
 
 /**
@@ -155,7 +207,7 @@ async function uploadMesh(
   meshName: string,
   creds: Credentials,
   options: DeployOptions
-): Promise<{ deploymentId: string }> {
+): Promise<{ deploymentId: string; creds: Credentials }> {
   const serverUrl = creds.serverUrl || getServerUrl();
 
   // Create multipart form data
@@ -201,14 +253,18 @@ async function uploadMesh(
 
   const body = Buffer.concat(parts);
 
-  const response = await fetch(`${serverUrl}/v1/deployments`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${creds.accessToken}`,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+  const { response, creds: updatedCreds } = await fetchWithRetry(
+    `${serverUrl}/v1/deployments`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${creds.accessToken}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
     },
-    body,
-  });
+    creds
+  );
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({})) as { error?: string };
@@ -216,7 +272,7 @@ async function uploadMesh(
   }
 
   const data = await response.json() as { deployment: { id: string } };
-  return { deploymentId: data.deployment.id };
+  return { deploymentId: data.deployment.id, creds: updatedCreds };
 }
 
 /**
@@ -231,19 +287,31 @@ async function pollDeploymentStatus(
   const pollInterval = 5000;
 
   let lastStatus = '';
+  let currentCreds = creds;
 
   for (let i = 0; i < maxAttempts; i++) {
-    const response = await fetch(`${serverUrl}/v1/deployments/${deploymentId}`, {
-      headers: {
-        'Authorization': `Bearer ${creds.accessToken}`,
+    const { response, creds: updatedCreds } = await fetchWithRetry(
+      `${serverUrl}/v1/deployments/${deploymentId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${currentCreds.accessToken}`,
+        },
       },
-    });
+      currentCreds
+    );
+    currentCreds = updatedCreds;
 
     if (!response.ok) {
       throw new Error(`Failed to get deployment status: HTTP ${response.status}`);
     }
 
-    const status = await response.json() as DeploymentStatus;
+    const data = await response.json() as DeploymentStatusResponse;
+    const status: DeploymentStatus = {
+      id: data.deployment.id,
+      status: data.deployment.status,
+      serviceUrl: data.deployment.serviceUrl,
+      error: data.deployment.statusMessage,
+    };
 
     // Print status updates
     if (status.status !== lastStatus) {
@@ -252,11 +320,11 @@ async function pollDeploymentStatus(
     }
 
     // Check terminal states
-    if (status.status === 'running') {
+    if (status.status === 'active') {
       return status;
     }
 
-    if (status.status === 'failed') {
+    if (status.status === 'failed' || status.status === 'rolled_back') {
       return status;
     }
 
@@ -273,10 +341,12 @@ async function pollDeploymentStatus(
 function printStatusUpdate(status: string): void {
   const icons: Record<string, string> = {
     pending: '⏳',
+    uploading: '📤',
     building: '🔨',
     deploying: '🚀',
-    running: '✓',
+    active: '✓',
     failed: '✗',
+    rolled_back: '⏪',
   };
 
   const icon = icons[status] || '•';
@@ -313,9 +383,9 @@ export async function deploy(meshName: string, options: DeployOptions = {}): Pro
   console.log('');
 
   try {
-    // Get or create mesh registration
+    // Get or create mesh registration (may refresh token)
     console.log('  🔍 Registering mesh...');
-    const mesh = await getOrCreateMesh(meshName, creds);
+    const { mesh, creds: currentCreds } = await getOrCreateMesh(meshName, creds);
 
     // Package mesh
     console.log('  📦 Packaging mesh...');
@@ -324,21 +394,21 @@ export async function deploy(meshName: string, options: DeployOptions = {}): Pro
 
     // Upload and start deployment
     console.log('  ☁️  Uploading to tx-server...');
-    const { deploymentId } = await uploadMesh(tarball, mesh.id, meshName, creds, options);
+    const { deploymentId, creds: finalCreds } = await uploadMesh(tarball, mesh.id, meshName, currentCreds, options);
 
     // Poll for completion
     console.log('');
     console.log('Deployment status:');
-    const status = await pollDeploymentStatus(deploymentId, creds);
+    const status = await pollDeploymentStatus(deploymentId, finalCreds);
 
     console.log('');
 
-    if (status.status === 'running') {
+    if (status.status === 'active') {
       const result: DeployResult = {
         success: true,
         deploymentId,
         serviceUrl: status.serviceUrl,
-        status: 'running',
+        status: 'active',
       };
       printDeployResult(result);
       return result;

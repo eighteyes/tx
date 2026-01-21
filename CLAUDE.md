@@ -1,4 +1,4 @@
-Do NOT run `tx start` or you will be terminated.
+Do NOT run `tx start` or `tx run` or you will be terminated.
 
 ## Architecture
 - `.ai/tx/` - system state

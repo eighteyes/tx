@@ -36,6 +36,7 @@ session-id: abc123       # Resume existing session (continuation)
 model: haiku | sonnet | opus  # Override agent's default model
 priority: high | normal | low  # Message priority (default: normal)
 headless: true           # Run without prompt injection (queue only)
+in-reply-to: original-msg-id   # REQUIRED for ask-response - correlates to original ask
 ---
 
 Message body content here.
@@ -52,6 +53,36 @@ Markdown formatting supported.
 | \`ask\` | agent → agent | Request information |
 | \`ask-response\` | agent → agent | Provide answer |
 | \`ask-human\` | worker → core | Request human input (HITL) |
+
+### Ask/Response Correlation (CRITICAL)
+
+**When responding to an \`ask\`, include \`in-reply-to\` with the original ask's msg-id.**
+
+\`\`\`yaml
+# Original ask (from coordinator)
+---
+to: mesh/editor
+from: mesh/coordinator
+type: ask
+msg-id: turn17-review      # ← Note this ID
+---
+
+# Your response - use in-reply-to to correlate
+---
+to: mesh/coordinator
+from: mesh/editor
+type: ask-response
+msg-id: turn17-review-response   # Can be unique
+in-reply-to: turn17-review       # ← MUST match original ask's msg-id
+---
+\`\`\`
+
+The system tracks ask/response pairs by \`in-reply-to\`. Missing or wrong values cause:
+- Response rejected as "unknown ask"
+- Sender marked as "not responding"
+- Potential session termination
+
+**Always include \`in-reply-to\` in ask-response messages.**
 
 ### Status Field
 
@@ -70,4 +101,58 @@ When you write an \`ask-human\` message:
 3. The system will resume your session with the response
 
 **VIOLATION**: Writing task-complete with pending asks = protocol error
+
+### Recovery Channels (system/*)
+
+Agents can request state guidance by writing to system channels:
+
+| Channel | Purpose |
+|---------|---------|
+| \`system/help\` | Request state guidance (deliberate) |
+| \`system/stuck\` | Declare inability to proceed (deliberate) |
+| \`system/*\` | Any other system target (accidental - still handled) |
+
+**Response**: \`type: guidance\` message with:
+- Current FSM state and valid exits
+- Pending asks that must be resolved
+- Worker status and await state
+- Suggested next action
+
+**Escalation**: After 3 requests in 60s, escalates to \`core/core\` as \`ask-human\`.
+
+**Example deliberate help request**:
+\`\`\`yaml
+---
+to: system/help
+from: narrative-engine/coordinator
+type: ask
+msg-id: help-123
+headline: Need guidance
+---
+
+I'm confused about what to do next. My ask to the player hasn't been answered.
+\`\`\`
+
+**Example guidance response**:
+\`\`\`yaml
+---
+to: narrative-engine/coordinator
+from: system/recovery
+type: guidance
+msg-id: guidance-123456
+in-reply-to: help-123
+---
+
+## Current State
+
+| Property | Value |
+|----------|-------|
+| FSM State | \`awaiting-response\` |
+| Worker Status | \`awaiting\` |
+| Pending Asks | 1 |
+
+## Suggested Action
+
+Await response to 1 pending ask(s) before sending task-complete.
+\`\`\`
 `;

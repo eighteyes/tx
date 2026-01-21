@@ -631,6 +631,16 @@ export class MessageQueue {
   }
 
   /**
+   * Clear all pending asks for a mesh (on mesh completion)
+   */
+  clearPendingAsksForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM pending_asks WHERE from_agent LIKE ? OR to_agent LIKE ?'
+    ).run(`${meshName}/%`, `${meshName}/%`);
+    return result.changes;
+  }
+
+  /**
    * Get database instance (for stale cleaner and deadlock detector)
    */
   getDatabase(): Database.Database {

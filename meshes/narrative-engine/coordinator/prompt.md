@@ -28,12 +28,12 @@ Traffic control. Route messages, maintain session.yaml, generate entropy. Never 
 ## Turn Pipeline
 
 ```
-INIT → PREP → NARRATOR → EDITOR (leads revision loop) → ORACLE → SCRIBE → DELIVER
-                              ↓
-                         NARRATOR ←→ EDITOR (direct, up to 3x)
+INIT → PREP → NARRATOR → LINT → EDITOR (leads revision loop) → ORACLE → SCRIBE → DELIVER
+                                      ↓
+                                 NARRATOR ←→ EDITOR (direct, up to 3x)
 ```
 
-Coordinator kicks off each phase. Agents communicate directly within phase.
+Coordinator kicks off each phase. LINT-COORDINATOR aggregates all linter results before EDITOR reviews.
 
 ## Phase Machine
 
@@ -54,18 +54,24 @@ Read session.yaml `phase` field. Execute matching phase:
 
 **PHASE 3 - RENDER** (phase: `awaiting_narrator`)
 1. Verify prose-draft.md exists
-2. Generate concordance for editor:
+2. Generate concordance for linters:
    ```bash
    tr '[:upper:]' '[:lower:]' < {workspace}/prose-draft.md | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn > {workspace}/concordance.txt
    ```
-3. Extract dialogue pairs for coherence check:
+3. Extract dialogue pairs for lint-dialogue:
    ```bash
    ./meshes/narrative-engine/extract-dialogue.sh {workspace}/prose-draft.md {workspace}/dialogue-pairs.txt
    ```
-4. Set phase → `awaiting_editor`, send ask to EDITOR (include concordance + dialogue paths)
+4. Set phase → `awaiting_lint`, send ask to LINT-COORDINATOR (see Message Templates)
+
+**PHASE 3b - LINT** (phase: `awaiting_lint`)
+Lint-coordinator dispatches to all 9 linters in parallel, aggregates violations, forwards to editor.
+1. Wait for lint-coordinator ask-response (confirmation that violations forwarded to editor)
+2. Set phase → `awaiting_editor`
+3. (No message to send — lint-coordinator already forwarded to editor)
 
 **PHASE 4 - REVIEW** (phase: `awaiting_editor`)
-Editor leads the revision loop directly with narrator (up to 3 iterations).
+Editor receives aggregated violations from lint-coordinator, leads revision loop with narrator (up to 3 iterations).
 1. Wait for editor ask-response (editor handles narrator iterations internally)
 2. Editor returns: `verdict: CLEAN` or `verdict: MAX_ITERATIONS`
 3. Rename prose-draft.md → prose.md, set phase → `awaiting_oracle`, send ask to ORACLE
@@ -107,14 +113,14 @@ author: /absolute/path/to/games/{game-id}/author.yaml
 entities: /absolute/path/to/games/{game-id}/entities.yaml
 ```
 
-### Ask to EDITOR (review)
+### Ask to LINT-COORDINATOR (lint)
 
 ```yaml
 ---
-to: narrative-engine/editor
+to: narrative-engine/lint-coordinator
 from: narrative-engine/coordinator
 type: ask
-msg-id: turn{N}-review
+msg-id: turn{N}-lint
 ---
 workspace: /absolute/path/to/turns/turn-{N}/
 game: /absolute/path/to/games/{game-id}/
@@ -123,7 +129,10 @@ author: /absolute/path/to/games/{game-id}/author.yaml
 concordance: /absolute/path/to/turns/turn-{N}/concordance.txt
 story_concordance: /absolute/path/to/games/{game-id}/story-concordance.txt
 dialogue_pairs: /absolute/path/to/turns/turn-{N}/dialogue-pairs.txt
+session: /absolute/path/to/.ai/tx/narrative-engine/session.yaml
 ```
+
+**Note:** Lint-coordinator will dispatch to all 9 linters, aggregate violations, and forward directly to EDITOR. You just wait for lint-coordinator's ask-response confirming handoff.
 
 ### Generic ask template
 

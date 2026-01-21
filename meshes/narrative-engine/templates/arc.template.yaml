@@ -58,3 +58,65 @@ possible_endings: []
 forbidden_endings: []
   # - "Protagonist becomes what they fought against without recognition"
   # - "Deus ex machina resolution"
+
+# ============================================
+# ENDING AVAILABILITY (Runtime - set by DRAMATURG)
+# ============================================
+# When conditions are met, DRAMATURG sets this flag.
+# NARRATOR surfaces the off-ramp in "You could:" options.
+# Player ignores it → story continues. Player takes it → epilogue.
+
+ending:
+  available: false
+  type: null                    # arc_complete | tragedy | triumph | exhaustion | quiet
+  trigger: null                 # What made this ending available
+  prompt: null                  # Text for NARRATOR to offer
+  # Example when active:
+  # available: true
+  # type: arc_complete
+  # trigger: "All dramatic questions resolved"
+  # prompt: "The questions are answered. You could let the story rest here."
+
+# Ending Conditions (evaluated by DRAMATURG each turn)
+ending_conditions:
+  arc_complete:
+    description: "All major questions answered, arc pressure released"
+    requires:
+      - "All questions with pressure > 50 are status: answered"
+      - "arc_pressure < 30 (tension released)"
+    tone: quiet
+
+  triumph:
+    description: "Transformational success on climactic action"
+    requires:
+      - "outcome_type: transformational_success"
+      - "arc_pressure >= 80 (climactic moment)"
+    tone: triumphant
+
+  tragedy:
+    description: "Catastrophic outcome with no recovery path"
+    requires:
+      - "outcome_type: catastrophic"
+      - "protagonist status: dead OR all bonds severed OR core goal destroyed"
+    tone: tragic
+
+  exhaustion:
+    description: "Player signals fatigue, story offers graceful exit"
+    requires:
+      - "Player explicitly requests ending"
+      - "OR 3+ turns of lateral movement (no question pressure change)"
+    tone: ambiguous
+
+  quiet:
+    description: "Natural pause point, nothing demands continuation"
+    requires:
+      - "arc_pressure between 20-40"
+      - "No questions above pressure 60"
+      - "Scene momentum: spent"
+    tone: bittersweet
+
+# Epilogue Seeds (used when ending is taken)
+epilogue_seeds: []
+  # - "What became of the artifact"
+  # - "Whether the innkeeper's secret held"
+  # - "The child, years later"

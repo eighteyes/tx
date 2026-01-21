@@ -15,6 +15,8 @@ import path from 'node:path';
 import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
+import { RecoveryHandler } from './recovery.ts';
+import type { AgentStateSnapshot } from '../worker/dispatcher.ts';
 
 /**
  * Interface for FSM validation capability
@@ -28,6 +30,14 @@ interface FSMValidator {
     messageFrontmatter: Record<string, unknown>,
     rearmatter?: Record<string, unknown>
   ): Promise<boolean>;
+}
+
+/**
+ * Interface for agent state provider
+ * Dispatcher implements this for recovery handler
+ */
+interface AgentStateProvider {
+  getAgentStateSnapshot(agentId: string): AgentStateSnapshot | null;
 }
 
 /**
@@ -99,6 +109,10 @@ export class MessageConsumer extends EventEmitter {
   // Parity gate: pending asks are now persisted in SQLite via this.queue
   // FSM validator (dispatcher) for pre-routing validation
   private fsmValidator: FSMValidator | null = null;
+  // Agent state provider (dispatcher) for recovery handler
+  private agentStateProvider: AgentStateProvider | null = null;
+  // Recovery handler for system/* interception
+  private recoveryHandler: RecoveryHandler | null = null;
   // Routing self-heal: track violations per agent
   private routingViolationTracker: Map<string, RoutingViolation> = new Map();
   // Cache mesh configs for routing validation
@@ -185,25 +199,38 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
-   * Subscribe to dispatcher events for parity gate and FSM validation
+   * Subscribe to dispatcher events for parity gate, FSM validation, and recovery
    * - Clears pending asks when a new session starts for an agent
    * - Sets up FSM validator for pre-routing message validation
+   * - Sets up recovery handler for system/* interception
    */
-  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator>): void {
+  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator> & Partial<AgentStateProvider>): void {
     // Store dispatcher as FSM validator if it has the validation method
     if (typeof dispatcher.validateMessageWithFSM === 'function') {
       this.fsmValidator = dispatcher as FSMValidator;
       log.debug('consumer', 'FSM validator registered');
     }
 
+    // Store dispatcher as agent state provider and set up recovery handler
+    if (typeof dispatcher.getAgentStateSnapshot === 'function') {
+      this.agentStateProvider = dispatcher as AgentStateProvider;
+      this.recoveryHandler = new RecoveryHandler(
+        this.queue,
+        (agentId) => this.agentStateProvider?.getAgentStateSnapshot(agentId) || null,
+        this.watchDir
+      );
+      log.debug('consumer', 'Recovery handler initialized');
+    }
+
+    // Don't clear pending asks on session start - asks persist across session restarts.
+    // Mesh state (including pending asks) is cleared on final task-complete to core.
     dispatcher.on('session-start', ({ agentId }: { agentId: string }) => {
       const pending = this.queue.getPendingAsks(agentId);
       if (pending.length > 0) {
-        log.info('consumer', `Clearing ${pending.length} stale pending asks on session start`, {
+        log.debug('consumer', `Agent starting with ${pending.length} pending asks (preserved)`, {
           agentId,
           msgIds: pending.map(p => p.msg_id),
         });
-        this.queue.clearPendingAsks(agentId);
       }
     });
   }
@@ -338,6 +365,48 @@ ${body}
       // Resolve mesh routing with support for partial names
       const toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
       const targetMesh = toAgent.split('/')[0];
+
+      // =================================================================
+      // RECOVERY CHANNEL INTERCEPTION
+      // Intercept messages to system/* targets and provide state guidance.
+      // Supports deliberate channels (system/help, system/stuck) and
+      // accidental writes (system/routing-validator, etc.)
+      // =================================================================
+      if (toAgent.startsWith('system/') && this.recoveryHandler) {
+        const fromAgent = parsed.frontmatter.from;
+        const msgId = parsed.frontmatter['msg-id'] || `recovery-${Date.now()}`;
+
+        log.info('consumer', 'Recovery request intercepted', {
+          from: fromAgent,
+          target: toAgent,
+          msgId,
+          file: filename,
+        });
+
+        const result = this.recoveryHandler.handleRecoveryRequest({
+          agentId: fromAgent,
+          targetChannel: toAgent,
+          msgId,
+          body: parsed.body,
+        });
+
+        log.info('consumer', `Recovery request handled: ${result}`, {
+          from: fromAgent,
+          target: toAgent,
+        });
+
+        // Delete the original message file (it was handled)
+        try {
+          fs.unlinkSync(filepath);
+          log.debug('consumer', `Deleted handled recovery message`, { file: filename });
+        } catch (unlinkErr) {
+          log.warn('consumer', `Failed to delete recovery message file`, {
+            file: filename,
+            error: (unlinkErr as Error).message,
+          });
+        }
+        return;
+      }
 
       // Command validation: check if target mesh handles this command
       const command = parsed.frontmatter.command;
@@ -535,18 +604,24 @@ ${body}
       // Detect ask-response messages - these resume awaiting workers
       if (messageType === 'ask-response') {
         const msgId = parsed.frontmatter['msg-id'];
+        const inReplyTo = parsed.frontmatter['in-reply-to'];
         const respondingAgent = parsed.frontmatter.from;
+
+        // Use in-reply-to as primary correlation, fall back to msg-id
+        const correlationId = inReplyTo || msgId;
 
         log.info('consumer', `Ask-response message detected`, {
           from: respondingAgent,
           to: toAgent,
           msgId,
+          inReplyTo,
+          correlationId,
           file: filename
         });
 
-        // Parity gate: progressive matching - msg-id first, then agent fallback
+        // Parity gate: progressive matching - correlation ID first, then agent fallback
         // The response is TO the agent who originally sent the ask
-        const result = this.queue.resolvePendingAsk(respondingAgent, toAgent, msgId);
+        const result = this.queue.resolvePendingAsk(respondingAgent, toAgent, correlationId);
 
         if (result.resolved) {
           if (result.matchType === 'msg-id') {
@@ -631,6 +706,16 @@ ${body}
 
             // Skip emitting core-message - the task-complete is blocked
             return;
+          }
+
+          // Parity gate passed - clear mesh state (pending asks) on final task-complete to core
+          const meshName = fromAgent.split('/')[0];
+          const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
+          if (clearedAsks > 0) {
+            log.info('consumer', `Mesh complete: cleared ${clearedAsks} pending asks`, {
+              meshName,
+              fromAgent,
+            });
           }
         }
 

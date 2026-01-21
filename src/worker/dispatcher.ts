@@ -144,6 +144,28 @@ export interface DispatcherConfig {
 }
 
 /**
+ * Comprehensive agent state snapshot for recovery guidance
+ * Used by RecoveryHandler to generate guidance messages for confused agents
+ */
+export interface AgentStateSnapshot {
+  agentId: string;
+  meshName: string;
+  fsm: {
+    currentState: string;
+    validExits: string[];
+    context: Record<string, unknown>;
+  } | null;
+  worker: {
+    status: string;
+    isAwaiting: boolean;
+    awaitingResponses: string[];
+    messagesProcessed: number;
+  } | null;
+  pendingAsks: Array<{ msgId: string; to: string; createdAt: number }>;
+  sessionId: string | null;
+}
+
+/**
  * Event emitted by Consumer when a message file is revised (edited)
  */
 interface RevisionMessageEvent {
@@ -2384,16 +2406,35 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Check if worker is awaiting responses - if so, suspend instead of completing
         // This handles the case where the SDK subprocess exits naturally while the FSM is in 'awaiting' state
+        // ALSO check SQLite for pending outgoing asks - handles race where enterAwait() hasn't finished
         const currentStatus = machine.getStatus();
-        if (currentStatus === 'awaiting') {
+        const pendingOutgoingAsks = this.queue.getPendingAsks(agentId);
+        const hasPendingAsks = pendingOutgoingAsks.length > 0;
+
+        if (currentStatus === 'awaiting' || hasPendingAsks) {
+          if (hasPendingAsks && currentStatus !== 'awaiting') {
+            log.warn('dispatcher', `Worker has pending outgoing asks but FSM not in awaiting - race condition detected`, {
+              agentId,
+              workerId: currentWorkerId,
+              fsmStatus: currentStatus,
+              pendingAsks: pendingOutgoingAsks.map(a => a.msg_id),
+            });
+          }
           const sessionId = data.sessionId;
           if (sessionId) {
-            const awaitingResponses = machine.getAwaitingResponses();
+            // Get awaiting responses from FSM, but also include SQLite pending asks (handles race)
+            const fsmAwaitingResponses = machine.getAwaitingResponses();
+            const sqliteTargets = pendingOutgoingAsks.map(a => a.to_agent);
+            const allTargets = new Set([...fsmAwaitingResponses, ...sqliteTargets]);
+            const pendingCount = Math.max(fsmAwaitingResponses.size, pendingOutgoingAsks.length);
+
             log.info('dispatcher', `Worker exited while awaiting - suspending session`, {
               agentId,
               workerId: currentWorkerId,
               sessionId: sessionId.slice(0, 8),
-              awaitingResponses: Array.from(awaitingResponses),
+              fsmAwaitingResponses: Array.from(fsmAwaitingResponses),
+              sqlitePendingAsks: sqliteTargets,
+              mergedTargets: Array.from(allTargets),
             });
 
             // Save to suspendedSessions (same mechanism as ask-human)
@@ -2401,11 +2442,21 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               sessionId,
               reason: 'await-response',
               suspendedAt: Date.now(),
-              targetAgents: new Set(awaitingResponses),
-              pendingResponseCount: awaitingResponses.size,
+              targetAgents: allTargets,
+              pendingResponseCount: pendingCount,
               meshName,
               agentConfig: agent,
               hookContext: workerHookContext,
+            });
+
+            // Persist to SQLite for crash recovery (matches ask-human behavior)
+            this.queue.suspendSession(agentId, {
+              sessionId,
+              reason: 'await-response',
+              suspendedAt: Date.now(),
+              meshName,
+              targetAgents: Array.from(allTargets),
+              pendingCount,
             });
 
             // Remove from activeWorkers but DON'T complete FSM - keep it in awaiting state
@@ -2417,8 +2468,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               workerId: currentWorkerId,
               sessionId,
               reason: 'await-response',
-              pendingResponseCount: awaitingResponses.size,
-              targetAgents: Array.from(awaitingResponses),
+              pendingResponseCount: pendingCount,
+              targetAgents: Array.from(allTargets),
             });
 
             // Don't complete FSM - wait for ask-response to resume
@@ -3266,6 +3317,79 @@ ${output}
    */
   getWorkspaceManager(): WorkspaceManager {
     return this.workspaceManager;
+  }
+
+  /**
+   * Get comprehensive state snapshot for recovery guidance
+   * Used by RecoveryHandler to generate guidance messages for confused agents
+   */
+  getAgentStateSnapshot(agentId: string): AgentStateSnapshot | null {
+    const [meshName, agentName] = agentId.split('/');
+    if (!meshName || !agentName) return null;
+
+    const fsm = this.meshFSMs.get(meshName);
+    const workerMachine = this.getWorkerMachine(agentId);
+    const pendingAsks = this.queue.getPendingAsks(agentId);
+    const sessionId = this.queue.getConversationId(agentId);
+
+    // Get valid exits from current FSM state's exit config
+    let validExits: string[] = [];
+    if (fsm?.isInitialized()) {
+      const stateConfig = fsm.getCurrentStateConfig();
+      if (stateConfig?.exit) {
+        const exit = stateConfig.exit;
+        // Collect all possible exit targets
+        const targets = new Set<string>();
+
+        // From 'when' clauses
+        if (exit.when) {
+          for (const clause of exit.when) {
+            if (clause.target) targets.add(clause.target);
+          }
+        }
+
+        // From 'default'
+        if (exit.default) {
+          targets.add(exit.default);
+        }
+
+        // From 'run' if it's a literal state name
+        if (exit.run && fsm.getStateConfig(exit.run.trim())) {
+          targets.add(exit.run.trim());
+        }
+
+        // From 'transitions' (backward compat)
+        if (exit.transitions) {
+          for (const target of Object.keys(exit.transitions)) {
+            targets.add(target);
+          }
+        }
+
+        validExits = Array.from(targets);
+      }
+    }
+
+    return {
+      agentId,
+      meshName,
+      fsm: fsm?.isInitialized() ? {
+        currentState: fsm.getCurrentState(),
+        validExits,
+        context: fsm.getContext(),
+      } : null,
+      worker: workerMachine ? {
+        status: workerMachine.getStatus(),
+        isAwaiting: workerMachine.isAwaiting(),
+        awaitingResponses: Array.from(workerMachine.getAwaitingResponses()),
+        messagesProcessed: workerMachine.getMessagesProcessed(),
+      } : null,
+      pendingAsks: pendingAsks.map(a => ({
+        msgId: a.msg_id,
+        to: a.to_agent,
+        createdAt: a.created_at || 0,
+      })),
+      sessionId,
+    };
   }
 
   /**

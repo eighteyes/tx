@@ -2,25 +2,51 @@
  * SessionSummarizer - Haiku-powered session summarization
  *
  * Generates headlines and summaries from session transcripts using Claude 3.5 Haiku.
+ * Uses Claude Code SDK for auth consistency with the rest of the system.
+ *
  * User requirement: Headlines are generated from intro task + final answer only,
  * NOT the full transcript.
  */
 
-import type Anthropic from '@anthropic-ai/sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'node:fs/promises';
 import { SessionStore } from './session-store.ts';
 import type { SummaryType } from './types.ts';
 import { log } from '../shared/logger.ts';
-import { getAnthropicClient } from '../shared/anthropic-client.ts';
 
 const COMPONENT = 'session-summarizer';
 
+/**
+ * Run a one-shot haiku query (no tools, just text completion)
+ */
+async function runHaikuQuery(prompt: string): Promise<string> {
+  let result = '';
+
+  for await (const message of query({
+    prompt,
+    options: {
+      model: 'haiku',
+      maxTurns: 1,
+      permissionMode: 'bypassPermissions',
+      allowDangerouslySkipPermissions: true,
+    },
+  })) {
+    if (message.type === 'assistant' && message.message?.content) {
+      for (const block of message.message.content) {
+        if (block.type === 'text') {
+          result += block.text;
+        }
+      }
+    }
+  }
+
+  return result.trim();
+}
+
 export class SessionSummarizer {
-  private client: Anthropic;
   private store: SessionStore;
 
   constructor(store: SessionStore) {
-    this.client = getAnthropicClient();
     this.store = store;
   }
 
@@ -33,22 +59,15 @@ export class SessionSummarizer {
     const intro = this.extractIntroTask(transcript);
     const final = this.extractFinalAnswer(transcript);
 
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 100,
-      messages: [{
-        role: 'user',
-        content: `Generate a 1-line headline (max 80 chars) for this session:
+    const prompt = `Generate a 1-line headline (max 80 chars) for this session:
 
 Task: ${intro.slice(0, 500)}
 
 Final Answer: ${final.slice(0, 1000)}
 
-Return ONLY the headline, no quotes or prefix.`
-      }]
-    });
+Return ONLY the headline, no quotes or prefix.`;
 
-    return (response.content[0] as { text: string }).text.trim();
+    return runHaikuQuery(prompt);
   }
 
   /**
@@ -124,40 +143,26 @@ Return ONLY the headline, no quotes or prefix.`
   }
 
   private async generateBriefSummary(transcript: string): Promise<string> {
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Summarize this agent session in 2-3 sentences. Focus on:
+    const prompt = `Summarize this agent session in 2-3 sentences. Focus on:
 - Main task/question
 - Key outcome or decision
 - Any notable artifacts created
 
 Session transcript:
-${transcript.slice(0, 10000)}`
-      }]
-    });
+${transcript.slice(0, 10000)}`;
 
-    return (response.content[0] as { text: string }).text;
+    return runHaikuQuery(prompt);
   }
 
   private async generateFinalAnswer(transcript: string): Promise<string> {
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 600,
-      messages: [{
-        role: 'user',
-        content: `Extract only the final answer or output from this session.
+    const prompt = `Extract only the final answer or output from this session.
 If the session produced code, include the key code.
 If it was a discussion, summarize the conclusion.
 
 Session transcript:
-${transcript.slice(-15000)}`
-      }]
-    });
+${transcript.slice(-15000)}`;
 
-    return (response.content[0] as { text: string }).text;
+    return runHaikuQuery(prompt);
   }
 
   private async generateSplitSummary(transcript: string): Promise<string> {
@@ -165,12 +170,7 @@ ${transcript.slice(-15000)}`
     const halfPoint = Math.floor(transcript.length / 2);
     const latterHalf = transcript.slice(halfPoint);
 
-    const response = await this.client.messages.create({
-      model: 'claude-3-5-haiku-latest',
-      max_tokens: 600,
-      messages: [{
-        role: 'user',
-        content: `Summarize the latter half of this session.
+    const prompt = `Summarize the latter half of this session.
 
 ## Original Task
 ${intro}
@@ -183,10 +183,9 @@ Format:
 [Summary]
 
 ## Outcome
-[Final status/output]`
-      }]
-    });
+[Final status/output]`;
 
-    return `## Original Task\n${intro}\n\n${(response.content[0] as { text: string }).text}`;
+    const result = await runHaikuQuery(prompt);
+    return `## Original Task\n${intro}\n\n${result}`;
   }
 }

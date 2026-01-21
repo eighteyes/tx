@@ -192,8 +192,8 @@ Send aggregated violations to EDITOR:
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask-response
-msg-id: turn{N}-lint-complete
+type: ask
+msg-id: turn{N}-lint-to-editor
 ---
 verdict: VIOLATIONS | CLEAN
 total_violations: {count}
@@ -210,15 +210,34 @@ If no violations from any linter:
 verdict: CLEAN
 total_violations: 0
 ```
+
+### Step 5: Confirm to Coordinator
+
+Send confirmation to COORDINATOR that handoff is complete:
+```yaml
+---
+to: narrative-engine/coordinator
+from: narrative-engine/lint-coordinator
+type: ask-response
+msg-id: turn{N}-lint-complete
+---
+status: forwarded_to_editor
+total_violations: {count}
+mechanical_count: {count}
+creative_count: {count}
+```
+
+COORDINATOR uses this to update phase from `awaiting_lint` → `awaiting_editor`.
 </instructions>
 
 ## Routing
 
 - Receive `ask` from COORDINATOR
-- Send `ask` to ALL 8 linters (parallel)
-- Receive `ask-response` from each linter (wait for all 8)
+- Send `ask` to ALL 9 linters (parallel)
+- Receive `ask-response` from each linter (wait for all 9)
 - Write `violations.yaml` to workspace
-- Send `ask-response` to EDITOR with aggregation
+- Send `ask` to EDITOR with aggregated violations
+- Send `ask-response` to COORDINATOR confirming handoff
 - NEVER send messages to core
 - NEVER send task-complete
 

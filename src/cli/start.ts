@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { TmuxSession, findClaudePath, injectFile, getSessionName, waitForUserIdle } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, injectFile, getSessionName, waitForUserIdle, writeStatusBar } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -403,14 +403,17 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       log.info('injector', 'Injected message to core', { id, from, type, file: path.basename(filepath) });
       queue.markProcessed(id);
       pendingRetries.delete(id);
+      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
     } else if (attempt >= MAX_INJECT_ATTEMPTS) {
       log.error('injector', 'Max retry attempts reached, marking failed', { id, from, type, attempts: attempt });
       queue.markProcessed(id);  // Mark as processed so it doesn't stay pending
       pendingRetries.delete(id);
+      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
     } else {
       // Backoff: 2s, 4s, 8s, 16s, max 30s
       const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
       log.debug('injector', 'Claude busy, retry scheduled', { id, from, type, attempt, delayMs: delay });
+      writeStatusBar({ state: 'RETRY', retryAttempt: attempt, pendingCount: pendingRetries.size + 1 });
 
       const timeout = setTimeout(() => tryInject(id, filepath, from, type, attempt + 1), delay);
       pendingRetries.set(id, { timeout, id });
@@ -420,8 +423,12 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
+    writeStatusBar({ state: 'BUSY', pendingCount: pendingRetries.size + 1 });
     tryInject(id, filepath, from, type);
   });
+
+  // Initialize status bar
+  writeStatusBar({ state: 'IDLE', pendingCount: 0 });
 
   await dispatcher.start(consumer);
 

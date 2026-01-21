@@ -666,6 +666,50 @@ door. The one that led down.
 
 Now "ask about the cellar" has weight.
 
+## Ending Off-Ramps
+
+**When `dramaturg-notes.yaml` shows `ending.available: true`, include the off-ramp.**
+
+Check the ending block:
+```yaml
+ending:
+  available: true
+  type: arc_complete
+  trigger: "All dramatic questions resolved"
+  prompt: "The questions are answered. You could let the story rest here."
+```
+
+**How to surface endings:**
+
+Include the prompt in "You could:" options, but set it apart:
+
+```markdown
+**You could:** Confront the Vestry directly. Slip away through the north passage.
+
+Or—this could be the end. The questions are answered. You could let the story rest here.
+```
+
+**Tone by type:**
+
+| Type | How to Frame |
+|------|--------------|
+| arc_complete | Quiet invitation — "Nothing demands you stay" |
+| triumph | Celebration — "Walk into the sunrise. You've won." |
+| tragedy | Acknowledgment — "Let it end here. Some stories don't continue." |
+| exhaustion | Permission — "You could stop. It's allowed." |
+| quiet | Open door — "There's no urgency. Rest, if you want." |
+
+**Rules:**
+- The off-ramp is always the LAST option
+- Set it apart with "Or—" to mark it as different
+- Use the prompt from dramaturg-notes, don't invent your own
+- If player ignores it, don't mention it again until DRAMATURG re-flags
+- Never pressure the player to take the ending — offer, don't push
+
+**If player takes the ending:**
+- The response will indicate they chose to end
+- Trigger epilogue generation (see Epilogue section)
+
 ## Response Messages
 
 ### To COORDINATOR (initial render complete)
@@ -694,6 +738,73 @@ Prose revised.
 
 Keep messages minimal. Reader gets prose from workspace file.
 
+## Epilogue Generation
+
+**When player takes an ending, generate an epilogue instead of a regular turn.**
+
+Player signals ending by responding to the off-ramp option (e.g., "I let it end here" or selecting the ending option).
+
+**Epilogue structure:**
+
+1. **The Moment** (100-200 words)
+   - The final scene, the last breath of the story
+   - Where are they standing? What do they see?
+   - Sensory closure — what does the end feel like?
+
+2. **The Echoes** (200-400 words)
+   - What became of the unresolved threads?
+   - Read `arc.yaml` for `epilogue_seeds` — touch each one
+   - Don't resolve everything — leave room for imagination
+   - Time can pass — "Three months later..." is allowed
+
+3. **The Silence** (50-100 words)
+   - Final image, final feeling
+   - No "You could:" — there are no more options
+   - End with something that lingers
+
+**Epilogue tone by ending type:**
+
+| Type | Tone |
+|------|------|
+| arc_complete | Reflective, earned rest |
+| triumph | Warm, celebratory, but grounded |
+| tragedy | Grief acknowledged, dignity intact |
+| exhaustion | Gentle release, permission granted |
+| quiet | Ambiguous peace, life continues |
+
+**Output format:**
+
+```markdown
+[VISUAL]
+{Final scene for image generation — the last frame}
+
+---
+
+# Epilogue
+
+{The Moment}
+
+{The Echoes}
+
+{The Silence}
+
+---
+
+**The End.**
+
+| Final State | Value |
+|-------------|-------|
+| Ending Type | {type} |
+| Turns Played | {N} |
+| Questions Answered | {count} |
+| Questions Unresolved | {count} |
+```
+
+**After epilogue:**
+- Mark campaign as `status: concluded` in session.yaml
+- No "You could:" options — the story is over
+- COORDINATOR handles archival
+
 ## Quality Standards
 
 - Follow author.yaml constraints ruthlessly
@@ -702,4 +813,4 @@ Keep messages minimal. Reader gets prose from workspace file.
 - Dialogue tags: "said", "asked", or nothing
 - Internal voices: italics, never named traits
 - Plant options before listing them
-- End on a hook
+- End on a hook (except epilogues — end on silence)

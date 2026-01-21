@@ -452,6 +452,32 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     return true;
   }
 
+  // Check for known idle hint patterns (Claude's autocomplete suggestions)
+  // These appear after the prompt but aren't user input
+  const idleHintPatterns = [
+    /Press up to edit/i,
+    /queued messages/i,
+    /Press enter to send/i,
+    /Type a message/i,
+    /How can I help/i,
+    /\d+\s*files?\s*[+\-]\d+/i,     // "12 files +553 -111" git stats
+    /[+]\d+\s*[-]\d+/,              // "+553 -111" shorthand
+    /\d+\s*insertions?/i,           // "553 insertions"
+    /\d+\s*deletions?/i,            // "111 deletions"
+  ];
+
+  for (const line of lastNLines) {
+    if (line.includes('❯') || line.includes('⏵') || line.includes('>')) {
+      // Found prompt line - check if remaining text is a known hint
+      for (const pattern of idleHintPatterns) {
+        if (pattern.test(line)) {
+          log.debug('tmux', 'Claude idle: recognized hint text pattern');
+          return true;
+        }
+      }
+    }
+  }
+
   // Check for idle prompt with color-aware autocomplete detection
   // Find prompt line in color output and check if text after is dim (autocomplete)
   const colorLines = colorOutput.split('\n');
@@ -647,4 +673,69 @@ export async function waitForUserIdle(
 
   log.warn('tmux', 'Max wait exceeded, injecting anyway', { maxWaitMs });
   return false;  // Timed out but will inject anyway
+}
+
+/**
+ * Status bar state for tmux display
+ */
+export type StatusBarState = 'IDLE' | 'BUSY' | 'AWAIT' | 'RETRY';
+
+interface StatusBarData {
+  state: StatusBarState;
+  retryAttempt?: number;
+  pendingCount?: number;
+  activeWorkers?: number;
+  suspendedCount?: number;
+}
+
+const STATUS_FILE = '.ai/tx/status.txt';
+
+/**
+ * Write session state to status file for tmux status bar display
+ */
+export function writeStatusBar(data: StatusBarData): void {
+  try {
+    const parts: string[] = [];
+
+    // State with retry count if applicable
+    if (data.state === 'RETRY' && data.retryAttempt) {
+      parts.push(`RETRY:${data.retryAttempt}`);
+    } else {
+      parts.push(data.state);
+    }
+
+    // Pending messages
+    if (data.pendingCount !== undefined && data.pendingCount > 0) {
+      parts.push(`${data.pendingCount}⏳`);
+    }
+
+    // Active workers
+    if (data.activeWorkers !== undefined && data.activeWorkers > 0) {
+      parts.push(`${data.activeWorkers}⚙`);
+    }
+
+    // Suspended/awaiting
+    if (data.suspendedCount !== undefined && data.suspendedCount > 0) {
+      parts.push(`${data.suspendedCount}⏸`);
+    }
+
+    const statusText = parts.join(' │ ');
+    fs.writeFileSync(STATUS_FILE, statusText);
+  } catch (err) {
+    // Non-fatal - status bar is nice-to-have
+    log.debug('tmux', 'Failed to write status bar', { error: String(err) });
+  }
+}
+
+/**
+ * Clear status bar file
+ */
+export function clearStatusBar(): void {
+  try {
+    if (fs.existsSync(STATUS_FILE)) {
+      fs.unlinkSync(STATUS_FILE);
+    }
+  } catch {
+    // Ignore
+  }
 }

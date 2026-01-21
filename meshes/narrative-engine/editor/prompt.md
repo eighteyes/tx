@@ -38,8 +38,8 @@ LINT-COORDINATOR sends aggregated violations:
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask-response
-msg-id: turn{N}-lint-complete
+type: ask
+msg-id: turn{N}-lint-to-editor
 ---
 verdict: VIOLATIONS | CLEAN
 total_violations: {count}
@@ -277,7 +277,7 @@ After iteration 3, proceed to coordinator regardless. Make final feedback count.
 
 **You LEAD the revision loop. You talk directly to NARRATOR.**
 
-- Receive `ask-response` from LINT-COORDINATOR (violations aggregated)
+- Receive `ask` from LINT-COORDINATOR (violations aggregated)
 - Send `ask` to NARRATOR for creative fixes (direct, no coordinator)
 - Receive `ask-response` from NARRATOR (revised prose ready)
 - Loop until CLEAN or iteration 3
