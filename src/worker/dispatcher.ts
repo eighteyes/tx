@@ -36,6 +36,7 @@ import { resolveLifecycle } from './lifecycle-utils.ts';
 import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
+import { SessionStore, SessionSummarizer } from '../session/index.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -138,6 +139,8 @@ export interface DispatcherConfig {
   meshesDir: string;
   lowMode?: boolean;
   ultraLowMode?: boolean;
+  /** Pre-initialized session store (from start.ts). If provided, dispatcher will record sessions. */
+  sessionStore?: SessionStore;
 }
 
 /**
@@ -226,6 +229,8 @@ export class WorkerDispatcher extends EventEmitter {
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
   private stuckDetector: StuckAgentDetector;
   private ensembleCoordinator: EnsembleCoordinator;
+  private sessionStore?: SessionStore;
+  private sessionSummarizer?: SessionSummarizer;
 
   constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
@@ -237,6 +242,13 @@ export class WorkerDispatcher extends EventEmitter {
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.stuckDetector = new StuckAgentDetector(stuckConfig);
     this.ensembleCoordinator = new EnsembleCoordinator();
+
+    // Session awareness - use store from config if provided
+    if (config.sessionStore) {
+      this.sessionStore = config.sessionStore;
+      this.sessionSummarizer = new SessionSummarizer(this.sessionStore);
+      log.debug('dispatcher', 'Session awareness enabled');
+    }
 
     // Wire stuck detector events to dispatcher
     this.stuckDetector.on('agent:nudged', (data) => {

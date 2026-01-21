@@ -18,6 +18,7 @@ import { validateMesh } from './validate-mesh.ts';
 import { login } from './login.ts';
 import { logout } from './logout.ts';
 import { deploy } from './deploy.ts';
+import { session } from './session.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -106,6 +107,7 @@ Commands:
   tx logs           View logs
   tx spy            Real-time activity stream
   tx tasks          View task queue
+  tx session        View and search agent sessions
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
   tx validate-mesh  Validate mesh configuration
@@ -355,6 +357,37 @@ Prerequisites:
 
 The command packages your mesh, uploads it to tx-server, and waits
 for the deployment to complete. On success, displays the service URL.`,
+
+  session: `tx session - View and search agent sessions
+
+Usage: tx session <mesh> <action> [selector] [options]
+
+Actions:
+  list                    List recent sessions
+  get <selector>          Get specific session
+  search <query>          Search sessions
+  prune                   Clean old sessions
+
+Selectors:
+  3                       3rd most recent session
+  3bad3                   Session ID containing "3bad3"
+
+Options:
+  --limit N               Limit results (default: 10)
+  --since 7d              Filter by date
+  --summary               Condensed summary (~200 tokens)
+  --final-answer          Just the final output
+  --full                  Complete transcript
+  --split-summary         Intro + summarized latter half
+  --json                  Output as JSON
+  --older-than 365d       For prune: age threshold
+  --dry-run               Preview without deleting
+
+Examples:
+  tx session brain list
+  tx session brain get 3 --summary
+  tx session brain search "auth flow"
+  tx session brain prune --older-than 365d --dry-run`,
 };
 
 function showHelp(cmd: string): void {
@@ -540,6 +573,11 @@ async function main() {
         region: flags.region as string,
         version: flags.version as string,
       });
+      break;
+
+    case 'session':
+      if (wantsHelp) { showHelp('session'); break; }
+      await session(args);
       break;
 
     default:
