@@ -13,6 +13,7 @@ import { WorkerDispatcher } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
+import { SessionStore } from '../session/index.ts';
 
 export interface StartOptions {
   continue?: boolean;
@@ -180,6 +181,23 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   log.info('start', 'Cleared pending messages and sessions');
 
+  // Initialize session store for session awareness
+  const sessionsDbPath = path.join(dataDir, 'sessions.db');
+  const sessionStore = new SessionStore(sessionsDbPath);
+
+  // Backfill existing sessions from filesystem on first run
+  const sessionsDir = path.join(aiDir, 'sessions');
+  const backfilled = await sessionStore.backfillFromFilesystem(sessionsDir);
+  if (backfilled > 0) {
+    log.info('start', `Backfilled ${backfilled} sessions from filesystem`);
+  }
+
+  // Prune old sessions (1 year retention)
+  const pruned = sessionStore.pruneOldSessions(365);
+  if (pruned > 0) {
+    log.info('start', `Pruned ${pruned} old sessions`);
+  }
+
   const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
   await consumer.start();
 
@@ -188,7 +206,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     msgsDir,
     meshesDir: path.join(txRoot, 'meshes'),
     lowMode: options?.low,
-    ultraLowMode: options?.ultraLow
+    ultraLowMode: options?.ultraLow,
+    sessionStore,  // Pass session store for session awareness
   }, queue);
 
   // Wire up parity gate: consumer subscribes to dispatcher for session-start events
@@ -446,6 +465,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   await dispatcher.stop(consumer);
   await consumer.stop();
   queue.close();
+  sessionStore.close();
 
   console.log(`[core] Consumer stopped. Claude session still running.`);
   console.log(`[core] Re-attach: tmux attach -t ${sessionName}`);
