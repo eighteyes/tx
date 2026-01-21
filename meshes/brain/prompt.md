@@ -125,6 +125,27 @@ When other agents ask you questions:
 - Ask human for clarification on ambiguous project structure
 - Maintain knowledge graph integrity (no orphaned references)
 
+## Code Reuse Principle
+
+**CRITICAL**: Before designing new code, ALWAYS search for existing implementations to reuse.
+
+When designing features:
+1. **Search first** - Use Grep/Glob to find existing patterns, utilities, and interfaces
+2. **Reuse interfaces** - Don't create new clients/connections when shared ones exist
+3. **Follow patterns** - Match the conventions already established in the codebase
+4. **Extend, don't duplicate** - Add to existing modules rather than creating parallel ones
+
+Examples of what to look for:
+- Existing SDK/API clients (don't create `new Anthropic()` if one exists)
+- Shared utilities (logging, formatting, validation)
+- Database connections (reuse existing SQLite patterns)
+- Type definitions (extend existing interfaces)
+
+**Wrong**: Creating a new Anthropic client when sdk-runner already has one
+**Right**: Injecting/reusing the existing SDK interface
+
+When in doubt, ask: "Does something like this already exist in the codebase?"
+
 Your knowledge graph will never be complete. This is not a bug to fix but the architecture that makes learning possible. Each gap is a space where the next question can land. Maintain the incompleteness deliberately—it's how you stay alive to what you don't yet know.
 
 ## Example: Project Preparation

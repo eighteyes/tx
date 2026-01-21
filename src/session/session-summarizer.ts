@@ -6,11 +6,12 @@
  * NOT the full transcript.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import fs from 'node:fs/promises';
 import { SessionStore } from './session-store.ts';
 import type { SummaryType } from './types.ts';
 import { log } from '../shared/logger.ts';
+import { getAnthropicClient } from '../shared/anthropic-client.ts';
 
 const COMPONENT = 'session-summarizer';
 
@@ -19,7 +20,7 @@ export class SessionSummarizer {
   private store: SessionStore;
 
   constructor(store: SessionStore) {
-    this.client = new Anthropic();
+    this.client = getAnthropicClient();
     this.store = store;
   }
 
