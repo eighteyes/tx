@@ -9,7 +9,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { log } from '../shared/logger.ts';
-import type { SessionMetadata, SessionSearchResult, SummaryType } from './types.ts';
+import type { SessionMetadata, SessionSearchResult, SummaryType, FileChangeSummary } from './types.ts';
 
 const COMPONENT = 'session-store';
 
@@ -29,6 +29,7 @@ interface SessionRow {
   final_status: string | null;
   headline: string | null;
   tags: string | null;
+  files_changed: string | null;
   created_at: number;
 }
 
@@ -76,8 +77,8 @@ export class SessionStore {
       INSERT INTO sessions (
         id, agent_id, mesh_id, started_at, ended_at, duration_seconds,
         transcript_path, message_count, tool_calls, final_status,
-        headline, tags, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        headline, tags, files_changed, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.getSessionStmt = this.db.prepare(`
@@ -128,12 +129,16 @@ export class SessionStore {
         final_status TEXT,
         headline TEXT,
         tags TEXT,
+        files_changed TEXT,
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id, started_at DESC);
       CREATE INDEX IF NOT EXISTS idx_sessions_mesh ON sessions(mesh_id, started_at DESC);
       CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(final_status);
     `);
+
+    // Migration: add files_changed column to existing tables
+    this.migrateFilesChanged();
 
     // FTS5 for full-text search with porter stemming
     this.db.exec(`
@@ -155,6 +160,28 @@ export class SessionStore {
     `);
 
     log.debug(COMPONENT, 'Schema created/verified');
+  }
+
+  /**
+   * Migrate existing sessions table to add files_changed column
+   * SQLite doesn't have IF NOT EXISTS for columns, so we check first
+   */
+  private migrateFilesChanged(): void {
+    try {
+      // Check if column exists
+      const tableInfo = this.db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+      const hasFilesChanged = tableInfo.some(col => col.name === 'files_changed');
+
+      if (!hasFilesChanged) {
+        this.db.exec('ALTER TABLE sessions ADD COLUMN files_changed TEXT');
+        log.info(COMPONENT, 'Migrated sessions table: added files_changed column');
+      }
+    } catch (err) {
+      // Table might not exist yet on first run - that's fine
+      log.debug(COMPONENT, 'Migration check skipped', {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 
   // ============================================
@@ -179,6 +206,7 @@ export class SessionStore {
         session.finalStatus ?? null,
         session.headline ?? null,
         session.tags ? JSON.stringify(session.tags) : null,
+        session.filesChanged ? JSON.stringify(session.filesChanged) : null,
         session.createdAt
       );
       log.debug(COMPONENT, 'Session recorded', { sessionId: session.id, agentId: session.agentId });
@@ -242,6 +270,10 @@ export class SessionStore {
     if (updates.tags !== undefined) {
       setClauses.push('tags = ?');
       params.push(updates.tags ? JSON.stringify(updates.tags) : null);
+    }
+    if (updates.filesChanged !== undefined) {
+      setClauses.push('files_changed = ?');
+      params.push(updates.filesChanged ? JSON.stringify(updates.filesChanged) : null);
     }
 
     if (setClauses.length === 0) return;
@@ -613,6 +645,7 @@ export class SessionStore {
       finalStatus: row.final_status as SessionMetadata['finalStatus'],
       headline: row.headline ?? undefined,
       tags: row.tags ? JSON.parse(row.tags) : undefined,
+      filesChanged: row.files_changed ? JSON.parse(row.files_changed) as FileChangeSummary : undefined,
       createdAt: row.created_at
     };
   }

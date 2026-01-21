@@ -4,7 +4,7 @@
  * View, search, and manage agent session history
  */
 
-import { SessionStore, SessionSummarizer, type SessionMetadata, type SummaryType } from '../session/index.ts';
+import { SessionStore, SessionSummarizer, type SessionMetadata, type SummaryType, type FileChangeSummary } from '../session/index.ts';
 import { log } from '../shared/logger.ts';
 import { chalk, colors } from '../shared/colors.ts';
 import { formatTimeAgo, formatDuration, parseTimeFilter } from '../shared/time.ts';
@@ -21,6 +21,7 @@ interface SessionFlags {
   dryRun?: boolean;
   olderThan?: string;
   json?: boolean;
+  files?: boolean;
 }
 
 /**
@@ -50,6 +51,8 @@ function parseFlags(args: string[]): SessionFlags {
       flags.olderThan = args[++i];
     } else if (arg === '--json') {
       flags.json = true;
+    } else if (arg === '--files') {
+      flags.files = true;
     }
   }
 
@@ -94,6 +97,50 @@ function formatStatus(status?: string): string {
     default:
       return chalk.dim('? unknown');
   }
+}
+
+/**
+ * Display file changes for a session
+ */
+function displayFilesChanged(files?: FileChangeSummary): void {
+  if (!files) {
+    console.log(chalk.dim('No file changes recorded for this session.'));
+    return;
+  }
+
+  const hasChanges = (files.created?.length || 0) +
+                     (files.modified?.length || 0) +
+                     (files.deleted?.length || 0) +
+                     (files.gitCommits?.length || 0) > 0;
+
+  if (!hasChanges) {
+    console.log(chalk.dim('No file changes recorded for this session.'));
+    return;
+  }
+
+  console.log(`\n${chalk.bold('Files Changed:')}\n`);
+
+  if (files.created?.length) {
+    console.log(chalk.cyan('  Created:'));
+    files.created.forEach(f => console.log(chalk.green(`    + ${f}`)));
+  }
+
+  if (files.modified?.length) {
+    console.log(chalk.cyan('  Modified:'));
+    files.modified.forEach(f => console.log(chalk.yellow(`    ~ ${f}`)));
+  }
+
+  if (files.deleted?.length) {
+    console.log(chalk.cyan('  Deleted:'));
+    files.deleted.forEach(f => console.log(chalk.red(`    - ${f}`)));
+  }
+
+  if (files.gitCommits?.length) {
+    console.log(chalk.cyan('  Commits:'));
+    files.gitCommits.forEach(c => console.log(chalk.magenta(`    * ${c}`)));
+  }
+
+  console.log();
 }
 
 /**
@@ -220,6 +267,12 @@ async function getSession(
   }
 
   console.log();
+
+  // Handle --files flag first (just shows files and returns)
+  if (flags.files) {
+    displayFilesChanged(session.filesChanged);
+    return;
+  }
 
   // Handle output mode flags
   if (flags.full && session.transcriptPath) {
@@ -424,6 +477,7 @@ ${chalk.bold('Options:')}
   ${chalk.dim('--final-answer')}          Just the final output
   ${chalk.dim('--full')}                  Complete transcript
   ${chalk.dim('--split-summary')}         Intro + summarized latter half
+  ${chalk.dim('--files')}                 Show files created/modified/deleted
   ${chalk.dim('--json')}                  Output as JSON
   ${chalk.dim('--older-than 365d')}       For prune: age threshold
   ${chalk.dim('--dry-run')}               Preview without deleting
@@ -431,6 +485,7 @@ ${chalk.bold('Options:')}
 ${chalk.bold('Examples:')}
   tx session brain list
   tx session brain get 3 --summary
+  tx session brain get 3 --files
   tx session brain search "auth flow"
   tx session brain prune --older-than 365d --dry-run
 `);

@@ -2477,6 +2477,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           const sessionStartTime = activeWorker?.startedAt || Date.now();
           const sessionEndTime = Date.now();
 
+          // Get files changed from the runner if available
+          const filesChanged = activeWorker?.runner?.getFilesChanged?.() || undefined;
+
           // Record session metadata
           this.sessionStore.recordSession({
             id: data.sessionId,
@@ -2489,6 +2492,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             messageCount: data.metrics?.messageCount,
             toolCalls: data.metrics?.toolCalls,
             finalStatus: 'success',
+            filesChanged,
             createdAt: Date.now(),
           });
 

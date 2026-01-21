@@ -3,10 +3,12 @@
  */
 
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
 import { query, type SDKResultMessage, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult, QueryMetrics, WorkerMetrics } from '../shared/types.ts';
+import type { FileChangeSummary } from '../session/types.ts';
 import { log } from '../shared/logger.ts';
 import {
   isUsagePolicyError,
@@ -64,6 +66,12 @@ export class SdkRunner extends EventEmitter {
   private queryMetrics: QueryMetrics[] = [];
   private startedAt: number = 0;
   private currentUserPrompt: string = '';  // Track for error context capture
+  private filesChanged: FileChangeSummary = {
+    created: [],
+    modified: [],
+    deleted: [],
+    gitCommits: [],
+  };
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -94,6 +102,148 @@ export class SdkRunner extends EventEmitter {
     };
   }
 
+  // ============================================
+  // File Change Tracking
+  // ============================================
+
+  /**
+   * Reset file tracking for a new run
+   */
+  private resetFilesChanged(): void {
+    this.filesChanged = {
+      created: [],
+      modified: [],
+      deleted: [],
+      gitCommits: [],
+    };
+  }
+
+  /**
+   * Add a file to the created list (deduped)
+   */
+  private addCreated(filePath: string): void {
+    if (!this.filesChanged.created.includes(filePath)) {
+      this.filesChanged.created.push(filePath);
+    }
+  }
+
+  /**
+   * Add a file to the modified list (deduped)
+   */
+  private addModified(filePath: string): void {
+    // Don't add to modified if it's in created (it was just created this session)
+    if (this.filesChanged.created.includes(filePath)) return;
+    if (!this.filesChanged.modified.includes(filePath)) {
+      this.filesChanged.modified.push(filePath);
+    }
+  }
+
+  /**
+   * Add a file to the deleted list (deduped)
+   */
+  private addDeleted(filePath: string): void {
+    if (!this.filesChanged.deleted.includes(filePath)) {
+      this.filesChanged.deleted.push(filePath);
+    }
+    // Remove from created/modified if it was there (file no longer exists)
+    this.filesChanged.created = this.filesChanged.created.filter(f => f !== filePath);
+    this.filesChanged.modified = this.filesChanged.modified.filter(f => f !== filePath);
+  }
+
+  /**
+   * Add a git commit hash (deduped)
+   */
+  private addGitCommit(commitHash: string): void {
+    if (!this.filesChanged.gitCommits?.includes(commitHash)) {
+      this.filesChanged.gitCommits?.push(commitHash);
+    }
+  }
+
+  /**
+   * Track file operations from tool_use blocks
+   */
+  private trackFileOperation(toolName: string, input: Record<string, unknown>): void {
+    const filePath = (input.file_path || input.path) as string | undefined;
+
+    switch (toolName) {
+      case 'Write':
+        if (filePath) {
+          // Check if file exists to determine create vs modify
+          if (fs.existsSync(filePath)) {
+            this.addModified(filePath);
+          } else {
+            this.addCreated(filePath);
+          }
+        }
+        break;
+
+      case 'Edit':
+        if (filePath) {
+          this.addModified(filePath);
+        }
+        break;
+
+      case 'NotebookEdit':
+        const notebookPath = input.notebook_path as string | undefined;
+        if (notebookPath) {
+          this.addModified(notebookPath);
+        }
+        break;
+
+      case 'Bash':
+        const command = input.command as string | undefined;
+        if (command) {
+          this.parseBashForFileOps(command);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Parse bash commands for file operations (best effort)
+   */
+  private parseBashForFileOps(command: string): void {
+    // Detect rm commands (simple heuristic)
+    const rmMatch = command.match(/\brm\s+(?:-[rf]+\s+)?([^\s|;&]+)/g);
+    if (rmMatch) {
+      for (const match of rmMatch) {
+        const parts = match.split(/\s+/);
+        const filePath = parts[parts.length - 1];
+        // Skip if it looks like an option
+        if (filePath && !filePath.startsWith('-')) {
+          this.addDeleted(filePath);
+        }
+      }
+    }
+
+    // Detect git commit (we'll capture commit hash from output later if needed)
+    if (command.includes('git commit')) {
+      // Mark that a commit happened - actual hash captured from output
+      log.debug('sdk-runner', 'Git commit detected in bash command');
+    }
+  }
+
+  /**
+   * Parse tool result for git commit hash
+   */
+  private parseToolResultForCommit(toolName: string, result: string): void {
+    if (toolName === 'Bash' && result) {
+      // Look for commit hash pattern in git commit output
+      // e.g., "[main abc1234] commit message" or "abc1234" as first line
+      const commitMatch = result.match(/\[[\w/-]+\s+([a-f0-9]{7,40})\]/);
+      if (commitMatch) {
+        this.addGitCommit(commitMatch[1]);
+      }
+    }
+  }
+
+  /**
+   * Get the file changes summary
+   */
+  getFilesChanged(): FileChangeSummary {
+    return this.filesChanged;
+  }
+
   async run(): Promise<WorkerResult> {
     const workerId = this.config.id;
 
@@ -104,8 +254,9 @@ export class SdkRunner extends EventEmitter {
     log.info('sdk-runner', `Starting worker`, { workerId, model: this.config.model });
     this.running = true;
     this.abortController = new AbortController();
-    // Reset metrics for this run
+    // Reset metrics and file tracking for this run
     this.queryMetrics = [];
+    this.resetFilesChanged();
     this.startedAt = Date.now();
     this.emit('start', { id: workerId });
 
@@ -231,6 +382,11 @@ export class SdkRunner extends EventEmitter {
                 sessionOutput.push(`[Tools: ${toolNames}]`);
                 // Emit output for stuck detection - tool calls are activity
                 this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
+
+                // Track file operations for each tool use
+                for (const toolUse of toolUses) {
+                  this.trackFileOperation(toolUse.name, (toolUse as any).input || {});
+                }
               }
               break;
 
@@ -567,6 +723,12 @@ export class SdkRunner extends EventEmitter {
               sessionOutput.push(`[Tools: ${toolNames}]`);
               // Emit output for stuck detection - tool calls are activity
               this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
+
+              // Track file operations for each tool use (resume flow)
+              for (const toolUse of toolUses) {
+                const tu = toolUse as { name: string; input?: Record<string, unknown> };
+                this.trackFileOperation(tu.name, tu.input || {});
+              }
             }
             break;
 

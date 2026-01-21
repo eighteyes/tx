@@ -5,6 +5,16 @@
  */
 
 /**
+ * Summary of file changes made during a session
+ */
+export interface FileChangeSummary {
+  created: string[];
+  modified: string[];
+  deleted: string[];
+  gitCommits?: string[];
+}
+
+/**
  * Session metadata stored in the database
  */
 export interface SessionMetadata {
@@ -20,6 +30,7 @@ export interface SessionMetadata {
   finalStatus?: 'success' | 'error' | 'abandoned';
   headline?: string;
   tags?: string[];
+  filesChanged?: FileChangeSummary;
   createdAt: number;
 }
 

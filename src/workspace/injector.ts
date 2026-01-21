@@ -15,7 +15,7 @@ import type { FSMStateConfig } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../shared/logger.ts';
-import type { SessionStore, SessionMetadata } from '../session/index.ts';
+import type { SessionStore, SessionMetadata, FileChangeSummary } from '../session/index.ts';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -430,19 +430,31 @@ Reference past sessions by number: "What did we discuss in session 3?"
    * Format sessions as a markdown table
    */
   private formatSessionTable(sessions: SessionMetadata[]): string {
-    const lines = ['| # | When | Duration | What | Tags |', '|---|------|----------|------|------|'];
+    const lines = ['| # | When | Duration | What | Files | Tags |', '|---|------|----------|------|-------|------|'];
 
     for (let i = 0; i < sessions.length; i++) {
       const s = sessions[i];
       const when = this.formatRelativeTime(s.startedAt);
       const duration = this.formatDuration(s.durationSeconds || 0);
       const headline = s.headline || 'Untitled session';
+      const fileCount = this.getFileCount(s.filesChanged);
       const tags = s.tags?.join(',') || '';
 
-      lines.push(`| ${i + 1} | ${when} | ${duration} | ${headline} | ${tags} |`);
+      lines.push(`| ${i + 1} | ${when} | ${duration} | ${headline} | ${fileCount} | ${tags} |`);
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Get file count summary for session table
+   */
+  private getFileCount(files?: FileChangeSummary): string {
+    if (!files) return '-';
+    const total = (files.created?.length || 0) +
+                  (files.modified?.length || 0) +
+                  (files.deleted?.length || 0);
+    return total > 0 ? `${total} files` : '-';
   }
 
   /**
