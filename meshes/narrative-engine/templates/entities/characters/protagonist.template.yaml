@@ -55,6 +55,30 @@ traits:
     #     critical: "Everything connects, everything means something"
 
 # ============================================
+# LAYERS - Progressive self-disclosure
+# ============================================
+# How the protagonist appears to OTHERS over time.
+# NARRATOR draws from unrevealed pool when describing protagonist externally.
+layers:
+  first_glance: []
+    # How protagonist appears to new characters they meet
+    # Examples:
+    # - "Moves like someone expecting trouble"
+    # - "The kind of tired that sleep won't fix"
+
+  familiar: []
+    # What regular contacts notice over time
+    # Examples:
+    # - "Always checking the exits, even in safe places"
+    # - "Flinches at sudden sounds, recovers quickly"
+
+  intimate: []
+    # What close bonds might observe
+    # Examples:
+    # - "Talks in their sleep — names, mostly"
+    # - "The way their hands shake after violence"
+
+# ============================================
 # EPISODES - What has happened to protagonist
 # ============================================
 episodes: []

@@ -41,6 +41,33 @@ traits:
     notable_objects: []         # [ancient tapestry, cracked mirror, empty throne]
 
 # ============================================
+# LAYERS - Progressive disclosure
+# ============================================
+# Details revealed over multiple visits. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as location evolves through episodes.
+layers:
+  first_glance: []
+    # Immediately obvious on first visit
+    # Examples:
+    # - "The smell of copper and old paper"
+    # - "Candlelight catching dust motes in the air"
+    # - "The floorboards groan with every step"
+
+  familiar: []
+    # Noticed on return visits or extended time
+    # Examples:
+    # - "The postcard pinned behind the counter — foreign script"
+    # - "That one step that's worn smooth, the rest untouched"
+    # - "The draft that comes from nowhere when the wind blows north"
+
+  intimate: []
+    # Revealed through events, secrets discovered, deep familiarity
+    # Examples:
+    # - "The hollow sound beneath the rug by the hearth"
+    # - "Scratches on the inside of the cellar door"
+    # - "The stain that won't come out, no matter how hard she scrubs"
+
+# ============================================
 # EPISODES - What has happened here
 # ============================================
 episodes: []

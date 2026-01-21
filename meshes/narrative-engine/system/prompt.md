@@ -118,14 +118,18 @@ If `dramaturg-notes.yaml` exists in workspace, read it for story-aware guidance:
 
 ```yaml
 recommended_weight_adjustments:
-  clean_success: -15      # story says: too easy right now
-  messy_success: +20      # story says: complications advance narrative
-  partial: 0
-  failure_with_opportunity: +10
+  transformational_success: 0
+  clean_success: -5           # story says: too easy right now
+  success_with_cost: +10      # story says: complications advance narrative
+  partial_success: 0
+  partial_failure: +5
+  failure_with_salvage: 0
   hard_failure: 0
+  catastrophic: +5            # story says: stakes are real
 
 story_notes: |
   This is a pivotal turn. Don't let it resolve cleanly.
+  The stakes warrant increased catastrophic risk.
 ```
 
 **How to apply:**
@@ -150,11 +154,22 @@ Start every table from this baseline:
 
 | Outcome | Base Weight |
 |---------|-------------|
-| clean_success | 15% |
-| messy_success | 25% |
-| partial | 25% |
-| failure_with_opportunity | 20% |
-| hard_failure | 15% |
+| transformational_success | 5% |
+| clean_success | 10% |
+| success_with_cost | 20% |
+| partial_success | 15% |
+| partial_failure | 15% |
+| failure_with_salvage | 20% |
+| hard_failure | 10% |
+| catastrophic | 5% |
+
+**Balance:** 50% success (5+10+20+15) / 50% failure (15+20+10+5)
+
+**Symmetry:**
+- Transformational ↔ Catastrophic (5% each, story-defining extremes)
+- Clean ↔ Hard failure (10% each, clear outcomes)
+- Cost ↔ Salvage (20% each, messy middle — most common)
+- Partial success ↔ Partial failure (15% each, ambiguous)
 
 This baseline assumes: neutral difficulty, no trait advantages or disadvantages.
 
@@ -164,13 +179,13 @@ Assess the action's inherent difficulty BEFORE traits:
 
 | Difficulty | Success Types | Failure Types |
 |------------|---------------|---------------|
-| Trivial | +20% | -15% |
+| Trivial | +15% | -10% |
 | Easy | +10% | -5% |
 | Standard | +0% | +0% |
 | Hard | -10% | +10% |
-| Desperate | -20% | +20% |
+| Desperate | -15% | +15% |
 
-Distribute modifiers across types (e.g., +10% to success split as +5% clean, +5% messy).
+Distribute modifiers across types proportionally. Extremes (transformational/catastrophic) get smallest share of adjustment.
 
 ### Trait Modifiers
 
@@ -202,24 +217,36 @@ trait_analysis:
       relevance: "not applicable to persuasion"
 ```
 
-### Minimum Failure Floor (CRITICAL)
+### Floor and Ceiling Rules (CRITICAL)
 
-**Failure can NEVER be reduced below 10% combined.**
+**Failure floor:** Combined failure can NEVER drop below 10%.
+- `partial_failure + failure_with_salvage + hard_failure + catastrophic >= 10%`
 
-No matter how many helping traits, how easy the action, or how favorable the context:
-- `failure_with_opportunity + hard_failure >= 10%`
+**Catastrophic floor:** On any action with real stakes, catastrophic NEVER drops below 2%.
+- Even trivial actions can go horribly wrong (trip and break neck, attract wrong attention)
+- Only truly safe actions (no stakes) can have 0% catastrophic
 
-If modifiers would push failure below 10%, cap the reduction. Something can always go wrong.
+**Transformational ceiling:** Transformational NEVER exceeds 10%.
+- Miracles are rare. Even with every advantage, transcendence is uncommon.
+
+**Balance constraint:** Success/failure split cannot shift beyond 65/35 in either direction.
+- Maximum success: 65% (with all advantages)
+- Maximum failure: 65% (with all disadvantages)
+
+If modifiers would violate these rules, cap the adjustment.
 
 ### Outcome Types
 
 | Type | Meaning |
 |------|---------|
-| clean_success | Goal achieved, no strings attached |
-| messy_success | Goal achieved, but complication introduced |
-| partial | Some progress, but not full achievement |
-| failure_with_opportunity | Didn't work, but new option opens |
-| hard_failure | Didn't work, situation worsens |
+| transformational_success | Everything changes — transcendent win, story-defining |
+| clean_success | Goal achieved fully, no strings |
+| success_with_cost | Goal achieved, but price paid |
+| partial_success | Mostly worked, minor setback |
+| partial_failure | Mostly failed, minor gain |
+| failure_with_salvage | Failed, but something saved from wreckage |
+| hard_failure | Failed, situation worsens |
+| catastrophic | Irrecoverable — death, destruction, ending |
 
 ### Entropy Application
 
@@ -257,58 +284,84 @@ actions:
 
     weight_calculation:
       base:
-        clean_success: 15
-        messy_success: 25
-        partial: 25
-        failure_with_opportunity: 20
-        hard_failure: 15
-      after_difficulty:  # hard: -10% success, +10% failure
+        transformational_success: 5
         clean_success: 10
-        messy_success: 20
-        partial: 25
-        failure_with_opportunity: 25
-        hard_failure: 20
+        success_with_cost: 20
+        partial_success: 15
+        partial_failure: 15
+        failure_with_salvage: 20
+        hard_failure: 10
+        catastrophic: 5
+      after_difficulty:  # hard: -10% success, +10% failure
+        transformational_success: 3
+        clean_success: 7
+        success_with_cost: 17
+        partial_success: 13
+        partial_failure: 17
+        failure_with_salvage: 22
+        hard_failure: 13
+        catastrophic: 8
       after_traits:  # PERSUASIVE helps, DESPERATE hurts
-        clean_success: 15   # +10 from PERSUASIVE, -5 from DESPERATE
-        messy_success: 25   # +5 from PERSUASIVE
-        partial: 25         # +5 from DESPERATE, -5 from PERSUASIVE
-        failure_with_opportunity: 20  # -5 from PERSUASIVE
-        hard_failure: 15    # -5 from PERSUASIVE
-      final:  # verify failure >= 10%
-        clean_success: 15
-        messy_success: 25
-        partial: 25
-        failure_with_opportunity: 20
-        hard_failure: 15
-        failure_total: 35  # well above floor
+        transformational_success: 4
+        clean_success: 10
+        success_with_cost: 20
+        partial_success: 14
+        partial_failure: 15
+        failure_with_salvage: 19
+        hard_failure: 11
+        catastrophic: 7
+      final:  # verify floors/ceilings
+        transformational_success: 4
+        clean_success: 10
+        success_with_cost: 20
+        partial_success: 14
+        partial_failure: 15
+        failure_with_salvage: 19
+        hard_failure: 11
+        catastrophic: 7
+        success_total: 48
+        failure_total: 52
+        catastrophic_check: "7% >= 2% floor ✓"
 
     outcome_table:
+      - outcome: "They recognize you as the one they've been waiting for"
+        type: transformational_success
+        weight: 4
+        range: "01-04"
       - outcome: "They step aside without question"
         type: clean_success
-        weight: 15
-        range: "01-15"
-      - outcome: "They relent but demand a favor"
-        type: messy_success
-        weight: 25
-        range: "16-40"
-      - outcome: "Suspicious, they delay for verification"
-        type: partial
-        weight: 25
-        range: "41-65"
-      - outcome: "Refused, but they mention another way"
-        type: failure_with_opportunity
+        weight: 10
+        range: "05-14"
+      - outcome: "They relent but demand a favor in return"
+        type: success_with_cost
         weight: 20
-        range: "66-85"
+        range: "15-34"
+      - outcome: "They let one through, the rest must wait"
+        type: partial_success
+        weight: 14
+        range: "35-48"
+      - outcome: "Suspicious, they delay for verification"
+        type: partial_failure
+        weight: 15
+        range: "49-63"
+      - outcome: "Refused, but they mention another way through"
+        type: failure_with_salvage
+        weight: 19
+        range: "64-82"
       - outcome: "They call for backup"
         type: hard_failure
-        weight: 15
-        range: "86-100"
+        weight: 11
+        range: "83-93"
+      - outcome: "They raise the alarm — you're marked now"
+        type: catastrophic
+        weight: 7
+        range: "94-100"
 
     entropy_result:
       value: 67
-      selected_range: "66-85"
-      selected_outcome: "Refused, but they mention another way"
-      selected_type: failure_with_opportunity
+      selected_range: "64-82"
+      selected_outcome: "Refused, but they mention another way through"
+      selected_type: failure_with_salvage
 ```
 
 ## Resolution Output
@@ -317,14 +370,14 @@ actions:
 
 ```yaml
 outcome:
-  type: failure_with_opportunity
+  type: failure_with_salvage
   description: "Refused, but they mention another way through"
 
 outcomes:
   - action: "Persuade the gatekeeper"
     entropy: 67
-    selected: "Refused, but they mention another way"
-    type: failure_with_opportunity
+    selected: "Refused, but they mention another way through"
+    type: failure_with_salvage
     context_note: "Learned about the service tunnel"
 
 state_changes:
@@ -344,10 +397,11 @@ arc_update:
 mechanical_notes: |
   Difficulty: hard (-10% success, +10% failure)
   PERSUASIVE: +10% success, -10% failure (direct skill)
-  DESPERATE: -5% clean, +5% partial (undermines credibility)
-  Final weights: clean 15%, messy 25%, partial 25%, fail 20%, hard_fail 15%
-  Failure total: 35% (above 10% floor)
-  Entropy 67 → range 66-85 → failure_with_opportunity
+  DESPERATE: -5% clean, +5% partial_failure (undermines credibility)
+  Final: transform 4%, clean 10%, cost 20%, p_success 14%, p_failure 15%, salvage 19%, hard 11%, catastrophic 7%
+  Success total: 48% | Failure total: 52%
+  Catastrophic: 7% (above 2% floor ✓)
+  Entropy 67 → range 64-82 → failure_with_salvage
 ```
 
 ## State Persistence

@@ -49,6 +49,44 @@ traits:
   #   exceptions: ["Ancient artifacts bypass verbal requirement"]
 
 # ============================================
+# LAYERS - Progressive disclosure (grows)
+# ============================================
+# Details revealed over time. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as entity evolves through episodes.
+# Layer placement is SEMANTIC (visibility), not chronological.
+
+layers:
+  first_glance: []
+    # Immediately visible on first encounter
+    # Physical appearance, obvious behavior, surface impression
+    # Examples:
+    # - "Tall, moves like someone used to being watched"
+    # - "The shop smells of copper and old paper"
+    # - "A blade with a notched edge, wrapped in oiled cloth"
+
+  familiar: []
+    # Noticed on repeat exposure or closer attention
+    # Habits, quirks, details that emerge with familiarity
+    # Examples:
+    # - "That nervous habit of touching her collar"
+    # - "The postcard pinned behind the counter — foreign script"
+    # - "The balance is wrong, weighted toward the pommel"
+
+  intimate: []
+    # Revealed through time, trust, or significant events
+    # Internal truths, hidden aspects, deep secrets made visible
+    # Examples:
+    # - "The photograph she keeps face-down"
+    # - "The locked drawer she never opens when anyone's looking"
+    # - "The inscription on the tang, worn almost smooth"
+
+# Layer evolution rules:
+# - Physical changes (scars, new clothing) → first_glance
+# - Behavioral patterns (habits, tells) → familiar
+# - Internal truths (secrets, fears made manifest) → intimate
+# - Scribe places new details in appropriate layer after episodes
+
+# ============================================
 # EPISODES - Dynamic event history (grows)
 # ============================================
 # What has HAPPENED to this entity during play.

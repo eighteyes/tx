@@ -42,6 +42,8 @@ routing:
       reviewer: "Tests passing, ready for review"
     blocked:
       implementer: "Tests failing, need fixes"
+    ask-response:
+      implementer: "Response to implementer's question"
 
   reviewer:
     complete:

@@ -13,7 +13,8 @@
 # 8. REVEALED_SECRETS - Who knows what
 # 9. VOICE (entities.yaml) - Character sound
 # 10. KNOWLEDGE_CHAIN - What was actually revealed vs assumed
-# 11. IMPOSSIBLE - Unintentional physics violations
+# 11. ENCOUNTERS - What's been described (no repetition)
+# 12. IMPOSSIBLE - Unintentional physics violations
 
 # World facts established through play
 # These are LOCKED - violating them breaks continuity
@@ -61,6 +62,45 @@ revealed_secrets: []
   # - secret: "The Machine was always speaking"
   #   revealed_to: [cassius, silence, moth]
   #   turn: 22
+
+# Entity encounters - tracks what's been shown to reader/protagonist
+# Prevents repetitive descriptions, enables progressive disclosure
+# NARRATOR checks before describing; SCRIBE updates after rendering
+encounters: {}
+  # moth:
+  #   reader_introduced: 3          # turn reader first saw this entity
+  #   protagonist_met: 5            # turn protagonist interacted (may differ)
+  #   layers_surfaced:              # which layer pools have been drawn from
+  #     - first_glance
+  #   details_revealed:             # specific details already shown
+  #     - detail: "tall, watchful posture"
+  #       turn: 3
+  #     - detail: "collar-touching habit"
+  #       turn: 8
+  #   last_appearance: 12
+  #
+  # the_shop:
+  #   reader_introduced: 2
+  #   protagonist_visited: [2, 5, 8]  # locations track multiple visits
+  #   layers_surfaced:
+  #     - first_glance
+  #     - familiar
+  #   details_revealed:
+  #     - detail: "copper smell"
+  #       turn: 2
+  #     - detail: "foreign postcard"
+  #       turn: 5
+  #   last_appearance: 8
+  #
+  # the_blade:
+  #   reader_introduced: 6
+  #   protagonist_acquired: 6
+  #   layers_surfaced:
+  #     - first_glance
+  #   details_revealed:
+  #     - detail: "notched edge, oiled cloth"
+  #       turn: 6
+  #   last_appearance: 14
 
 # Knowledge chain - what was ACTUALLY revealed and to whom
 # ORACLE uses this to catch unjustified knowledge claims

@@ -51,6 +51,33 @@ traits:
       affection: ""             # "Offers food, uses endearments"
 
 # ============================================
+# LAYERS - Progressive disclosure
+# ============================================
+# Details revealed over time. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as character evolves through episodes.
+layers:
+  first_glance: []
+    # Immediately visible on first encounter
+    # Examples:
+    # - "Tall, moves like someone used to being watched"
+    # - "Calloused hands that never quite rest"
+    # - "Eyes that track every exit"
+
+  familiar: []
+    # Noticed on repeat exposure or closer attention
+    # Examples:
+    # - "That nervous habit of touching her collar when lying"
+    # - "The way she always sits facing the door"
+    # - "Her voice drops half an octave when she's afraid"
+
+  intimate: []
+    # Revealed through time, trust, or significant events
+    # Examples:
+    # - "The photograph she keeps face-down by her bed"
+    # - "The name she whispers when she thinks no one hears"
+    # - "The scar she hides beneath her sleeve"
+
+# ============================================
 # EPISODES - What has happened to them
 # ============================================
 episodes: []

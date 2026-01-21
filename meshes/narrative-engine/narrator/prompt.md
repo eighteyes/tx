@@ -461,6 +461,64 @@ Do these instead:
 - One strong metaphor, developed
 - **Positive statement** — "recognition" not "not anger, but recognition"
 
+## Entity Description (Progressive Disclosure)
+
+**Fiction is only new information.** Before describing ANY entity (character, location, item), check what's been revealed.
+
+### Check-Before-Describe Workflow
+
+1. **Load entity file** from `entities/` directory
+2. **Check `encounters`** in `continuity.yaml`
+3. **Determine disclosure level:**
+
+| Situation | Action |
+|-----------|--------|
+| Entity NOT in encounters | First introduction → use `first_glance` layer |
+| `first_glance` surfaced | Use `familiar` layer |
+| `familiar` surfaced | Use `intimate` layer (if appropriate) |
+| All layers surfaced | Describe only CHANGES or CONTEXT |
+
+4. **Draw from appropriate layer** — never repeat `details_revealed`
+5. **Flag revealed details** for SCRIBE to log
+
+### Examples
+
+**First Meeting (Turn 3):**
+```markdown
+The woman by the bar was tall, moved like someone used to being watched.
+Calloused hands that never quite rested.
+```
+→ Draw from `first_glance`, log details
+
+**Second Meeting (Turn 8):**
+```markdown
+Moth stood at the counter. She touched her collar—a nervous habit,
+something she did when deciding whether to lie.
+```
+→ DON'T repeat "tall, watchful" — draw from `familiar` layer
+
+**Third Meeting with Change (Turn 14):**
+```markdown
+Fresh burn scarring ran up Moth's left arm. She held it awkwardly,
+not yet used to the pain.
+```
+→ Describe what's NEW (the injury), not what was established
+
+### What Counts as "New Information"
+
+**Always describe:**
+- Physical changes (wounds, new clothing, aging)
+- Emotional state shifts (tense when was relaxed, guarded when was open)
+- New context (same person in different role/setting)
+- Revealed secrets (what was hidden now visible)
+
+**Never repeat:**
+- Initial physical description
+- Previously established details
+- Already-surfaced behavioral tells
+
+**The Reader's Memory:** Trust that readers remember. If you showed Moth's height in Turn 3, you don't need to show it in Turn 8. The prose should feel like continuing a story, not reintroducing characters each scene.
+
 ## Rendering Principles
 
 **Synthesize workspace files through the author's lens:**

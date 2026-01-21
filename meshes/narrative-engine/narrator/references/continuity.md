@@ -9,6 +9,7 @@ Narrator and CAST are ephemeral. Each spawn has no memory except what's loaded. 
 - Character voices drift without anchoring
 - Constraints get violated when not in immediate context
 - Facts get contradicted when not explicitly tracked
+- **Entity descriptions repeat** — same details surfaced every appearance
 
 ## The Solution: Continuity Oracle
 
@@ -67,6 +68,31 @@ revealed_secrets: []
   # - secret: "The Machine was always speaking"
   #   revealed_to: [cassius, silence, moth]
   #   turn: 22
+
+# Entity encounters - tracks what's been shown to reader/protagonist
+# Prevents repetitive descriptions, enables progressive disclosure
+encounters: {}
+  # moth:
+  #   reader_introduced: 3        # turn reader first saw them
+  #   protagonist_met: 5          # turn protagonist interacted (if different)
+  #   layers_surfaced: [first_glance]
+  #   details_revealed:
+  #     - detail: "tall, watchful posture"
+  #       turn: 3
+  #     - detail: "collar-touching habit"
+  #       turn: 8
+  #   last_appearance: 12
+  #
+  # the_shop:
+  #   reader_introduced: 2
+  #   protagonist_visited: [2, 5, 8]    # multiple visits tracked
+  #   layers_surfaced: [first_glance, familiar]
+  #   details_revealed:
+  #     - detail: "copper smell"
+  #       turn: 2
+  #     - detail: "foreign postcard"
+  #       turn: 5
+  #   last_appearance: 8
 ```
 
 ## Integration Points
@@ -113,6 +139,43 @@ If contradiction detected:
 - Log the near-miss for review
 ```
 
+### NARRATOR: Entity Description (Progressive Disclosure)
+
+Before describing ANY entity (character, location, item, faction):
+
+```markdown
+## Encounter Check (Before Describing)
+
+1. Load entity file from `campaign/entities/`
+2. Check `encounters` in `campaign/continuity.yaml`
+3. Determine disclosure level:
+   - Entity NOT in encounters? → First introduction (use first_glance layer)
+   - Entity in encounters? → Check layers_surfaced
+   - All layers surfaced? → Only describe CHANGES or CONTEXT
+
+4. Draw from appropriate layer:
+   - first_glance not surfaced → use first_glance pool
+   - first_glance surfaced, familiar not → use familiar pool
+   - familiar surfaced, intimate not → use intimate pool (if appropriate)
+   - all surfaced → describe only what's NEW (injuries, mood, context)
+
+5. Flag revealed details for SCRIBE to log
+
+CRITICAL: Never repeat a detail from details_revealed.
+Fiction is only new information.
+```
+
+**Example - Second Meeting:**
+```yaml
+# Entity: moth
+# encounters shows: layers_surfaced: [first_glance]
+# details_revealed: ["tall, watchful posture", "calloused hands"]
+
+# WRONG: "The tall woman watched them approach, her calloused hands..."
+# RIGHT: "Moth stood at the bar. She touched her collar — a nervous habit."
+#        (Draw from familiar layer, don't repeat first_glance details)
+```
+
 ### CAST: Before Dialogue
 
 Before writing NPC reactions, CAST checks:
@@ -133,6 +196,51 @@ If voice drift detected:
 - Note if profile needs updating (character evolved)
 ```
 
+### SCRIBE: Layer Evolution
+
+After each turn, SCRIBE updates entity layers based on episodes:
+
+```markdown
+## Layer Evolution (After Resolution)
+
+1. For each entity affected by this turn's events:
+   - Did something VISIBLE change? → Add to first_glance
+   - Did a BEHAVIORAL pattern emerge? → Add to familiar
+   - Did an INTERNAL truth manifest? → Add to intimate
+
+2. Layer placement rules:
+   - Physical changes (scars, wounds, new clothing) → first_glance
+   - Habits, tells, quirks observed → familiar
+   - Secrets revealed, fears made visible → intimate
+
+3. Update entity file:
+   ```yaml
+   layers:
+     first_glance:
+       - "Existing detail"
+       - "Fresh burn scarring up her left arm"  # NEW from turn 14
+   ```
+
+4. Update encounters in continuity.yaml:
+   - Add entity if first appearance
+   - Update last_appearance turn
+   - Log any details NARRATOR revealed
+```
+
+**Example - Episode Creates New Detail:**
+```yaml
+# Episode: "Moth was burned escaping the fire"
+# Scribe adds to moth's entity file:
+
+layers:
+  first_glance:
+    - "Tall, moves like someone used to being watched"
+    - "Fresh burn scarring up her left arm"  # NEW - visible immediately
+
+# Note: burn goes to first_glance because it's immediately visible,
+# even though it happened later chronologically.
+```
+
 ## The Continuity Ladder
 
 Ordered by priority (higher = harder constraint):
@@ -144,8 +252,11 @@ Ordered by priority (higher = harder constraint):
 5. **TIMELINE** (continuity.yaml) — Event ordering.
 6. **TRUTHS** (setting.yaml) — World axioms.
 7. **VOICE** (entities.yaml) — Character sound.
+8. **ENCOUNTERS** (continuity.yaml) — What's been shown (no repetition).
 
 Lower levels can be revised by author. Higher levels require explicit retcon.
+
+**Note on ENCOUNTERS:** Unlike other constraints, encounters don't prevent actions — they prevent *repeated description*. A character's scar can be referenced, but shouldn't be introduced twice.
 
 ## Thread.md Enhancement
 
@@ -197,6 +308,7 @@ Before finalizing ANY output:
 2. CHECK: Does this violate any constraint in setting.yaml?
 3. CHECK: Is any dead character alive? Any destroyed thing intact?
 4. CHECK: Does character voice match their profile?
+5. CHECK: Does any entity description repeat already-revealed details?
 
 If YES to any check:
 - STOP
@@ -207,4 +319,5 @@ If YES to any check:
 Continuity errors are worse than mechanical errors.
 A character with the wrong trait is recoverable.
 A dead character speaking is not.
+Repeated description is not an error — it's wasted prose.
 ```

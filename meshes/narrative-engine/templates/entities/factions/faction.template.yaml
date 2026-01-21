@@ -39,6 +39,33 @@ traits:
     behavioral: []              # [always sit facing the door, never shake hands]
 
 # ============================================
+# LAYERS - Progressive disclosure
+# ============================================
+# Details revealed through exposure and investigation. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as faction evolves through episodes.
+layers:
+  first_glance: []
+    # Obvious from first encounter or common knowledge
+    # Examples:
+    # - "They wear red hand marks on their palms"
+    # - "The guards defer to anyone with the silver pin"
+    # - "They own half the businesses in the lower quarter"
+
+  familiar: []
+    # Noticed through repeated dealings or active investigation
+    # Examples:
+    # - "They never meet in the same place twice"
+    # - "Messages come by raven, always at midnight"
+    # - "The leader hasn't been seen in public for three months"
+
+  intimate: []
+    # Revealed through infiltration, betrayal, or major events
+    # Examples:
+    # - "The inner circle calls themselves the Unchained"
+    # - "Three of the council are actually the same person"
+    # - "They're not protecting the artifact — they're feeding it"
+
+# ============================================
 # EPISODES - What has happened to this faction
 # ============================================
 episodes: []

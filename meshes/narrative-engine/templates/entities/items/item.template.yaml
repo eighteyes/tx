@@ -35,6 +35,33 @@ traits:
     distinguishing: []          # ["crack along the blade", "faded inscription"]
 
 # ============================================
+# LAYERS - Progressive disclosure
+# ============================================
+# Details revealed through handling and events. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as item evolves through episodes.
+layers:
+  first_glance: []
+    # Obvious on first inspection
+    # Examples:
+    # - "A blade with a notched edge, wrapped in oiled cloth"
+    # - "Cold to the touch, even in summer"
+    # - "The leather grip worn smooth by decades of use"
+
+  familiar: []
+    # Noticed with extended handling or study
+    # Examples:
+    # - "The balance is wrong, weighted toward the pommel"
+    # - "Faint etching along the spine, illegible"
+    # - "It hums slightly when pointed north"
+
+  intimate: []
+    # Revealed through events, bonding, or expertise
+    # Examples:
+    # - "The inscription on the tang, worn almost smooth: 'For my son'"
+    # - "Glows faintly in the presence of the dead"
+    # - "Warm now — it wasn't before the blood"
+
+# ============================================
 # EPISODES - What has happened to this item
 # ============================================
 episodes: []

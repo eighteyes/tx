@@ -96,6 +96,7 @@ For each NPC present, consider:
 - What they witnessed
 - Their secrets (hidden from player)
 - Their bonds
+- **Is this a first meeting?** Check entity's `trust_level` — if 0, they're strangers
 
 **What do they want?**
 - Core motivation
@@ -104,6 +105,7 @@ For each NPC present, consider:
 **How would they react?**
 - Traits filter response
 - Wants determine action
+- **First meetings are different** — more guarded, more formal, more observant
 
 ## Voice Elements
 
