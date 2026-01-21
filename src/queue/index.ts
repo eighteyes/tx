@@ -522,7 +522,7 @@ export class MessageQueue {
     const result = this.db.prepare(`
       UPDATE messages SET status = 'pending', delivered_at = NULL
       WHERE status = 'interrupted'
-    `).run(Date.now());
+    `).run();
     return result.changes;
   }
 

@@ -131,16 +131,17 @@ describe('Crash Recovery System', () => {
       payload: { test: 'pending-2' }
     });
 
-    // Poll one message to mark as delivered
-    queue.poll('test/worker');
+    // Poll ONE message to mark as delivered (leave the other pending)
+    queue.pollOne('test/worker');
 
     // Mark all pending as interrupted
-    queue.markPendingAsInterrupted();
+    const interruptedCount = queue.markPendingAsInterrupted();
 
     // Check that messages were marked as interrupted
+    assert.strictEqual(interruptedCount, 1, 'Should have interrupted 1 message');
     const interrupted = queue.getInterruptedMessages();
-    assert.ok(interrupted.length >= 1, 'Should have interrupted messages');
-    assert.ok(interrupted.some(m => m.status === 'interrupted'), 'Messages should have interrupted status');
+    assert.strictEqual(interrupted.length, 1, 'Should have 1 interrupted message');
+    assert.strictEqual(interrupted[0].status, 'interrupted', 'Message should have interrupted status');
   });
 
   test('should get interrupted messages', () => {
