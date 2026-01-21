@@ -15,6 +15,7 @@ import type { FSMStateConfig } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../shared/logger.ts';
+import type { SessionStore, SessionMetadata } from '../session/index.ts';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -392,4 +393,86 @@ export class PromptInjector {
       });
     }
   }
+
+  // ============================================
+  // Session Awareness Injection
+  // ============================================
+
+  /**
+   * Inject session list into a system prompt
+   * Shows recent sessions for this agent so they can reference past context
+   */
+  injectSessionList(
+    basePrompt: string,
+    agentId: string,
+    config: SessionAwarenessConfig,
+    sessionStore: SessionStore
+  ): string {
+    if (!config.enabled) return basePrompt;
+
+    const sessions = sessionStore.listSessions(agentId, config.max_sessions || 10);
+
+    if (sessions.length === 0) return basePrompt;
+
+    const table = this.formatSessionTable(sessions);
+
+    return `${basePrompt}
+
+# Recent Sessions
+
+${table}
+
+Reference past sessions by number: "What did we discuss in session 3?"
+`;
+  }
+
+  /**
+   * Format sessions as a markdown table
+   */
+  private formatSessionTable(sessions: SessionMetadata[]): string {
+    const lines = ['| # | When | Duration | What | Tags |', '|---|------|----------|------|------|'];
+
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
+      const when = this.formatRelativeTime(s.startedAt);
+      const duration = this.formatDuration(s.durationSeconds || 0);
+      const headline = s.headline || 'Untitled session';
+      const tags = s.tags?.join(',') || '';
+
+      lines.push(`| ${i + 1} | ${when} | ${duration} | ${headline} | ${tags} |`);
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Format timestamp as relative time (e.g., "2h ago", "3d ago")
+   */
+  private formatRelativeTime(timestamp: number): string {
+    const diff = Date.now() - timestamp;
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    return 'just now';
+  }
+
+  /**
+   * Format duration in seconds as human-readable (e.g., "5m", "1h 30m")
+   */
+  private formatDuration(seconds: number): string {
+    const mins = Math.floor(seconds / 60);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    return `${hours}h ${mins % 60}m`;
+  }
+}
+
+/**
+ * Session awareness configuration from mesh config
+ */
+export interface SessionAwarenessConfig {
+  enabled: boolean;
+  max_sessions?: number;
 }

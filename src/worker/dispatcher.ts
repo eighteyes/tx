@@ -2172,8 +2172,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         workerHookContext.sessionId = data.sessionId;
 
         // Save output for debugging (but DON'T complete FSM yet)
+        let transcriptPath: string | null = null;
         if (data.output) {
-          this.saveSessionOutput(agentId, data.output);
+          transcriptPath = this.saveSessionOutput(agentId, data.output);
         }
 
         // Execute post-hooks BEFORE completing FSM
@@ -2468,6 +2469,50 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             agentId,
             taskId: workerHookContext.taskId,
             iterations: workerHookContext.qualityIteration || 1,
+          });
+        }
+
+        // Record session for session awareness (async, non-blocking)
+        if (this.sessionStore && this.sessionSummarizer && data.sessionId && transcriptPath) {
+          const sessionStartTime = activeWorker?.startedAt || Date.now();
+          const sessionEndTime = Date.now();
+
+          // Record session metadata
+          this.sessionStore.recordSession({
+            id: data.sessionId,
+            agentId,
+            meshId: meshName,
+            startedAt: sessionStartTime,
+            endedAt: sessionEndTime,
+            durationSeconds: Math.floor((sessionEndTime - sessionStartTime) / 1000),
+            transcriptPath,
+            messageCount: data.metrics?.messageCount,
+            toolCalls: data.metrics?.toolCalls,
+            finalStatus: 'success',
+            createdAt: Date.now(),
+          });
+
+          // Generate headline async (don't block completion)
+          this.sessionSummarizer.generateHeadline(transcriptPath)
+            .then((headline) => {
+              this.sessionStore!.updateHeadline(data.sessionId!, headline);
+            })
+            .catch((err) => {
+              log.warn('dispatcher', 'Failed to generate session headline', {
+                sessionId: data.sessionId,
+                error: (err as Error).message,
+              });
+            });
+
+          // Index for FTS search
+          if (data.output) {
+            this.sessionStore.indexSessionContent(data.sessionId, data.output);
+          }
+
+          log.debug('dispatcher', 'Recorded session for awareness', {
+            sessionId: data.sessionId.slice(0, 8),
+            agentId,
+            meshName,
           });
         }
 
@@ -3009,8 +3054,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
   /**
    * Save session output to .ai/tx/sessions/{agentId}/{timestamp}.md
+   * @returns The file path where the transcript was saved, or null on failure
    */
-  private saveSessionOutput(agentId: string, output: string): void {
+  private saveSessionOutput(agentId: string, output: string): string | null {
     try {
       const sessionsDir = path.join(this.config.workDir, '.ai', 'tx', 'sessions', agentId.replace('/', '-'));
       if (!fs.existsSync(sessionsDir)) {
@@ -3032,8 +3078,10 @@ ${output}
 
       fs.writeFileSync(filepath, content);
       log.info('dispatcher', `Saved session output: ${filepath}`, { agentId, bytes: output.length });
+      return filepath;
     } catch (err) {
       log.error('dispatcher', `Failed to save session output`, { agentId, error: (err as Error).message });
+      return null;
     }
   }
 

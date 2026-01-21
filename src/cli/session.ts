@@ -165,9 +165,10 @@ async function getSession(
 
   if (parsed.type === 'index') {
     // Get by index - list sessions and pick by index
-    const sessions = store.listSessions(agentId, parsed.value as number);
-    if (sessions.length >= parsed.value) {
-      session = sessions[(parsed.value as number) - 1];
+    const indexValue = parsed.value as number;
+    const sessions = store.listSessions(agentId, indexValue);
+    if (sessions.length >= indexValue) {
+      session = sessions[indexValue - 1];
     }
   } else {
     // Get by partial ID - search for matching session
