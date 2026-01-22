@@ -862,7 +862,18 @@ export class WorkerDispatcher extends EventEmitter {
     });
 
     try {
-      // Interrupt the current query
+      // Check if worker is still running - if so, can't resume yet
+      if (activeWorker.runner.isRunning()) {
+        log.warn('dispatcher', `Revision skipped - worker still running`, {
+          agentId,
+          sessionId: sessionId.slice(0, 8),
+          headline,
+        });
+        // Queue the revision for later? For now, just skip
+        return;
+      }
+
+      // Interrupt the current query (in case it's in a wait state)
       await activeWorker.runner.interrupt();
 
       this.emit('revision:interrupt', {
