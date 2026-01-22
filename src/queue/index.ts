@@ -670,6 +670,43 @@ export class MessageQueue {
   }
 
   /**
+   * Get incoming asks (asks TO this agent that need response)
+   * Returns asks where this agent is the target and must respond
+   */
+  getIncomingAsks(toAgent: string): PendingAsk[] {
+    return this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      WHERE to_agent = ?
+      ORDER BY created_at ASC
+    `).all(toAgent) as PendingAsk[];
+  }
+
+  /**
+   * Get pending tasks for an agent (messages queued for processing)
+   * Returns pending messages addressed to this agent
+   */
+  getPendingTasks(toAgent: string): Message[] {
+    const rows = this.db.prepare(`
+      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      FROM messages
+      WHERE to_agent = ? AND status = 'pending'
+      ORDER BY created_at ASC
+    `).all(toAgent) as MessageRow[];
+
+    return rows.map(row => ({
+      id: row.id,
+      from_agent: row.from_agent,
+      to_agent: row.to_agent,
+      type: row.type,
+      status: row.status as 'pending' | 'delivered',
+      payload: JSON.parse(row.payload),
+      created_at: row.created_at,
+      delivered_at: row.delivered_at ?? undefined
+    }));
+  }
+
+  /**
    * Clear a specific pending ask by ID
    */
   clearPendingAsk(id: number): void {

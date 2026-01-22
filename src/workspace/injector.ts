@@ -479,6 +479,112 @@ Reference past sessions by number: "What did we discuss in session 3?"
     const hours = Math.floor(mins / 60);
     return `${hours}h ${mins % 60}m`;
   }
+
+  // ============================================
+  // Situational Context Injection
+  // ============================================
+
+  /**
+   * Inject situational context into a system prompt
+   * Shows pending asks (incoming/outgoing) and queued tasks
+   * so agents have full awareness when starting/resuming
+   */
+  injectSituationalContext(basePrompt: string, context: SituationalContext): string {
+    const parts: string[] = [];
+    const hasOutgoing = context.outgoingAsks.length > 0;
+    const hasIncoming = context.incomingAsks.length > 0;
+    const hasTasks = context.pendingTasks.length > 0;
+
+    // Skip if nothing to inject
+    if (!hasOutgoing && !hasIncoming && !hasTasks) {
+      return basePrompt;
+    }
+
+    parts.push('# Situational Awareness\n');
+    parts.push('**IMPORTANT**: Review your current obligations before proceeding.\n');
+
+    // Current task (first pending task)
+    if (hasTasks) {
+      const currentTask = context.pendingTasks[0];
+      parts.push('## Current Task\n');
+      parts.push(`- **From**: \`${currentTask.from_agent}\``);
+      parts.push(`- **Type**: \`${currentTask.type}\``);
+      if (currentTask.payload?.headline) {
+        parts.push(`- **Headline**: ${currentTask.payload.headline}`);
+      }
+      const taskAge = this.formatAge(currentTask.created_at || Date.now());
+      parts.push(`- **Queued**: ${taskAge}`);
+
+      if (context.pendingTasks.length > 1) {
+        parts.push(`\n*+${context.pendingTasks.length - 1} more task(s) queued*`);
+      }
+      parts.push('');
+    }
+
+    // Outgoing asks (waiting for responses)
+    if (hasOutgoing) {
+      parts.push('## Outgoing Asks (Waiting for Responses)\n');
+      parts.push('You have sent asks and are waiting for responses:\n');
+      for (const ask of context.outgoingAsks) {
+        const age = this.formatAge(ask.created_at || Date.now());
+        parts.push(`- \`${ask.msg_id}\` → **${ask.to_agent}** (${age})`);
+      }
+      parts.push('\n*Do NOT send task-complete until these are resolved.*\n');
+    }
+
+    // Incoming asks (others waiting for YOUR response)
+    if (hasIncoming) {
+      parts.push('## Incoming Asks (Awaiting YOUR Response)\n');
+      parts.push('Other agents are waiting for your response:\n');
+      for (const ask of context.incomingAsks) {
+        const age = this.formatAge(ask.created_at || Date.now());
+        parts.push(`- \`${ask.msg_id}\` from **${ask.from_agent}** (${age})`);
+      }
+      parts.push('\n**You MUST respond to these before sending task-complete.**\n');
+    }
+
+    const section = parts.join('\n');
+    return `${basePrompt}\n\n${section}`;
+  }
+
+  /**
+   * Format age as human-readable (e.g., "30s ago", "5m ago")
+   */
+  private formatAge(timestamp: number): string {
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return `${seconds}s ago`;
+  }
+}
+
+/**
+ * Situational context for agent awareness
+ */
+export interface SituationalContext {
+  /** Asks this agent sent and is waiting for responses */
+  outgoingAsks: Array<{
+    msg_id: string;
+    to_agent: string;
+    created_at?: number;
+  }>;
+  /** Asks sent TO this agent that need response */
+  incomingAsks: Array<{
+    msg_id: string;
+    from_agent: string;
+    created_at?: number;
+  }>;
+  /** Messages queued for this agent to process */
+  pendingTasks: Array<{
+    from_agent: string;
+    type: string;
+    created_at?: number;
+    payload?: { headline?: string };
+  }>;
 }
 
 /**

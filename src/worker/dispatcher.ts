@@ -18,7 +18,7 @@ import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConf
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
-import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext} from '../workspace/index.ts';
+import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext, type SituationalContext} from '../workspace/index.ts';
 import {
   LifecycleHooks,
   QualityIterationError,
@@ -1980,6 +1980,40 @@ The system will resume your session when the human responds.`;
           // instead of file-based SUBTASK markers. See: ensemble.type: parallel in config.
         }
       }
+
+      // Inject situational context (pending asks, queued tasks)
+      // Gives agent full awareness of obligations when starting/resuming
+      const outgoingAsks = this.queue.getPendingAsks(agentId);
+      const incomingAsks = this.queue.getIncomingAsks(agentId);
+      const pendingTasks = this.queue.getPendingTasks(agentId);
+
+      if (outgoingAsks.length > 0 || incomingAsks.length > 0 || pendingTasks.length > 0) {
+        systemPrompt = this.promptInjector.injectSituationalContext(systemPrompt, {
+          outgoingAsks: outgoingAsks.map(a => ({
+            msg_id: a.msg_id,
+            to_agent: a.to_agent,
+            created_at: a.created_at,
+          })),
+          incomingAsks: incomingAsks.map(a => ({
+            msg_id: a.msg_id,
+            from_agent: a.from_agent,
+            created_at: a.created_at,
+          })),
+          pendingTasks: pendingTasks.map(t => ({
+            from_agent: t.from_agent,
+            type: t.type,
+            created_at: t.created_at,
+            payload: t.payload as { headline?: string },
+          })),
+        });
+        log.info('dispatcher', `Injected situational context`, {
+          agentId,
+          outgoingAsks: outgoingAsks.length,
+          incomingAsks: incomingAsks.length,
+          pendingTasks: pendingTasks.length,
+        });
+      }
+
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 
