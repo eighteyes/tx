@@ -41,6 +41,14 @@ interface AgentStateProvider {
 }
 
 /**
+ * Interface for mesh state management
+ * Dispatcher implements this to clear in-memory state on mesh completion
+ */
+interface MeshStateManager {
+  clearMeshState(meshName: string): void;
+}
+
+/**
  * Event emitted when task-complete is rejected due to pending asks
  */
 export interface ParityReminderEvent {
@@ -111,6 +119,8 @@ export class MessageConsumer extends EventEmitter {
   private fsmValidator: FSMValidator | null = null;
   // Agent state provider (dispatcher) for recovery handler
   private agentStateProvider: AgentStateProvider | null = null;
+  // Mesh state manager (dispatcher) for clearing state on completion
+  private meshStateManager: MeshStateManager | null = null;
   // Recovery handler for system/* interception
   private recoveryHandler: RecoveryHandler | null = null;
   // Routing self-heal: track violations per agent
@@ -203,8 +213,9 @@ export class MessageConsumer extends EventEmitter {
    * - Clears pending asks when a new session starts for an agent
    * - Sets up FSM validator for pre-routing message validation
    * - Sets up recovery handler for system/* interception
+   * - Sets up mesh state manager for clearing in-memory state on completion
    */
-  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator> & Partial<AgentStateProvider>): void {
+  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator> & Partial<AgentStateProvider> & Partial<MeshStateManager>): void {
     // Store dispatcher as FSM validator if it has the validation method
     if (typeof dispatcher.validateMessageWithFSM === 'function') {
       this.fsmValidator = dispatcher as FSMValidator;
@@ -220,6 +231,12 @@ export class MessageConsumer extends EventEmitter {
         this.watchDir
       );
       log.debug('consumer', 'Recovery handler initialized');
+    }
+
+    // Store dispatcher as mesh state manager for clearing state on completion
+    if (typeof dispatcher.clearMeshState === 'function') {
+      this.meshStateManager = dispatcher as MeshStateManager;
+      log.debug('consumer', 'Mesh state manager registered');
     }
 
     // Don't clear pending asks on session start - asks persist across session restarts.
@@ -708,14 +725,21 @@ ${body}
             return;
           }
 
-          // Parity gate passed - clear mesh state (pending asks) on final task-complete to core
+          // Parity gate passed - clear mesh state on final task-complete to core
           const meshName = fromAgent.split('/')[0];
+
+          // Clear SQLite state (pending asks)
           const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
           if (clearedAsks > 0) {
             log.info('consumer', `Mesh complete: cleared ${clearedAsks} pending asks`, {
               meshName,
               fromAgent,
             });
+          }
+
+          // Clear dispatcher in-memory state (suspended sessions, ask buffers, FSM)
+          if (this.meshStateManager) {
+            this.meshStateManager.clearMeshState(meshName);
           }
         }
 

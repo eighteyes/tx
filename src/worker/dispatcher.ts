@@ -1768,6 +1768,46 @@ The system will resume your session when the human responds.`;
   }
 
   /**
+   * Clear in-memory state for a mesh on completion
+   * Called by consumer when task-complete to core passes parity gate
+   */
+  clearMeshState(meshName: string): void {
+    let clearedSessions = 0;
+    let clearedBuffers = 0;
+
+    // Clear suspended sessions for this mesh
+    for (const [agentId, _] of this.suspendedSessions) {
+      if (agentId.startsWith(`${meshName}/`)) {
+        this.suspendedSessions.delete(agentId);
+        clearedSessions++;
+      }
+    }
+
+    // Clear ask response buffers for this mesh
+    for (const [agentId, _] of this.askResponseBuffer) {
+      if (agentId.startsWith(`${meshName}/`)) {
+        this.askResponseBuffer.delete(agentId);
+        clearedBuffers++;
+      }
+    }
+
+    // Clear FSM state for this mesh
+    const fsm = this.meshFSMs.get(meshName);
+    if (fsm) {
+      this.meshFSMs.delete(meshName);
+    }
+
+    if (clearedSessions > 0 || clearedBuffers > 0) {
+      log.info('dispatcher', `Cleared mesh state on completion`, {
+        meshName,
+        clearedSessions,
+        clearedBuffers,
+        clearedFSM: !!fsm,
+      });
+    }
+  }
+
+  /**
    * Stop the dispatcher
    */
   async stop(consumer?: EventEmitter): Promise<void> {
