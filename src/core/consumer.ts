@@ -100,6 +100,7 @@ interface CachedMeshConfig {
 interface MeshConfig {
   mesh: string;
   routing?: Record<string, Record<string, Record<string, string>>>;
+  completion_agent?: string;
 }
 
 export class MessageConsumer extends EventEmitter {
@@ -240,14 +241,12 @@ export class MessageConsumer extends EventEmitter {
       log.debug('consumer', 'Mesh state manager registered');
     }
 
-    // Don't clear pending asks on session start - asks persist across session restarts.
-    // Mesh state (including pending asks) is cleared on final task-complete to core.
+    // Clear pending asks on session start - orphaned asks from previous session would block completion
     dispatcher.on('session-start', ({ agentId }: { agentId: string }) => {
-      const pending = this.queue.getPendingAsks(agentId);
-      if (pending.length > 0) {
-        log.debug('consumer', `Agent starting with ${pending.length} pending asks (preserved)`, {
+      const cleared = this.queue.clearPendingAsks(agentId);
+      if (cleared > 0) {
+        log.debug('consumer', `Session start: cleared ${cleared} stale pending asks`, {
           agentId,
-          msgIds: pending.map(p => p.msg_id),
         });
       }
     });
@@ -729,21 +728,31 @@ ${body}
             return;
           }
 
-          // Parity gate passed - clear mesh state on final task-complete to core
-          const meshName = fromAgent.split('/')[0];
+          // Parity gate passed - check if this is the completion_agent
+          const [meshName, agentName] = fromAgent.split('/');
+          const meshConfig = await this.loadMeshConfig(meshName);
+          const isCompletionAgent = meshConfig?.completion_agent === agentName;
 
-          // Clear SQLite state (pending asks)
-          const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
-          if (clearedAsks > 0) {
-            log.info('consumer', `Mesh complete: cleared ${clearedAsks} pending asks`, {
-              meshName,
-              fromAgent,
-            });
-          }
-
-          // Clear dispatcher in-memory state (suspended sessions, ask buffers, FSM)
-          if (this.meshStateManager) {
-            this.meshStateManager.clearMeshState(meshName);
+          if (isCompletionAgent) {
+            // Completion agent: clear ALL asks for the mesh
+            const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
+            if (clearedAsks > 0) {
+              log.info('consumer', `Completion agent: cleared ${clearedAsks} mesh pending asks`, {
+                meshName, fromAgent,
+              });
+            }
+            // Also clear mesh state
+            if (this.meshStateManager) {
+              this.meshStateManager.clearMeshState(meshName);
+            }
+          } else {
+            // Non-completion agent: only clear this agent's asks
+            const clearedAsks = this.queue.clearPendingAsks(fromAgent);
+            if (clearedAsks > 0) {
+              log.info('consumer', `Agent complete: cleared ${clearedAsks} pending asks`, {
+                fromAgent,
+              });
+            }
           }
         }
 
