@@ -20,6 +20,7 @@ import { logout } from './logout.ts';
 import { deploy } from './deploy.ts';
 import { session } from './session.ts';
 import { recover } from './recover.ts';
+import { mesh } from './mesh.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -110,6 +111,7 @@ Commands:
   tx spy            Real-time activity stream
   tx tasks          View task queue
   tx session        View and search agent sessions
+  tx mesh           Manage mesh state
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
   tx validate-mesh  Validate mesh configuration
@@ -418,6 +420,31 @@ Crash Recovery:
 
   Use 'tx recover resume' to re-queue interrupted messages,
   or 'tx recover discard' to abandon them.`,
+
+  mesh: `tx mesh - Manage mesh state
+
+Usage: tx mesh <action> [mesh] [options]
+
+Actions:
+  list                    List meshes with activity
+  status <mesh>           Show mesh state snapshot
+  clear <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
+
+Options:
+  --json                  Output as JSON
+  --force                 Force clear even if workers are running
+
+Examples:
+  tx mesh list
+  tx mesh list --json
+  tx mesh status narrative-engine
+  tx mesh status dev --json
+  tx mesh clear test-mesh
+  tx mesh clear test-mesh --force
+
+Notes:
+  - If workers are running, use 'tx mesh clear --force' or stop workers first
+  - 'clear' removes suspended sessions, pending asks, and FSM state from SQLite`,
 };
 
 function showHelp(cmd: string): void {
@@ -615,6 +642,11 @@ async function main() {
       await recover(args.filter(a => !a.startsWith('-')), {
         json: Boolean(flags.json),
       });
+      break;
+
+    case 'mesh':
+      if (wantsHelp) { showHelp('mesh'); break; }
+      await mesh(args);
       break;
 
     default:

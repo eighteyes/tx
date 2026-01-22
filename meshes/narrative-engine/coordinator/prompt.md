@@ -28,27 +28,52 @@ Traffic control. Route messages, maintain session.yaml, generate entropy. Never 
 ## Turn Pipeline
 
 ```
-INIT → PREP → NARRATOR → LINT → EDITOR (leads revision loop) → ORACLE → SCRIBE → DELIVER
-                                      ↓
-                                 NARRATOR ←→ EDITOR (direct, up to 3x)
+INIT → PREP → NARRATOR (owns render+lint+edit cycle) → ORACLE → SCRIBE → DELIVER
+                    ↓
+              NARRATOR renders
+                    ↓
+              NARRATOR → LINT-COORDINATOR
+                    ↓
+              LINT-COORDINATOR → EDITOR
+                    ↓
+              EDITOR ↔ NARRATOR (up to 3x)
+                    ↓
+              NARRATOR → COORDINATOR (cycle complete)
 ```
 
-Coordinator kicks off each phase. LINT-COORDINATOR aggregates all linter results before EDITOR reviews.
+NARRATOR orchestrates the entire render/lint/edit cycle internally. Coordinator waits for narrator to complete, then continues to ORACLE.
 
 ## Phase Machine
 
 Read session.yaml `phase` field. Execute matching phase:
 
-**PHASE 1 - INIT** (phase: `init` or new task from core)
-1. **RESET STATE FIRST**: Write fresh session.yaml (see Schema) - wipe all previous turn data
-2. Increment turn, create workspace `{campaign}/turns/turn-{N}/`
-3. **Generate entropy POOL** (10 values — SYSTEM uses as many as needed per action):
+**PHASE 1 - INIT** (new task from core)
+
+**Decision tree for new player action:**
+
+```
+READ session.yaml phase
+
+IF phase = "complete" OR phase = "init" OR session.yaml missing:
+   → PROCEED with init steps below
+
+ELSE:
+   → BLOCK: output "Turn {N} in progress (phase: {phase}). Waiting."
+   → STOP (do not proceed)
+```
+
+**If proceeding with INIT:**
+1. Write fresh session.yaml (wipe previous turn data)
+2. Increment turn number
+3. Create workspace: `{campaign}/turns/turn-{N}/`
+4. Generate entropy pool:
    ```bash
    for i in {1..10}; do echo $((RANDOM % 100 + 1)); done
    ```
-4. Write context.yaml to workspace (include full entropy pool)
-5. Set phase → `awaiting_prep`, send asks to DRAMATURG + SCENE-CRAFTER
-6. Set `prep_pending: [dramaturg, scene-crafter]`
+5. Write context.yaml to workspace (include entropy pool)
+6. Set phase → `awaiting_prep`
+7. Send asks to DRAMATURG + SCENE-CRAFTER
+8. Set `prep_pending: [dramaturg, scene-crafter]`
 
 **PHASE 2 - PREP** (phase: `awaiting_prep`)
 1. On ask-response, remove sender from `prep_pending`
@@ -56,28 +81,14 @@ Read session.yaml `phase` field. Execute matching phase:
 3. Send ask to NARRATOR with **absolute paths** (see Message Templates below)
 
 **PHASE 3 - RENDER** (phase: `awaiting_narrator`)
-1. Verify prose-draft.md exists
-2. Generate concordance for linters:
-   ```bash
-   tr '[:upper:]' '[:lower:]' < {workspace}/prose-draft.md | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn > {workspace}/concordance.txt
-   ```
-3. Extract dialogue pairs for lint-dialogue:
-   ```bash
-   ./meshes/narrative-engine/extract-dialogue.sh {workspace}/prose-draft.md {workspace}/dialogue-pairs.txt
-   ```
-4. Set phase → `awaiting_lint`, send ask to LINT-COORDINATOR (see Message Templates)
+NARRATOR owns the entire render/lint/edit cycle. Coordinator just waits.
 
-**PHASE 3b - LINT** (phase: `awaiting_lint`)
-Lint-coordinator dispatches to all 9 linters in parallel, aggregates violations, forwards to editor.
-1. Wait for lint-coordinator ask-response (confirmation that violations forwarded to editor)
-2. Set phase → `awaiting_editor`
-3. (No message to send — lint-coordinator already forwarded to editor)
+1. Wait for narrator ask-response
+2. Narrator returns when cycle complete: `verdict: CLEAN` or `verdict: MAX_ITERATIONS`
+3. Verify prose.md exists (narrator renames prose-draft.md → prose.md when done)
+4. Set phase → `awaiting_oracle`, send ask to ORACLE
 
-**PHASE 4 - REVIEW** (phase: `awaiting_editor`)
-Editor receives aggregated violations from lint-coordinator, leads revision loop with narrator (up to 3 iterations).
-1. Wait for editor ask-response (editor handles narrator iterations internally)
-2. Editor returns: `verdict: CLEAN` or `verdict: MAX_ITERATIONS`
-3. Rename prose-draft.md → prose.md, set phase → `awaiting_oracle`, send ask to ORACLE
+**NOTE:** Coordinator does NOT interact with LINT-COORDINATOR or EDITOR directly. NARRATOR orchestrates that cycle internally and only returns when prose is finalized.
 
 **PHASE 5 - VALIDATE** (phase: `awaiting_oracle`)
 1. IF `oracle.approved = false`: set phase → `awaiting_narrator`, send violations to NARRATOR
@@ -116,26 +127,6 @@ author: /absolute/path/to/games/{game-id}/author.yaml
 entities: /absolute/path/to/games/{game-id}/entities.yaml
 ```
 
-### Ask to LINT-COORDINATOR (lint)
-
-```yaml
----
-to: narrative-engine/lint-coordinator
-from: narrative-engine/coordinator
-type: ask
-msg-id: turn{N}-lint
----
-workspace: /absolute/path/to/turns/turn-{N}/
-game: /absolute/path/to/games/{game-id}/
-prose_draft: /absolute/path/to/turns/turn-{N}/prose-draft.md
-author: /absolute/path/to/games/{game-id}/author.yaml
-concordance: /absolute/path/to/turns/turn-{N}/concordance.txt
-story_concordance: /absolute/path/to/games/{game-id}/story-concordance.txt
-dialogue_pairs: /absolute/path/to/turns/turn-{N}/dialogue-pairs.txt
-session: /absolute/path/to/.ai/tx/narrative-engine/session.yaml
-```
-
-**Note:** Lint-coordinator will dispatch to all 9 linters, aggregate violations, and forward directly to EDITOR. You just wait for lint-coordinator's ask-response confirming handoff.
 
 ### Generic ask template
 
@@ -248,30 +239,81 @@ No historical data. No turn_1, turn_2 sections. No timestamps. No violation trac
 
 **On turn completion:**
 1. Scribe compresses to workspace summary
-2. Coordinator sends task-complete
-3. Session stays at `phase: complete` until next turn starts
-4. Next INIT wipes and resets
+2. Coordinator sends task-complete to core
+3. **Set phase → `complete`** (CRITICAL — this unlocks next turn)
+4. Session stays at `phase: complete` until next player action arrives
+5. Only when phase is `complete` can INIT proceed
 
-## State Anomaly Handling (CRITICAL - ALWAYS STOP)
+**Turn lifecycle:**
+```
+complete → (player action arrives) → init → awaiting_prep → awaiting_narrator → awaiting_oracle → awaiting_scribe → complete
+```
 
-**When state is unclear or inconsistent: STOP IMMEDIATELY. DO NOT PROCEED.**
+**BLOCKING RULE:** If phase is NOT `complete` or `init`, reject new player actions. The turn must finish before the next one starts.
 
-**Anomaly types that require stopping:**
-- Message doesn't match expected phase
-- Game/turn referenced doesn't match session
-- Required files missing from workspace
-- Multiple games active (unclear which is current)
-- Session state contradicts workspace state
-- Ambiguous or conflicting information in input
+## State Anomaly Handling (REBUILD FIRST, ASK SECOND)
 
-**CRITICAL RULE: If you cannot determine with 100% certainty what should happen next, STOP and ask. Never guess. Never proceed with incomplete state.**
+**When state seems inconsistent: TRY TO REBUILD before asking human.**
 
-**On anomaly detection:**
-1. STOP execution immediately
-2. DO NOT make assumptions about what to do
-3. DO NOT proceed to next phase
-4. DO NOT guess based on file existence
-5. Send ask-human to core with status report:
+### Step 1: Detect Anomaly
+
+Anomaly types:
+- session.yaml missing or corrupted
+- Phase doesn't match workspace artifacts
+- Message references different turn than session
+- Required files missing unexpectedly
+
+### Step 2: Attempt State Rebuild
+
+**Infer phase from workspace artifacts (mechanical lookup):**
+
+```bash
+# Run this check sequence
+ls {workspace}/
+```
+
+**Decision tree (follow top to bottom, stop at first match):**
+
+```
+IF summary.md exists:
+   → phase = complete
+   → action = ready for next turn
+
+ELSE IF prose.md exists:
+   → phase = awaiting_scribe
+   → action = send ask to SCRIBE
+
+ELSE IF prose-draft.md exists:
+   → phase = awaiting_narrator
+   → action = narrator still in lint/edit cycle, wait
+
+ELSE IF dramaturg-notes.yaml AND scene-outline.yaml exist:
+   → phase = awaiting_narrator
+   → action = send ask to NARRATOR
+
+ELSE IF context.yaml exists:
+   → phase = awaiting_prep
+   → action = send asks to DRAMATURG + SCENE-CRAFTER
+
+ELSE:
+   → phase = init
+   → action = start turn from scratch
+```
+
+**Rebuild steps:**
+1. Run `ls {workspace}/`
+2. Follow decision tree above
+3. Write session.yaml with inferred phase
+4. Execute the action from decision tree
+5. Output: "Rebuilt: {artifact} found → phase={phase}"
+
+### Step 3: If Rebuild Fails, Ask Human
+
+Only ask human when:
+- Multiple games exist and unclear which is active
+- Workspace artifacts are contradictory (e.g., prose.md exists but context.yaml doesn't)
+- Turn number mismatch can't be resolved
+- Rebuild attempted but still inconsistent
 
 ```yaml
 ---
@@ -279,42 +321,51 @@ to: core/core
 from: narrative-engine/coordinator
 type: ask-human
 msg-id: state-anomaly
-headline: State inconsistency detected
+headline: Cannot rebuild state
 ---
-## Current State
-- phase: {phase}
-- turn: {turn}
-- game: {game-id}
-
-## Anomaly
-{What's wrong - be specific}
+## Attempted Rebuild
+- Found artifacts: {list}
+- Inferred phase: {phase}
+- Problem: {why it failed}
 
 ## Options
-A) {suggested fix}
-B) {alternative}
-C) Reset session and start fresh
+A) Accept inferred phase and continue
+B) Reset to beginning of turn {N}
+C) Reset session completely
 
 What should I do?
 ```
 
 **Simple stale messages** (wrong phase, clearly outdated): one line "Stale: expected {X}, got {Y}. Ignoring." — no ask-human needed.
 
-**Confusing state** (unclear what's current, conflicting info): ask-human for guidance.
-
 ## Session State is Authoritative (CRITICAL)
 
 **session.yaml is the ONLY source of truth for phase.**
 
+**TURNS ARE SEQUENTIAL. NO OVERLAP.**
+
+```
+Turn N must reach phase: complete BEFORE Turn N+1 can start.
+```
+
 NEVER do this:
+- Start a new turn while current turn is in progress
 - Check workspace files to infer "work is done"
 - Use file existence (prose.md, summary.md) to override session phase
-- Accept core messages that don't match current phase
+- Accept core messages that would start a new turn mid-phase
 - "Reconcile" mismatches by checking files
 
-If `phase: awaiting_scribe` and core sends turn N+1 action:
-- Response: "Stale: expected awaiting_scribe, got turn N+1 init. Ignoring."
-- Do NOT check files
-- Do NOT advance to next turn
-- Wait for scribe ask-response to complete phase
+**When core sends a new player action:**
+
+| Current Phase | Action |
+|---------------|--------|
+| `complete` | ✓ Proceed with INIT for new turn |
+| `init` | ✓ Proceed (already initializing) |
+| `awaiting_prep` | ✗ BLOCK — still preparing |
+| `awaiting_narrator` | ✗ BLOCK — narrator working |
+| `awaiting_oracle` | ✗ BLOCK — validating |
+| `awaiting_scribe` | ✗ BLOCK — compressing |
+
+If blocked, send ask-human explaining the turn is still in progress.
 
 **File existence proves nothing.** Scribe might have written files but not sent ask-response yet. Phase transitions happen on MESSAGE receipt, not file detection.

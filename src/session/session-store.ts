@@ -237,6 +237,37 @@ export class SessionStore {
   }
 
   /**
+   * List sessions for a mesh (all agents in the mesh), ordered by most recent first
+   */
+  listSessionsByMesh(meshId: string, limit: number = 50): SessionMetadata[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM sessions
+      WHERE mesh_id = ?
+      ORDER BY started_at DESC
+      LIMIT ?
+    `).all(meshId, limit) as SessionRow[];
+    return rows.map(row => this.rowToSession(row));
+  }
+
+  /**
+   * Count sessions grouped by mesh
+   * Returns a Map of meshId -> count
+   */
+  countSessionsByMesh(): Map<string, number> {
+    const rows = this.db.prepare(`
+      SELECT mesh_id, COUNT(*) as count
+      FROM sessions
+      GROUP BY mesh_id
+    `).all() as Array<{ mesh_id: string; count: number }>;
+
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      counts.set(row.mesh_id, row.count);
+    }
+    return counts;
+  }
+
+  /**
    * Update session with final data (endedAt, status, counts)
    */
   updateSession(id: string, updates: Partial<SessionMetadata>): void {
