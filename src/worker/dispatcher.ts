@@ -979,19 +979,81 @@ export class WorkerDispatcher extends EventEmitter {
     }
 
     try {
-      // ask-human is fire-and-forget - don't add to awaitingResponses
-      // Human response comes back as new task input, not ask-response
-      // Worker can complete without waiting for human response
+      // ask-human: HALT mesh immediately - kill worker, suspend session
+      // Human responds via ask-response, mesh resumes when received
       if (messageType === 'ask-human') {
-        log.info('dispatcher', `ask-human sent (fire-and-forget, no await)`, {
+        log.info('dispatcher', `ask-human: halting mesh for human response`, {
           from: senderAgentId,
           to: targetAgentId,
         });
-        this.emit('worker:ask-human', {
-          workerId: senderAgentId,
-          target: targetAgentId,
+
+        // Extract mesh and agent info for later resume
+        const [meshName, agentName] = senderAgentId.split('/');
+        const meshConfig = this.meshConfigs.get(meshName);
+        const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+
+        if (!agentConfig) {
+          log.error('dispatcher', `Cannot suspend: agent config not found`, {
+            from: senderAgentId,
+            meshName,
+            agentName,
+          });
+          return;
+        }
+
+        // Get pending ask-humans count for this agent
+        const pendingAsks = this.queue.getPendingAsks(senderAgentId);
+        const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
+        const pendingCount = pendingAskHumans.length;
+        const suspendedAt = Date.now();
+
+        // Store session for later resume (in-memory)
+        this.suspendedSessions.set(senderAgentId, {
+          sessionId,
+          reason: 'ask-human',
+          suspendedAt,
+          targetAgents: new Set([targetAgentId]),
+          pendingResponseCount: pendingCount,
+          meshName,
+          agentConfig,
         });
-      } else if (currentStatus === 'awaiting') {
+
+        // Persist to SQLite for crash recovery
+        this.queue.suspendSession(senderAgentId, {
+          sessionId,
+          reason: 'ask-human',
+          suspendedAt,
+          meshName,
+          targetAgents: [targetAgentId],
+          pendingCount,
+        });
+
+        // Kill the worker - mesh halted until human responds
+        runner.kill('ask-human: mesh halted for human response');
+
+        this.emit('worker:suspended', {
+          agentId: senderAgentId,
+          workerId,
+          sessionId,
+          reason: 'ask-human',
+          pendingResponseCount: pendingCount,
+          targetAgents: [targetAgentId],
+        });
+
+        // Remove from active workers
+        this.removeActiveWorker(senderAgentId, workerId);
+
+        log.info('dispatcher', `Mesh halted - worker killed and suspended`, {
+          from: senderAgentId,
+          workerId,
+          sessionId: sessionId.slice(0, 8),
+          pendingResponseCount: pendingCount,
+        });
+
+        return; // Done - mesh is halted
+      }
+
+      if (currentStatus === 'awaiting') {
         // Already awaiting, add this target to the set
         log.info('dispatcher', `Adding await target`, {
           from: senderAgentId,
@@ -1022,88 +1084,7 @@ export class WorkerDispatcher extends EventEmitter {
           sessionId,
           type: messageType,
         });
-
-        // For ask-human messages: KILL the worker immediately
-        // Worker will be resumed when human responds (FSM handles this)
-        if (messageType === 'ask-human') {
-          log.info('dispatcher', `Killing worker for ask-human (will resume on response)`, {
-            from: senderAgentId,
-            sessionId: sessionId.slice(0, 8),
-          });
-
-          try {
-            // Extract mesh and agent info for later resume
-            const [meshName, agentName] = senderAgentId.split('/');
-            const meshConfig = this.meshConfigs.get(meshName);
-            const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
-
-            if (!agentConfig) {
-              log.error('dispatcher', `Cannot suspend: agent config not found`, {
-                from: senderAgentId,
-                meshName,
-                agentName,
-              });
-              return;
-            }
-
-            // Get the count of pending ask-humans for this agent from the queue
-            // This tells us how many responses we need to wait for before resuming
-            const pendingAsks = this.queue.getPendingAsks(senderAgentId);
-            const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
-            const pendingCount = pendingAskHumans.length;
-
-            const suspendedAt = Date.now();
-
-            // Store session for later resume with pending count (in-memory)
-            this.suspendedSessions.set(senderAgentId, {
-              sessionId,
-              reason: 'ask-human',
-              suspendedAt,
-              targetAgents: new Set([targetAgentId]),
-              pendingResponseCount: pendingCount,
-              meshName,
-              agentConfig,
-            });
-
-            // Persist to SQLite for crash recovery
-            this.queue.suspendSession(senderAgentId, {
-              sessionId,
-              reason: 'ask-human',
-              suspendedAt,
-              meshName,
-              targetAgents: [targetAgentId],
-              pendingCount,
-            });
-
-            // Kill the worker - no steering, no resume, just stop
-            runner.kill('ask-human: suspending for human response');
-
-            this.emit('worker:suspended', {
-              agentId: senderAgentId,
-              workerId,
-              sessionId,
-              reason: 'ask-human',
-              pendingResponseCount: pendingCount,
-              targetAgents: [targetAgentId],
-            });
-
-            // Remove from active workers using workerId
-            this.removeActiveWorker(senderAgentId, workerId);
-
-            log.info('dispatcher', `Worker killed and suspended`, {
-              from: senderAgentId,
-              workerId,
-              sessionId: sessionId.slice(0, 8),
-              pendingResponseCount: pendingCount,
-            });
-          } catch (killError) {
-            log.error('dispatcher', `Failed to kill worker for ask-human`, {
-              from: senderAgentId,
-              workerId,
-              error: (killError as Error).message,
-            });
-          }
-        }
+        // Note: ask-human is handled above with early return (kills worker, halts mesh)
       } else {
         log.warn('dispatcher', `Cannot await from current state`, {
           from: senderAgentId,

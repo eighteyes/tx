@@ -388,9 +388,13 @@ ${body}
       // Intercept messages to system/* targets and provide state guidance.
       // Supports deliberate channels (system/help, system/stuck) and
       // accidental writes (system/routing-validator, etc.)
+      // Skip: core/* (no FSM), system/* (avoid loops), missing from field
       // =================================================================
-      if (toAgent.startsWith('system/') && this.recoveryHandler) {
-        const fromAgent = parsed.frontmatter.from;
+      const fromAgent = parsed.frontmatter.from;
+      const skipRecovery = !fromAgent ||
+                           fromAgent.startsWith('core/') ||
+                           fromAgent.startsWith('system/');
+      if (toAgent.startsWith('system/') && this.recoveryHandler && !skipRecovery) {
         const msgId = parsed.frontmatter['msg-id'] || `recovery-${Date.now()}`;
 
         log.info('consumer', 'Recovery request intercepted', {
@@ -455,7 +459,6 @@ ${body}
       // Validates that routing rules exist for intra-mesh messages.
       // Self-heals on first violation, escalates on second.
       // =================================================================
-      const fromAgent = parsed.frontmatter.from;
       const messageType = parsed.frontmatter.type;
 
       if (fromAgent && toAgent && messageType) {

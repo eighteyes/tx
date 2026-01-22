@@ -37,6 +37,7 @@ model: haiku | sonnet | opus  # Override agent's default model
 priority: high | normal | low  # Message priority (default: normal)
 headless: true           # Run without prompt injection (queue only)
 in-reply-to: original-msg-id   # REQUIRED for ask-response - correlates to original ask
+resume-mesh: true              # Skip state clearing on new run (for crash recovery)
 ---
 
 Message body content here.
@@ -155,4 +156,37 @@ in-reply-to: help-123
 
 Await response to 1 pending ask(s) before sending task-complete.
 \`\`\`
+
+### Mesh State and Crash Recovery
+
+By default, mesh state is cleared when:
+1. A new task arrives at the mesh entry point
+2. A \`task-complete\` reaches core with no pending asks
+
+**State that gets cleared**:
+- Suspended session data (including session IDs for \`--resume\`)
+- Pending ask-response buffers
+- FSM workflow state
+
+**To resume a crashed mesh**, set \`resume-mesh: true\` in the task frontmatter:
+
+\`\`\`yaml
+---
+to: mesh/entry-agent
+from: core/core
+type: task
+msg-id: resume-123
+resume-mesh: true              # Preserve state, resume crashed workers
+headline: Continue previous work
+---
+
+Pick up where you left off.
+\`\`\`
+
+**When to use \`resume-mesh: true\`**:
+- Recovering from a crash mid-workflow
+- Continuing a multi-agent task that was interrupted
+- When workers have pending \`ask-human\` or \`ask\` messages outstanding
+
+**Default behavior (no flag)**: Fresh start - all mesh state cleared before processing.
 `;
