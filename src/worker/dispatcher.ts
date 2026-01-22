@@ -269,6 +269,7 @@ export class WorkerDispatcher extends EventEmitter {
 
   constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
     super();
+    this.setMaxListeners(25);
     this.config = config;
     this.queue = queue;
     this.stateFile = path.join(config.workDir, '.ai', 'tx', 'data', 'workers.json');

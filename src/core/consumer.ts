@@ -131,6 +131,7 @@ export class MessageConsumer extends EventEmitter {
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
+    this.setMaxListeners(25);
     this.watchDir = watchDir;
     this.queue = queue;
     // Default to TX_ROOT/meshes if not provided
