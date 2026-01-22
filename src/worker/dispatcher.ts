@@ -755,6 +755,36 @@ export class WorkerDispatcher extends EventEmitter {
       }
     }
 
+    // NEW MESH RUN: Clear stale state when task arrives at entry point
+    // This handles crashed/abandoned meshes that never sent task-complete to core
+    const entryPoint = meshConfig.entry_point || 'worker';
+    if (agentName === entryPoint) {
+      // Check for resume-mesh flag in frontmatter (allows resuming crashed mesh)
+      const pendingMsg = this.queue.peekOne(agentId);
+      const resumeMesh = pendingMsg?.payload?.['resume-mesh'] === true ||
+                         pendingMsg?.payload?.['resume-mesh'] === 'true';
+
+      if (resumeMesh) {
+        log.info('dispatcher', `Resuming mesh (resume-mesh flag set)`, {
+          meshName,
+          agentId,
+          hasSuspendedSessions: this.suspendedSessions.size > 0,
+        });
+      } else {
+        // Clear any stale state from previous incomplete run
+        const hadState = this.suspendedSessions.size > 0 ||
+                        this.askResponseBuffer.size > 0 ||
+                        this.meshFSMs.has(meshName);
+        if (hadState) {
+          log.info('dispatcher', `New mesh run at entry point, clearing stale state`, {
+            meshName,
+            agentId,
+          });
+          this.clearMeshState(meshName);
+        }
+      }
+    }
+
     // Check for FSM ensemble state (both legacy type: ensemble and new ensemble.type: parallel)
     const fsm = this.meshFSMs.get(meshName);
     if (fsm && fsm.isInitialized()) {
