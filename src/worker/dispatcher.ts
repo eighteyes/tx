@@ -230,6 +230,58 @@ interface ActiveWorker {
 }
 
 /**
+ * Reason for session resume - used for logging and event naming
+ */
+type ResumeReason =
+  | 'revision'
+  | 'ask-human'
+  | 'ask-response'
+  | 'parity-reminder'
+  | 'quality-iteration'
+  | 'incoming-ask-reminder';
+
+/**
+ * Options for unified session resume
+ */
+interface ResumeSessionOptions {
+  reason: ResumeReason;
+  agentId: string;
+  sessionId: string;
+  prompt: string;
+  runner: SdkRunner;
+  interrupt?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Result from session resume attempt
+ */
+interface ResumeSessionResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Options for spawning a worker
+ */
+interface SpawnWorkerOptions {
+  /** If set, worker is part of ensemble - collect output instead of FSM transition */
+  ensembleId?: string;
+  /** Ensemble index (for differentiated context injection) */
+  ensembleIndex?: number;
+  /** Total number of agents in ensemble (for context injection) */
+  ensembleTotal?: number;
+  /** Skip post-hooks (for ensemble workers) */
+  skipPostHooks?: boolean;
+  /** FSM instance to use for context injection (ensemble workers use mesh FSM) */
+  fsm?: MeshFSM;
+  /** FSM state config for ensemble context */
+  fsmStateConfig?: FSMStateConfig;
+  /** Task message (for ensemble workers that don't poll queue) */
+  task?: Message;
+}
+
+/**
  * Suspended session state (worker killed, awaiting resume)
  */
 interface SuspendedSession {
@@ -341,6 +393,93 @@ export class WorkerDispatcher extends EventEmitter {
     if (continuation === true) return true;
     if (Array.isArray(continuation)) return continuation.includes(agentName);
     return false;
+  }
+
+  // ============================================================================
+  // Unified Session Resume
+  // ============================================================================
+
+  /**
+   * Resume a session with consistent logging and event emission
+   *
+   * Consolidates the 6 different resume pathways:
+   * - revision: User edits message file
+   * - ask-human: Human responds to suspended agent
+   * - ask-response: Agent responds to ask
+   * - parity-reminder: Blocked task-complete reminder
+   * - quality-iteration: Quality gate failure retry
+   * - incoming-ask-reminder: Stuck detector reminder
+   */
+  private async resumeSession(options: ResumeSessionOptions): Promise<ResumeSessionResult> {
+    const { reason, agentId, sessionId, prompt, runner, interrupt, metadata } = options;
+    const shortSessionId = sessionId.slice(0, 8);
+
+    try {
+      // Optional interrupt before resume
+      if (interrupt) {
+        await runner.interrupt();
+        this.emit(`${reason}:interrupt`, { agentId, sessionId, ...metadata });
+      }
+
+      log.info('dispatcher', `Resuming session`, {
+        agentId,
+        reason,
+        sessionId: shortSessionId,
+        ...metadata,
+      });
+
+      const result = await runner.resume(sessionId, prompt);
+
+      if (result.success) {
+        log.info('dispatcher', `Session resumed successfully`, {
+          agentId,
+          reason,
+          sessionId: shortSessionId,
+        });
+
+        this.emit(`${reason}:complete`, {
+          agentId,
+          sessionId,
+          success: true,
+          ...metadata,
+        });
+
+        return { success: true };
+      } else {
+        log.error('dispatcher', `Session resume failed`, {
+          agentId,
+          reason,
+          sessionId: shortSessionId,
+          error: result.error,
+        });
+
+        this.emit(`${reason}:error`, {
+          agentId,
+          sessionId,
+          error: result.error,
+          ...metadata,
+        });
+
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      const errorMsg = (error as Error).message;
+
+      log.error('dispatcher', `Session resume exception`, {
+        agentId,
+        reason,
+        sessionId: shortSessionId,
+        error: errorMsg,
+      });
+
+      this.emit(`${reason}:error`, {
+        agentId,
+        error: errorMsg,
+        ...metadata,
+      });
+
+      return { success: false, error: errorMsg };
+    }
   }
 
   // ============================================================================
@@ -862,73 +1001,27 @@ export class WorkerDispatcher extends EventEmitter {
       contentLength: content.length,
     });
 
-    try {
-      // Check if worker is still running - if so, can't resume yet
-      if (activeWorker.runner.isRunning()) {
-        log.warn('dispatcher', `Revision skipped - worker still running`, {
-          agentId,
-          sessionId: sessionId.slice(0, 8),
-          headline,
-        });
-        // Queue the revision for later? For now, just skip
-        return;
-      }
-
-      // Interrupt the current query (in case it's in a wait state)
-      await activeWorker.runner.interrupt();
-
-      this.emit('revision:interrupt', {
-        agentId,
-        sessionId,
-        headline,
-      });
-
-      // Resume with the revised content
-      // Build a feedback prompt that includes the revision
-      const revisionPrompt = this.buildRevisionPrompt(content, headline);
-
-      log.info('dispatcher', `Resuming session with revised content`, {
+    // Check if worker is still running - if so, can't resume yet
+    if (activeWorker.runner.isRunning()) {
+      log.warn('dispatcher', `Revision skipped - worker still running`, {
         agentId,
         sessionId: sessionId.slice(0, 8),
+        headline,
       });
-
-      // Resume the session with the revised content
-      // This will trigger the 'complete' event handler when finished
-      const result = await activeWorker.runner.resume(sessionId, revisionPrompt);
-
-      if (result.success) {
-        log.info('dispatcher', `Revision resume completed successfully`, {
-          agentId,
-          sessionId: sessionId.slice(0, 8),
-        });
-        this.emit('revision:complete', {
-          agentId,
-          sessionId,
-          success: true,
-        });
-      } else {
-        log.error('dispatcher', `Revision resume failed`, {
-          agentId,
-          sessionId: sessionId.slice(0, 8),
-          error: result.error,
-        });
-        this.emit('revision:error', {
-          agentId,
-          sessionId,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      const errorMsg = (error as Error).message;
-      log.error('dispatcher', `Failed to handle message revision`, {
-        agentId,
-        error: errorMsg,
-      });
-      this.emit('revision:error', {
-        agentId,
-        error: errorMsg,
-      });
+      // Queue the revision for later? For now, just skip
+      return;
     }
+
+    // Resume with the revised content (interrupt first in case worker is in wait state)
+    await this.resumeSession({
+      reason: 'revision',
+      agentId,
+      sessionId,
+      prompt: this.buildRevisionPrompt(content, headline),
+      runner: activeWorker.runner,
+      interrupt: true,
+      metadata: { headline },
+    });
   }
 
   /**
@@ -1526,32 +1619,18 @@ The system will resume your session when the human responds.`;
         // Get ALL buffered responses for this agent
         const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
 
-        log.info('dispatcher', `All responses received, resuming session`, {
-          awaitingAgentId,
-          sessionId: sessionId.slice(0, 8),
-          responseCount: bufferedResponses.length,
-        });
-
-        // Build resume prompt with ALL buffered responses
-        const resumePrompt = this.buildAskResponsePrompt(bufferedResponses);
-
         // Clear buffer before resume
         this.askResponseBuffer.delete(awaitingAgentId);
 
-        // Resume the session
-        const result = await runner.resume(sessionId, resumePrompt);
-
-        if (result.success) {
-          log.info('dispatcher', `Session resumed successfully`, {
-            awaitingAgentId,
-            sessionId: sessionId.slice(0, 8),
-          });
-        } else {
-          log.error('dispatcher', `Session resume failed`, {
-            awaitingAgentId,
-            error: result.error,
-          });
-        }
+        // Resume the session with all buffered responses
+        await this.resumeSession({
+          reason: 'ask-response',
+          agentId: awaitingAgentId,
+          sessionId,
+          prompt: this.buildAskResponsePrompt(bufferedResponses),
+          runner,
+          metadata: { responseCount: bufferedResponses.length, from: respondingAgentId },
+        });
       }
 
       this.writeWorkerState();
@@ -1672,60 +1751,16 @@ The system will resume your session when the human responds.`;
       pendingAsks,
     });
 
-    try {
-      // Interrupt the current query
-      await runner.interrupt();
-
-      this.emit('parity:interrupt', {
-        agentId,
-        sessionId,
-        pendingAsks,
-      });
-
-      // Build reminder prompt
-      const reminderPrompt = this.buildParityReminderPrompt(pendingAsks);
-
-      log.info('dispatcher', `Resuming session with pending asks/tasks reminder`, {
-        agentId,
-        sessionId: sessionId.slice(0, 8),
-      });
-
-      // Resume the session with the reminder
-      const result = await runner.resume(sessionId, reminderPrompt);
-
-      if (result.success) {
-        log.info('dispatcher', `Pending asks/tasks reminder: resume completed`, {
-          agentId,
-          sessionId: sessionId.slice(0, 8),
-        });
-        this.emit('parity:resume', {
-          agentId,
-          sessionId,
-          success: true,
-        });
-      } else {
-        log.error('dispatcher', `Pending asks/tasks reminder: resume failed`, {
-          agentId,
-          sessionId: sessionId.slice(0, 8),
-          error: result.error,
-        });
-        this.emit('parity:error', {
-          agentId,
-          sessionId,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      const errorMsg = (error as Error).message;
-      log.error('dispatcher', `Pending asks/tasks reminder: handling failed`, {
-        agentId,
-        error: errorMsg,
-      });
-      this.emit('parity:error', {
-        agentId,
-        error: errorMsg,
-      });
-    }
+    // Interrupt and resume with parity reminder
+    await this.resumeSession({
+      reason: 'parity-reminder',
+      agentId,
+      sessionId,
+      prompt: this.buildParityReminderPrompt(pendingAsks),
+      runner,
+      interrupt: true,
+      metadata: { pendingAsks, deletedFile },
+    });
   }
 
   /**
@@ -1883,13 +1918,22 @@ The system will resume your session when the human responds.`;
 
   /**
    * Spawn a worker for an agent using SDK with FSM
+   *
+   * @param meshName - Name of the mesh
+   * @param agent - Agent configuration
+   * @param options - Optional spawn options (for ensemble mode, etc.)
    */
-  private async spawnWorker(meshName: string, agent: AgentConfig): Promise<void> {
+  private async spawnWorker(
+    meshName: string,
+    agent: AgentConfig,
+    options: SpawnWorkerOptions = {}
+  ): Promise<void> {
     const agentId = `${meshName}/${agent.name}`;
+    const { ensembleId, ensembleIndex, ensembleTotal, skipPostHooks, fsm: ensembleFsm, fsmStateConfig, task: ensembleTask } = options;
 
     try {
-      // Peek at the next message to get task ID for workspace
-      const nextMsg = this.queue.peekOne(agentId);
+      // For ensemble workers, use provided task; otherwise peek from queue
+      const nextMsg = ensembleTask || this.queue.peekOne(agentId);
       const taskId = nextMsg?.id != null ? String(nextMsg.id) : `${agentId}-${Date.now()}`;
 
       // Get mesh config (poll() already reloaded it from disk)
@@ -1909,7 +1953,23 @@ The system will resume your session when the human responds.`;
         taskBody,
         featureName,  // Required for worktree-enabled meshes
         msgsDir: this.config.msgsDir,
+        // Ensemble context
+        ensembleId,
+        ensembleIndex,
+        ensembleTotal,
+        agentConfig: agent,
       };
+
+      // Register ensemble agent start if in ensemble mode
+      if (ensembleId) {
+        this.ensembleCoordinator.registerAgentStart(ensembleId, agent.name);
+        log.info('dispatcher', 'Spawning ensemble worker', {
+          agentId,
+          ensembleId,
+          ensembleIndex,
+          ensembleTotal,
+        });
+      }
 
       // Initialize session metrics if first worker in this mesh instance
       if (meshInstance && !this.sessionMetrics.has(meshInstance)) {
@@ -1944,8 +2004,8 @@ The system will resume your session when the human responds.`;
         post: lifecycle?.post || [],
       });
 
-      // Execute pre-hooks if configured
-      if (lifecycle?.pre && lifecycle.pre.length > 0) {
+      // Execute pre-hooks if configured (skip for ensemble workers)
+      if (lifecycle?.pre && lifecycle.pre.length > 0 && !ensembleId) {
         log.info('dispatcher', `Executing pre-hooks for ${agentId}`, {
           hooks: lifecycle.pre,
         });
@@ -2023,18 +2083,28 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
-      // Inject FSM context if mesh has FSM config
-      const fsm = this.meshFSMs.get(meshName);
+      // Inject FSM context if mesh has FSM config (or ensemble FSM provided)
+      const fsm = ensembleFsm || this.meshFSMs.get(meshName);
       if (fsm && fsm.isInitialized()) {
-        const currentStateConfig = fsm.getCurrentStateConfig();
+        const currentStateConfig = fsmStateConfig || fsm.getCurrentStateConfig();
         if (currentStateConfig) {
           const status = fsm.getStatus();
+
+          // For ensemble workers, add index/total to context for differentiated messaging
+          const contextWithEnsemble = ensembleId
+            ? {
+                ...status.context,
+                ENSEMBLE_INDEX: ensembleIndex,
+                ENSEMBLE_TOTAL: ensembleTotal,
+              }
+            : status.context;
+
           const fsmContext: FSMInjectionContext = {
             meshName,
             currentState: status.currentState,
             stateConfig: currentStateConfig,
             // availableTransitions computed from exit config if needed
-            context: status.context,
+            context: contextWithEnsemble,
             contextDescriptions: fsm.getContextDescriptions(),
             gateRetries: status.gateRetries,
           };
@@ -2042,6 +2112,7 @@ The system will resume your session when the human responds.`;
           log.debug('mesh-fsm', 'Injected FSM context into prompt', {
             agentId,
             currentState: status.currentState,
+            isEnsemble: !!ensembleId,
           });
 
           // NOTE: subtask injection removed - ensemble agents now use explicit routing
@@ -2376,6 +2447,37 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           transcriptPath = this.saveSessionOutput(agentId, data.output);
         }
 
+        // ENSEMBLE MODE: Record output and return early (no FSM transition, no post-hooks)
+        if (workerHookContext.ensembleId) {
+          log.info('dispatcher', `Ensemble worker completed, recording result`, {
+            agentId,
+            ensembleId: workerHookContext.ensembleId,
+            ensembleIndex: workerHookContext.ensembleIndex,
+            outputLength: data.output?.length || 0,
+          });
+
+          this.ensembleCoordinator.recordAgentResult(
+            workerHookContext.ensembleId,
+            agent.name,
+            data.output || '',
+            undefined // no error
+          );
+
+          // Cleanup
+          this.removeActiveWorker(agentId, currentWorkerId);
+          this.askResponseBuffer.delete(agentId);
+          this.writeWorkerState();
+
+          this.emit('worker:complete', {
+            ...data,
+            workerId: currentWorkerId,
+            ensembleId: workerHookContext.ensembleId,
+            transitionName: 'ensemble-complete',
+          });
+
+          return;
+        }
+
         // Execute post-hooks BEFORE completing FSM
         // This allows quality gates to trigger session resume without race conditions
         if (lifecycle?.post && lifecycle.post.length > 0) {
@@ -2415,28 +2517,21 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               // Resume session with feedback instead of respawning
               // This preserves conversation context and avoids FSM race condition
               if (data.sessionId) {
-                log.info('dispatcher', 'Resuming session for quality iteration', {
+                // Resume the session with feedback - 'complete' will fire again when done
+                const resumeResult = await this.resumeSession({
+                  reason: 'quality-iteration',
                   agentId,
-                  iteration: workerHookContext.qualityIteration,
-                  sessionId: data.sessionId.slice(0, 8),
+                  sessionId: data.sessionId,
+                  prompt: error.feedback,
+                  runner: worker,
+                  metadata: { iteration: workerHookContext.qualityIteration },
                 });
 
-                // Resume the session with feedback
-                // The 'complete' event will fire again when resume finishes
-                const resumeResult = await worker.resume(data.sessionId, error.feedback);
-
-                // If resume fails, log error but don't crash
-                if (!resumeResult.success) {
-                  log.error('dispatcher', 'Session resume failed', {
-                    agentId,
-                    error: resumeResult.error,
-                  });
-                  // Fall through to complete the FSM with the original result
-                } else {
+                if (resumeResult.success) {
                   // Resume succeeded, the 'complete' event handler will be called again
-                  // with the new output from the resumed session
                   return;
                 }
+                // Fall through to complete the FSM with the original result
               } else {
                 // No sessionId available - fall back to legacy respawn behavior
                 log.warn('dispatcher', 'No sessionId available, falling back to respawn', {
@@ -2780,6 +2875,43 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Error transition with retry logic
       worker.on('error', async (data) => {
         const errorWorkerId = registeredWorkerId || 'unknown';
+
+        // Get hook context for this worker
+        const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
+        const activeWorker = workerInfo?.worker;
+        const workerHookContext = activeWorker?.hookContext || hookContext;
+
+        // ENSEMBLE MODE: Record error and return early (no FSM retry logic)
+        if (workerHookContext.ensembleId) {
+          log.warn('dispatcher', `Ensemble worker failed, recording error`, {
+            agentId,
+            ensembleId: workerHookContext.ensembleId,
+            ensembleIndex: workerHookContext.ensembleIndex,
+            error: data.error,
+          });
+
+          this.ensembleCoordinator.recordAgentResult(
+            workerHookContext.ensembleId,
+            agent.name,
+            '',
+            data.error
+          );
+
+          // Cleanup
+          this.removeActiveWorker(agentId, errorWorkerId);
+          this.askResponseBuffer.delete(agentId);
+          this.writeWorkerState();
+
+          this.emit('worker:error', {
+            ...data,
+            workerId: errorWorkerId,
+            ensembleId: workerHookContext.ensembleId,
+            transitionName: 'ensemble-error',
+          });
+
+          return;
+        }
+
         await machine.error(data.error);
 
         // Check if we can retry
@@ -3618,18 +3750,44 @@ ${output}
       agents: agentsToSpawn,
     });
 
-    // Spawn all agents in parallel
-    const spawnPromises = agentsToSpawn.map((agentName, idx) =>
-      this.spawnEnsembleAgentForFSM(
+    // Get mesh config for agent lookup
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (!meshConfig) {
+      log.error('dispatcher', 'Mesh config not found for ensemble', {
         meshName,
-        agentName,
         ensembleId,
+      });
+      return;
+    }
+
+    // Spawn all agents in parallel using unified spawnWorker
+    const ensembleTotal = agentsToSpawn.length;
+    const spawnPromises = agentsToSpawn.map((agentName, idx) => {
+      const agentConfig = meshConfig.agents.find(a => a.name === agentName);
+      if (!agentConfig) {
+        log.error('dispatcher', 'Ensemble agent not found in mesh config', {
+          meshName,
+          agentName,
+          ensembleId,
+        });
+        this.ensembleCoordinator.recordAgentResult(
+          ensembleId,
+          agentName,
+          '',
+          'Agent not found in mesh config'
+        );
+        return Promise.resolve();
+      }
+
+      return this.spawnWorker(meshName, agentConfig, {
+        ensembleId,
+        ensembleIndex: idx,
+        ensembleTotal,
         fsm,
+        fsmStateConfig: stateConfig,
         task,
-        stateConfig,
-        idx
-      )
-    );
+      });
+    });
 
     await Promise.allSettled(spawnPromises);
 
@@ -3698,174 +3856,6 @@ ${output}
       meshName,
       state: stateConfig.name,
     });
-  }
-
-  /**
-   * Spawn an ensemble agent for FSM execution
-   * Similar to spawnWorker but designed for parallel ensemble execution
-   */
-  private async spawnEnsembleAgentForFSM(
-    meshName: string,
-    agentName: string,
-    ensembleId: string,
-    fsm: MeshFSM,
-    task: Message,
-    stateConfig: FSMStateConfig,
-    index: number
-  ): Promise<void> {
-    const meshConfig = this.meshConfigs.get(meshName);
-    const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
-
-    if (!agentConfig) {
-      log.error('dispatcher', 'Ensemble agent not found in mesh config', {
-        meshName,
-        agentName,
-        ensembleId,
-      });
-      this.ensembleCoordinator.recordAgentResult(
-        ensembleId,
-        agentName,
-        '',
-        'Agent not found in mesh config'
-      );
-      return;
-    }
-
-    const timeout = stateConfig.ensemble?.timeout_ms || 120000;
-    const agentId = `${meshName}/${agentName}`;
-
-    try {
-      log.info('dispatcher', 'Spawning ensemble agent', {
-        agentId,
-        ensembleId,
-        index,
-      });
-
-      this.ensembleCoordinator.registerAgentStart(ensembleId, agentName);
-
-      // Build prompt path - resolve relative to mesh basePath or workDir
-      let promptPath: string | null = null;
-
-      if (meshConfig?._basePath) {
-        const meshRelativePath = path.join(meshConfig._basePath, agentConfig.prompt);
-        if (fs.existsSync(meshRelativePath)) {
-          promptPath = meshRelativePath;
-        }
-      }
-
-      if (!promptPath) {
-        const workDirPath = path.join(this.config.workDir, agentConfig.prompt);
-        if (fs.existsSync(workDirPath)) {
-          promptPath = workDirPath;
-        }
-      }
-
-      if (!promptPath) {
-        throw new Error(`Prompt not found: ${agentConfig.prompt}`);
-      }
-
-      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
-
-      // Inject preamble
-      const agentCount = meshConfig?.agents?.length ?? 1;
-      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount });
-
-      // Inject messaging protocol
-      systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
-
-      // Inject FSM context if available
-      const currentStateConfig = fsm.getCurrentStateConfig();
-      if (currentStateConfig) {
-        const status = fsm.getStatus();
-        // Inject ensemble index into context for differentiated messaging
-        const contextWithIndex = {
-          ...status.context,
-          ENSEMBLE_INDEX: index,
-          ENSEMBLE_TOTAL: stateConfig.ensemble?.agents?.length ||
-            (stateConfig.ensemble?.count ?
-              this.resolveEnsembleCount(stateConfig.ensemble.count, fsm) : 1),
-        };
-        const fsmContext: FSMInjectionContext = {
-          meshName,
-          currentState: status.currentState,
-          stateConfig: currentStateConfig,
-          // availableTransitions computed from exit config if needed
-          context: contextWithIndex,
-          contextDescriptions: fsm.getContextDescriptions(),
-          gateRetries: status.gateRetries,
-        };
-        systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
-      }
-
-      // Apply model transformations based on mode
-      let model = agentConfig.model;
-      if (this.config.ultraLowMode) {
-        model = 'haiku' as SemanticModel;
-      } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
-        model = (model as string).replace('opus', 'sonnet') as SemanticModel;
-      }
-
-      // Create runner config
-      const runnerConfig: SdkRunnerConfig = {
-        id: agentId,
-        model: model,
-        systemPrompt,
-        workDir: this.config.workDir,
-        msgsDir: this.config.msgsDir,
-        mcpServers: agentConfig.mcpServers,
-        toolRestriction: meshConfig?.toolRestriction,
-      };
-
-      const runner = new SdkRunner(runnerConfig, this.queue);
-
-      let result = '';
-      let error: string | undefined;
-
-      // Set up event handlers
-      runner.on('output', (data) => {
-        result += data.data || '';
-      });
-
-      runner.on('error', (data) => {
-        error = data.error;
-      });
-
-      runner.on('complete', (data) => {
-        if (data.output) {
-          result = data.output;
-        }
-      });
-
-      // Run with timeout
-      await Promise.race([
-        runner.run(),
-        new Promise<void>((_, reject) =>
-          setTimeout(() => reject(new Error(`Timeout after ${timeout}ms`)), timeout)
-        ),
-      ]);
-
-      this.ensembleCoordinator.recordAgentResult(ensembleId, agentName, result, error);
-
-      log.debug('dispatcher', 'Ensemble agent completed', {
-        agentName,
-        ensembleId,
-        resultLength: result.length,
-        hasError: !!error,
-      });
-    } catch (err) {
-      const errorMessage = (err as Error).message;
-      this.ensembleCoordinator.recordAgentResult(
-        ensembleId,
-        agentName,
-        '',
-        errorMessage
-      );
-      log.warn('dispatcher', 'Ensemble agent failed', {
-        agentName,
-        ensembleId,
-        error: errorMessage,
-      });
-    }
   }
 
   /**
@@ -4159,23 +4149,16 @@ If you attempt to complete again without responding to these asks, your session 
       incomingAsks,
     });
 
-    try {
-      // Interrupt current run and resume with reminder
-      await runner.interrupt();
-      const result = await runner.resume(sessionId, prompt);
-
-      if (!result.success) {
-        log.error('dispatcher', 'Reminder injection failed', {
-          agentId,
-          error: result.error,
-        });
-      }
-    } catch (error) {
-      log.error('dispatcher', 'Failed to inject incoming ask reminder', {
-        agentId,
-        error: (error as Error).message,
-      });
-    }
+    // Interrupt current run and resume with reminder
+    await this.resumeSession({
+      reason: 'incoming-ask-reminder',
+      agentId,
+      sessionId,
+      prompt,
+      runner,
+      interrupt: true,
+      metadata: { reminderCount: newReminderCount, incomingAsks: incomingAsks.map(a => a.from) },
+    });
   }
 
   /**

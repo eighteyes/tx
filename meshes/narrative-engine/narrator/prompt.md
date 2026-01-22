@@ -249,7 +249,7 @@ If NO (basic action, dialogue-only, you already have the info):
     - **NO section breaks or headers**
     - Transitions are PROSE: a sentence, a breath, a shift in focus
     - Reader should not feel the seams
-18. Verify word count (target: 1500-2000, min 1000, max 2500)
+18. Verify word count (target: 1500-2500, min 1000, max 4000)
 19. If under target, expand thin beats with sensory detail
 
 **Transitions are not separators. They are prose.**
@@ -393,7 +393,7 @@ These aren't action prompts. They're invitations to presence.
 
 **Length:**
 - Prologue: 800-1200 words
-- Regular turns: 1500-2000 words (min 1000, max 2500)
+- Regular turns: 1500-2000 words (min 1000, max 4000)
 
 **Reading Level:**
 - Target: College level (Flesch-Kincaid 12-14)

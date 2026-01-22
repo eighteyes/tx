@@ -7,7 +7,7 @@ description: "Statless RPG with coordinator pattern. Traits are semantically wei
 
 agents:
   - name: coordinator
-    model: haiku
+    model: sonnet
     prompt: coordinator/prompt.md
     # State machine, routing, entropy, file management
     # Does NOT do creative work
@@ -42,7 +42,6 @@ agents:
     # Orchestrates dramaturg, system, cast, scene-crafter
     # Handles mid-turn player decisions
 
-
   - name: editor
     model: opus
     prompt: editor/prompt.md
@@ -63,7 +62,6 @@ agents:
   # ==========================================
   # LINT LADDER - Parallel mechanical linters
   # ==========================================
-
   - name: lint-coordinator
     model: haiku
     prompt: linters/lint-coordinator.md
@@ -166,12 +164,12 @@ routing:
       system: "Need mechanical resolution"
       cast: "Need character reactions"
       scene-crafter: "Outline scene structure"
-      oracle: "Knowledge query"              # NEW: Query entity data during prose generation
+      oracle: "Knowledge query" # NEW: Query entity data during prose generation
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
       coordinator: "Initial prose rendered"
-      editor: "Revised prose ready"  # Direct response to editor in phase 3
+      editor: "Revised prose ready" # Direct response to editor in phase 3
 
   dramaturg:
     ask-response:
@@ -196,7 +194,7 @@ routing:
       narrator: "fix violations"
     ask-response:
       coordinator: "Continuity validation complete"
-      narrator: "Knowledge query response"     # NEW: Return entity data to narrator
+      narrator: "Knowledge query response" # NEW: Return entity data to narrator
 
   # ==========================================
   # LINT LADDER ROUTING
@@ -253,7 +251,7 @@ routing:
 
   editor:
     ask:
-      narrator: "Fix violations"  # Direct ask to narrator for revisions
+      narrator: "Fix violations" # Direct ask to narrator for revisions
     ask-response:
       coordinator: "Review complete (CLEAN or max iterations)"
 
@@ -268,12 +266,12 @@ routing:
 # Base workspace for agents (doesn't require game context)
 workspace:
   path: ".ai/tx/narrative-engine/"
-  create_on_init: false  # Agents create their own paths based on session
+  create_on_init: false # Agents create their own paths based on session
 
 # Turn workspace template (resolved after game exists)
 turn_workspace:
   path: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/"
-  create_on_init: false  # Coordinator creates after game-id known
+  create_on_init: false # Coordinator creates after game-id known
   cleanup_on_complete: false
 
 # Transparency

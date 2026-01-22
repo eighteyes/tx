@@ -226,6 +226,61 @@ playbook_notes: |
   Uses layered quality refinement: haiku drafts, sonnet reviews, opus finalizes.
 ```
 
+## Task Distribution Pattern
+
+Alternative to ensemble for splitting work across agents:
+
+```yaml
+task_distribution:
+  spawner: coordinator      # Agent that splits the task
+  subagents: [worker-1, worker-2, worker-3]
+  reviewer: synthesizer     # Agent that combines results
+  distribution_strategy: equal  # equal | weighted | adaptive | custom
+  subtask_count: 5          # Optional fixed count
+  timeout_ms: 300000        # 5 minute timeout
+  allow_partial_failure: true
+```
+
+**When to use task_distribution vs ensemble:**
+| Pattern | Task Distribution | Ensemble |
+|---------|------------------|----------|
+| Task | Split into parts | Same task |
+| Agents | Different subtasks | Same analysis |
+| Output | Combined portions | Aggregated views |
+
+## Aggregation Strategies
+
+For ensemble `aggregation` field:
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `concat` | Join all outputs | Comprehensive review |
+| `deduplicate` | Remove duplicate findings | Code analysis |
+| `voting` | Majority opinion wins | Consensus decisions |
+| `consensus` | Require agreement | High-stakes choices |
+| `custom` | Use custom prompt | Domain-specific |
+
+## Deprecated Patterns
+
+**AVOID these patterns:**
+
+| Pattern | Replacement | Reason |
+|---------|-------------|--------|
+| `state.type: ensemble` | `state.ensemble: { type: parallel }` | Old FSM syntax |
+| `state.subtask: true` | Explicit ensemble routing | Implicit behavior |
+| `workspace: "string"` | `workspace: { path: "..." }` | Object format preferred |
+
+## Additional Config Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `brain` | boolean | Enable brain-update insights |
+| `capabilities` | array | Agent capability tags |
+| `config` | object | Custom mesh-specific settings |
+| `idle_timeout_minutes` | number/false | Idle timeout (false=disabled) |
+| `clear-before` | boolean | Clear state before run |
+| `turn_workspace` | object | Turn-based game workspace |
+
 ## Debugging
 
 ```bash

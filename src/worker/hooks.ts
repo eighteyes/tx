@@ -84,6 +84,14 @@ export interface HookContext {
   // Message directory for feedback messages
   msgsDir?: string;
 
+  // Ensemble context (if worker is part of ensemble)
+  ensembleId?: string;
+  ensembleIndex?: number;
+  ensembleTotal?: number;
+
+  // Agent config reference (for resume scenarios)
+  agentConfig?: unknown;
+
   [key: string]: unknown;  // Allow additional context fields
 }
 

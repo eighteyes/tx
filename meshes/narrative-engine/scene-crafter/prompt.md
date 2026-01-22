@@ -329,5 +329,5 @@ All data is in scene-outline.yaml. Keep the message minimal.
 - ALWAYS include at least one internal voice beat
 - ALWAYS end with a hook that pulls forward
 - Decision points should feel natural, not intrusive
-- Total word target: 1500-2000 (minimum 1000, maximum 2500)
+- Total word target: 1500-2000 (minimum 1000, maximum 4000)
 - Consider author.yaml voice constraints in guidance notes

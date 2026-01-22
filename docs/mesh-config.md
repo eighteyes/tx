@@ -442,6 +442,115 @@ Project configs override global configs with same mesh name.
 
 ---
 
+## Task Distribution
+
+### `task_distribution`
+- **Type**: `object`
+- **Required**: No
+- **Behavior**: Spawner/subagent pattern for parallel task execution. Alternative to FSM ensemble states.
+
+#### Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `spawner` | string | Agent that splits task into subtasks |
+| `subagents` | string[] | Agents that execute subtasks |
+| `reviewer` | string | Agent that combines results |
+| `distribution_strategy` | string | How to split work |
+
+#### Distribution Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `equal` | Split evenly across subagents |
+| `weighted` | Assign based on agent capabilities |
+| `adaptive` | Dynamic based on task complexity |
+| `custom` | Use `distribution_prompt` for custom logic |
+
+#### Optional Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `distribution_prompt` | string | - | Custom split instructions (required for `custom` strategy) |
+| `subtask_count` | number | - | Fixed number of subtasks |
+| `timeout_ms` | number | - | Timeout for all subtasks |
+| `allow_partial_failure` | boolean | false | Continue with partial results |
+
+**Example**:
+```yaml
+task_distribution:
+  spawner: coordinator
+  subagents: [analyst-1, analyst-2, analyst-3]
+  reviewer: synthesizer
+  distribution_strategy: equal
+  timeout_ms: 300000
+  allow_partial_failure: true
+```
+
+**vs Ensemble**: Task distribution splits work into parts; ensemble runs same task in parallel.
+
+---
+
+## Additional Config Fields
+
+### `brain`
+- **Type**: `boolean`
+- **Default**: `false`
+- **Behavior**: Enables brain-update lifecycle hook for documenting insights.
+
+### `capabilities`
+- **Type**: `string[]`
+- **Required**: No
+- **Behavior**: Tags for agent capability matching. Used for intent-based routing.
+
+```yaml
+capabilities:
+  - code-review
+  - refactoring
+```
+
+### `config`
+- **Type**: `object`
+- **Required**: No
+- **Behavior**: Arbitrary mesh-specific settings. Not processed by core system.
+
+```yaml
+config:
+  custom_setting: value
+  domain_specific:
+    nested: true
+```
+
+### `idle_timeout_minutes`
+- **Type**: `number | false`
+- **Default**: System default
+- **Behavior**: How long idle workers stay alive. `false` disables timeout.
+
+```yaml
+idle_timeout_minutes: 30    # 30 minute timeout
+idle_timeout_minutes: false # No timeout
+```
+
+### `clear-before`
+- **Type**: `boolean`
+- **Default**: `false`
+- **Behavior**: Clear existing state before mesh run. Removes suspended sessions and pending asks.
+
+### `turn_workspace`
+- **Type**: `object`
+- **Required**: No
+- **Behavior**: Custom workspace configuration for turn-based workflows.
+
+```yaml
+turn_workspace:
+  template: ".ai/games/{game-id}/turn-{turn}/"
+  schema:
+    turn: number
+    board: string
+```
+
+---
+
 ## Iteration Control
 
 ### `iteration`

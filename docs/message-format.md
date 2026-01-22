@@ -51,6 +51,17 @@ TX messages are markdown files with YAML frontmatter and optional rearmatter:
 | `feature` | string | - | Feature name for worktree-enabled meshes |
 | `headless` | string | `false` | Set to `true` for headless mode messages (bypasses dispatcher) |
 
+### Runtime Override Fields
+
+These fields allow per-message overrides of agent configuration:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `model` | string | Agent default | Override agent model (`opus`, `sonnet`, `haiku`) |
+| `priority` | string | - | Message queue processing priority |
+| `session-id` | string | - | Resume specific session ID (for continuation meshes) |
+| `in-reply-to` | string | - | Original msg-id being replied to (correlation) |
+
 ### Field Details
 
 #### `to` - Recipient Routing
@@ -137,6 +148,67 @@ For headless REPL mode (`tx run`). Prevents dispatcher from processing:
 ```yaml
 headless: true
 ```
+
+#### `model` - Runtime Model Override
+
+Override the agent's configured model for this specific message:
+
+```yaml
+model: opus
+model: sonnet
+model: haiku
+```
+
+**Use cases**:
+- Force opus for complex tasks that normally use sonnet
+- Use haiku for simple tasks to reduce cost
+- Testing model behavior differences
+
+**Source**: `consumer.ts:556`
+
+#### `priority` - Message Queue Priority
+
+Set message processing priority in the queue:
+
+```yaml
+priority: high
+priority: normal
+priority: low
+```
+
+Higher priority messages are processed before lower priority.
+
+**Source**: `consumer.ts:557`
+
+#### `session-id` - Session Continuation
+
+Resume a specific session for continuation-enabled meshes:
+
+```yaml
+session-id: sess_abc123def456
+```
+
+**Use cases**:
+- Explicit session targeting instead of auto-detection
+- Resuming after crash recovery
+- Testing specific session states
+
+**Requires**: Mesh `continuation: true` or `continuation: [agent]`
+
+**Source**: `consumer.ts:555`
+
+#### `in-reply-to` - Message Correlation
+
+Link a response to the original message:
+
+```yaml
+in-reply-to: ask-sources-001
+```
+
+**Use cases**:
+- Correlate `ask-response` to original `ask`
+- Track message chains
+- Parity gate matching
 
 ---
 
