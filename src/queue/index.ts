@@ -807,6 +807,16 @@ export class MessageQueue {
   }
 
   /**
+   * Clear suspended sessions for a mesh (on mesh completion or new run)
+   */
+  clearSuspendedSessionsForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM suspended_sessions WHERE agent_id LIKE ? OR mesh_name = ?'
+    ).run(`${meshName}/%`, meshName);
+    return result.changes;
+  }
+
+  /**
    * Clear all suspended sessions
    */
   clearAllSuspendedSessions(): number {

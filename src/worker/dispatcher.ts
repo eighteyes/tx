@@ -1798,14 +1798,15 @@ The system will resume your session when the human responds.`;
   }
 
   /**
-   * Clear in-memory state for a mesh on completion
+   * Clear in-memory AND SQLite state for a mesh on completion
    * Called by consumer when task-complete to core passes parity gate
+   * Also called on new run at entry point (unless resume-mesh flag set)
    */
   clearMeshState(meshName: string): void {
     let clearedSessions = 0;
     let clearedBuffers = 0;
 
-    // Clear suspended sessions for this mesh
+    // Clear in-memory suspended sessions for this mesh
     for (const [agentId, _] of this.suspendedSessions) {
       if (agentId.startsWith(`${meshName}/`)) {
         this.suspendedSessions.delete(agentId);
@@ -1813,7 +1814,7 @@ The system will resume your session when the human responds.`;
       }
     }
 
-    // Clear ask response buffers for this mesh
+    // Clear in-memory ask response buffers for this mesh
     for (const [agentId, _] of this.askResponseBuffer) {
       if (agentId.startsWith(`${meshName}/`)) {
         this.askResponseBuffer.delete(agentId);
@@ -1827,11 +1828,15 @@ The system will resume your session when the human responds.`;
       this.meshFSMs.delete(meshName);
     }
 
-    if (clearedSessions > 0 || clearedBuffers > 0) {
+    // Clear SQLite suspended sessions for this mesh (survives restart)
+    const clearedDbSessions = this.queue.clearSuspendedSessionsForMesh(meshName);
+
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
         clearedBuffers,
+        clearedDbSessions,
         clearedFSM: !!fsm,
       });
     }
