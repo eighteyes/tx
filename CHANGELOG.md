@@ -5,6 +5,45 @@ All notable changes to TX V4 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-01-21
+
+### Added
+
+#### Agent Recovery Channel
+- **system/help, system/stuck**: Deliberate recovery channels for confused agents
+- **Recovery handler**: Intercepts system/* messages and provides state guidance
+- **Escalation ladder**: 3 requests in 60s triggers ask-human to core
+- **State snapshot**: Dispatcher exposes `getAgentStateSnapshot()` for recovery context
+
+#### Situational Awareness Injection
+- **Current task context**: Agents see queued task details on start/resume
+- **Outgoing asks**: Shows asks waiting for responses (prevents re-asking)
+- **Incoming asks**: Shows asks from others awaiting response (prevents missed obligations)
+- **Queue depth**: Count of additional pending tasks
+
+#### Crash Recovery Infrastructure
+- **Suspended sessions table**: SQLite persistence for ask-human/await-response state
+- **Interrupted message status**: Distinguishes crash-interrupted from failed messages
+- **Session preservation**: Session IDs survive restarts for --resume capability
+- **Pending asks persistence**: Parity gate state survives crashes
+
+#### Session Awareness
+- **Session store**: SQLite-backed session tracking with file change summaries
+- **Headline generation**: Haiku-powered session summarization via Claude Code SDK
+- **Session search**: FTS5 full-text search across session history
+
+### Changed
+
+- **Mesh state cleanup**: Pending asks cleared on task-complete to core (not session start)
+- **Ask-response correlation**: Supports `in-reply-to` frontmatter for explicit correlation
+- **Idle detection**: Added patterns for Claude hint text and git stats
+
+### Fixed
+
+- **Ask registration race condition**: SQLite-based detection prevents orphaned asks
+- **Await-response suspension**: Persisted to SQLite for crash recovery
+- **Session headline auth**: Uses Claude Code SDK instead of direct API
+
 ## [0.2.0] - 2026-01-03
 
 ### Added
@@ -86,5 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace manager for task-scoped outputs
 - Prompt injection system
 
+[0.2.1]: https://github.com/eighteyes/tx/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/eighteyes/tx/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/eighteyes/tx/releases/tag/v0.1.0
