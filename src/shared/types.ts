@@ -215,6 +215,7 @@ export type FSMStateType = 'normal' | 'ensemble';
  * Used within state definition (different from mesh-level EnsembleConfig)
  */
 export interface FSMEnsembleConfig {
+  type?: 'parallel';             // Ensemble execution type (currently only 'parallel' supported)
   agents?: string[];             // Different agents to run in parallel
   agent?: string;                // OR same agent N times
   count?: number | string;       // Static number or $variable reference

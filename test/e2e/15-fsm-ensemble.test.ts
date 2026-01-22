@@ -27,6 +27,9 @@ import type {
   Message,
 } from '../../src/shared/types.ts';
 
+// Helper to safely access states array when FSMConfig.states is array | object union
+const getStatesArray = (config: FSMConfig): FSMStateConfig[] => config.states as FSMStateConfig[];
+
 describe('FSM Ensemble States E2E', () => {
   let testDir: string;
   let msgsDir: string;
@@ -294,7 +297,7 @@ describe('FSM Ensemble States E2E', () => {
       assert.strictEqual(stateConfig?.subtask, true);
 
       // Verify ensemble state config
-      const ensembleState = config.states.find(s => s.name === 'parallel_review');
+      const ensembleState = getStatesArray(config).find((s: FSMStateConfig) => s.name === 'parallel_review');
       assert.ok(ensembleState);
       assert.strictEqual(ensembleState.type, 'ensemble');
       assert.ok(ensembleState.ensemble);

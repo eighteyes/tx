@@ -264,12 +264,14 @@ export class RedisStorageProvider implements StorageProvider {
       '>'
     );
 
-    if (!results || results.length === 0) return [];
+    if (!results || (results as unknown[]).length === 0) return [];
 
     const entries: QueueEntry[] = [];
     const idsToAck: string[] = [];
 
-    for (const [, messages] of results) {
+    // Type the results as array of [streamName, messages] tuples
+    type StreamResult = [string, Array<[string, string[]]>];
+    for (const [, messages] of results as StreamResult[]) {
       for (const [streamId, fields] of messages as Array<[string, string[]]>) {
         const data: Record<string, string> = {};
         for (let i = 0; i < fields.length; i += 2) {

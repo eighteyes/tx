@@ -42,8 +42,11 @@ Read session.yaml `phase` field. Execute matching phase:
 **PHASE 1 - INIT** (phase: `init` or new task from core)
 1. **RESET STATE FIRST**: Write fresh session.yaml (see Schema) - wipe all previous turn data
 2. Increment turn, create workspace `{campaign}/turns/turn-{N}/`
-3. Generate entropy: `echo $((RANDOM % 100 + 1))`
-4. Write context.yaml to workspace
+3. **Generate entropy POOL** (10 values — SYSTEM uses as many as needed per action):
+   ```bash
+   for i in {1..10}; do echo $((RANDOM % 100 + 1)); done
+   ```
+4. Write context.yaml to workspace (include full entropy pool)
 5. Set phase → `awaiting_prep`, send asks to DRAMATURG + SCENE-CRAFTER
 6. Set `prep_pending: [dramaturg, scene-crafter]`
 
@@ -198,6 +201,7 @@ The prologue lets the player settle into the world before acting. Turn 1 begins 
 ```yaml
 turn: 0
 type: prologue
+entropy_pool: [72, 34, 91, 15, 56, 83, 7, 44, 68, 29]  # 10 values
 actor:
   id: protagonist
   traits: [from protagonist.yaml]
@@ -230,7 +234,7 @@ workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
 last_ask_sent: {msg-id}
 prep_pending: [agent-ids]  # only during awaiting_prep phase
-entropy: {number}
+entropy_pool: [72, 34, 91, 15, 56, 83, 7, 44, 68, 29]  # 10 values, SYSTEM uses as needed
 ```
 
 No historical data. No turn_1, turn_2 sections. No timestamps. No violation tracking. Current turn state only.

@@ -43,6 +43,12 @@ export type AgentRouting = Record<string, RoutingDestination>;
  */
 export type ToolRestriction = 'unrestricted' | 'mcp-only';
 
+/**
+ * Mesh-style routing: { status: { destination: "reason" } }
+ * This is the format from mesh config.yaml files
+ */
+export type MeshStyleRouting = Record<string, Record<string, string>>;
+
 export interface SdkRunnerConfig {
   id: string;
   model: SemanticModel;
@@ -50,7 +56,7 @@ export interface SdkRunnerConfig {
   workDir: string;
   msgsDir: string;
   maxTurns?: number;
-  routing?: AgentRouting;  // Optional routing table for this agent
+  routing?: MeshStyleRouting;  // Optional routing table (mesh config format, injected into prompt)
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
   sessionId?: string;  // Resume existing session (for interrupt/revision flow)

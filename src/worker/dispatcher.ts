@@ -104,6 +104,18 @@ interface IterationConfig {
 // - string[] = only listed agents persist sessions
 // - undefined/false = no session persistence
 
+/**
+ * Rearmatter (transparency metadata) configuration
+ */
+interface RearmatterConfig {
+  enabled?: boolean;
+  fields?: string[];
+  thresholds?: {
+    confidence?: number;
+    grade?: string;
+  };
+}
+
 interface MeshConfig {
   mesh: string;
   description?: string;
@@ -122,6 +134,7 @@ interface MeshConfig {
   iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
+  rearmatter?: RearmatterConfig;  // Transparency metadata config
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -1952,7 +1965,7 @@ The system will resume your session when the human responds.`;
             meshName,
             currentState: status.currentState,
             stateConfig: currentStateConfig,
-            availableTransitions: status.availableTransitions,
+            // availableTransitions computed from exit config if needed
             context: status.context,
             contextDescriptions: fsm.getContextDescriptions(),
             gateRetries: status.gateRetries,
@@ -3674,7 +3687,7 @@ ${output}
           meshName,
           currentState: status.currentState,
           stateConfig: currentStateConfig,
-          availableTransitions: status.availableTransitions,
+          // availableTransitions computed from exit config if needed
           context: contextWithIndex,
           contextDescriptions: fsm.getContextDescriptions(),
           gateRetries: status.gateRetries,

@@ -104,24 +104,35 @@ entropy: 67
 # Dramaturg Notes: Turn {N}
 turn: {N}
 entropy: {value}
+arc_pressure: {from state.yaml}
 
 guidance:
-  # Weight adjustments (applied to base 50/50 weights)
+  # Weight adjustments (AGGRESSIVE — applied to base 50/50 weights)
+  # These should meaningfully shift outcomes, not just nudge
   recommended_weight_adjustments:
-    transformational_success: 0
-    clean_success: -5
+    transformational_success: -3
+    clean_success: -15
     success_with_cost: +10
-    partial_success: 0
-    partial_failure: +5
-    failure_with_salvage: 0
-    hard_failure: 0
-    catastrophic: +5
+    partial_success: -5
+    partial_failure: +15
+    failure_with_salvage: +5
+    hard_failure: +5
+    catastrophic: +3
 
-  weight_reason: "Mid-arc, trust question pressurized — messy deepens without resolving"
+  weight_reason: "Mid-arc (pressure 85), trust question at 60 pressure — failure should feel possible, success should cost"
 
   tone: "Intimate tension. Close but not safe."
 
   pivot: "First voluntary reach — whatever happens, this changes them"
+
+  # REQUIRED: Identify traits that should HURT this turn
+  traits_should_hurt:
+    - trait: GUARDED
+      reason: "Reaching out while guarded creates internal conflict"
+      suggested_penalty: "-10% clean_success"
+    - trait: PATTERN-SEEKER
+      reason: "Overanalyzing the moment kills spontaneity"
+      suggested_penalty: "+5% partial_failure"
 
   patterns_to_test:
     - GUARDED
@@ -132,25 +143,80 @@ guidance:
 
   phase_note: "Approaching First Contact → Revelation transition"
 
+# Scene-level complications (REQUIRED assessment)
+scene_complications:
+  risks_present:
+    - type: observation
+      source: "They're in a public space"
+      recommendation: "+5% exposure risk"
+  base_complication_chance: 20%
+  complication_note: "Even quiet moments can be interrupted"
+
 # Ending availability (check conditions each turn)
 ending:
   available: false
-  # If available:
-  # available: true
-  # type: arc_complete
-  # trigger: "All dramatic questions resolved"
-  # prompt: "The questions are answered. You could let the story rest here."
 ```
 
-## Weight Guidelines
+## Weight Guidelines (AGGRESSIVE)
 
-| Arc Position | Lean Toward |
-|--------------|-------------|
-| Early (building) | success_with_cost, partial — complicate |
-| Mid (pressurized) | cost, partial_failure — test questions |
-| Pre-climax | partial_failure, failure_with_salvage — raise stakes |
-| Climax | clean/transformational OR hard_failure/catastrophic — resolve |
-| Denouement | clean, success_with_cost — wind down |
+**Default stance: Success must be EARNED, not gifted.**
+
+Stories require struggle. Easy wins are boring wins. Your job is to ensure the dice are weighted toward *interesting*, which usually means weighted toward *costly* or *failing*.
+
+### Arc Position → Weight Adjustments
+
+| Arc Position | Weight Adjustments | Philosophy |
+|--------------|-------------------|------------|
+| Early (building) | clean: -10%, cost: +15%, partial_failure: +10% | Complicate everything. Build obstacles. |
+| Mid (pressurized) | clean: -15%, cost: +10%, partial_failure: +15%, hard: +5% | Questions should HURT to answer. |
+| Pre-climax | clean: -20%, partial_failure: +15%, hard: +10%, catastrophic: +5% | Stakes are real. Failure looms. |
+| Climax | transformational: +5%, catastrophic: +15%, middle outcomes: -20% | Extremes only. No half-measures. |
+| Denouement | clean: +5%, cost: +10%, catastrophic: -5% | Earned rest, but scars remain. |
+
+### Momentum → Additional Adjustments
+
+| Momentum | Adjustment |
+|----------|------------|
+| rising | partial_failure: +5% (momentum should be tested) |
+| building | cost: +10% (success should cost) |
+| releasing | clean: -5%, salvage: +10% (release is messy) |
+| stalling | hard: +10% (break the stall with consequences) |
+| crashing | catastrophic: +10% (let it crash) |
+
+### Scene-Level Complication Flagging
+
+**For EVERY turn, evaluate external pressure sources:**
+
+| Question | If Yes → Flag |
+|----------|---------------|
+| Who else knows they're here? | `complication_risk: interruption` |
+| What's happening nearby? | `complication_risk: environmental` |
+| Is anyone actively looking for them? | `complication_risk: pursuit` |
+| Time pressure active? | `complication_risk: deadline` |
+| Are they being observed? | `complication_risk: exposure` |
+
+**Include in dramaturg-notes.yaml:**
+```yaml
+scene_complications:
+  risks_present:
+    - type: exposure
+      source: "Algorithm watching all actions"
+      recommendation: "+10% to partial_failure, hard_failure"
+    - type: interruption
+      source: "Villagers aware of strangers"
+      base_chance: 25%
+      recommendation: "Flag for SYSTEM to roll separately"
+```
+
+**Base complication chance by arc pressure:**
+| Arc Pressure | Base Complication Chance |
+|--------------|-------------------------|
+| 0-50 | 15% per turn |
+| 51-100 | 20% per turn |
+| 101-150 | 25% per turn |
+| 150+ | 30% per turn |
+
+### Seed State → Action
 
 | Seed State | Action |
 |------------|--------|

@@ -12,7 +12,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { MeshFSM } from '../../src/mesh/fsm.ts';
-import type { FSMConfig } from '../../src/shared/types.ts';
+import type { FSMConfig, FSMStateConfig } from '../../src/shared/types.ts';
+
+// Helper to safely access states array when FSMConfig.states is array | object union
+const getStatesArray = (config: FSMConfig): FSMStateConfig[] => config.states as FSMStateConfig[];
 
 describe('FSM Exit-Based Routing Integration', () => {
   let testDir: string;
@@ -66,7 +69,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     await fsm.initialize();
 
     // Simulate PASS signal
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = { haiku_success_signal: 'PASS' };
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -105,7 +108,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     await fsm.initialize();
 
     // Simulate REFINE signal (should self-loop)
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = { haiku_success_signal: 'REFINE' };
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -144,7 +147,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     await fsm.initialize();
 
     // Simulate BLOCKED signal
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = { haiku_success_signal: 'BLOCKED' };
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -173,7 +176,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     const fsm = new MeshFSM('literal-routing', config, db, testDir);
     await fsm.initialize();
 
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = {};
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -206,7 +209,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     const fsm = new MeshFSM('script-routing', config, db, testDir);
     await fsm.initialize();
 
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
 
     // Test PASS signal -> success
     const context1 = { signal: 'PASS' };
@@ -248,7 +251,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     const fsm = new MeshFSM('priority-routing', config, db, testDir);
     await fsm.initialize();
 
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = { signal: 'PASS' };
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -284,7 +287,7 @@ describe('FSM Exit-Based Routing Integration', () => {
     const fsm = new MeshFSM('default-routing', config, db, testDir);
     await fsm.initialize();
 
-    const exit = config.states[0].exit!;
+    const exit = getStatesArray(config)[0].exit!;
     const context = { signal: 'OTHER_VALUE' };
 
     const nextState = await fsm.evaluateExitRouting(exit, context);
@@ -333,13 +336,13 @@ describe('FSM Exit-Based Routing Integration', () => {
     await fsm.initialize();
 
     // Test haiku PASS -> sonnet
-    const haiku_exit = config.states[0].exit!;
+    const haiku_exit = getStatesArray(config)[0].exit!;
     const haiku_context = { haiku_signal: 'PASS' };
     const haiku_next = await fsm.evaluateExitRouting(haiku_exit, haiku_context);
     assert.strictEqual(haiku_next, 'sonnet_layer');
 
     // Test sonnet PASS -> opus
-    const sonnet_exit = config.states[1].exit!;
+    const sonnet_exit = getStatesArray(config)[1].exit!;
     const sonnet_context = { sonnet_signal: 'PASS' };
     const sonnet_next = await fsm.evaluateExitRouting(sonnet_exit, sonnet_context);
     assert.strictEqual(sonnet_next, 'opus_layer');

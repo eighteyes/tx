@@ -250,24 +250,36 @@ export class WorkerPool extends EventEmitter {
     // Get conversation ID for resume (if any)
     const conversationId = await this.storage.getConversationId(session.sessionId, message.to);
 
-    // Run Claude SDK query
-    const result = await query({
-      model: agentConfig.model || 'sonnet',
-      systemPrompt,
+    // Run Claude SDK query - iterate over async messages
+    const q = query({
       prompt: userPrompt,
       options: {
+        model: agentConfig.model || 'sonnet',
+        systemPrompt,
         maxTurns: agentConfig.maxTurns || 10,
+        resume: conversationId || undefined,
       },
-      ...(conversationId ? { resumeConversationId: conversationId } : {}),
     });
 
-    // Store conversation ID for future resume
-    if (result.conversationId) {
-      await this.storage.setConversationId(session.sessionId, message.to, result.conversationId);
+    // Collect result messages from the async iterator
+    let resultMessage = '';
+    let newSessionId: string | null = null;
+    for await (const msg of q) {
+      if (msg.type === 'result') {
+        // Access result property if available (success case)
+        const resultMsg = msg as { result?: string; session_id?: string };
+        resultMessage = resultMsg.result || '[No result]';
+        newSessionId = resultMsg.session_id || null;
+      }
     }
 
-    // Extract response and write back
-    const responseText = this.extractResponseText(result);
+    // Store conversation ID for future resume
+    if (newSessionId) {
+      await this.storage.setConversationId(session.sessionId, message.to, newSessionId);
+    }
+
+    // Use extracted result message
+    const responseText = resultMessage || '[No response]';
 
     // Write response message
     const responseMessage: AgentMessage = {

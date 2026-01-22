@@ -1,0 +1,468 @@
+# entropy-tables-rebalanced.yaml
+# Example demonstrating new balance rules
+# Scenario: Quiet scene at Lute Lake inn, attempting to rest and gather information
+
+turn: 8
+arc_pressure: 95  # Mid-arc, questions pressurized
+
+# Entropy pool from coordinator (10 values, consumed in order)
+entropy_pool: [42, 78, 15, 63, 91, 27, 54, 8, 71, 36]
+entropy_consumed: 4
+
+# Floor requirements at arc_pressure 95 (51-100 range)
+floor_check:
+  arc_pressure: 95
+  required_failure_floor: 20%
+  required_catastrophic_floor: 5%
+  required_hard_failure_floor: 7%
+  max_success_allowed: 60%
+  status: "ENFORCED"
+
+actions:
+  # ============================================
+  # ACTION 1: Convince innkeeper to let them stay
+  # ============================================
+  - action: "Convince the innkeeper to rent rooms despite the late hour"
+    entropy_provided: 42  # pool[0]
+
+    difficulty: standard
+    difficulty_modifier: "+0% (normal request, normal hour)"
+
+    trait_analysis:
+      helping:
+        - trait: WITNESSED [5/5]
+          relevance: "Authentic presence builds trust"
+          raw_effect: "+20%"
+        - trait: EMBODIED [5/5]
+          relevance: "Calm body language reassures"
+          raw_effect: "+15%"
+        # Bond also counts toward cap
+        - trait: bond_group_PROVEN
+          relevance: "Group cohesion appears trustworthy"
+          raw_effect: "+10%"
+
+      hurting:
+        - trait: WATCHED [4/5]
+          relevance: "Hypervigilance makes her seem paranoid, scanning exits"
+          effect: "-10% clean_success, +10% partial_failure"
+        - trait: PATTERN-SEEKER [6/5 OVERCLOCK]
+          relevance: "Overclock makes her hesitate, analyzing innkeeper's micro-expressions instead of speaking naturally"
+          effect: "-15% clean_success, +10% hard_failure, +5% catastrophic"
+
+      neutral:
+        - trait: DESPERATE
+          relevance: "Not desperate for lodging specifically"
+
+    modifier_calculation:
+      raw_helping_total: "+45%"  # 20 + 15 + 10
+      capped_helping: "+30%"     # CAPPED at maximum
+      raw_hurting_total: "-25%"  # Distributed across outcomes
+      net_modifier: "+5%"        # Helping and hurting partially cancel
+
+    weight_calculation:
+      base:
+        transformational_success: 5
+        clean_success: 10
+        success_with_cost: 20
+        partial_success: 15
+        partial_failure: 15
+        failure_with_salvage: 20
+        hard_failure: 10
+        catastrophic: 5
+
+      after_modifiers:
+        # Capped helping (+30%) shifted toward success
+        # Hurting (-25%) shifted toward failure
+        # Net: slight success lean, but hurting creates spiky failure risk
+        transformational_success: 5   # unchanged (ceiling)
+        clean_success: 8              # -2 from WATCHED, PATTERN-SEEKER penalties
+        success_with_cost: 22         # +2 net
+        partial_success: 13           # -2
+        partial_failure: 17           # +2 from WATCHED
+        failure_with_salvage: 18      # -2
+        hard_failure: 12              # +2 from PATTERN-SEEKER overclock
+        catastrophic: 5               # floor maintained
+
+      floor_enforced:
+        transformational_success: 5
+        clean_success: 8
+        success_with_cost: 22
+        partial_success: 13
+        partial_failure: 17
+        failure_with_salvage: 18
+        hard_failure: 12
+        catastrophic: 5
+        # Verification
+        success_total: 48%            # Under 60% cap ✓
+        failure_total: 52%            # Above 20% floor ✓
+        catastrophic_check: "5% >= 5% floor ✓"
+        hard_failure_check: "12% >= 7% floor ✓"
+
+    outcome_table:
+      - outcome: "Innkeeper recognizes something in her eyes — 'You're one of the seekers. Room 7, no questions.'"
+        type: transformational_success
+        weight: 5
+        range: "01-05"
+        consequence: "Unexpected ally, information flows freely"
+
+      - outcome: "Rooms available, fair price, no suspicion"
+        type: clean_success
+        weight: 8
+        range: "06-13"
+        consequence: "Safe rest, neutral interaction"
+
+      - outcome: "Rooms given but innkeeper charges double for 'late arrival' — and watches them closely"
+        type: success_with_cost
+        weight: 22
+        range: "14-35"
+        consequence: "Lodging secured but marked as unusual guests"
+
+      - outcome: "One room only, must share — 'That's all I've got'"
+        type: partial_success
+        weight: 13
+        range: "36-48"
+        consequence: "Cramped but sheltered, limited privacy"
+
+      - outcome: "Innkeeper hesitates, asks too many questions before agreeing"
+        type: partial_failure
+        weight: 17
+        range: "49-65"
+        consequence: "Delayed, attention drawn, villagers notice the exchange"
+
+      - outcome: "Refused lodging but directed to the barn — 'Sleep there if you must'"
+        type: failure_with_salvage
+        weight: 18
+        range: "66-83"
+        consequence: "Shelter but exposed, cold, and clearly unwelcome"
+
+      - outcome: "Innkeeper refuses and warns them to leave before morning — 'Your kind isn't wanted here'"
+        type: hard_failure
+        weight: 12
+        range: "84-95"
+        consequence: "Hostility revealed, must find other shelter, village alerted"
+
+      - outcome: "Innkeeper recognizes them from a WANTED description — reaches for something under the counter"
+        type: catastrophic
+        weight: 5
+        range: "96-100"
+        consequence: "Cover blown, immediate danger, must flee or confront"
+
+    entropy_result:
+      value: 42
+      selected_range: "36-48"
+      selected_outcome: "One room only, must share"
+      selected_type: partial_success
+
+  # ============================================
+  # ACTION 2: Listen for information in common room
+  # ============================================
+  - action: "Eavesdrop on villagers discussing recent events"
+    entropy_provided: 78  # pool[1]
+
+    difficulty: easy
+    difficulty_modifier: "+10% success, -5% failure (public conversation, not hidden)"
+
+    trait_analysis:
+      helping:
+        - trait: PATTERN-SEEKER [6/5 OVERCLOCK]
+          relevance: "Overclock excels at connecting fragments of conversation"
+          raw_effect: "+25%"
+
+      hurting:
+        - trait: PATTERN-SEEKER [6/5 OVERCLOCK]
+          relevance: "SAME TRAIT HURTS TOO — hears connections that aren't there, misinterprets dialect as code"
+          effect: "+15% partial_failure (false patterns)"
+        - trait: EMBODIED [5/5]
+          relevance: "Body language betrays her attention — locals notice her listening"
+          effect: "+10% to exposure risk"
+        - trait: WATCHED [4/5]
+          relevance: "Constantly checking if SHE's being watched makes her miss actual information"
+          effect: "-5% clean_success"
+
+      neutral:
+        - trait: WITNESSED [5/5]
+          relevance: "Not relevant to passive listening"
+
+    modifier_calculation:
+      raw_helping_total: "+25%"
+      capped_helping: "+25%"      # Under cap
+      hurting_effects: "Distributed — +15% partial_failure, +10% exposure, -5% clean"
+      difficulty_bonus: "+10% success, -5% failure"
+
+    weight_calculation:
+      base:
+        transformational_success: 5
+        clean_success: 10
+        success_with_cost: 20
+        partial_success: 15
+        partial_failure: 15
+        failure_with_salvage: 20
+        hard_failure: 10
+        catastrophic: 5
+
+      after_modifiers:
+        transformational_success: 6   # +1 from easy + helping
+        clean_success: 12             # +2 net (easy bonus offset by WATCHED penalty)
+        success_with_cost: 18         # shifted to partial by overclock noise
+        partial_success: 12           # -3
+        partial_failure: 22           # +7 from PATTERN-SEEKER false patterns
+        failure_with_salvage: 16      # -4 from easy
+        hard_failure: 9               # -1 from easy
+        catastrophic: 5               # floor
+
+      floor_enforced:
+        transformational_success: 6
+        clean_success: 12
+        success_with_cost: 18
+        partial_success: 12
+        partial_failure: 22
+        failure_with_salvage: 16
+        hard_failure: 9
+        catastrophic: 5
+        success_total: 48%
+        failure_total: 52%
+        catastrophic_check: "5% >= 5% floor ✓"
+        note: "Easy action but OVERCLOCK creates false-pattern risk"
+
+    outcome_table:
+      - outcome: "Overhears exactly what they need — coordinates, names, the whole picture"
+        type: transformational_success
+        weight: 6
+        range: "01-06"
+
+      - outcome: "Clear intelligence gathered — learns about recent disappearances, patterns emerge"
+        type: clean_success
+        weight: 12
+        range: "07-18"
+
+      - outcome: "Good information but locals notice her listening — conversation stops, eyes follow her"
+        type: success_with_cost
+        weight: 18
+        range: "19-36"
+
+      - outcome: "Fragments only — enough to know something's wrong, not enough to know what"
+        type: partial_success
+        weight: 12
+        range: "37-48"
+
+      - outcome: "OVERCLOCK MISFIRE — hears pattern that isn't there, draws false conclusion"
+        type: partial_failure
+        weight: 22
+        range: "49-70"
+        note: "She's CERTAIN she heard coordinates in their dialect. She didn't."
+
+      - outcome: "Conversation too quiet, but she learns the villagers are afraid of something"
+        type: failure_with_salvage
+        weight: 16
+        range: "71-86"
+
+      - outcome: "Caught listening — 'What are you looking at, stranger?'"
+        type: hard_failure
+        weight: 9
+        range: "87-95"
+
+      - outcome: "One of the villagers recognizes her from somewhere — freezes, then bolts for the door"
+        type: catastrophic
+        weight: 5
+        range: "96-100"
+
+    entropy_result:
+      value: 78
+      selected_range: "71-86"
+      selected_outcome: "Conversation too quiet, but she learns the villagers are afraid of something"
+      selected_type: failure_with_salvage
+
+  # ============================================
+  # ACTION 3: Rest and recover (quiet scene)
+  # ============================================
+  - action: "Get meaningful rest in the cramped room"
+    entropy_provided: 15  # pool[2] — LOW ROLL
+
+    difficulty: standard
+    difficulty_modifier: "+0%"
+
+    trait_analysis:
+      helping:
+        - trait: EMBODIED [5/5]
+          relevance: "Body knows how to find rest"
+          raw_effect: "+15%"
+
+      hurting:
+        - trait: WATCHED [4/5]
+          relevance: "Can't relax, keeps checking windows, listening for footsteps"
+          effect: "+15% partial_failure, +5% hard_failure"
+        - trait: PATTERN-SEEKER [6/5 OVERCLOCK]
+          relevance: "Mind won't stop analyzing the day — sees threats in shadows"
+          effect: "+10% partial_failure, -10% clean_success"
+        - trait: WITNESSED [5/5]
+          relevance: "Hyperaware of others in the room, can't let guard down"
+          effect: "+5% success_with_cost"
+
+      neutral: []
+
+    weight_calculation:
+      after_modifiers:
+        transformational_success: 3   # Reduced — rest rarely transcendent
+        clean_success: 5              # Hard to get clean rest with these traits
+        success_with_cost: 20         # Sleep but nightmares
+        partial_success: 12
+        partial_failure: 25           # HIGH — mind racing
+        failure_with_salvage: 18
+        hard_failure: 12              # Can't sleep at all
+        catastrophic: 5
+
+      floor_enforced:
+        success_total: 40%
+        failure_total: 60%            # Rest is HARD for this character
+        note: "Trait profile actively works against peaceful rest"
+
+    outcome_table:
+      - outcome: "Deep, dreamless sleep — wakes restored, clear-headed"
+        type: transformational_success
+        weight: 3
+        range: "01-03"
+
+      - outcome: "Solid rest, ready to face the day"
+        type: clean_success
+        weight: 5
+        range: "04-08"
+
+      - outcome: "Sleeps but dreams of the algorithm — wakes tired but functional"
+        type: success_with_cost
+        weight: 20
+        range: "09-28"
+
+      - outcome: "Dozes fitfully, half-rested"
+        type: partial_success
+        weight: 12
+        range: "29-40"
+
+      - outcome: "Mind races all night — exhausted, making worse decisions tomorrow"
+        type: partial_failure
+        weight: 25
+        range: "41-65"
+
+      - outcome: "No sleep, but uses the time to plan — tired but prepared"
+        type: failure_with_salvage
+        weight: 18
+        range: "66-83"
+
+      - outcome: "No rest, no planning — just dread. Starts the day depleted"
+        type: hard_failure
+        weight: 12
+        range: "84-95"
+
+      - outcome: "Night terror so severe the group is woken, innkeeper demands they leave immediately"
+        type: catastrophic
+        weight: 5
+        range: "96-100"
+
+    entropy_result:
+      value: 15
+      selected_range: "09-28"
+      selected_outcome: "Sleeps but dreams of the algorithm — wakes tired but functional"
+      selected_type: success_with_cost
+      note: "Low roll but landed in large success_with_cost range"
+
+  # ============================================
+  # ACTION 4: SCENE COMPLICATION (Dramaturg flagged)
+  # ============================================
+  - action: "Scene complication check: Do villagers interrupt?"
+    entropy_provided: 63  # pool[3]
+    type: scene_complication
+
+    dramaturg_flag:
+      base_chance: 20%  # arc_pressure 95 = 20% base
+      modifiers:
+        - "Strangers in small village: +15%"
+        - "Late arrival noticed: +10%"
+        - "Locals are afraid of something: +5%"
+      total_chance: 50%
+
+    outcome_table:
+      - outcome: "Night passes quietly — no interruption"
+        type: no_complication
+        weight: 50
+        range: "01-50"
+
+      - outcome: "Knock on door at 3am — innkeeper with a warning"
+        type: minor_complication
+        weight: 20
+        range: "51-70"
+        consequence: "Information delivered with urgency, sleep interrupted"
+
+      - outcome: "Villagers gather outside, debating whether to confront the strangers"
+        type: moderate_complication
+        weight: 15
+        range: "71-85"
+        consequence: "Tension, potential confrontation, must decide: hide or address"
+
+      - outcome: "Angry villagers storm the room demanding they leave NOW"
+        type: major_complication
+        weight: 10
+        range: "86-95"
+        consequence: "Immediate crisis, group cohesion tested, possible violence"
+
+      - outcome: "Fire in the inn — accident or arson?"
+        type: severe_complication
+        weight: 5
+        range: "96-100"
+        consequence: "Chaos, evacuation, possessions at risk, cover definitely blown"
+
+    entropy_result:
+      value: 63
+      selected_range: "51-70"
+      selected_outcome: "Knock on door at 3am — innkeeper with a warning"
+      selected_type: minor_complication
+
+# ============================================
+# TURN SUMMARY
+# ============================================
+
+turn_summary:
+  actions_resolved: 4
+  entropy_consumed: 4
+  entropy_remaining: [91, 27, 54, 8, 71, 36]
+
+  outcomes:
+    - action: "Convince innkeeper"
+      result: partial_success
+      note: "One room, cramped but sheltered"
+
+    - action: "Eavesdrop"
+      result: failure_with_salvage
+      note: "No intel but sensed village fear"
+
+    - action: "Rest"
+      result: success_with_cost
+      note: "Slept but nightmares"
+
+    - action: "Scene complication"
+      result: minor_complication
+      note: "3am warning from innkeeper"
+
+  trait_pressure_changes:
+    PATTERN-SEEKER:
+      tested: true
+      pressure: "+1 (overclock volatility showing)"
+      note: "Helped AND hurt in same turn — characteristic of 6/5"
+    WATCHED:
+      tested: true
+      pressure: "+1 (hypervigilance cost visible)"
+    EMBODIED:
+      tested: true
+      pressure: "stable (worked as intended for rest)"
+    WITNESSED:
+      tested: false
+      pressure: "stable"
+
+  narrative_implications: |
+    The night was not restful. One room, shared between four people
+    who trust each other but can't relax. She slept, but the algorithm
+    found her in dreams. The villagers are afraid of something — she
+    doesn't know what yet, but the innkeeper's 3am knock suggests
+    answers are coming whether she wants them or not.
+
+    Key tension: Her PATTERN-SEEKER overclock is becoming a liability.
+    She heard patterns in the villagers' conversation that weren't there.
+    Tomorrow's decisions may be based on false intelligence.

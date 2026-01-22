@@ -62,7 +62,8 @@ describe('V4 Mesh Validator Test', () => {
     });
 
     test('should accept full config with all optional fields', () => {
-      const config: MeshConfigSchema = {
+      // Config with extra unknown fields that validator accepts but are not in schema
+      const config = {
         mesh: 'test',
         description: 'Test mesh description',
         agents: [
