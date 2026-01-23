@@ -57,6 +57,15 @@ export interface ParityReminderEvent {
   deletedFile: string;
 }
 
+/**
+ * Event emitted when completion_agent sends task-complete to core/core
+ * Signals that the mesh run is complete and analytics summary should be logged
+ */
+export interface MeshCompleteEvent {
+  meshName: string;
+  completionAgent: string;  // Full agentId (mesh/agent)
+}
+
 interface Frontmatter {
   to: string;
   from: string;
@@ -745,6 +754,12 @@ ${body}
             if (this.meshStateManager) {
               this.meshStateManager.clearMeshState(meshName);
             }
+
+            // Emit mesh-complete event for analytics summary logging
+            this.emit('mesh-complete', {
+              meshName,
+              completionAgent: fromAgent,
+            } as MeshCompleteEvent);
           } else {
             // Non-completion agent: only clear this agent's asks
             const clearedAsks = this.queue.clearPendingAsks(fromAgent);

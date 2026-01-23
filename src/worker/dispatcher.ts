@@ -31,7 +31,7 @@ import { MeshValidator } from './mesh-validator.ts';
 import {
   type PreflightOutput,
 } from '../quality/index.ts';
-import type { ParityReminderEvent } from '../core/consumer.ts';
+import type { ParityReminderEvent, MeshCompleteEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
@@ -311,6 +311,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
+  private boundMeshCompleteHandler: ((event: MeshCompleteEvent) => void) | null = null;
   private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
@@ -723,6 +724,12 @@ export class WorkerDispatcher extends EventEmitter {
         this.handleParityReminder(event);
       };
       consumer.on('parity-reminder', this.boundParityReminderHandler);
+
+      // Subscribe to mesh-complete events for analytics summary logging
+      this.boundMeshCompleteHandler = (event: MeshCompleteEvent) => {
+        this.handleMeshComplete(event);
+      };
+      consumer.on('mesh-complete', this.boundMeshCompleteHandler);
     }
 
     // Start stuck agent detector
@@ -3668,7 +3675,10 @@ ${output}
 
   /**
    * Check if a mesh session is complete (no active workers from that mesh)
-   * If complete, log session metrics and cleanup
+   *
+   * Behavior depends on whether mesh has a completion_agent:
+   * - WITH completion_agent: Just update timestamps, logging happens in handleMeshComplete
+   * - WITHOUT completion_agent: Log and cleanup immediately (fallback behavior)
    */
   private checkSessionComplete(meshInstance: string | undefined): void {
     if (!meshInstance) return;
@@ -3682,18 +3692,83 @@ ${output}
       .some(w => w.hookContext?.meshInstance === meshInstance);
 
     if (!activeInMesh) {
+      // Session complete metadata
       session.completedAt = Date.now();
       session.totalDurationMs = session.completedAt - session.startedAt;
 
-      // Log session summary
-      log.sessionComplete(session);
+      // Check if mesh has a completion_agent configured
+      const meshConfig = this.meshConfigs.get(session.meshName);
+      const hasCompletionAgent = !!meshConfig?.completion_agent;
 
-      // Emit event for external consumers
-      this.emit('session:complete', session);
-
-      // Cleanup
-      this.sessionMetrics.delete(meshInstance);
+      if (hasCompletionAgent) {
+        // Mesh has completion_agent - logging will happen in handleMeshComplete
+        // when completion_agent sends task-complete to core/core
+        // Just mark the session as ready for final logging
+        log.debug('dispatcher', 'Session ready for completion_agent', {
+          meshInstance,
+          meshName: session.meshName,
+          completionAgent: meshConfig?.completion_agent,
+        });
+      } else {
+        // No completion_agent - log and cleanup immediately (fallback behavior)
+        log.sessionComplete(session);
+        this.emit('session:complete', session);
+        this.sessionMetrics.delete(meshInstance);
+      }
     }
+  }
+
+  /**
+   * Handle mesh-complete event from consumer
+   * Called when completion_agent sends task-complete to core/core
+   * Logs the session analytics summary and cleans up
+   */
+  private handleMeshComplete(event: MeshCompleteEvent): void {
+    const { meshName, completionAgent } = event;
+
+    // Find session by meshName (sessionMetrics is keyed by meshInstance = meshName-timestamp)
+    let sessionKey: string | undefined;
+    let session: SessionMetrics | undefined;
+
+    for (const [key, value] of this.sessionMetrics.entries()) {
+      if (value.meshName === meshName) {
+        sessionKey = key;
+        session = value;
+        break;
+      }
+    }
+
+    if (!session || !sessionKey) {
+      log.warn('dispatcher', 'Mesh complete event but no session metrics found', {
+        meshName,
+        completionAgent,
+        availableSessions: Array.from(this.sessionMetrics.keys()),
+      });
+      return;
+    }
+
+    // Ensure completion timestamps are set
+    if (!session.completedAt) {
+      session.completedAt = Date.now();
+      session.totalDurationMs = session.completedAt - session.startedAt;
+    }
+
+    // Log session summary
+    log.sessionComplete(session);
+
+    // Emit event for external consumers
+    this.emit('session:complete', session);
+
+    // Cleanup
+    this.sessionMetrics.delete(sessionKey);
+
+    log.debug('dispatcher', 'Mesh analytics logged on completion', {
+      meshName,
+      completionAgent,
+      sessionKey,
+      workerCount: session.workerCount,
+      totalCost: session.totalCostUsd,
+    });
   }
 
   // ============================================================================
