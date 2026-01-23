@@ -69,6 +69,99 @@ You are the {role} agent.
 3. Signal completion when finished
 ```
 
+## Agent Boundaries (CRITICAL for Coordinators)
+
+Haiku agents are eager helpers. Without explicit boundaries, they'll do work meant for other agents. Use `<boundaries>` blocks to constrain behavior.
+
+**Problem**: A haiku coordinator sees domain context (file formats, workflow goals) and decides to "help" by doing the creative work itself instead of routing.
+
+**Solution**: Explicit DO NOT / ONLY lists that name WHO does each task.
+
+```markdown
+<role>
+Route tasks. Validate state. Forward to specialists.
+You are a ROUTER. You do NOT create content.
+</role>
+
+<boundaries>
+DO NOT:
+- Write output files (worker does that)
+- Analyze input data (analyst does that)
+- Make domain decisions (specialist does that)
+- Read file contents beyond checking existence
+
+ONLY:
+- Read session state for routing decisions
+- Check file EXISTENCE (ls), never CONTENTS (cat)
+- Write routing messages to other agents
+- Write ask-human when blocked
+</boundaries>
+```
+
+**Key principles:**
+- State WHO does the forbidden work: "(worker does that)"
+- Separate existence checks from content reads
+- Add "If you find yourself doing X, STOP" guardrails
+- Keep domain knowledge minimal - coordinators route, they don't understand
+
+## Phase Coordinators Pattern
+
+For complex pipelines, use **one haiku coordinator per phase** instead of one monolithic coordinator.
+
+**Problem**: A single coordinator managing many phases accumulates too much context and state. It becomes complex, error-prone, and harder to debug.
+
+**Solution**: Split into discrete phase coordinators, each with single responsibility.
+
+**Before (monolithic):**
+```yaml
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md  # 400 lines, manages 6 phases
+```
+
+**After (phase-based):**
+```yaml
+agents:
+  - name: entry
+    model: haiku
+    prompt: coordinator/entry.md        # Routes based on state
+
+  - name: init-coord
+    model: haiku
+    prompt: coordinator/init-coord.md   # Sets up workspace, routes to prep
+
+  - name: prep-coord
+    model: haiku
+    prompt: coordinator/prep-coord.md   # Fan-out/fan-in for prep agents
+
+  - name: work-coord
+    model: haiku
+    prompt: coordinator/work-coord.md   # Dispatches workers, routes to validate
+```
+
+**Benefits:**
+- Each coordinator has ~50-80 lines (vs 400+)
+- Single responsibility per agent
+- Easier to debug (which phase failed?)
+- State validation at phase boundaries
+- Boundaries are clearer per-phase
+
+**Pattern:**
+```
+entry → phase-1-coord → phase-2-coord → ... → completion-coord
+              ↓               ↓
+         specialists     specialists
+```
+
+**Each phase coordinator:**
+1. Receives task from previous coordinator
+2. Does its ONE job (setup, dispatch, validate, etc.)
+3. Updates shared session state
+4. Routes to next coordinator
+
+**Shared state**: Use session.yaml that all coordinators read/write. Each coordinator preserves ALL fields when updating.
+
 ## Multi-Agent Routing
 
 ```yaml
