@@ -1,16 +1,50 @@
 # narrative-engine/config.yaml
-# LLM-Native Tabletop RPG System - Coordinator Architecture
-# Separates orchestration (haiku) from creative work (opus/sonnet)
+# LLM-Native Tabletop RPG System - Phase Coordinator Architecture
+# Splits orchestration into discrete haiku phase coordinators
 
 mesh: narrative-engine
 description: "Statless RPG with coordinator pattern. Traits are semantically weighted, damage is trait accumulation, outcomes emerge from JIT probability tables + external entropy."
 
 agents:
-  - name: coordinator
-    model: sonnet
-    prompt: coordinator/prompt.md
-    # State machine, routing, entropy, file management
-    # Does NOT do creative work
+  # ==========================================
+  # PHASE COORDINATORS (haiku - mechanical routing)
+  # ==========================================
+
+  - name: entry
+    model: haiku
+    prompt: coordinator/entry.md
+
+  - name: game-coord
+    model: haiku
+    prompt: coordinator/game-coord.md
+
+  - name: prologue-coord
+    model: haiku
+    prompt: coordinator/prologue-coord.md
+
+  - name: init-coord
+    model: haiku
+    prompt: coordinator/init-coord.md
+
+  - name: prep-coord
+    model: haiku
+    prompt: coordinator/prep-coord.md
+
+  - name: render-coord
+    model: haiku
+    prompt: coordinator/render-coord.md
+
+  - name: validate-coord
+    model: haiku
+    prompt: coordinator/validate-coord.md
+
+  - name: compress-coord
+    model: haiku
+    prompt: coordinator/compress-coord.md
+
+  # ==========================================
+  # CREATIVE AGENTS (sonnet/opus)
+  # ==========================================
 
   - name: dramaturg
     model: sonnet
@@ -57,7 +91,7 @@ agents:
     model: haiku
     prompt: scribe/prompt.md
     # Context compression, state management, game canon promotion
-    # Only fires if editor passes (or max iterations)
+    # Only fires if oracle passes (or max iterations)
 
   # ==========================================
   # LINT LADDER - Parallel mechanical linters
@@ -117,46 +151,70 @@ agents:
     # Creative: Scene opening physical grounding
     # Body before thought
 
-entry_point: coordinator
-completion_agent: coordinator
+entry_point: entry
+completion_agent: compress-coord
 
-# Session persistence (only coordinator tracks state across turns)
+# Session persistence (coordinators share state via session.yaml)
 continuation: true
 
-# Phase-based routing with direct agent communication
-# Phase 1: DRAMATURG + SCENE-CRAFTER (prep)
-# Phase 2: NARRATOR + SYSTEM + CAST (render)
-# Phase 3: LINT-COORDINATOR → 8 LINTERS (parallel) → EDITOR → NARRATOR (review loop)
-# Coordinator kicks off each phase, agents communicate directly within phase
-#
-# Lint Ladder Flow:
-#   Coordinator → lint-coordinator
-#                 ↓
-#       [8 linters in parallel]
-#                 ↓
-#       lint-coordinator aggregates → violations.yaml
-#                 ↓
-#              Editor (holistic review)
-#                 ↓
-#       Editor ↔ Narrator (revision loop, up to 3 iterations)
-#                 ↓
-#       Editor → Coordinator (CLEAN or MAX_ITERATIONS)
+# ==========================================
+# ROUTING - Phase coordinator architecture
+# ==========================================
 
 routing:
-  coordinator:
-    ask:
-      narrator: "Render prose (phase 2)"
-      lint-coordinator: "Lint prose (phase 3 - parallel linters)"
-      oracle: "Validate continuity"
-      scribe: "Compress turn state"
-      dramaturg: "Analyze story context"
-      scene-crafter: "Outline scene structure"
-      system: "Need mechanical resolution"
-      editor: "Review prose"
+  # Phase coordinators route to each other
+  entry:
+    task:
+      game-coord: "Route new game request"
+      init-coord: "Route player action"
     ask-human:
-      core: "Need player input OR game state anomaly"
-    complete:
-      core: "Turn complete, prose delivered"
+      core: "Turn in progress"
+
+  game-coord:
+    ask:
+      narrator: "HITL game creation"
+    task:
+      prologue-coord: "Game created, start prologue"
+
+  prologue-coord:
+    task:
+      prep-coord: "Prologue workspace ready"
+
+  init-coord:
+    task:
+      prep-coord: "Turn workspace ready"
+
+  prep-coord:
+    ask:
+      dramaturg: "Analyze story context"
+      scene-crafter: "Design scene beats"
+    task:
+      render-coord: "Prep complete"
+
+  render-coord:
+    ask:
+      narrator: "Render prose"
+    task:
+      validate-coord: "Prose ready for validation"
+
+  validate-coord:
+    ask:
+      oracle: "Validate continuity"
+      narrator: "Fix violations"
+    task:
+      compress-coord: "Prose approved"
+
+  compress-coord:
+    ask:
+      scribe: "Compress turn state"
+    task-complete:
+      core: "Turn complete"
+    ask-human:
+      core: "Coordinator ready check failed"
+
+  # ==========================================
+  # CREATIVE AGENT ROUTING
+  # ==========================================
 
   narrator:
     ask:
@@ -164,17 +222,19 @@ routing:
       system: "Need mechanical resolution"
       cast: "Need character reactions"
       scene-crafter: "Outline scene structure"
-      oracle: "Knowledge query" # NEW: Query entity data during prose generation
+      oracle: "Knowledge query"
+      lint-coordinator: "Lint prose"
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
-      coordinator: "Initial prose rendered"
-      editor: "Revised prose ready" # Direct response to editor in phase 3
+      render-coord: "Initial prose rendered"
+      validate-coord: "Fix complete"
+      editor: "Revised prose ready"
 
   dramaturg:
     ask-response:
       narrator: "Story analysis complete"
-      coordinator: "Prep analysis complete"
+      prep-coord: "Prep analysis complete"
 
   system:
     ask-response:
@@ -187,14 +247,18 @@ routing:
   scene-crafter:
     ask-response:
       narrator: "Scene outline complete"
-      coordinator: "Prep outline complete"
+      prep-coord: "Prep outline complete"
 
   oracle:
     ask:
       narrator: "fix violations"
     ask-response:
-      coordinator: "Continuity validation complete"
-      narrator: "Knowledge query response" # NEW: Return entity data to narrator
+      validate-coord: "Continuity validation complete"
+      narrator: "Knowledge query response"
+
+  scribe:
+    ask-response:
+      compress-coord: "Turn compression complete"
 
   # ==========================================
   # LINT LADDER ROUTING
@@ -246,26 +310,19 @@ routing:
       lint-coordinator: "Check complete"
 
   # ==========================================
-  # EDITOR (now receives from lint-coordinator)
+  # EDITOR (receives from lint-coordinator)
   # ==========================================
 
   editor:
     ask:
-      narrator: "Fix violations" # Direct ask to narrator for revisions
+      narrator: "Fix violations"
     ask-response:
-      coordinator: "Review complete (CLEAN or max iterations)"
-
-  scribe:
-    ask-response:
-      coordinator: "Turn compression complete"
-
-# Editor manages its own iteration loop (max 3)
-# Coordinator only sees: phase started → phase complete
+      narrator: "Review complete"
 
 # Workspace configuration
 # Base workspace for agents (doesn't require game context)
 workspace:
-  path: ".ai/tx/narrative-engine/"
+  path: ".ai/games/"
   create_on_init: false # Agents create their own paths based on session
 
 # Turn workspace template (resolved after game exists)
@@ -273,15 +330,3 @@ turn_workspace:
   path: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/"
   create_on_init: false # Coordinator creates after game-id known
   cleanup_on_complete: false
-
-# Transparency
-# rearmatter:
-#   enabled: true
-#   fields:
-#     - outcome_table
-#     - selected_outcome
-#     - trait_pressure
-#     - momentum
-#     - arc_pressure
-#     - editor_passes      # How many editor iterations
-#     - prose_violations   # Any unresolved violations
