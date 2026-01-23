@@ -49,9 +49,12 @@ entropy_pool: [10 values]
 
 ## On Task Receipt
 
+**Send ask to scribe, then STOP. Do NOT send task-complete yet.**
+
 1. Read session.yaml for ALL fields
 2. Read workspace, game_path from task body
 3. Send ask to SCRIBE
+4. **STOP HERE** - wait for scribe's ask-response before continuing
 
 ### Ask to Scribe
 
@@ -71,6 +74,9 @@ context: {workspace}/context.yaml
 ```
 
 ## On Ask-Response (from scribe)
+
+**Only execute this section when you receive an ask-response FROM scribe.**
+**If you just received a task, go to "On Task Receipt" above instead.**
 
 1. Read session.yaml for ALL fields
 2. Verify `{workspace}/summary.md` exists
