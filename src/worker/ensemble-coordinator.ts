@@ -20,6 +20,7 @@ export interface EnsembleExecutionState {
   agentResults: Map<string, { content: string; error?: string; startTime: number; endTime?: number }>;
   agentStartTimes: Map<string, number>;  // Track when each agent was spawned
   originalTask: Message;
+  aggregationStarted: boolean;  // Prevents concurrent aggregation
 }
 
 export class EnsembleCoordinator {
@@ -43,6 +44,7 @@ export class EnsembleCoordinator {
       agentResults: new Map(),
       agentStartTimes: new Map(),
       originalTask: task,
+      aggregationStarted: false,
     };
 
     this.activeEnsembles.set(ensembleId, state);
@@ -71,17 +73,18 @@ export class EnsembleCoordinator {
 
   /**
    * Record agent result
+   * Returns completion status to avoid race conditions in aggregation
    */
   recordAgentResult(
     ensembleId: string,
     agentName: string,
     content: string,
     error?: string
-  ): void {
+  ): { isComplete: boolean; shouldAggregate: boolean } {
     const state = this.activeEnsembles.get(ensembleId);
     if (!state) {
       log.warn('ensemble', 'Ensemble not found', { ensembleId });
-      return;
+      return { isComplete: false, shouldAggregate: false };
     }
 
     const startTime = state.agentStartTimes.get(agentName) || Date.now();
@@ -97,6 +100,20 @@ export class EnsembleCoordinator {
       agent: agentName,
       success: !error,
     });
+
+    // Check completion atomically
+    const expectedCount = state.config.agents.length;
+    const receivedCount = state.agentResults.size;
+    const minRequired = state.config.fault_tolerance?.min_success_count || expectedCount;
+    const isComplete = receivedCount >= minRequired;
+
+    // Claim aggregation if complete and not already claimed
+    const shouldAggregate = isComplete && !state.aggregationStarted;
+    if (shouldAggregate) {
+      state.aggregationStarted = true;
+    }
+
+    return { isComplete, shouldAggregate };
   }
 
   /**
@@ -114,10 +131,18 @@ export class EnsembleCoordinator {
 
   /**
    * Get aggregated result
+   * Claims aggregation if not already claimed (prevents concurrent aggregation)
    */
   async getAggregatedResult(ensembleId: string): Promise<{ output: string; metadata: any } | null> {
     const state = this.activeEnsembles.get(ensembleId);
     if (!state) return null;
+
+    // Claim aggregation to prevent concurrent calls
+    if (state.aggregationStarted) {
+      log.warn('ensemble', 'Aggregation already in progress', { ensembleId });
+      return null;
+    }
+    state.aggregationStarted = true;
 
     // Collect successful results
     const results: AgentResult[] = [];

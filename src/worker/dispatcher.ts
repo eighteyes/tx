@@ -1001,25 +1001,24 @@ export class WorkerDispatcher extends EventEmitter {
       contentLength: content.length,
     });
 
-    // Check if worker is still running - if so, can't resume yet
+    // If worker is running, kill it first so we can resume with revision
     if (activeWorker.runner.isRunning()) {
-      log.warn('dispatcher', `Revision skipped - worker still running`, {
+      log.info('dispatcher', `Killing worker for revision`, {
         agentId,
         sessionId: sessionId.slice(0, 8),
         headline,
       });
-      // Queue the revision for later? For now, just skip
-      return;
+      activeWorker.runner.kill('revision: user edited message');
     }
 
-    // Resume with the revised content (interrupt first in case worker is in wait state)
+    // Resume with the revised content
     await this.resumeSession({
       reason: 'revision',
       agentId,
       sessionId,
       prompt: this.buildRevisionPrompt(content, headline),
       runner: activeWorker.runner,
-      interrupt: true,
+      interrupt: false,  // Already killed if was running
       metadata: { headline },
     });
   }
@@ -2770,9 +2769,35 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.removeActiveWorker(agentId, currentWorkerId);
-        this.askResponseBuffer.delete(agentId);
         this.stuckDetector.clearNudgeTracking(agentId);
         this.writeWorkerState();
+
+        // Check for buffered ask-responses that arrived during race window
+        // (between isRunning() check and completion)
+        const bufferedResponses = this.askResponseBuffer.get(agentId);
+        if (bufferedResponses?.length && data.sessionId) {
+          log.info('dispatcher', `Processing buffered ask-responses post-completion`, {
+            agentId,
+            sessionId: data.sessionId.slice(0, 8),
+            responseCount: bufferedResponses.length,
+          });
+
+          this.askResponseBuffer.delete(agentId);
+
+          // Resume session with buffered responses
+          await this.resumeSession({
+            reason: 'ask-response',
+            agentId,
+            sessionId: data.sessionId,
+            prompt: this.buildAskResponsePrompt(bufferedResponses),
+            runner: worker,
+            metadata: { responseCount: bufferedResponses.length, postCompletion: true },
+          });
+
+          return; // New complete event will fire when resume finishes
+        }
+
+        this.askResponseBuffer.delete(agentId);
 
         // Check if mesh session is complete
         this.checkSessionComplete(workerHookContext.meshInstance);
