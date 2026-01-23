@@ -227,8 +227,10 @@ routing:
     ask-human:
       core: "HITL extraction / mid-turn decisions"
     ask-response:
+      game-coord: "Game creation complete"
       render-coord: "Initial prose rendered"
       validate-coord: "Fix complete"
+      oracle: "Violation fix complete"
       editor: "Revised prose ready"
 
   dramaturg:

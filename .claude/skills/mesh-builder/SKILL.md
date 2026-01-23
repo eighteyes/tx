@@ -374,6 +374,43 @@ For ensemble `aggregation` field:
 | `clear-before` | boolean | Clear state before run |
 | `turn_workspace` | object | Turn-based game workspace |
 
+## Route Validation
+
+Verify all `ask` relationships have matching `ask-response` routes back.
+
+**Rule**: If agent A asks agent B, then B must have an `ask-response` route back to A.
+
+**Manual check:**
+1. List all `ask` relationships: `A → asks → B`
+2. List all `ask-response` routes: `B → responds-to → [X, Y, Z]`
+3. For each ask, verify the target can respond to the sender
+
+**Common mistakes:**
+- Coordinator asks worker, but worker only responds to a different coordinator
+- Agent added to `ask` list but `ask-response` not updated
+- Indirect flows (A → B → C → A) mistaken for direct flows
+
+**Example mismatch:**
+```yaml
+# validator asks fixer
+validator:
+  ask:
+    fixer: "Fix issues"
+
+# fixer responds to reviewer, NOT validator - BUG!
+fixer:
+  ask-response:
+    reviewer: "Fixes complete"  # ⚠ validator missing!
+```
+
+**Intentional indirection** (not a bug):
+```yaml
+# narrator → lint-coordinator → editor → narrator
+# lint-coordinator responds to editor, not narrator (by design)
+```
+
+Document intentional indirections in `playbook_notes`.
+
 ## Debugging
 
 ```bash
