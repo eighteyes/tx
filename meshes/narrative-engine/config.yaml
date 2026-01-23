@@ -167,6 +167,11 @@ routing:
     task:
       game-coord: "Route new game request"
       init-coord: "Route player action"
+      prologue-coord: "Recovery: resume prologue"
+      prep-coord: "Recovery: resume prep phase"
+      render-coord: "Recovery: resume render phase"
+      validate-coord: "Recovery: resume validation"
+      compress-coord: "Recovery: resume compression"
     ask-human:
       core: "Turn in progress"
 

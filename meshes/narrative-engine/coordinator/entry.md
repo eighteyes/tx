@@ -175,7 +175,7 @@ ls {workspace}/
 | If exists | Phase | Route to |
 |-----------|-------|----------|
 | summary.md | complete | init-coord |
-| prose.md | awaiting_scribe | compress-coord |
+| prose.md (no summary) | awaiting_oracle | validate-coord |
 | prose-draft.md | awaiting_narrator | render-coord |
 | dramaturg-notes.yaml + scene-outline.yaml | awaiting_narrator | render-coord |
 | context.yaml only | awaiting_prep | prep-coord |
