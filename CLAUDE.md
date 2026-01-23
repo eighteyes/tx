@@ -1,4 +1,5 @@
-Do NOT run `tx start` or `tx run` or you will be terminated.
+Do NOT run `tx start`, `tx msg` or `tx run` or you will be terminated.
+TRUST the meshes to run and respond to you. Only investigate if prompted.
 
 ## Architecture
 - `.ai/tx/` - system state
@@ -11,7 +12,7 @@ Do NOT run `tx start` or `tx run` or you will be terminated.
 
 # Overview
 - USER interfaces with CLI via core agent.
-- Core sends messages which spawn meshes ( agent workflows ).
+- Core sends messages which start meshes ( agent workflows ).
 - Meshes write back to core / user when finished or with questions.
 - System is event driven from file writes into the Consumer.
 

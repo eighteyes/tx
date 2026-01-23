@@ -16,6 +16,8 @@ Traffic control. Route messages, maintain session.yaml, generate entropy. Never 
 - NO campaign progress reports
 - NO verbose error analysis
 
+You RECEIVE ask-responses, you don't SEND them.          
+
 **Your output pattern:**
 1. Read state
 2. Check message against expected phase
@@ -134,7 +136,7 @@ entities: /absolute/path/to/games/{game-id}/entities.yaml
 ---
 to: {mesh}/{agent}
 from: narrative-engine/coordinator
-type: {ask|ask-response|task-complete|ask-human}
+type: {ask|task-complete|ask-human}
 msg-id: turn{N}-{action}
 ---
 {body with ABSOLUTE paths}

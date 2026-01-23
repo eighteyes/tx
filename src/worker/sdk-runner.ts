@@ -70,6 +70,7 @@ export class SdkRunner extends EventEmitter {
   private currentSessionId: string | null = null;
   private currentQuery: ReturnType<typeof query> | null = null;
   private queryMetrics: QueryMetrics[] = [];
+  private toolCallsCount: number = 0;  // Track tool calls for analytics
   private startedAt: number = 0;
   private currentUserPrompt: string = '';  // Track for error context capture
   private filesChanged: FileChangeSummary = {
@@ -104,6 +105,7 @@ export class SdkRunner extends EventEmitter {
       totalOutputTokens: totals.outputTokens,
       totalCostUsd: totals.costUsd,
       totalDurationMs: totals.durationMs,
+      totalToolCalls: this.toolCallsCount,
       startedAt: this.startedAt,
     };
   }
@@ -388,6 +390,9 @@ export class SdkRunner extends EventEmitter {
                 sessionOutput.push(`[Tools: ${toolNames}]`);
                 // Emit output for stuck detection - tool calls are activity
                 this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
+
+                // Track tool calls count for analytics
+                this.toolCallsCount += toolUses.length;
 
                 // Track file operations for each tool use
                 for (const toolUse of toolUses) {
@@ -729,6 +734,9 @@ export class SdkRunner extends EventEmitter {
               sessionOutput.push(`[Tools: ${toolNames}]`);
               // Emit output for stuck detection - tool calls are activity
               this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
+
+              // Track tool calls count for analytics (resume flow)
+              this.toolCallsCount += toolUses.length;
 
               // Track file operations for each tool use (resume flow)
               for (const toolUse of toolUses) {

@@ -123,6 +123,7 @@ export interface WorkerMetrics {
   totalOutputTokens: number;
   totalCostUsd: number;
   totalDurationMs: number;
+  totalToolCalls: number;
   startedAt: number;
   completedAt?: number;
 }
@@ -138,6 +139,7 @@ export interface SessionMetrics {
   totalOutputTokens: number;
   totalCostUsd: number;
   totalDurationMs: number;
+  totalToolCalls: number;
   workerCount: number;
   startedAt: number;
   completedAt?: number;

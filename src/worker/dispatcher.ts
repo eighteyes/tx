@@ -1980,6 +1980,7 @@ The system will resume your session when the human responds.`;
           totalOutputTokens: 0,
           totalCostUsd: 0,
           totalDurationMs: 0,
+          totalToolCalls: 0,
           workerCount: 0,
           startedAt: Date.now(),
         });
@@ -2764,6 +2765,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             session.totalInputTokens += data.metrics.totalInputTokens;
             session.totalOutputTokens += data.metrics.totalOutputTokens;
             session.totalCostUsd += data.metrics.totalCostUsd;
+            session.totalToolCalls += data.metrics.totalToolCalls || 0;
             session.workerCount++;
           }
         }

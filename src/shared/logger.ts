@@ -148,25 +148,50 @@ class Logger {
    * Log mesh session metrics summary
    */
   sessionComplete(session: SessionMetrics): void {
+    // Extract agent names from agentIds (mesh/agent -> agent)
+    const agentNames = session.workers.map(w => w.agentId.split('/')[1] || w.agentId);
+
+    // Calculate total tool calls across all workers
+    const totalToolCalls = session.workers.reduce((sum, w) => sum + (w.totalToolCalls || 0), 0);
+
+    // Format tokens with commas for readability
+    const formatNumber = (n: number): string => n.toLocaleString('en-US');
+    const totalTokens = session.totalInputTokens + session.totalOutputTokens;
+
+    // Build human-readable summary message
+    const summaryLines = [
+      `Mesh run complete: ${session.meshName} (task-id: ${session.meshInstance})`,
+      `  Agents: ${agentNames.join(', ')}`,
+      `  Total agents: ${session.workerCount}`,
+      `  Total tokens: ${formatNumber(totalTokens)} (in: ${formatNumber(session.totalInputTokens)}, out: ${formatNumber(session.totalOutputTokens)})`,
+      `  Total cost: $${session.totalCostUsd.toFixed(2)}`,
+      `  Total tool calls: ${formatNumber(totalToolCalls)}`,
+    ];
+
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level: 'info',
-      component: 'session',
-      message: 'Mesh session complete',
+      component: 'mesh-analytics',
+      message: summaryLines.join('\n'),
       data: {
         meshInstance: session.meshInstance,
         meshName: session.meshName,
         workerCount: session.workerCount,
+        agentNames,
         totalInputTokens: session.totalInputTokens,
         totalOutputTokens: session.totalOutputTokens,
+        totalTokens,
         totalCostUsd: session.totalCostUsd.toFixed(4),
+        totalToolCalls,
         durationMs: session.totalDurationMs,
         workers: session.workers.map(w => ({
           agentId: w.agentId,
+          agentName: w.agentId.split('/')[1] || w.agentId,
           model: w.model,
           inputTokens: w.totalInputTokens,
           outputTokens: w.totalOutputTokens,
           costUsd: w.totalCostUsd.toFixed(4),
+          toolCalls: w.totalToolCalls || 0,
         })),
       },
     };
