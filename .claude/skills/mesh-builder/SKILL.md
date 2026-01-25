@@ -411,6 +411,53 @@ fixer:
 
 Document intentional indirections in `playbook_notes`.
 
+## Prompt-to-Config Validation
+
+Verify all agent references in prompts match agents defined in config.yaml.
+
+**Rule**: Every `to: mesh/agent` in prompt examples must reference an agent that exists in the mesh's config.yaml.
+
+**Manual check:**
+```bash
+# Extract agents from config
+yq '.agents[].name' meshes/{mesh}/config.yaml | sort > /tmp/agents.txt
+
+# Extract to: targets from prompts
+rg "to: {mesh}/[a-z-]+" meshes/{mesh} --type md -o --no-filename \
+  | sed 's/to: {mesh}\///' | sort | uniq > /tmp/targets.txt
+
+# Find mismatches
+comm -23 /tmp/targets.txt /tmp/agents.txt
+```
+
+**Common mistakes:**
+- Generic `coordinator` when mesh has phase coordinators (`init-coord`, `render-coord`, etc.)
+- Outdated agent names after refactoring
+- Copy-paste from other meshes with different agent names
+
+**Architectural principle:**
+
+Prompts should reference **responsibilities**, not agent names. Routing decisions (who handles what) belong in config.yaml, not prompts.
+
+| Pattern | Guidance |
+|---------|----------|
+| `to: mesh/specific-agent` in examples | Acceptable for illustrating message format |
+| `to: {from: field}` dynamic routing | Preferred for ask-response patterns |
+| Prose describing "send to agent X" | Move WHO to config, keep WHAT in prompt |
+
+**Anti-pattern:**
+```markdown
+# BAD: Hardcoded routing in prompt
+When done, send ask-response to COORDINATOR.
+```
+
+**Better:**
+```markdown
+# GOOD: Reference responsibility, config handles routing
+When done, send ask-response to the coordinator that sent the ask.
+# Config routing section defines which coordinator that is.
+```
+
 ## Debugging
 
 ```bash

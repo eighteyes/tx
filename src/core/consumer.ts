@@ -15,8 +15,6 @@ import path from 'node:path';
 import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
-import { RecoveryHandler } from './recovery.ts';
-import type { AgentStateSnapshot } from '../worker/dispatcher.ts';
 
 /**
  * Interface for FSM validation capability
@@ -30,14 +28,6 @@ interface FSMValidator {
     messageFrontmatter: Record<string, unknown>,
     rearmatter?: Record<string, unknown>
   ): Promise<boolean>;
-}
-
-/**
- * Interface for agent state provider
- * Dispatcher implements this for recovery handler
- */
-interface AgentStateProvider {
-  getAgentStateSnapshot(agentId: string): AgentStateSnapshot | null;
 }
 
 /**
@@ -127,12 +117,8 @@ export class MessageConsumer extends EventEmitter {
   // Parity gate: pending asks are now persisted in SQLite via this.queue
   // FSM validator (dispatcher) for pre-routing validation
   private fsmValidator: FSMValidator | null = null;
-  // Agent state provider (dispatcher) for recovery handler
-  private agentStateProvider: AgentStateProvider | null = null;
   // Mesh state manager (dispatcher) for clearing state on completion
   private meshStateManager: MeshStateManager | null = null;
-  // Recovery handler for system/* interception
-  private recoveryHandler: RecoveryHandler | null = null;
   // Routing self-heal: track violations per agent
   private routingViolationTracker: Map<string, RoutingViolation> = new Map();
   // Cache mesh configs for routing validation
@@ -226,22 +212,11 @@ export class MessageConsumer extends EventEmitter {
    * - Sets up recovery handler for system/* interception
    * - Sets up mesh state manager for clearing in-memory state on completion
    */
-  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator> & Partial<AgentStateProvider> & Partial<MeshStateManager>): void {
+  subscribeToDispatcher(dispatcher: EventEmitter & Partial<FSMValidator> & Partial<MeshStateManager>): void {
     // Store dispatcher as FSM validator if it has the validation method
     if (typeof dispatcher.validateMessageWithFSM === 'function') {
       this.fsmValidator = dispatcher as FSMValidator;
       log.debug('consumer', 'FSM validator registered');
-    }
-
-    // Store dispatcher as agent state provider and set up recovery handler
-    if (typeof dispatcher.getAgentStateSnapshot === 'function') {
-      this.agentStateProvider = dispatcher as AgentStateProvider;
-      this.recoveryHandler = new RecoveryHandler(
-        this.queue,
-        (agentId) => this.agentStateProvider?.getAgentStateSnapshot(agentId) || null,
-        this.watchDir
-      );
-      log.debug('consumer', 'Recovery handler initialized');
     }
 
     // Store dispatcher as mesh state manager for clearing state on completion
@@ -393,44 +368,21 @@ ${body}
       const targetMesh = toAgent.split('/')[0];
 
       // =================================================================
-      // RECOVERY CHANNEL INTERCEPTION
-      // Intercept messages to system/* targets and provide state guidance.
-      // Supports deliberate channels (system/help, system/stuck) and
-      // accidental writes (system/routing-validator, etc.)
-      // Skip: core/* (no FSM), system/* (avoid loops), missing from field
+      // DROP MESSAGES TO system/*
+      // Agents routing to system/* is a mistake - drop silently
       // =================================================================
       const fromAgent = parsed.frontmatter.from;
-      const skipRecovery = !fromAgent ||
-                           fromAgent.startsWith('core/') ||
-                           fromAgent.startsWith('system/');
-      if (toAgent.startsWith('system/') && this.recoveryHandler && !skipRecovery) {
-        const msgId = parsed.frontmatter['msg-id'] || `recovery-${Date.now()}`;
-
-        log.info('consumer', 'Recovery request intercepted', {
+      if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/')) {
+        log.warn('consumer', 'Dropped message to system/* (routing mistake)', {
           from: fromAgent,
-          target: toAgent,
-          msgId,
+          to: toAgent,
           file: filename,
         });
 
-        const result = this.recoveryHandler.handleRecoveryRequest({
-          agentId: fromAgent,
-          targetChannel: toAgent,
-          msgId,
-          body: parsed.body,
-        });
-
-        log.info('consumer', `Recovery request handled: ${result}`, {
-          from: fromAgent,
-          target: toAgent,
-        });
-
-        // Delete the original message file (it was handled)
         try {
           fs.unlinkSync(filepath);
-          log.debug('consumer', `Deleted handled recovery message`, { file: filename });
         } catch (unlinkErr) {
-          log.warn('consumer', `Failed to delete recovery message file`, {
+          log.warn('consumer', `Failed to delete dropped message`, {
             file: filename,
             error: (unlinkErr as Error).message,
           });
@@ -972,7 +924,25 @@ ${body}
       const hasAnyRules = Object.keys(agentRouting).length > 0;
       if (!hasAnyRules) return true;
 
-      // Agent has rules but not for this type - track violation
+      // Check if target agent exists (soft violation)
+      const [targetMesh] = toAgent.split('/');
+      const meshAgentSet = this.meshAgents.get(targetMesh);
+      const targetExists = meshAgentSet?.has(targetAgentName) ?? false;
+
+      if (targetExists) {
+        // Soft violation: no rules for this message type, but target exists
+        // Clear violation tracker - this is a config gap, not agent error
+        this.routingViolationTracker.delete(fromAgent);
+        log.warn('consumer', 'Routing violation (soft): no rules for message type, but target exists', {
+          from: fromAgent,
+          to: toAgent,
+          type: messageType,
+          definedTypes: Object.keys(agentRouting),
+        });
+        return true; // Allow through
+      }
+
+      // Hard violation: target doesn't exist at all
       await this.trackRoutingViolation(fromAgent, toAgent, messageType, meshConfig, filepath);
       return false;
     }
@@ -980,7 +950,25 @@ ${body}
     // Check if target is in the allowed destinations
     const routingRule = typeRouting[targetAgentName];
     if (!routingRule) {
-      // Invalid target - track violation
+      // Check if target agent exists in mesh (soft violation check)
+      const [targetMesh] = toAgent.split('/');
+      const meshAgentSet = this.meshAgents.get(targetMesh);
+      const targetExists = meshAgentSet?.has(targetAgentName) ?? false;
+
+      if (targetExists) {
+        // Soft violation: agent exists but not in routing table
+        // Clear violation tracker - this is a config gap, not agent error
+        this.routingViolationTracker.delete(fromAgent);
+        log.warn('consumer', 'Routing violation (soft): target exists, allowing message', {
+          from: fromAgent,
+          to: toAgent,
+          type: messageType,
+          expectedTargets: Object.keys(typeRouting || {}),
+        });
+        return true; // Allow through
+      }
+
+      // Hard violation: target doesn't exist at all
       await this.trackRoutingViolation(fromAgent, toAgent, messageType, meshConfig, filepath);
       return false;
     }
@@ -1099,39 +1087,27 @@ ${body}
       }
     }
 
-    const timestamp = Date.now();
-    const msgId = `routing-feedback-${timestamp}`;
-    const filename = `${timestamp}-routing-feedback-system--${meshName}-${agentName}-${msgId}.md`;
-    const filepath = path.join(this.watchDir, filename);
+    const feedbackContent = `# Routing Violation
 
-    const feedbackContent = `---
-to: ${fromAgent}
-from: system/routing-validator
-type: routing-feedback
-violation-count: 1
-timestamp: ${new Date().toISOString()}
----
+\`${attemptedTarget}\` is not a valid target for \`${messageType}\` messages.
 
-# Routing Violation
-
-Your message to \`${attemptedTarget}\` with type \`${messageType}\` has no routing rule.
-
-## Valid targets for ${agentName} → ${messageType}:
-
+**Valid targets for ${messageType}:**
 ${targetsFormatted}
 
-## Current routing configuration for ${agentName}:
-${allRoutingFormatted || '_No routing rules defined_'}
+**All routes for ${agentName}:**
+${allRoutingFormatted || '_None defined_'}`;
 
-Please select a valid target and retry.
-`;
+    // Emit event for dispatcher to inject directly into agent session
+    this.emit('system-feedback', {
+      agentId: fromAgent,
+      feedback: feedbackContent,
+      reason: 'routing-violation',
+    });
 
-    fs.writeFileSync(filepath, feedbackContent);
-    log.info('consumer', 'Wrote routing feedback to agent', {
+    log.info('consumer', 'Emitted routing feedback for direct injection', {
       fromAgent,
       attemptedTarget,
       messageType,
-      msgId,
     });
   }
 

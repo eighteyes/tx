@@ -45,7 +45,6 @@ agents:
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)
   # ==========================================
-
   - name: dramaturg
     model: sonnet
     prompt: dramaturg/prompt.md
@@ -151,11 +150,23 @@ agents:
     # Creative: Scene opening physical grounding
     # Body before thought
 
+  - name: lint-factoids
+    model: haiku
+    prompt: linters/lint-factoids.md
+    # Creative: Real-world trivia repetition detection
+    # Prevents same facts appearing twice in campaign
+
+  - name: lint-temporal
+    model: haiku
+    prompt: linters/lint-temporal.md
+    # Creative: Temporal continuity detection
+    # Duration/time contradictions across turns
+
 entry_point: entry
 completion_agent: compress-coord
 
 # Session persistence (coordinators share state via session.yaml)
-continuation: true
+# continuation: true
 
 # ==========================================
 # ROUTING - Phase coordinator architecture
@@ -281,6 +292,8 @@ routing:
       lint-litotes: "Check litotes"
       lint-metaphor: "Check metaphor"
       lint-body-first: "Check body-first"
+      lint-factoids: "Check factoid reuse"
+      lint-temporal: "Check temporal continuity"
     ask-response:
       editor: "Violations aggregated"
 
@@ -313,6 +326,14 @@ routing:
       lint-coordinator: "Check complete"
 
   lint-body-first:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-factoids:
+    ask-response:
+      lint-coordinator: "Check complete"
+
+  lint-temporal:
     ask-response:
       lint-coordinator: "Check complete"
 

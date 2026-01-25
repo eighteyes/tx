@@ -33,7 +33,7 @@ import {
 } from '../quality/index.ts';
 import type { ParityReminderEvent, MeshCompleteEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
-import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent} from '../mesh/index.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
@@ -238,7 +238,8 @@ type ResumeReason =
   | 'ask-response'
   | 'parity-reminder'
   | 'quality-iteration'
-  | 'incoming-ask-reminder';
+  | 'incoming-ask-reminder'
+  | 'system-feedback';
 
 /**
  * Options for unified session resume
@@ -282,6 +283,15 @@ interface SpawnWorkerOptions {
 }
 
 /**
+ * System feedback event for direct injection into agent session
+ */
+interface SystemFeedbackEvent {
+  agentId: string;
+  feedback: string;
+  reason: string;
+}
+
+/**
  * Suspended session state (worker killed, awaiting resume)
  */
 interface SuspendedSession {
@@ -312,6 +322,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private boundMeshCompleteHandler: ((event: MeshCompleteEvent) => void) | null = null;
+  private boundSystemFeedbackHandler: ((event: SystemFeedbackEvent) => void) | null = null;
   private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
@@ -730,6 +741,12 @@ export class WorkerDispatcher extends EventEmitter {
         this.handleMeshComplete(event);
       };
       consumer.on('mesh-complete', this.boundMeshCompleteHandler);
+
+      // Subscribe to system-feedback events for direct injection
+      this.boundSystemFeedbackHandler = (event: SystemFeedbackEvent) => {
+        this.handleSystemFeedback(event);
+      };
+      consumer.on('system-feedback', this.boundSystemFeedbackHandler);
     }
 
     // Start stuck agent detector
@@ -1905,6 +1922,14 @@ The system will resume your session when the human responds.`;
       consumer.off('parity-reminder', this.boundParityReminderHandler);
       this.boundParityReminderHandler = null;
     }
+    if (consumer && this.boundMeshCompleteHandler) {
+      consumer.off('mesh-complete', this.boundMeshCompleteHandler);
+      this.boundMeshCompleteHandler = null;
+    }
+    if (consumer && this.boundSystemFeedbackHandler) {
+      consumer.off('system-feedback', this.boundSystemFeedbackHandler);
+      this.boundSystemFeedbackHandler = null;
+    }
 
     // Stop stuck agent detector
     this.stuckDetector.stop();
@@ -1918,6 +1943,14 @@ The system will resume your session when the human responds.`;
     this.activeWorkers.clear();
     this.askResponseBuffer.clear();
     this.writeWorkerState();
+
+    // Clean shutdown: clear suspended sessions so they don't restore on next start
+    // Crash recovery still works - only clean shutdown clears
+    const clearedSessions = this.queue.clearAllSuspendedSessions();
+    this.suspendedSessions.clear();
+    if (clearedSessions > 0) {
+      log.info('dispatcher', 'Clean shutdown: cleared suspended sessions', { count: clearedSessions });
+    }
 
     this.emit('stop');
   }
@@ -3207,6 +3240,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         this.emit('fsm:script-run', event);
       });
 
+      // Handle FSM feedback - inject directly into agent instead of writing file
+      fsm.on('fsm:feedback', (event: FSMFeedbackEvent) => {
+        if (!event.escalated) {
+          this.handleFSMFeedback(event);
+        }
+      });
+
       // Initialize the FSM
       fsm.initialize().catch(error => {
         log.error('mesh-fsm', 'Failed to initialize FSM (JIT)', {
@@ -3323,6 +3363,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             });
           }
           this.emit('fsm:script-run', event);
+        });
+
+        // Handle FSM feedback - inject directly into agent instead of writing file
+        fsm.on('fsm:feedback', (event: FSMFeedbackEvent) => {
+          if (!event.escalated) {
+            this.handleFSMFeedback(event);
+          }
         });
 
         // Initialize the FSM (loads or creates state)
@@ -3768,6 +3815,124 @@ ${output}
       sessionKey,
       workerCount: session.workerCount,
       totalCost: session.totalCostUsd,
+    });
+  }
+
+  /**
+   * Handle system feedback - inject directly into agent's running session
+   * Avoids writing message files that agents might try to respond to
+   */
+  private async handleSystemFeedback(event: SystemFeedbackEvent): Promise<void> {
+    const { agentId, feedback, reason } = event;
+
+    // Find active worker for this agent
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers || workers.length === 0) {
+      log.warn('dispatcher', 'System feedback: no active worker to inject into', {
+        agentId,
+        reason,
+      });
+      return;
+    }
+
+    // Get the most recent worker
+    const activeWorker = workers[workers.length - 1];
+    const sessionId = activeWorker.runner.getSessionId();
+
+    if (!sessionId) {
+      log.warn('dispatcher', 'System feedback: worker has no session ID', {
+        agentId,
+        reason,
+      });
+      return;
+    }
+
+    log.info('dispatcher', 'Injecting system feedback directly into agent session', {
+      agentId,
+      reason,
+      sessionId: sessionId.slice(0, 8),
+    });
+
+    // Inject as user message via session resume
+    await this.resumeSession({
+      reason: 'system-feedback',
+      agentId,
+      sessionId,
+      prompt: feedback,
+      runner: activeWorker.runner,
+      interrupt: true,
+      metadata: { systemFeedback: true, feedbackReason: reason },
+    });
+  }
+
+  /**
+   * Handle FSM feedback - inject directly into agent session
+   * Called when FSM violation detected (first violation only, escalations still go to core)
+   */
+  private async handleFSMFeedback(event: FSMFeedbackEvent): Promise<void> {
+    const { agentId, currentState, attemptedTarget, allowedTargets, violationType } = event;
+
+    const allowedTargetsFormatted = allowedTargets.length > 0
+      ? allowedTargets.map(t => `- \`${event.meshName}/${t}\``).join('\n')
+      : '- (no specific agents configured for this state)';
+
+    const reason = violationType === 'no-route'
+      ? 'No exit route defined for this transition.'
+      : `\`${attemptedTarget}\` not allowed from state \`${currentState}\`.`;
+
+    const feedback = `# FSM Violation
+
+${reason}
+
+**Current state:** \`${currentState}\`
+**Attempted:** \`${attemptedTarget}\`
+
+**Allowed targets:**
+${allowedTargetsFormatted}
+
+Routes to \`core/core\` or other meshes are always permitted.`;
+
+    // Emit system-feedback event for direct injection
+    this.emit('system-feedback-internal', {
+      agentId,
+      feedback,
+      reason: 'fsm-violation',
+    });
+
+    // Find active worker and inject directly
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers || workers.length === 0) {
+      log.warn('dispatcher', 'FSM feedback: no active worker to inject into', {
+        agentId,
+        currentState,
+        attemptedTarget,
+      });
+      return;
+    }
+
+    const activeWorker = workers[workers.length - 1];
+    const sessionId = activeWorker.runner.getSessionId();
+
+    if (!sessionId) {
+      log.warn('dispatcher', 'FSM feedback: worker has no session ID', { agentId });
+      return;
+    }
+
+    log.info('dispatcher', 'Injecting FSM feedback directly into agent session', {
+      agentId,
+      currentState,
+      attemptedTarget,
+      sessionId: sessionId.slice(0, 8),
+    });
+
+    await this.resumeSession({
+      reason: 'system-feedback',
+      agentId,
+      sessionId,
+      prompt: feedback,
+      runner: activeWorker.runner,
+      interrupt: true,
+      metadata: { fsmFeedback: true, currentState, attemptedTarget },
     });
   }
 

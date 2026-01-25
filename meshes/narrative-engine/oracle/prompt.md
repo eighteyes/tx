@@ -168,7 +168,7 @@ Check in priority order (higher = harder constraint):
 **If no violations:**
 ```yaml
 ---
-to: narrative-engine/coordinator
+to: narrative-engine/validate-coord
 from: narrative-engine/oracle
 type: ask-response
 msg-id: turn{N}-validated
@@ -179,7 +179,7 @@ approved: true
 **If violations found:**
 ```yaml
 ---
-to: narrative-engine/coordinator
+to: narrative-engine/validate-coord
 from: narrative-engine/oracle
 type: ask-response
 msg-id: turn{N}-validated

@@ -1385,90 +1385,14 @@ export class MeshFSM extends EventEmitter {
     this.emit('fsm:feedback', feedbackEvent);
 
     if (violation.count === 1) {
-      // First violation: Write feedback message to agent
-      await this.writeFeedbackMessage(agentId, violation.lastViolation);
+      // First violation: Dispatcher handles feedback injection via fsm:feedback event
+      // No file write needed - dispatcher injects directly into agent session
       return true; // Feedback sent, agent can self-correct
     } else {
       // Second+ violation: Escalate to core
       await this.writeEscalationMessage(agentId, violation.lastViolation);
       return false; // Escalated, agent needs human help
     }
-  }
-
-  /**
-   * Write a feedback message to help the agent self-correct
-   */
-  private async writeFeedbackMessage(
-    agentId: string,
-    violation: {
-      attemptedTarget: string;
-      currentState: string;
-      allowedTargets: string[];
-      violationType: 'no-route' | 'invalid-agent';
-      timestamp: number;
-    }
-  ): Promise<void> {
-    // Ensure msgs directory exists
-    if (!fs.existsSync(this.msgsDir)) {
-      fs.mkdirSync(this.msgsDir, { recursive: true });
-    }
-
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `fsm-feedback-${Date.now()}`;
-    const toSafe = agentId.replace('/', '-');
-    const filename = `${timestamp}-fsm-feedback-system-fsm-validator--${toSafe}-${msgId}.md`;
-    const filepath = path.join(this.msgsDir, filename);
-
-    const violationDescription = violation.violationType === 'no-route'
-      ? 'No valid exit route was found for your message.'
-      : `The agent \`${violation.attemptedTarget}\` is not allowed in the target state.`;
-
-    const allowedTargetsFormatted = violation.allowedTargets.length > 0
-      ? violation.allowedTargets.map(t => `- \`${this.meshName}/${t}\``).join('\n')
-      : '- (no specific agents configured for this state)';
-
-    const validStates = this.getValidStates();
-
-    const content = `---
-to: ${agentId}
-from: system/fsm-validator
-type: fsm-feedback
-violation-count: 1
-timestamp: ${new Date().toISOString()}
----
-
-# FSM State Violation
-
-Your message violates FSM routing rules. ${violationDescription}
-
-## Current State
-\`${violation.currentState}\`
-
-## Attempted Target
-\`${violation.attemptedTarget}\`
-
-## Allowed Agents in Current State
-${allowedTargetsFormatted}
-
-## Valid States
-${validStates.map(s => `- \`${s}\``).join('\n')}
-
-## How to Fix
-
-1. **Check your message routing**: Ensure the \`to:\` field targets an agent allowed in the FSM's current or next state.
-2. **Review state transitions**: The FSM controls which states can be transitioned to based on exit conditions.
-3. **Route outside mesh if needed**: Messages to \`core/core\` or other meshes are always allowed.
-
-Please correct your routing and resend the message.
-`;
-
-    fs.writeFileSync(filepath, content);
-    log.info('mesh-fsm', 'FSM feedback message written', {
-      meshName: this.meshName,
-      agentId,
-      filepath,
-      violationType: violation.violationType,
-    });
   }
 
   /**

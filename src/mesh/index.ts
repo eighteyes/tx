@@ -19,6 +19,7 @@ export {
   type FSMTransitionEvent,
   type FSMGateEvent,
   type FSMScriptEvent,
+  type FSMFeedbackEvent,
 } from './fsm.ts';
 
 export type {

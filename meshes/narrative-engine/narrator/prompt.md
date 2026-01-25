@@ -60,7 +60,7 @@ When COORDINATOR sends a game-maker request (no existing game):
 7. **Send ask-response to COORDINATOR** (REQUIRED - coordinator is waiting!):
    ```yaml
    ---
-   to: narrative-engine/coordinator
+   to: narrative-engine/game-coord
    from: narrative-engine/narrator
    type: ask-response
    msg-id: game-creation-complete
@@ -296,10 +296,10 @@ If NO (basic action, dialogue-only, you already have the info):
 
 ### Phase 9: Return to Coordinator
 
-28. Send ask-response to COORDINATOR with verdict:
+28. Send ask-response to RENDER-COORD with verdict:
     ```yaml
     ---
-    to: narrative-engine/coordinator
+    to: narrative-engine/render-coord
     from: narrative-engine/narrator
     type: ask-response
     msg-id: turn{N}-rendered
@@ -653,11 +653,11 @@ Prose revised.
 
 When you receive an `ask-response` from `narrative-engine/editor` with `verdict`:
 1. Rename `prose-draft.md` → `prose.md`
-2. **Send ask-response to COORDINATOR** — cycle is complete
+2. **Send ask-response to VALIDATE-COORD** — cycle is complete
 
 ```yaml
 ---
-to: narrative-engine/coordinator
+to: narrative-engine/validate-coord
 from: narrative-engine/narrator
 type: ask-response
 msg-id: turn{N}-rendered
@@ -819,13 +819,13 @@ msg-id: turn{N}-revised-{iteration}
 Prose revised.
 ```
 
-### To COORDINATOR (lint/edit cycle complete)
+### To VALIDATE-COORD (lint/edit cycle complete)
 
 **Only send this AFTER editor returns final verdict.**
 
 ```yaml
 ---
-to: narrative-engine/coordinator
+to: narrative-engine/validate-coord
 from: narrative-engine/narrator
 type: ask-response
 msg-id: turn{N}-rendered

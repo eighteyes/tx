@@ -249,74 +249,38 @@ export class DeadlockDetector extends EventEmitter {
 
     const oldestAsk = pendingAsks[0];
 
-    // Write synthetic ask-response with error
-    this.writeSyntheticResponse(oldestAsk, cycle);
+    // Build synthetic ask-response content
+    const cycleStr = cycle.agents.join(' → ') + ' → ' + cycle.agents[0];
+    const syntheticResponse = `## DEADLOCK DETECTED
+
+Your ask to **${oldestAsk.to_agent}** was part of a circular dependency.
+
+**Cycle**: ${cycleStr}
+
+This ask has been automatically resolved to break the deadlock.
+
+**What to Do**:
+1. Review your workflow design to prevent circular dependencies
+2. Consider using fire-and-forget patterns for auxiliary requests
+
+Your task should now continue. Handle this as an error response.`;
 
     // Clear the pending ask
     if (oldestAsk.id) {
       this.queue.clearPendingAsk(oldestAsk.id);
     }
 
+    // Emit event with full response data for direct injection
     this.emit('deadlock:broken', {
       cycle,
       brokenAsk: oldestAsk,
+      syntheticResponse: {
+        from: 'system/deadlock-detector',
+        to: oldestAsk.from_agent,
+        content: syntheticResponse,
+        headline: 'Deadlock detected and broken',
+      },
     });
-  }
-
-  /**
-   * Write a synthetic ask-response to break the cycle
-   */
-  private writeSyntheticResponse(ask: PendingAsk, cycle: CycleInfo): void {
-    const timestamp = Date.now();
-    const msgId = `deadlock-break-${timestamp}`;
-    const cycleStr = cycle.agents.join(' → ') + ' → ' + cycle.agents[0];
-
-    const content = `---
-to: ${ask.from_agent}
-from: system/deadlock-detector
-type: ask-response
-msg-id: ${msgId}
-headline: Deadlock detected and broken
-timestamp: ${new Date().toISOString()}
-status: error
----
-
-## DEADLOCK DETECTED
-
-Your ask to **${ask.to_agent}** was part of a circular dependency.
-
-**Cycle**: ${cycleStr}
-
-This ask has been automatically resolved to break the deadlock.
-
-**What Happened**:
-- You sent an ask to ${ask.to_agent}
-- That agent (directly or indirectly) sent an ask back to you
-- This created a circular wait that would never resolve
-
-**What to Do**:
-1. Review your workflow design to prevent circular dependencies
-2. Consider using fire-and-forget patterns for auxiliary requests
-3. If you need bidirectional communication, use separate task chains
-
-Your task should now continue. Handle this as an error response.
-`;
-
-    const filename = `${timestamp}-ask-response-system--${ask.from_agent.replace('/', '-')}-${msgId}.md`;
-    const filepath = path.join(this.msgsDir, filename);
-
-    try {
-      fs.writeFileSync(filepath, content);
-      log.info('deadlock-detector', 'Wrote synthetic response', {
-        filepath,
-        to: ask.from_agent,
-        cycle: cycle.agents,
-      });
-    } catch (error) {
-      log.error('deadlock-detector', 'Failed to write synthetic response', {
-        error: (error as Error).message,
-      });
-    }
   }
 
   /**

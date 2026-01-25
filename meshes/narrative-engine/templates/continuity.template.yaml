@@ -186,3 +186,24 @@ used_factoids: []
   #   context: "food_preservation"
   #   turn: 7
   #   source: "Character discusses ancient honey in storage"
+
+# Temporal statements (durations, elapsed time, travel times)
+# LINT-TEMPORAL prevents contradictions on time-based claims
+# Format: statement + category + entities for contradiction detection
+temporal_statements: []
+  # - statement: "The journey took three weeks"
+  #   category: travel_duration
+  #   entities: [caravan, mountains]
+  #   established: 12
+  # - statement: "Two days since the attack"
+  #   category: elapsed_time
+  #   entities: [village]
+  #   established: 18
+  # - statement: "They arrived at dawn"
+  #   category: time_of_day
+  #   entities: [party, inn]
+  #   established: 22
+  # - statement: "Three weeks without rain"
+  #   category: seasonal
+  #   entities: [drought]
+  #   established: 5

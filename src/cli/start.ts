@@ -373,6 +373,16 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       cycle: data.cycle.agents,
       brokenMsgId: data.brokenAsk.msg_id,
     });
+
+    // Route synthetic response to dispatcher for direct injection
+    if (data.syntheticResponse) {
+      consumer.emit('ask-response-message', {
+        from: data.syntheticResponse.from,
+        to: data.syntheticResponse.to,
+        content: data.syntheticResponse.content,
+        headline: data.syntheticResponse.headline,
+      });
+    }
   });
   deadlockDetector.on('deadlock:escalated', (cycle) => {
     log.error('self-healing', 'Deadlock escalated to human', {

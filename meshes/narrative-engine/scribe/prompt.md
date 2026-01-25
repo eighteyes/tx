@@ -577,7 +577,7 @@ entities:
 
 ```yaml
 ---
-to: narrative-engine/coordinator
+to: narrative-engine/compress-coord
 from: narrative-engine/scribe
 type: ask-response
 msg-id: turn{N}-compressed

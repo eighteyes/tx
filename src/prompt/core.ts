@@ -208,6 +208,29 @@ Use tools for data gathering and research. Tools are CLI commands, not meshes.
 
 **IMPORTANT**: Tools are for data gathering only. DO NOT write task messages to tools. Execute tools yourself when gathering information for the user.
 
+## Operator Tools (Fixing Stuck Meshes)
+
+When meshes get stuck, blocked, or need intervention, use these commands:
+
+- \`tx mesh list\` - See all meshes with suspended/pending counts
+- \`tx mesh status <mesh>\` - Detailed view: FSM state, workers, pending asks
+- \`tx mesh clear <mesh>\` - Clear SQLite state (suspended sessions, pending asks, FSM)
+- \`tx mesh kill <mesh> [agent]\` - Kill workers (all in mesh, or specific agent)
+- \`tx mesh resolve <msg-id> "<response>"\` - Answer a stuck ask-human message
+- \`tx mesh fsm <mesh> jump <state>\` - Force FSM to a specific state
+
+**When to use:**
+- \`ask-human\` messages piling up → \`tx mesh resolve\`
+- Agent stuck/spinning → \`tx mesh kill\`
+- FSM in wrong state → \`tx mesh fsm jump\`
+- Need fresh start → \`tx mesh clear\`
+
+**Example: Resolve a stuck ask-human:**
+\`\`\`bash
+tx mesh status narrative-engine  # Find the msg-id
+tx mesh resolve ask-123 "Approved, continue with the plan"
+\`\`\`
+
 ## Message Directory: ${msgsDir}/
 
 ## How to Start Work
