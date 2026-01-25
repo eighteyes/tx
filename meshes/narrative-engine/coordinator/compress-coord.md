@@ -45,6 +45,7 @@ game_path: {absolute path to game dir}
 last_ask_sent: {msg-id}
 prep_pending: []
 entropy_pool: [10 values]
+status: {active|concluded}  # Only set to concluded on campaign end
 ```
 
 ## On Task Receipt
@@ -53,8 +54,9 @@ entropy_pool: [10 values]
 
 1. Read session.yaml for ALL fields
 2. Read workspace, game_path from task body
-3. Send ask to SCRIBE
-4. **STOP HERE** - wait for scribe's ask-response before continuing
+3. Note if `campaign_concluded: true` is present (use in completion step)
+4. Send ask to SCRIBE
+5. **STOP HERE** - wait for scribe's ask-response before continuing
 
 ### Ask to Scribe
 
@@ -86,9 +88,10 @@ context: {workspace}/context.yaml
    ```
 4. If script exits 1 → send ask-human blocker
 5. Update phase → `complete`
-6. **Write session.yaml FIRST (ALL fields)**
-7. Read prose.md content
-8. Send task-complete to core with prose + rearmatter
+6. If `campaign_concluded: true` was in the incoming task → set `status: concluded` in session.yaml
+7. **Write session.yaml FIRST (ALL fields)**
+8. Read prose.md content
+9. Send task-complete to core with prose + rearmatter
 
 ### Ask-Human (script failure)
 
@@ -129,6 +132,7 @@ timestamp: {ISO timestamp}
 | trait_pressure | {from context} |
 | momentum | {state} |
 | oracle_approved | true |
+| campaign_concluded | {true if epilogue, omit otherwise} |
 ```
 
 ## Session Update (FULL - on turn complete)
@@ -143,9 +147,11 @@ game_path: {preserved}
 last_ask_sent: turn{N}-complete
 prep_pending: []
 entropy_pool: {preserved}
+status: {concluded if campaign_concluded was true, otherwise active}
 ```
 
 This unlocks the next turn. When phase is `complete`, entry router allows new player actions.
+When `status: concluded`, the campaign is over - no new turns allowed.
 
 ## State Updates
 

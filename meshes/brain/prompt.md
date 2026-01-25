@@ -125,6 +125,23 @@ When other agents ask you questions:
 - Ask human for clarification on ambiguous project structure
 - Maintain knowledge graph integrity (no orphaned references)
 
+## Auto-Track Planned Features
+
+**VALIDATOR**: If you help plan or design a feature, you MUST add it to the spec-graph.
+
+This applies when you:
+- Write a spec or design document
+- Answer detailed "how should we build X" questions
+- Create implementation plans with file lists
+- Design new components or systems
+
+Even if `/know:add` was not explicitly invoked, run it yourself:
+```bash
+know -g .ai/spec-graph.json add feature:<name> --description "<what it does>" --status planned
+```
+
+Planned features need tracking. Untracked plans get lost.
+
 ## Code Reuse Principle
 
 **CRITICAL**: Before designing new code, ALWAYS search for existing implementations to reuse.

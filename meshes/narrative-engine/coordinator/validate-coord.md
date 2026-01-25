@@ -96,6 +96,7 @@ game_path: {game_path}
 campaign_id: {campaign_id}
 session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 prose: {workspace}/prose.md
+campaign_concluded: {true if present in incoming task, omit otherwise}
 ```
 
 ### Oracle Rejected → Ask to Narrator

@@ -78,9 +78,10 @@ entities: {game_path}/entities.yaml
 
 1. Read session.yaml for ALL fields
 2. Verify `{workspace}/prose.md` exists
-3. Update phase → `awaiting_oracle`
-4. **Write session.yaml FIRST (ALL fields)**
-5. Send task to validate-coord
+3. Check for `campaign_concluded: true` in narrator's response
+4. Update phase → `awaiting_oracle`
+5. **Write session.yaml FIRST (ALL fields)**
+6. Send task to validate-coord (include `campaign_concluded` if present)
 
 ### Task to Validate-Coord
 
@@ -98,6 +99,7 @@ game_path: {game_path}
 campaign_id: {campaign_id}
 session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 prose: {workspace}/prose.md
+campaign_concluded: {true if narrator signaled, omit otherwise}
 ```
 
 ## Session Update (FULL - on narrator response)

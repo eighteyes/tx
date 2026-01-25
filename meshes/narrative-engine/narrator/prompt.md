@@ -900,9 +900,9 @@ Player signals ending by responding to the off-ramp option (e.g., "I let it end 
 ```
 
 **After epilogue:**
-- Mark campaign as `status: concluded` in session.yaml
+- Include `campaign_concluded: true` in ask-response to coordinator
 - No "You could:" options — the story is over
-- COORDINATOR handles archival
+- COORDINATOR updates session.yaml and handles archival
 
 ## Quality Standards
 
