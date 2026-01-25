@@ -23,6 +23,7 @@ export interface StartOptions {
   serve?: boolean; // start HTTP server alongside core agent
   servePort?: number; // server port (default: 9898)
   serveHost?: string; // server host (default: 0.0.0.0)
+  debug?: boolean; // enable forensics and verbose logging for all meshes
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -232,6 +233,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     lowMode: options?.low,
     ultraLowMode: options?.ultraLow,
     sessionStore,  // Pass session store for session awareness
+    debug: options?.debug,  // Enable forensics and verbose logging
   }, queue);
 
   // Wire up parity gate: consumer subscribes to dispatcher for session-start events

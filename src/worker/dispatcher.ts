@@ -154,6 +154,8 @@ export interface DispatcherConfig {
   ultraLowMode?: boolean;
   /** Pre-initialized session store (from start.ts). If provided, dispatcher will record sessions. */
   sessionStore?: SessionStore;
+  /** Enable debug mode: adds forensics postHook to all meshes */
+  debug?: boolean;
 }
 
 /**
@@ -2035,7 +2037,7 @@ The system will resume your session when the human responds.`;
         hasLifecycle: meshConfig?.lifecycle !== undefined,
       });
 
-      const lifecycle = meshConfig ? resolveLifecycle(meshConfig) : undefined;
+      const lifecycle = meshConfig ? resolveLifecycle(meshConfig, this.config.debug) : undefined;
 
       log.info('dispatcher', 'Lifecycle resolved', {
         agentId,

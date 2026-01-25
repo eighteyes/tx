@@ -170,6 +170,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   turn_workspace: { type: 'object' },
   // Playbook notes for design rationale and documentation
   playbook_notes: { type: 'string' },
+  // Debug mode: enables forensics postHook for mesh execution analysis
+  debug: { type: 'boolean' },
 };
 
 /**

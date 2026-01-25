@@ -20,6 +20,7 @@ export interface LifecycleResolvableConfig {
     onFail?: 'stop' | 'retry' | 'loop' | 'halt';
     maxIterations?: number;
   };
+  debug?: boolean;  // Enable forensics analysis
 }
 
 /**
@@ -34,14 +35,26 @@ export interface ResolvedLifecycle {
  * Resolve lifecycle hooks from config
  * Supports shorthands that expand to lifecycle hooks:
  * - worktree: true → worktree:create + commit:auto (cleanup via /know:done)
+ * - debug: true → forensics:analyze
  * Explicit lifecycle overrides all shorthands
+ *
+ * @param config - Mesh config with lifecycle-relevant fields
+ * @param globalDebug - Global debug flag from CLI (--debug)
  */
-export function resolveLifecycle(config: LifecycleResolvableConfig): ResolvedLifecycle | undefined {
+export function resolveLifecycle(
+  config: LifecycleResolvableConfig,
+  globalDebug?: boolean
+): ResolvedLifecycle | undefined {
   // Explicit lifecycle takes precedence
   if (config.lifecycle) {
+    // If debug mode is enabled globally but not in explicit lifecycle, append forensics
+    const post = [...(config.lifecycle.post || [])];
+    if ((config.debug || globalDebug) && !post.includes('forensics:analyze')) {
+      post.push('forensics:analyze');
+    }
     return {
       pre: config.lifecycle.pre || [],
-      post: config.lifecycle.post || [],
+      post,
     };
   }
 
@@ -54,6 +67,12 @@ export function resolveLifecycle(config: LifecycleResolvableConfig): ResolvedLif
   if (config.worktree) {
     pre.unshift('worktree:create');  // worktree first
     post.push('commit:auto');        // commit changes, but KEEP worktree for review
+  }
+
+  // debug: true shorthand → forensics:analyze
+  // Also enabled by global --debug flag
+  if (config.debug || globalDebug) {
+    post.push('forensics:analyze');
   }
 
   // Only return if we have any hooks

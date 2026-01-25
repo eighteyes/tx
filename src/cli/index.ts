@@ -21,6 +21,7 @@ import { deploy } from './deploy.ts';
 import { session } from './session.ts';
 import { recover } from './recover.ts';
 import { mesh } from './mesh.ts';
+import { forensics } from './forensics.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -115,6 +116,7 @@ Commands:
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
   tx validate-mesh  Validate mesh configuration
+  tx forensics      Analyze mesh execution sessions
   tx login          Authenticate with tx-server
   tx logout         Clear stored credentials
   tx deploy         Deploy mesh to Cloud Run
@@ -157,7 +159,8 @@ Options:
   -c, --continue     Resume previous Claude session
   --model <model>    Model to use (e.g., opus, sonnet)
   --low              Use cost-effective models (replaces opus with sonnet)
-  --ultra-low        Use ultra low cost mode (forces haiku for everything)`,
+  --ultra-low        Use ultra low cost mode (forces haiku for everything)
+  --debug            Enable forensics analysis for all meshes`,
 
   msg: `tx msg - View messages
 
@@ -445,6 +448,37 @@ Examples:
 Notes:
   - If workers are running, use 'tx mesh clear --force' or stop workers first
   - 'clear' removes suspended sessions, pending asks, and FSM state from SQLite`,
+
+  forensics: `tx forensics - Analyze mesh execution sessions
+
+Usage: tx forensics [mesh] [options]
+
+Arguments:
+  mesh              Mesh name to analyze (default: most recent sessions)
+
+Options:
+  -s, --session <id>   Specific session ID to analyze
+  -a, --agent <name>   Specific agent to analyze
+  -n, --last <n>       Analyze last N sessions (default: 1)
+  -o, --output <path>  Output path (default: .ai/tx/forensics/)
+  --json               Output as JSON
+
+Examples:
+  tx forensics                    # Analyze most recent session
+  tx forensics dev                # Analyze most recent dev mesh session
+  tx forensics --last 5           # Analyze last 5 sessions
+  tx forensics -a dev/implementer # Analyze specific agent
+  tx forensics --json             # Output as JSON
+
+Analysis Categories:
+  - Routing failures: violations, dead ends, wrong targets
+  - Stale state: old asks never answered, session sync issues
+  - Off-script agents: unexpected message types, hallucinated targets
+  - Success patterns: effective handoffs, correct state management
+
+Output:
+  Reports are written to .ai/tx/forensics/ in both JSON and Markdown formats.
+  CLI output includes a formatted summary with issues and recommendations.`,
 };
 
 function showHelp(cmd: string): void {
@@ -466,6 +500,7 @@ async function main() {
         serve: Boolean(flags.serve),
         servePort: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
         serveHost: flags.H as string || flags.host as string,
+        debug: Boolean(flags.debug),
       });
       break;
 
@@ -647,6 +682,18 @@ async function main() {
     case 'mesh':
       if (wantsHelp) { showHelp('mesh'); break; }
       await mesh(args);
+      break;
+
+    case 'forensics':
+      if (wantsHelp) { showHelp('forensics'); break; }
+      const forensicsMesh = args.filter(a => !a.startsWith('-'))[0];
+      await forensics(forensicsMesh, {
+        session: flags.s as string || flags.session as string,
+        agent: flags.a as string || flags.agent as string,
+        last: flags.n as string || flags.last as string,
+        output: flags.o as string || flags.output as string,
+        json: Boolean(flags.json),
+      });
       break;
 
     default:
