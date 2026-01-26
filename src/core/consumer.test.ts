@@ -50,6 +50,20 @@ function createMockQueue(): MessageQueue {
       }
       return counts;
     },
+    findPendingAsk: (respondingAgent: string, targetAgent: string, msgId?: string) => {
+      // Read-only lookup - same logic as resolvePendingAsk but no deletion
+      if (msgId) {
+        const byMsgId = pendingAsks.find(a => a.from_agent === targetAgent && a.msg_id === msgId);
+        if (byMsgId) {
+          return { found: true, matchType: 'msg-id' as const, ask: byMsgId };
+        }
+      }
+      const byAgent = pendingAsks.find(a => a.from_agent === targetAgent && a.to_agent === respondingAgent);
+      if (byAgent) {
+        return { found: true, matchType: 'agent' as const, ask: byAgent };
+      }
+      return { found: false, matchType: 'none' as const };
+    },
     resolvePendingAsk: (respondingAgent: string, targetAgent: string, msgId?: string) => {
       // Try exact msg-id match first
       if (msgId) {
@@ -163,6 +177,12 @@ describe('Ask-Parity-Gate', () => {
     }) as typeof fs.unlinkSync;
 
     await consumer.start();
+
+    // Simulate dispatcher: resolve pending asks when responses arrive
+    // (Consumer validates but dispatcher resolves - matches production behavior)
+    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+      mockQueue.resolvePendingAsk(event.from, event.to, event.msgId);
+    });
   });
 
   afterEach(async () => {

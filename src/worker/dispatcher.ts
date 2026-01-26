@@ -1587,7 +1587,7 @@ The system will resume your session when the human responds.`;
    * 3. If all responses received, resume the session
    */
   private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
-    const { from: respondingAgentId, to: awaitingAgentId, content } = event;
+    const { from: respondingAgentId, to: awaitingAgentId, content, msgId: correlationId } = event;
 
     // Check for suspended session
     const suspended = this.suspendedSessions.get(awaitingAgentId);
@@ -1604,8 +1604,10 @@ The system will resume your session when the human responds.`;
           headline: event.headline,
         });
 
-        // Check SQLite for current pending ask count (source of truth)
-        // The consumer's resolvePendingAsk was already called, so the count reflects the response
+        // Resolve the pending ask now that response is received
+        this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
+
+        // Check SQLite for remaining pending ask count
         const remainingPendingAsks = this.queue.getPendingAsks(awaitingAgentId)
           .filter(a => a.to_agent === 'core/core');
         const remainingCount = remainingPendingAsks.length;
@@ -1661,6 +1663,9 @@ The system will resume your session when the human responds.`;
           content,
           headline: event.headline,
         });
+
+        // Resolve the pending ask now that response is received
+        this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
 
         // Remove responder from target agents
         suspended.targetAgents.delete(respondingAgentId);
@@ -1755,6 +1760,9 @@ The system will resume your session when the human responds.`;
         content,
         headline: event.headline,
       });
+
+      // Resolve the pending ask now that response is received
+      this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
 
       // Remove incoming ask from responding agent
       const respondingWorker = this.getFirstWorkerForAgent(respondingAgentId);

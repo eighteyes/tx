@@ -553,6 +553,45 @@ export class MessageQueue {
   }
 
   /**
+   * Find a pending ask without deleting - for validation/logging
+   * Same matching logic as resolvePendingAsk but read-only
+   */
+  findPendingAsk(
+    respondingAgent: string,
+    targetAgent: string,
+    msgId?: string
+  ): { found: boolean; matchType: 'msg-id' | 'agent' | 'none'; ask?: PendingAsk } {
+    // 1. Try exact msg-id match first
+    if (msgId) {
+      const byMsgId = this.db.prepare(`
+        SELECT id, from_agent, to_agent, msg_id, created_at
+        FROM pending_asks
+        WHERE from_agent = ? AND msg_id = ?
+        LIMIT 1
+      `).get(targetAgent, msgId) as PendingAsk | undefined;
+
+      if (byMsgId) {
+        return { found: true, matchType: 'msg-id', ask: byMsgId };
+      }
+    }
+
+    // 2. Fall back to agent match (oldest first)
+    const byAgent = this.db.prepare(`
+      SELECT id, from_agent, to_agent, msg_id, created_at
+      FROM pending_asks
+      WHERE from_agent = ? AND to_agent = ?
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get(targetAgent, respondingAgent) as PendingAsk | undefined;
+
+    if (byAgent) {
+      return { found: true, matchType: 'agent', ask: byAgent };
+    }
+
+    return { found: false, matchType: 'none' };
+  }
+
+  /**
    * Resolve a pending ask - progressive matching
    * 1. Try exact msg-id match
    * 2. Fall back to from/to agent match

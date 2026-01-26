@@ -600,13 +600,13 @@ ${body}
           file: filename
         });
 
-        // Parity gate: progressive matching - correlation ID first, then agent fallback
-        // The response is TO the agent who originally sent the ask
-        const result = this.queue.resolvePendingAsk(respondingAgent, toAgent, correlationId);
+        // Parity gate: validate response matches a pending ask (don't delete yet)
+        // Deletion happens in dispatcher after successful delivery
+        const result = this.queue.findPendingAsk(respondingAgent, toAgent, correlationId);
 
-        if (result.resolved) {
+        if (result.found) {
           if (result.matchType === 'msg-id') {
-            log.info('consumer', `Parity gate: resolved ask by msg-id`, {
+            log.info('consumer', `Parity gate: found pending ask by msg-id`, {
               agentId: toAgent,
               msgId,
               from: respondingAgent,
@@ -614,7 +614,7 @@ ${body}
             });
           } else {
             // Agent fallback - msg-id didn't match but found pending ask to this agent
-            log.warn('consumer', `Parity gate: resolved ask by agent (msg-id mismatch)`, {
+            log.warn('consumer', `Parity gate: found pending ask by agent (msg-id mismatch)`, {
               agentId: toAgent,
               responseMsgId: msgId,
               originalMsgId: result.ask?.msg_id,
@@ -622,10 +622,10 @@ ${body}
             });
           }
         } else {
-          // No match found - truly unknown response
+          // No match found - could be a race or truly unknown
           const pending = this.queue.getPendingAsks(toAgent);
           const counts = this.queue.getPendingAskCounts(toAgent);
-          log.warn('consumer', `Parity gate: ask-response for unknown ask`, {
+          log.debug('consumer', `Parity gate: no pending ask found for response`, {
             agentId: toAgent,
             msgId,
             from: respondingAgent,

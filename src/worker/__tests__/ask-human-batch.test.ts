@@ -96,6 +96,12 @@ describe('Ask-Human Batching', () => {
     queue = createQueue(dataDir);
     consumer = new MessageConsumer(msgsDir, queue, path.join(temp.dir, 'meshes'));
     await consumer.start();
+
+    // Simulate dispatcher: resolve pending asks when responses arrive
+    // (Consumer validates but dispatcher resolves - matches production behavior)
+    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+      queue.resolvePendingAsk(event.from, event.to, event.msgId);
+    });
   });
 
   afterEach(async () => {
