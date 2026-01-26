@@ -7,8 +7,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --import tsx --test test/**/*.test.ts",
-    "test:e2e": "node --import tsx --test test/e2e/*.ts",
+    "test": "node --import tsx --test test/unit/**/*.test.ts test/*.test.ts",
+    "test:e2e": "node --import tsx --test test/e2e/*.test.ts",
+    "test:all": "node --import tsx --test test/**/*.test.ts",
     "test:frontend": "cd frontend && npx playwright test",
     "start": "node --import tsx src/cli/index.ts start",
     "status": "node --import tsx src/cli/index.ts status",
