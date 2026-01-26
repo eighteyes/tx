@@ -27,6 +27,95 @@ export interface StartOptions {
   noInject?: boolean; // disable context injection hook
 }
 
+/**
+ * Inject TX context hook into project's .claude/settings.json
+ *
+ * This ensures the UserPromptSubmit hook is configured for TX context injection.
+ * - Copies hook script to .ai/scripts/tx-context-hook.ts
+ * - Merges hook config into .claude/settings.json (without overwriting other settings)
+ * - Avoids duplicates by checking if hook already exists
+ */
+function injectHookConfig(cwd: string, txRoot: string): void {
+  const claudeDir = path.join(cwd, '.claude');
+  const settingsPath = path.join(claudeDir, 'settings.json');
+  const scriptsDir = path.join(cwd, '.ai', 'scripts');
+  const hookScriptDest = path.join(scriptsDir, 'tx-context-hook.ts');
+
+  // 1. Copy hook script from TX installation to project
+  try {
+    fs.mkdirSync(scriptsDir, { recursive: true });
+
+    // Resolve hook source from TX installation (txRoot/src/hooks/claude/)
+    const hookScriptSrc = path.join(txRoot, 'src', 'hooks', 'claude', 'tx-context-hook.ts');
+
+    if (!fs.existsSync(hookScriptSrc)) {
+      log.warn('start', 'Hook script not found, skipping hook injection', { src: hookScriptSrc });
+      return;
+    }
+
+    fs.copyFileSync(hookScriptSrc, hookScriptDest);
+    fs.chmodSync(hookScriptDest, 0o755);
+    log.debug('start', 'Copied hook script to project', { dest: hookScriptDest });
+  } catch (err) {
+    log.warn('start', 'Failed to copy hook script', { error: String(err) });
+    return;
+  }
+
+  // 2. Merge hook config into .claude/settings.json
+  try {
+    fs.mkdirSync(claudeDir, { recursive: true });
+
+    let settings: {
+      hooks?: {
+        UserPromptSubmit?: Array<{
+          matcher: string;
+          hooks: Array<{ type: string; command: string; timeout: number }>;
+        }>;
+      };
+      [key: string]: unknown;
+    } = {};
+
+    if (fs.existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      } catch (parseErr) {
+        log.warn('start', 'Failed to parse existing settings.json, creating new', { error: String(parseErr) });
+        settings = {};
+      }
+    }
+
+    // Ensure hooks.UserPromptSubmit exists
+    settings.hooks = settings.hooks || {};
+    settings.hooks.UserPromptSubmit = settings.hooks.UserPromptSubmit || [];
+
+    // Hook command using CLAUDE_PROJECT_DIR for portability
+    const hookCommand = 'npx tsx "$CLAUDE_PROJECT_DIR/.ai/scripts/tx-context-hook.ts"';
+
+    // Check if our hook already exists (by command path)
+    const hasHook = settings.hooks.UserPromptSubmit.some((h) =>
+      h.hooks?.some((inner) => inner.command === hookCommand)
+    );
+
+    if (!hasHook) {
+      settings.hooks.UserPromptSubmit.push({
+        matcher: '',
+        hooks: [{
+          type: 'command',
+          command: hookCommand,
+          timeout: 5
+        }]
+      });
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+      log.info('start', 'Injected TX context hook into .claude/settings.json');
+      console.log('[hook] Injected TX context hook into .claude/settings.json');
+    } else {
+      log.debug('start', 'TX context hook already configured in settings.json');
+    }
+  } catch (err) {
+    log.warn('start', 'Failed to inject hook config', { error: String(err) });
+  }
+}
+
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
   // Work directory: where .ai/tx/ lives (default: current directory)
   const cwd = workDir || process.env.TX_CWD || process.cwd();
@@ -39,6 +128,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Debug: Show resolved paths
   console.log(`[debug] cwd (work): ${cwd}`);
   console.log(`[debug] txRoot (meshes): ${txRoot}`);
+
+  // Inject TX context hook into project's .claude/settings.json
+  injectHookConfig(cwd, txRoot);
 
   // Ensure directories exist
   const msgsDir = path.join(aiDir, 'msgs');
