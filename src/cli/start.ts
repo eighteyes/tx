@@ -4,6 +4,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { TmuxSession, findClaudePath, getSessionName, writeStatusBar } from '../core/tmux.ts';
@@ -120,8 +121,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Work directory: where .ai/tx/ lives (default: current directory)
   const cwd = workDir || process.env.TX_CWD || process.cwd();
 
-  // TX installation: where meshes/ lives (default: same as work directory)
-  const txRoot = process.env.TX_ROOT || cwd;
+  // TX installation: where meshes/ and hooks live
+  // Derive from this file's location: src/cli/start.ts -> tx-core root
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
+  const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
 
   const aiDir = path.join(cwd, '.ai', 'tx');
 
