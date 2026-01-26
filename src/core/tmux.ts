@@ -690,7 +690,15 @@ interface StatusBarData {
   pendingAsks?: number;        // ask-human count awaiting response
 }
 
-const STATUS_FILE = '.ai/tx/status.txt';
+// Status file path - set by init, defaults to cwd-relative
+let statusFilePath = '.ai/tx/status.txt';
+
+/**
+ * Initialize status file path with absolute project directory
+ */
+export function initStatusFile(workDir: string): void {
+  statusFilePath = path.join(workDir, '.ai', 'tx', 'status.txt');
+}
 
 /**
  * Write session state to status file for tmux status bar display
@@ -732,7 +740,7 @@ export function writeStatusBar(data: StatusBarData): void {
     }
 
     const statusText = parts.join(' │ ');
-    fs.writeFileSync(STATUS_FILE, statusText);
+    fs.writeFileSync(statusFilePath, statusText);
   } catch (err) {
     // Non-fatal - status bar is nice-to-have
     log.debug('tmux', 'Failed to write status bar', { error: String(err) });
@@ -744,8 +752,8 @@ export function writeStatusBar(data: StatusBarData): void {
  */
 export function clearStatusBar(): void {
   try {
-    if (fs.existsSync(STATUS_FILE)) {
-      fs.unlinkSync(STATUS_FILE);
+    if (fs.existsSync(statusFilePath)) {
+      fs.unlinkSync(statusFilePath);
     }
   } catch {
     // Ignore

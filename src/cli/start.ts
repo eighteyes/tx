@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { TmuxSession, findClaudePath, getSessionName, writeStatusBar } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, getSessionName, writeStatusBar, initStatusFile } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -128,6 +128,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
 
   const aiDir = path.join(cwd, '.ai', 'tx');
+
+  // Initialize status file path to use working directory (not cwd where TX runs)
+  initStatusFile(cwd);
 
   // Debug: Show resolved paths
   console.log(`[debug] cwd (work): ${cwd}`);
