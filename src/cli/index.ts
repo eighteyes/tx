@@ -160,7 +160,8 @@ Options:
   --model <model>    Model to use (e.g., opus, sonnet)
   --low              Use cost-effective models (replaces opus with sonnet)
   --ultra-low        Use ultra low cost mode (forces haiku for everything)
-  --debug            Enable forensics analysis for all meshes`,
+  --debug            Enable forensics analysis for all meshes
+  --no-inject        Disable context injection hook`,
 
   msg: `tx msg - View messages
 
@@ -510,6 +511,7 @@ async function main() {
         servePort: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
         serveHost: flags.H as string || flags.host as string,
         debug: Boolean(flags.debug),
+        noInject: Boolean(flags.noInject),
       });
       break;
 

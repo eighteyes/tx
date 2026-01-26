@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { TmuxSession, findClaudePath, injectFile, getSessionName, waitForUserIdle, writeStatusBar } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, getSessionName, writeStatusBar } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -24,6 +24,7 @@ export interface StartOptions {
   servePort?: number; // server port (default: 9898)
   serveHost?: string; // server host (default: 0.0.0.0)
   debug?: boolean; // enable forensics and verbose logging for all meshes
+  noInject?: boolean; // disable context injection hook
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -158,6 +159,25 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   }
   // Write current PID
   fs.writeFileSync(pidFile, String(process.pid));
+
+  // Write runtime.json for context hook
+  const runtimePath = path.join(dataDir, 'runtime.json');
+  const runtimeState = {
+    inject: !options?.noInject,  // true by default
+    startedAt: new Date().toISOString(),
+    sessionName: tmux.name,
+    projectDir: cwd,
+  };
+  fs.writeFileSync(runtimePath, JSON.stringify(runtimeState, null, 2));
+  log.info('start', 'Wrote runtime.json', { inject: runtimeState.inject });
+
+  // Initialize pending-for-core.json (empty on startup)
+  const pendingPath = path.join(dataDir, 'pending-for-core.json');
+  const pendingState = {
+    messages: [],
+    lastWritten: 0,
+  };
+  fs.writeFileSync(pendingPath, JSON.stringify(pendingState, null, 2));
 
   // Load tmux config if it exists (check work dir first, then TX_ROOT)
   let tmuxConf = path.join(cwd, '.tmux.conf');
@@ -394,53 +414,99 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   });
   deadlockDetector.start();
 
-  // Event-driven message injector with backoff retry
-  const pendingRetries = new Map<number, { timeout: NodeJS.Timeout; id: number }>();
-  const MAX_INJECT_ATTEMPTS = 10;
+  // Append message to pending-for-core.json for hook injection
+  const appendPendingMessage = (id: number, filepath: string, from: string, type: string) => {
+    try {
+      const pendingPath = path.join(dataDir, 'pending-for-core.json');
+      const pending = fs.existsSync(pendingPath)
+        ? JSON.parse(fs.readFileSync(pendingPath, 'utf-8'))
+        : { messages: [], lastWritten: 0 };
 
-  const tryInject = async (id: number, filepath: string, from: string, type: string, attempt = 1) => {
-    if (!fs.existsSync(filepath)) {
-      log.warn('injector', 'Message source file not found', { id, from, type, filepath });
-      queue.markProcessed(id);
-      return;
+      // Add new message
+      pending.messages.push({
+        id,
+        from,
+        type,
+        file: filepath,
+        timestamp: new Date().toISOString(),
+      });
+      pending.lastWritten = id;
+
+      fs.writeFileSync(pendingPath, JSON.stringify(pending, null, 2));
+      log.info('injector', 'Appended message to pending-for-core.json', { id, from, type });
+    } catch (err) {
+      log.error('injector', 'Failed to append pending message', { id, error: String(err) });
     }
+  };
 
-    // Wait for user to stop typing before injecting
-    // Uses env vars TX_INJECT_DEBOUNCE_MS (default 5000) and TX_INJECT_MAX_WAIT_MS (default 60000)
-    await waitForUserIdle(tmux);
+  // Write status.json for hook consumption (mirrors worker state)
+  const writeStatusFile = () => {
+    try {
+      const statusPath = path.join(dataDir, 'status.json');
+      const workersPath = path.join(dataDir, 'workers.json');
 
-    const injected = injectFile(tmux, filepath);
-    log.debug('injector', 'injectFile result', { id, injected, attempt });
-    if (injected) {
-      log.info('injector', 'Injected message to core', { id, from, type, file: path.basename(filepath) });
-      queue.markProcessed(id);
-      pendingRetries.delete(id);
-      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
-    } else if (attempt >= MAX_INJECT_ATTEMPTS) {
-      log.error('injector', 'Max retry attempts reached, marking failed', { id, from, type, attempts: attempt });
-      queue.markProcessed(id);  // Mark as processed so it doesn't stay pending
-      pendingRetries.delete(id);
-      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
-    } else {
-      // Backoff: 2s, 4s, 8s, 16s, max 30s
-      const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
-      log.debug('injector', 'Claude busy, retry scheduled', { id, from, type, attempt, delayMs: delay });
-      writeStatusBar({ state: 'RETRY', retryAttempt: attempt, pendingCount: pendingRetries.size + 1 });
+      // Read workers.json to get active workers
+      let meshes: Record<string, { activeWorkers: number; state: string }> = {};
+      let workers: string[] = [];
+      let pendingAsks = 0;
 
-      const timeout = setTimeout(() => tryInject(id, filepath, from, type, attempt + 1), delay);
-      pendingRetries.set(id, { timeout, id });
+      if (fs.existsSync(workersPath)) {
+        const workersData = JSON.parse(fs.readFileSync(workersPath, 'utf-8'));
+        const activeWorkers = workersData.workers || [];
+
+        // Group by mesh (first part of agentId)
+        for (const w of activeWorkers) {
+          const [meshName] = w.agentId.split('/');
+          if (!meshes[meshName]) {
+            meshes[meshName] = { activeWorkers: 0, state: 'active' };
+          }
+          meshes[meshName].activeWorkers++;
+          workers.push(w.agentId);
+
+          // Count awaiting workers as pending asks
+          if (w.status === 'awaiting') {
+            pendingAsks++;
+          }
+        }
+      }
+
+      const status = {
+        meshes,
+        workers,
+        pendingAsks,
+        timestamp: new Date().toISOString(),
+      };
+
+      fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+    } catch (err) {
+      log.debug('injector', 'Failed to write status.json', { error: String(err) });
     }
   };
 
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
-    writeStatusBar({ state: 'BUSY', pendingCount: pendingRetries.size + 1 });
-    tryInject(id, filepath, from, type);
+    appendPendingMessage(id, filepath, from, type);
+    queue.markProcessed(id);
+    writeStatusFile();
+    writeStatusBar({ state: 'IDLE', pendingCount: 0 });
   });
 
-  // Initialize status bar
+  // Initialize status bar and status file
   writeStatusBar({ state: 'IDLE', pendingCount: 0 });
+  writeStatusFile();
+
+  // Update status.json on dispatcher events
+  dispatcher.on('worker:spawn', () => {
+    // Give time for workers.json to be written first
+    setTimeout(writeStatusFile, 100);
+  });
+  dispatcher.on('worker:complete', () => {
+    setTimeout(writeStatusFile, 100);
+  });
+  dispatcher.on('worker:error', () => {
+    setTimeout(writeStatusFile, 100);
+  });
 
   await dispatcher.start(consumer);
 
@@ -486,14 +552,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Cleanup
   console.log('\n[core] Detached from session.');
-  for (const { timeout, id } of pendingRetries.values()) {
-    clearTimeout(timeout);
-    queue.markProcessed(id);  // Mark as processed so they don't stay pending
-  }
-  if (pendingRetries.size > 0) {
-    log.info('injector', `Marked ${pendingRetries.size} pending retries as processed on shutdown`);
-  }
-  pendingRetries.clear();
 
   // Stop self-healing components
   staleCleaner.stop();
