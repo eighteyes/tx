@@ -24,6 +24,65 @@ export interface StartOptions {
   servePort?: number; // server port (default: 9898)
   serveHost?: string; // server host (default: 0.0.0.0)
   debug?: boolean; // enable forensics and verbose logging for all meshes
+  passive?: boolean; // passive display mode - don't auto-attach to tmux
+  active?: boolean; // active display mode - auto-attach to tmux (default)
+}
+
+export type DisplayMode = 'active' | 'passive';
+
+/**
+ * Get the display mode from options
+ * Default is 'active' (attached to tmux)
+ */
+function getDisplayMode(options?: StartOptions): DisplayMode {
+  if (options?.passive) return 'passive';
+  if (options?.active) return 'active';
+  return 'active'; // default
+}
+
+/**
+ * Runtime state file path
+ */
+function getRuntimeStatePath(cwd: string): string {
+  return path.join(cwd, '.ai', 'tx', 'data', 'runtime.json');
+}
+
+/**
+ * Read runtime state
+ */
+export function readRuntimeState(cwd?: string): { displayMode?: DisplayMode; sessionName?: string } | null {
+  const workDir = cwd || process.env.TX_CWD || process.cwd();
+  const statePath = getRuntimeStatePath(workDir);
+  try {
+    if (fs.existsSync(statePath)) {
+      return JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+/**
+ * Write runtime state
+ */
+function writeRuntimeState(cwd: string, state: { displayMode: DisplayMode; sessionName: string }): void {
+  const statePath = getRuntimeStatePath(cwd);
+  fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+}
+
+/**
+ * Clear runtime state (on clean shutdown)
+ */
+function clearRuntimeState(cwd: string): void {
+  const statePath = getRuntimeStatePath(cwd);
+  try {
+    if (fs.existsSync(statePath)) {
+      fs.unlinkSync(statePath);
+    }
+  } catch {
+    // Ignore errors
+  }
 }
 
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
@@ -146,6 +205,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   console.log(`[tmux] Creating session: ${sessionName}`);
   await tmux.create(cwd);
   await new Promise(resolve => setTimeout(resolve, 500));
+
+  // Determine and store display mode
+  const displayMode = getDisplayMode(options);
+  writeRuntimeState(cwd, { displayMode, sessionName });
+  log.info('start', `Display mode: ${displayMode}`, { displayMode, sessionName });
 
   // PID file for crash detection
   const pidFile = path.join(dataDir, '.pid');
@@ -415,17 +479,17 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       log.info('injector', 'Injected message to core', { id, from, type, file: path.basename(filepath) });
       queue.markProcessed(id);
       pendingRetries.delete(id);
-      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
+      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size, displayMode });
     } else if (attempt >= MAX_INJECT_ATTEMPTS) {
       log.error('injector', 'Max retry attempts reached, marking failed', { id, from, type, attempts: attempt });
       queue.markProcessed(id);  // Mark as processed so it doesn't stay pending
       pendingRetries.delete(id);
-      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size });
+      writeStatusBar({ state: 'IDLE', pendingCount: pendingRetries.size, displayMode });
     } else {
       // Backoff: 2s, 4s, 8s, 16s, max 30s
       const delay = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
       log.debug('injector', 'Claude busy, retry scheduled', { id, from, type, attempt, delayMs: delay });
-      writeStatusBar({ state: 'RETRY', retryAttempt: attempt, pendingCount: pendingRetries.size + 1 });
+      writeStatusBar({ state: 'RETRY', retryAttempt: attempt, pendingCount: pendingRetries.size + 1, displayMode });
 
       const timeout = setTimeout(() => tryInject(id, filepath, from, type, attempt + 1), delay);
       pendingRetries.set(id, { timeout, id });
@@ -435,12 +499,27 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
-    writeStatusBar({ state: 'BUSY', pendingCount: pendingRetries.size + 1 });
+    writeStatusBar({ state: 'BUSY', pendingCount: pendingRetries.size + 1, displayMode });
     tryInject(id, filepath, from, type);
   });
 
-  // Initialize status bar
-  writeStatusBar({ state: 'IDLE', pendingCount: 0 });
+  // Subscribe to ask-message events for HITL notification in passive mode
+  // ask-human messages always notify user regardless of display mode
+  consumer.on('ask-message', ({ type, headline, from }) => {
+    if (type === 'ask-human') {
+      // Always print HITL notification to console (visible in passive mode)
+      console.log(`\n${'='.repeat(60)}`);
+      console.log(`[TX] 🔔 HITL Required: "${headline || 'Human input needed'}"`);
+      console.log(`[TX] From: ${from}`);
+      console.log(`[TX] Attach to respond: tmux attach -t ${sessionName}`);
+      console.log(`${'='.repeat(60)}\n`);
+
+      log.info('hitl', 'ask-human notification displayed', { headline, from, displayMode });
+    }
+  });
+
+  // Initialize status bar with display mode
+  writeStatusBar({ state: 'IDLE', pendingCount: 0, displayMode });
 
   await dispatcher.start(consumer);
 
@@ -460,29 +539,57 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   }
 
   console.log('\n✅ TX V4 services ready!');
-  console.log('Attaching to session... (Ctrl+B D to detach)\n');
 
-  // Attach FIRST, then send Claude command (user sees it live)
-  const attachPromise = new Promise<void>((resolve) => {
-    const attach = spawn('tmux', ['attach', '-t', sessionName], {
-      stdio: 'inherit'
-    });
-    attach.on('exit', () => resolve());
-    attach.on('error', () => resolve());
-  });
-
-  // Small delay to let attach take over terminal
-  await new Promise(r => setTimeout(r, 100));
-
-  // Now send Claude command - user sees it in attached session
+  // Build Claude command
   const claudePath = findClaudePath();
   const continueFlag = options?.continue ? ' --continue' : '';
   const modelFlag = options?.model ? ` --model ${options.model}` : '';
-  tmux.send(`clear && ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
-  tmux.sendEnter();
+  const claudeCmd = `clear && ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`;
 
-  // Wait for detach
-  await attachPromise;
+  if (displayMode === 'active') {
+    // Active mode: attach to tmux, user sees everything
+    console.log('Attaching to session... (Ctrl+B D to detach)\n');
+
+    // Attach FIRST, then send Claude command (user sees it live)
+    const attachPromise = new Promise<void>((resolve) => {
+      const attach = spawn('tmux', ['attach', '-t', sessionName], {
+        stdio: 'inherit'
+      });
+      attach.on('exit', () => resolve());
+      attach.on('error', () => resolve());
+    });
+
+    // Small delay to let attach take over terminal
+    await new Promise(r => setTimeout(r, 100));
+
+    // Now send Claude command - user sees it in attached session
+    tmux.send(claudeCmd);
+    tmux.sendEnter();
+
+    // Wait for detach
+    await attachPromise;
+  } else {
+    // Passive mode: don't attach, run in background
+    console.log(`\n📺 Running in PASSIVE mode (not attached to tmux)`);
+    console.log(`   Session: ${sessionName}`);
+    console.log(`   Attach with: tmux attach -t ${sessionName}`);
+    console.log(`\n⚠️  HITL (ask-human) messages will print here.\n`);
+
+    // Send Claude command to tmux (runs in background)
+    tmux.send(claudeCmd);
+    tmux.sendEnter();
+
+    // In passive mode, wait for SIGINT/SIGTERM or indefinitely
+    // The services (consumer, dispatcher) keep running in the background
+    await new Promise<void>((resolve) => {
+      const cleanup = () => {
+        console.log('\n[core] Received shutdown signal...');
+        resolve();
+      };
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+    });
+  }
 
   // Cleanup
   console.log('\n[core] Detached from session.');
@@ -515,6 +622,10 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     fs.unlinkSync(pidFile);
     log.info('start', 'PID file removed (clean shutdown)');
   }
+
+  // Clear runtime state on clean shutdown
+  clearRuntimeState(cwd);
+  log.info('start', 'Runtime state cleared (clean shutdown)');
 
   console.log(`[core] Consumer stopped. Claude session still running.`);
   console.log(`[core] Re-attach: tmux attach -t ${sessionName}`);
