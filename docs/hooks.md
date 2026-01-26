@@ -208,6 +208,36 @@ lifecycle:
     - brain-update
 ```
 
+#### `forensics:analyze`
+Analyzes mesh execution for patterns, issues, and improvements.
+
+**Reads**: `context.sessionId`, `context.meshName`, `context.agentName`
+
+**Behavior**:
+- Uses Haiku to analyze session transcript
+- Identifies: routing failures, stale state, off-script agents, success patterns
+- Writes report to `.ai/tx/forensics/{mesh}-{timestamp}.md`
+- Non-blocking: failures don't halt mesh execution
+
+**Activation**: Only runs when debug mode is enabled:
+- `--debug` flag on `tx start`, OR
+- `debug: true` in mesh config
+
+```yaml
+# In mesh config.yaml
+debug: true
+
+# Or via CLI
+# tx start --debug
+```
+
+**CLI Alternative**: Run analysis on-demand:
+```bash
+tx forensics [mesh]        # Analyze specific mesh
+tx forensics               # Analyze most recent session
+tx forensics --session ID  # Analyze specific session
+```
+
 #### `worktree:cleanup`
 Removes worktree and associated branches.
 
@@ -225,33 +255,91 @@ lifecycle:
 
 ## Custom Hook Implementation
 
-### Hook Handler Interface
+### Hook Definition Interface
 
 ```typescript
-type HookHandler = (context: HookContext) => Promise<void> | void;
+interface HookDefinition {
+  name: string;                    // e.g., 'category:action'
+  phase: 'pre' | 'post';           // Execution phase
+  priority?: number;               // Lower = earlier (default: 50)
+  description?: string;            // Human-readable description
+  handler: HookHandler;            // Execution function
+  initialize?: (utils: HookUtils) => Promise<void>;  // Optional async setup
+}
+
+type HookHandler = (context: HookContext, utils: HookUtils) => Promise<void>;
+
+interface HookUtils {
+  queue: MessageQueue;
+  worktreeManager: WorktreeManager;
+  workDir: string;
+  meshesDir: string;
+  writeResultMessage: (gate: string, passed: boolean, summary: string, details?: Record<string, unknown>) => void;
+  writeFeedbackMessage: (agentId: string, taskId: string, feedback: string, iteration: number) => Promise<string>;
+}
 ```
 
-### Registration
+### Creating a New Hook
+
+1. Create a file in `src/hooks/pre/` or `src/hooks/post/`:
 
 ```typescript
-// In src/worker/hooks.ts
-import { LifecycleHooks } from './hooks.ts';
+// src/hooks/post/my-custom-hook.ts
+import type { HookDefinition, HookContext, HookUtils } from '../types.ts';
+import { QualityIterationError } from '../errors.ts';
 
-const hooks = new LifecycleHooks(workDir, queue);
-
-// Register pre-hook
-hooks.addPreHook('my-custom:setup', async (context) => {
-  // Setup logic here
-  context.myCustomData = await setupSomething();
-});
-
-// Register post-hook
-hooks.addPostHook('my-custom:validate', async (context) => {
+const handler = async (context: HookContext, utils: HookUtils): Promise<void> => {
   if (!isValid(context.workerOutput)) {
     throw new QualityIterationError('Validation failed: reason');
   }
-});
+};
+
+export const myCustomHook: HookDefinition = {
+  name: 'my-custom:validate',
+  phase: 'post',
+  priority: 55,  // Runs after quality gates (50-53)
+  description: 'Validates output against custom rules',
+  handler,
+};
 ```
+
+2. Register in `src/hooks/post/index.ts`:
+
+```typescript
+import { myCustomHook } from './my-custom-hook.ts';
+export { myCustomHook };
+
+// Add to allPostHooks array
+export const allPostHooks = [
+  // ... existing hooks
+  myCustomHook,
+];
+```
+
+### Priority Ordering
+
+Hooks execute by priority within each phase (lower = earlier):
+
+**Pre-hooks:**
+| Hook | Priority |
+|------|----------|
+| `worktree:create` | 10 |
+| `quality:preflight` | 50 |
+
+**Post-hooks:**
+| Hook | Priority |
+|------|----------|
+| `quality:evaluate` | 40 |
+| `quality:checklist` | 50 |
+| `quality:rubric` | 51 |
+| `quality:adversarial` | 52 |
+| `quality:accuracy` | 53 |
+| `quality:summarizer` | 60 |
+| `quality:deterministic` | 70 |
+| `worktree:cleanup` | 80 |
+| `commit:auto` | 90 |
+| `forensics:analyze` | 95 |
+| `brain-update` | 100 |
 
 ---
 
@@ -572,10 +660,22 @@ new LifecycleHooks(workDir: string, queue: MessageQueue, meshesDir?: string)
 
 | Component | File | Description |
 |-----------|------|-------------|
-| Hook System | `src/worker/hooks.ts` | Extensible pre/post hook registry |
+| **Hook System** | `src/hooks/` | Modular hook directory |
+| Types | `src/hooks/types.ts` | HookContext, HookUtils, HookDefinition |
+| Errors | `src/hooks/errors.ts` | QualityIterationError, QualityHaltError, etc. |
+| Registry | `src/hooks/registry.ts` | Hook registration with priority ordering |
+| Lifecycle Class | `src/hooks/lifecycle-hooks.ts` | Main LifecycleHooks class |
+| Pre-hooks | `src/hooks/pre/*.ts` | Individual pre-hook implementations |
+| Post-hooks | `src/hooks/post/*.ts` | Individual post-hook implementations |
+| Utilities | `src/hooks/utils/*.ts` | Shared utilities (messages, quality, rearmatter) |
+| **Integration** | | |
 | Lifecycle Resolution | `src/worker/lifecycle-utils.ts` | Resolves hooks from config |
-| Dispatcher Integration | `src/worker/dispatcher.ts` | Orchestrates hook execution |
-| Quality Gates | `src/quality/gates/*.ts` | Individual gate implementations |
+| Dispatcher | `src/worker/dispatcher.ts` | Orchestrates hook execution |
+| **Forensics** | | |
+| Analyzer | `src/forensics/analyzer.ts` | Haiku-powered transcript analysis |
+| CLI Command | `src/cli/forensics.ts` | On-demand forensics via CLI |
+
+**Note**: `src/worker/hooks.ts` is now a re-export shim for backward compatibility.
 
 ---
 

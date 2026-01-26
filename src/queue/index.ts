@@ -406,6 +406,17 @@ export class MessageQueue {
   }
 
   /**
+   * Count pending messages for a specific agent
+   * Used by OAOM (One-Agent-One-Message) enforcement to check queue depth
+   */
+  countPending(agentId: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as c FROM messages WHERE to_agent = ? AND status = 'pending'
+    `).get(agentId) as { c: number };
+    return row.c;
+  }
+
+  /**
    * Get queue stats
    */
   getStats(): { pending: number; delivered: number; total: number; byAgent: Record<string, number> } {

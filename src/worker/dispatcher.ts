@@ -307,6 +307,17 @@ interface SuspendedSession {
   hookContext?: HookContext;  // Preserved for await-response resumption
 }
 
+/**
+ * Agent lock state for OAOM (One-Agent-One-Message) enforcement
+ * Each agent processes exactly one message at a time; subsequent messages queue
+ */
+interface AgentLock {
+  reason: 'processing' | 'awaiting-human' | 'awaiting-agent';
+  since: number;
+  workerId?: string;
+  sessionId?: string;
+}
+
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
@@ -328,6 +339,7 @@ export class WorkerDispatcher extends EventEmitter {
   private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
+  private agentLocks: Map<string, AgentLock> = new Map();  // OAOM enforcement
   private stuckDetector: StuckAgentDetector;
   private ensembleCoordinator: EnsembleCoordinator;
   private sessionStore?: SessionStore;
@@ -613,6 +625,107 @@ export class WorkerDispatcher extends EventEmitter {
     return undefined;
   }
 
+  // ============================================================================
+  // OAOM (One-Agent-One-Message) Lock Management
+  // ============================================================================
+
+  /**
+   * Check if an agent is currently locked (processing a message or awaiting response)
+   */
+  private isAgentLocked(agentId: string): boolean {
+    return this.agentLocks.has(agentId);
+  }
+
+  /**
+   * Acquire a lock for an agent before processing a message
+   */
+  private acquireAgentLock(
+    agentId: string,
+    reason: 'processing' | 'awaiting-human' | 'awaiting-agent',
+    workerId?: string,
+    sessionId?: string
+  ): void {
+    this.agentLocks.set(agentId, {
+      reason,
+      since: Date.now(),
+      workerId,
+      sessionId,
+    });
+    this.emit('agent:locked', { agentId, reason });
+    log.debug('dispatcher', 'Agent lock acquired', { agentId, reason, workerId });
+  }
+
+  /**
+   * Update the reason for an existing lock (e.g., processing -> awaiting)
+   */
+  private updateAgentLockReason(
+    agentId: string,
+    reason: 'processing' | 'awaiting-human' | 'awaiting-agent'
+  ): void {
+    const lock = this.agentLocks.get(agentId);
+    if (lock) {
+      const oldReason = lock.reason;
+      lock.reason = reason;
+      log.debug('dispatcher', 'Agent lock reason updated', { agentId, oldReason, newReason: reason });
+    }
+  }
+
+  /**
+   * Release an agent's lock and process next queued message
+   */
+  private releaseAgentLock(agentId: string): void {
+    const lock = this.agentLocks.get(agentId);
+    if (lock) {
+      const duration = Date.now() - lock.since;
+      this.agentLocks.delete(agentId);
+      this.emit('agent:unlocked', {
+        agentId,
+        wasLocked: lock.reason,
+        duration,
+      });
+      log.debug('dispatcher', 'Agent lock released', {
+        agentId,
+        wasLocked: lock.reason,
+        duration,
+      });
+
+      // Check for queued messages after unlock
+      this.processNextQueuedMessage(agentId);
+    }
+  }
+
+  /**
+   * Get the current lock state for an agent (for debugging/status)
+   */
+  getAgentLockState(agentId: string): AgentLock | undefined {
+    return this.agentLocks.get(agentId);
+  }
+
+  /**
+   * Process the next queued message for an agent after unlock
+   * This enables FIFO processing of queued messages
+   */
+  private processNextQueuedMessage(agentId: string): void {
+    // Don't process if dispatcher is stopped
+    if (!this.running) return;
+
+    // Check if there are pending messages for this agent
+    const pendingCount = this.queue.countPending(agentId);
+    if (pendingCount > 0) {
+      log.info('dispatcher', 'Processing next queued message after unlock', {
+        agentId,
+        pendingCount,
+      });
+
+      // Small delay to allow state to settle, then trigger handleWorkerMessage
+      setTimeout(() => {
+        if (this.running && !this.isAgentLocked(agentId)) {
+          this.handleWorkerMessage(agentId);
+        }
+      }, 50);
+    }
+  }
+
   /**
    * Process any queued messages for agents in a mesh after the mesh is un-halted.
    * This is called when a suspended session resumes and completes.
@@ -869,12 +982,25 @@ export class WorkerDispatcher extends EventEmitter {
   private handleWorkerMessage(agentId: string): void {
     if (!this.running) return;
 
-    // NOTE: Per-agent lock REMOVED for runtime parallelism
-    // Multiple workers can now run concurrently for the same agentId
-    const currentWorkers = this.activeWorkers.get(agentId) || [];
+    // OAOM (One-Agent-One-Message): Check if agent is locked
+    // Each agent processes exactly one message at a time; subsequent messages queue
+    const lock = this.agentLocks.get(agentId);
+    if (lock) {
+      const queueDepth = this.queue.countPending(agentId);
+      log.info('dispatcher', 'Agent locked, message remains queued (OAOM)', {
+        agentId,
+        lockReason: lock.reason,
+        lockedSince: lock.since,
+        lockedDuration: Date.now() - lock.since,
+        queueDepth,
+      });
+      this.emit('agent:queued', { agentId, reason: lock.reason, queueDepth });
+      return; // Message stays in queue, will process when unlocked
+    }
+
     log.debug('dispatcher', `Worker message received`, {
       agentId,
-      currentWorkerCount: currentWorkers.length
+      hasLock: false
     });
 
     // Parse mesh/agent from agentId
@@ -989,7 +1115,10 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
-    log.info('dispatcher', `Spawning worker for message`, { agentId });
+    // OAOM: Acquire lock before spawning worker
+    this.acquireAgentLock(agentId, 'processing');
+
+    log.info('dispatcher', `Spawning worker for message (OAOM lock acquired)`, { agentId });
     this.spawnWorker(meshName, agent);
   }
 
@@ -1173,6 +1302,9 @@ export class WorkerDispatcher extends EventEmitter {
         // Remove from active workers
         this.removeActiveWorker(senderAgentId, workerId);
 
+        // OAOM: Transition lock to awaiting-human (keep locked, but different reason)
+        this.updateAgentLockReason(senderAgentId, 'awaiting-human');
+
         log.info('dispatcher', `Mesh halted - worker killed and suspended`, {
           from: senderAgentId,
           workerId,
@@ -1200,6 +1332,9 @@ export class WorkerDispatcher extends EventEmitter {
           sessionId: sessionId.slice(0, 8),
         });
         await machine.enterAwait(targetAgentId, sessionId);
+
+        // OAOM: Transition lock to awaiting-agent
+        this.updateAgentLockReason(senderAgentId, 'awaiting-agent');
 
         // Set up timeout
         const timeout = machine.currentContext.awaitTimeout;
@@ -1288,6 +1423,9 @@ The system will resume your session when the human responds.`;
       this.suspendedSessions.delete(agentId);
       this.queue.resumeSession(agentId);
 
+      // OAOM: Transition lock back to processing (was awaiting-human or awaiting-agent)
+      this.updateAgentLockReason(agentId, 'processing');
+
       // Build the resume prompt with human response
       const resumePrompt = headline
         ? `## Human Response: ${headline}\n\n${responseContent}`
@@ -1353,22 +1491,9 @@ The system will resume your session when the human responds.`;
         });
         this.writeWorkerState();
 
-        // Check for pending continuation messages (self-addressed or from other agents)
-        const pendingMsg = this.queue.peekOne(agentId);
-        if (pendingMsg && this.running) {
-          log.info('dispatcher', `Continuation message found after resumed worker completion, spawning next iteration`, {
-            agentId,
-            from: pendingMsg.from_agent,
-            type: pendingMsg.type,
-            isSelfLoop: pendingMsg.from_agent === agentId,
-          });
-
-          setTimeout(() => {
-            if (this.running && !this.hasActiveWorkers(agentId)) {
-              this.spawnWorker(meshName, agentConfig);
-            }
-          }, 100);
-        }
+        // OAOM: Release lock - this will trigger processNextQueuedMessage
+        // which handles continuation messages automatically
+        this.releaseAgentLock(agentId);
 
         // MESH UN-HALT: Process any messages that were queued while mesh was halted
         // This runs after the resumed worker completes, checking all agents in the mesh
@@ -1385,6 +1510,9 @@ The system will resume your session when the human responds.`;
         this.removeActiveWorker(agentId, workerId);
         this.emit('worker:error', { id: agentId, error: error.message });
         this.writeWorkerState();
+
+        // OAOM: Release lock on error too
+        this.releaseAgentLock(agentId);
 
         // Even on error, the mesh is now un-halted - process queued messages
         this.emit('mesh:unhalted', { meshName, reason: 'ask-human-resolved-with-error' });
@@ -1631,6 +1759,9 @@ The system will resume your session when the human responds.`;
           return;
         }
 
+        // OAOM: Transition lock back to processing (was awaiting-agent)
+        this.updateAgentLockReason(awaitingAgentId, 'processing');
+
         // Check if runner is still actively processing
         // If so, the response is already queued and runner will see it naturally
         if (runner.isRunning()) {
@@ -1841,6 +1972,9 @@ The system will resume your session when the human responds.`;
       this.removeActiveWorker(agentId, workerId);
       this.askResponseBuffer.delete(agentId);
       this.writeWorkerState();
+
+      // OAOM: Release lock on await timeout
+      this.releaseAgentLock(agentId);
     } catch (error) {
       log.error('dispatcher', `Failed to handle await timeout`, {
         agentId,
@@ -1875,6 +2009,15 @@ The system will resume your session when the human responds.`;
       }
     }
 
+    // OAOM: Clear agent locks for this mesh
+    let clearedLocks = 0;
+    for (const [agentId, _] of this.agentLocks) {
+      if (agentId.startsWith(`${meshName}/`)) {
+        this.agentLocks.delete(agentId);
+        clearedLocks++;
+      }
+    }
+
     // Clear FSM state for this mesh
     const fsm = this.meshFSMs.get(meshName);
     if (fsm) {
@@ -1884,11 +2027,12 @@ The system will resume your session when the human responds.`;
     // Clear SQLite suspended sessions for this mesh (survives restart)
     const clearedDbSessions = this.queue.clearSuspendedSessionsForMesh(meshName);
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0) {
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedLocks > 0 || clearedDbSessions > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
         clearedBuffers,
+        clearedLocks,
         clearedDbSessions,
         clearedFSM: !!fsm,
       });
@@ -2510,6 +2654,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.askResponseBuffer.delete(agentId);
           this.writeWorkerState();
 
+          // OAOM: Release lock on ensemble completion
+          this.releaseAgentLock(agentId);
+
           this.emit('worker:complete', {
             ...data,
             workerId: currentWorkerId,
@@ -2617,6 +2764,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               this.askResponseBuffer.delete(agentId);
               this.writeWorkerState();
 
+              // OAOM: Release lock on quality halt
+              this.releaseAgentLock(agentId);
+
               this.emit('quality:halt', {
                 agentId,
                 taskId: workerHookContext.taskId,
@@ -2714,6 +2864,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             // Remove from activeWorkers but DON'T complete FSM - keep it in awaiting state
             this.removeActiveWorker(agentId, currentWorkerId);
             this.writeWorkerState();
+
+            // OAOM: Transition lock to awaiting-agent (keep locked, but different reason)
+            this.updateAgentLockReason(agentId, 'awaiting-agent');
 
             this.emit('worker:suspended', {
               agentId,
@@ -2921,24 +3074,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             : undefined,
         });
 
-        // Check for pending continuation messages (self-addressed or from other agents)
-        // This handles the case where an agent sends a message to itself to continue iterating
-        const pendingMsg = this.queue.peekOne(agentId);
-        if (pendingMsg && this.running) {
-          log.info('dispatcher', `Continuation message found after completion, spawning next iteration`, {
-            agentId,
-            from: pendingMsg.from_agent,
-            type: pendingMsg.type,
-            isSelfLoop: pendingMsg.from_agent === agentId,
-          });
-
-          // Schedule next iteration (slight delay to allow state to settle)
-          setTimeout(() => {
-            if (this.running && !this.hasActiveWorkers(agentId)) {
-              this.spawnWorker(meshName, agent);
-            }
-          }, 100);
-        }
+        // OAOM: Release lock - this will trigger processNextQueuedMessage
+        // which handles continuation messages (self-addressed or from other agents) automatically
+        this.releaseAgentLock(agentId);
       });
 
       // Error transition with retry logic
@@ -2971,6 +3109,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.askResponseBuffer.delete(agentId);
           this.writeWorkerState();
 
+          // OAOM: Release lock on ensemble error
+          this.releaseAgentLock(agentId);
+
           this.emit('worker:error', {
             ...data,
             workerId: errorWorkerId,
@@ -3001,12 +3142,16 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           await machine.retry();
           // Remove current worker before respawning
           this.removeActiveWorker(agentId, errorWorkerId);
+          // OAOM: Keep lock during retry - spawnWorker will use existing lock
           // Recursively spawn again, but check if dispatcher is still running
           setTimeout(() => {
             if (this.running) {
+              // Note: Lock remains held, spawnWorker won't re-acquire
               this.spawnWorker(meshName, agent);
             } else {
               log.debug('dispatcher', `Skipping retry, dispatcher stopped`, { agentId });
+              // OAOM: Release lock if we can't retry due to shutdown
+              this.releaseAgentLock(agentId);
             }
           }, 1000);
         } else {
@@ -3014,6 +3159,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.removeActiveWorker(agentId, errorWorkerId);
           this.askResponseBuffer.delete(agentId);
           this.writeWorkerState();
+          // OAOM: Release lock after exhausting retries
+          this.releaseAgentLock(agentId);
         }
 
         this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
