@@ -200,7 +200,6 @@ function buildPassiveOutput(
  */
 function buildActiveOutput(
   meshes: MeshStatus[],
-  locked: LockedAgent[],
   messages: QueuedMessage[],
   msgsDir: string
 ): string {
@@ -270,7 +269,7 @@ const handler = async (context: HookContext, utils: HookUtils): Promise<void> =>
     // 6. Build output based on mode
     const activeMode = isActiveMode();
     const output = activeMode
-      ? buildActiveOutput(meshes, locked, queuedMessages, msgsDir)
+      ? buildActiveOutput(meshes, queuedMessages, msgsDir)
       : buildPassiveOutput(meshes, locked, pendingAskCount, queuedMessages, msgsDir);
 
     // Store in context for the worker to use

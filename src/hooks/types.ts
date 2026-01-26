@@ -56,6 +56,9 @@ export interface HookContext {
   // Deterministic gate configuration
   deterministicCommands?: string[];
 
+  // Status injection output (set by status:injection pre-hook)
+  statusInjection?: string | null;
+
   [key: string]: unknown;  // Allow additional context fields
 }
 
