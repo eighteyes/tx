@@ -341,7 +341,8 @@ export class PromptInjector {
   ): Promise<void> {
     try {
       // Create directory structure
-      const promptDir = join(process.cwd(), '.ai', 'tx', 'prompts', meshName);
+      const workDir = process.env.TX_CWD || process.cwd();
+      const promptDir = join(workDir, '.ai', 'tx', 'prompts', meshName);
       await mkdir(promptDir, { recursive: true });
 
       // Build prompt file with metadata header
