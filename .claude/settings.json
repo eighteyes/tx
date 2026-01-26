@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/.ai/scripts/tx-context-hook.ts\"",
+            "command": "npx tsx \"$CLAUDE_PROJECT_DIR/src/hooks/claude/tx-context-hook.ts\"",
             "timeout": 5
           }
         ]
