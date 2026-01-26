@@ -160,14 +160,7 @@ Options:
   --model <model>    Model to use (e.g., opus, sonnet)
   --low              Use cost-effective models (replaces opus with sonnet)
   --ultra-low        Use ultra low cost mode (forces haiku for everything)
-  --debug            Enable forensics analysis for all meshes
-  --passive          Don't auto-attach to tmux (run in background)
-  --active           Auto-attach to tmux (default behavior)
-
-Display Modes:
-  active (default):  User attached to tmux, sees all injections
-  passive:           tmux runs but user not attached, must manually attach
-                     HITL (ask-human) messages print to console regardless`,
+  --debug            Enable forensics analysis for all meshes`,
 
   msg: `tx msg - View messages
 
@@ -517,8 +510,6 @@ async function main() {
         servePort: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
         serveHost: flags.H as string || flags.host as string,
         debug: Boolean(flags.debug),
-        passive: Boolean(flags.passive),
-        active: Boolean(flags.active),
       });
       break;
 

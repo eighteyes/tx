@@ -6,13 +6,11 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { MessageQueue } from '../queue/index.ts';
 import { TmuxSession, getSessionName } from '../core/tmux.ts';
-import { readRuntimeState, DisplayMode } from './start.ts';
 
 export interface StatusResult {
   core: {
     running: boolean;
     session: string;
-    displayMode?: DisplayMode;
   };
   queue: {
     pending: number;
@@ -41,10 +39,6 @@ export async function status(workDir?: string): Promise<StatusResult> {
   const tmux = new TmuxSession(sessionName);
   const coreRunning = await tmux.exists();
 
-  // Read runtime state for display mode
-  const runtimeState = readRuntimeState(cwd);
-  const displayMode = coreRunning ? runtimeState?.displayMode : undefined;
-
   // Check queue if exists
   let stats = { pending: 0, delivered: 0, total: 0, byAgent: {} as Record<string, number> };
 
@@ -69,7 +63,6 @@ export async function status(workDir?: string): Promise<StatusResult> {
     core: {
       running: coreRunning,
       session: sessionName,
-      displayMode,
     },
     queue: stats,
     workers,
@@ -85,8 +78,7 @@ export function printStatus(result: StatusResult, json = false): void {
 
   // Core status
   const coreIcon = result.core.running ? '✓' : '✗';
-  const modeDisplay = result.core.displayMode ? ` [${result.core.displayMode}]` : '';
-  console.log(`Core: ${coreIcon} ${result.core.running ? 'running' : 'stopped'} (${result.core.session})${modeDisplay}`);
+  console.log(`Core: ${coreIcon} ${result.core.running ? 'running' : 'stopped'} (${result.core.session})`);
 
   // Active workers
   if (result.workers.length > 0) {

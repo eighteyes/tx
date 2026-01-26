@@ -56,7 +56,6 @@ export {
 
 // Pre-hooks
 export { registerPreHooks, preHooks } from './pre/index.ts';
-export { statusInjectionHook } from './pre/status-injection.ts';
 export { worktreeCreateHook } from './pre/worktree-create.ts';
 export { qualityPreflightHook } from './pre/quality-preflight.ts';
 

@@ -686,7 +686,6 @@ interface StatusBarData {
   pendingCount?: number;
   activeWorkers?: number;
   suspendedCount?: number;
-  displayMode?: 'active' | 'passive';
 }
 
 const STATUS_FILE = '.ai/tx/status.txt';
@@ -697,12 +696,6 @@ const STATUS_FILE = '.ai/tx/status.txt';
 export function writeStatusBar(data: StatusBarData): void {
   try {
     const parts: string[] = [];
-
-    // Display mode indicator (A for active, P for passive)
-    if (data.displayMode) {
-      const modeIndicator = data.displayMode === 'active' ? 'A' : 'P';
-      parts.push(modeIndicator);
-    }
 
     // State with retry count if applicable
     if (data.state === 'RETRY' && data.retryAttempt) {

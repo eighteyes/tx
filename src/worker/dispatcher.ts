@@ -2294,18 +2294,6 @@ The system will resume your session when the human responds.`;
       // Inject messaging protocol for all agents
       systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
-      // Inject status context from pre-hook (TX system state: meshes, locked agents, pending asks)
-      if (hookContext.statusInjection) {
-        systemPrompt = this.promptInjector.injectStatusContext(
-          systemPrompt,
-          hookContext.statusInjection as string | null
-        );
-        log.debug('dispatcher', 'Injected status context from pre-hook', {
-          agentId,
-          length: (hookContext.statusInjection as string).length,
-        });
-      }
-
       // Inject FSM context if mesh has FSM config (or ensemble FSM provided)
       const fsm = ensembleFsm || this.meshFSMs.get(meshName);
       if (fsm && fsm.isInitialized()) {

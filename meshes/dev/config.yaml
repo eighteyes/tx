@@ -50,8 +50,6 @@ routing:
       core: "Approved - ready to merge"
     blocked:
       implementer: "Changes requested from review"
-    ask-response:
-      implementer: "Response to implementer's question"
 
 lifecycle:
   post:

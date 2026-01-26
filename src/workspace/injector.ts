@@ -240,24 +240,6 @@ export class PromptInjector {
   }
 
   /**
-   * Inject status context from pre-hook into a system prompt
-   * This is called after pre-hooks complete to inject the statusInjection output
-   * set by the status:injection hook
-   */
-  injectStatusContext(basePrompt: string, statusInjection: string | null): string {
-    if (!statusInjection) {
-      return basePrompt;
-    }
-
-    // Wrap in system-reminder tags for visibility
-    const section = `<system-reminder>
-${statusInjection}
-</system-reminder>`;
-
-    return `${basePrompt}\n\n${section}`;
-  }
-
-  /**
    * Inject content after the preamble section of a prompt
    * Finds the first double newline after the preamble header and inserts content there
    */
