@@ -204,8 +204,8 @@ Send aggregated violations to EDITOR:
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask
-msg-id: turn{N}-lint-to-editor
+type: ask-response
+msg-id: turn{N}-lint-complete
 ---
 verdict: VIOLATIONS | CLEAN
 total_violations: {count}

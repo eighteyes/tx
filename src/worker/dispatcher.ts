@@ -219,6 +219,16 @@ interface AskResponseMessageEvent {
 }
 
 /**
+ * Tracked message sent by worker (for completion message enforcement)
+ */
+interface TrackedMessage {
+  to: string;
+  type: string;
+  msgId?: string;
+  filepath: string;
+}
+
+/**
  * Active worker state
  */
 interface ActiveWorker {
@@ -229,6 +239,9 @@ interface ActiveWorker {
   hookContext: HookContext;  // Lifecycle hook context (includes quality state)
   startedPromise?: Promise<void>;  // Resolves when FSM 'start' transition completes
   lastOutputAt?: number;  // Timestamp of last output (for stuck detection)
+  messagesSent: TrackedMessage[];  // Messages written by this worker (for completion enforcement)
+  taskFrom?: string;  // Who sent the initial task (e.g., 'core/core')
+  nudgeCount: number;  // Number of completion nudges sent
 }
 
 /**
@@ -336,6 +349,9 @@ export class WorkerDispatcher extends EventEmitter {
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private boundMeshCompleteHandler: ((event: MeshCompleteEvent) => void) | null = null;
   private boundSystemFeedbackHandler: ((event: SystemFeedbackEvent) => void) | null = null;
+  // Message tracking handlers for completion enforcement
+  private boundCoreMessageTrackingHandler: ((event: { from: string; type: string; filepath: string }) => void) | null = null;
+  private boundWorkerMessageTrackingHandler: ((event: { from: string; type: string; agentId: string; filepath?: string }) => void) | null = null;
   private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
@@ -516,9 +532,15 @@ export class WorkerDispatcher extends EventEmitter {
    * Add a worker instance to the active workers map
    * Generates a unique workerId for parallel execution tracking
    */
-  private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId'>): string {
+  private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount'>, taskFrom?: string): string {
     const workerId = `${agentId}-${crypto.randomUUID().slice(0, 8)}`;
-    const workerWithId: ActiveWorker = { ...worker, workerId };
+    const workerWithId: ActiveWorker = {
+      ...worker,
+      workerId,
+      messagesSent: [],  // Initialize empty message tracking
+      nudgeCount: 0,  // Initialize nudge counter
+      taskFrom,  // Track who sent the initial task
+    };
 
     const workers = this.activeWorkers.get(agentId) || [];
     workers.push(workerWithId);
@@ -527,6 +549,7 @@ export class WorkerDispatcher extends EventEmitter {
     log.debug('dispatcher', 'Added active worker', {
       workerId,
       agentId,
+      taskFrom,
       totalWorkersForAgent: workers.length,
     });
 
@@ -598,6 +621,33 @@ export class WorkerDispatcher extends EventEmitter {
   hasActiveWorkers(agentId: string): boolean {
     const workers = this.activeWorkers.get(agentId);
     return workers !== undefined && workers.length > 0;
+  }
+
+  /**
+   * Track a message sent by an active worker
+   * Called when consumer detects a message written by a worker
+   */
+  private trackMessageSent(fromAgentId: string, toAgentId: string, messageType: string, filepath?: string): void {
+    const workers = this.activeWorkers.get(fromAgentId);
+    if (!workers || workers.length === 0) {
+      // No active worker for this agent - might be a manual message or timing issue
+      return;
+    }
+
+    // Track on the first (usually only) worker for this agent
+    const worker = workers[0];
+    worker.messagesSent.push({
+      to: toAgentId,
+      type: messageType,
+      filepath: filepath || '',
+    });
+
+    log.debug('dispatcher', 'Tracked message sent by worker', {
+      fromAgentId,
+      toAgentId,
+      messageType,
+      totalMessagesSent: worker.messagesSent.length,
+    });
   }
 
   /**
@@ -862,6 +912,19 @@ export class WorkerDispatcher extends EventEmitter {
         this.handleSystemFeedback(event);
       };
       consumer.on('system-feedback', this.boundSystemFeedbackHandler);
+
+      // Track messages sent by workers for completion enforcement
+      // When a worker writes a message, track it so we can verify task-complete was sent
+      this.boundCoreMessageTrackingHandler = (event: { from: string; type: string; filepath: string }) => {
+        this.trackMessageSent(event.from, 'core/core', event.type, event.filepath);
+      };
+      consumer.on('core-message', this.boundCoreMessageTrackingHandler);
+
+      this.boundWorkerMessageTrackingHandler = (event: { from: string; type: string; agentId: string; filepath?: string }) => {
+        // agentId in worker-message is the recipient (toAgent)
+        this.trackMessageSent(event.from, event.agentId, event.type, event.filepath);
+      };
+      consumer.on('worker-message', this.boundWorkerMessageTrackingHandler);
     }
 
     // Start stuck agent detector
@@ -1469,12 +1532,13 @@ The system will resume your session when the human responds.`;
       };
 
       // Store in active workers and get the generated workerId
+      // For resumed sessions (ask-human response), the task effectively comes from core/core
       const workerId = this.addActiveWorker(agentId, {
         runner,
         machine,
         startedAt: Date.now(),
         hookContext,
-      });
+      }, 'core/core');
 
       // Set up minimal event handlers
       runner.on('complete', async (data) => {
@@ -2889,6 +2953,46 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
+        // =================================================================
+        // COMPLETION MESSAGE ENFORCEMENT
+        // If task was received from core/core, verify worker sent task-complete back
+        // =================================================================
+        if (activeWorker?.taskFrom === 'core/core') {
+          // Check if worker sent task-complete to core/core
+          const sentTaskCompleteToCore = activeWorker.messagesSent.some(
+            msg => msg.to === 'core/core' && msg.type === 'task-complete'
+          );
+
+          // Also check for ask-human (different flow, don't nudge)
+          const sentAskHuman = activeWorker.messagesSent.some(
+            msg => msg.to === 'core/core' && msg.type === 'ask-human'
+          );
+
+          if (!sentTaskCompleteToCore && !sentAskHuman) {
+            // Worker didn't send completion message - nudge for one
+            const maxNudges = 2;
+            if (activeWorker.nudgeCount < maxNudges) {
+              log.warn('dispatcher', 'Worker completing without task-complete to core - nudging', {
+                agentId,
+                workerId: currentWorkerId,
+                nudgeCount: activeWorker.nudgeCount + 1,
+                messagesSent: activeWorker.messagesSent.map(m => `${m.type} → ${m.to}`),
+              });
+
+              await this.nudgeForCompletion(agentId, activeWorker, data.sessionId);
+              return; // Don't complete yet - give worker another turn
+            } else {
+              // Exceeded nudge limit - log warning but allow completion
+              log.error('dispatcher', 'Worker failed to send task-complete after nudges', {
+                agentId,
+                workerId: currentWorkerId,
+                nudgeCount: activeWorker.nudgeCount,
+                messagesSent: activeWorker.messagesSent.map(m => `${m.type} → ${m.to}`),
+              });
+            }
+          }
+        }
+
         // NOW complete the FSM (after post-hooks pass or exhausted)
         // Defense-in-depth: catch ValidationError if worker tries to complete with pending asks
         try {
@@ -3167,16 +3271,18 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       // Add worker to active workers with unique workerId for parallel execution
+      // Pass taskFrom to track who sent the initial task (for completion message enforcement)
+      const taskFrom = nextMsg?.from_agent;
       const workerId = this.addActiveWorker(agentId, {
         runner: worker,
         machine,
         startedAt: Date.now(),
         hookContext,
-        startedPromise,  // Add promise to track 'start' completion
-      });
+        startedPromise,  // Add promise to track 'start' transition
+      }, taskFrom);
       // Set the registeredWorkerId so event handlers can reference it
       registeredWorkerId = workerId;
-      log.debug('dispatcher', `Worker registered`, { agentId, workerId });
+      log.debug('dispatcher', `Worker registered`, { agentId, workerId, taskFrom });
       this.writeWorkerState();
 
       // Run the worker (async, don't await)
@@ -4614,6 +4720,75 @@ If you attempt to complete again without responding to these asks, your session 
     });
 
     log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId, workerId });
+  }
+
+  /**
+   * Nudge a worker to send a task-complete message to core/core
+   * Called when worker completes without sending the expected completion message
+   */
+  private async nudgeForCompletion(
+    agentId: string,
+    worker: ActiveWorker,
+    sessionId?: string
+  ): Promise<void> {
+    const { runner } = worker;
+
+    // Increment nudge count
+    worker.nudgeCount++;
+
+    if (!sessionId) {
+      log.error('dispatcher', 'Cannot nudge for completion without session ID', { agentId });
+      return;
+    }
+
+    const nudgePrompt = `## System Notice: Completion Message Required
+
+Your session is ending but you haven't sent a task-complete message to core/core.
+
+**Please write a task-complete message now:**
+
+\`\`\`markdown
+---
+to: core/core
+from: ${agentId}
+type: task-complete
+msg-id: ${agentId.replace('/', '-')}-${Date.now()}
+headline: [Brief summary of what was accomplished]
+status: complete
+---
+
+## Summary
+[Brief description of what was implemented or completed]
+
+## Files Changed
+[List key files that were modified, if any]
+\`\`\`
+
+Write this message to: ${this.config.msgsDir}/
+
+**This is required for proper coordination.** Core needs to know when your work is done.`;
+
+    log.info('dispatcher', `Nudging worker for completion message (attempt ${worker.nudgeCount})`, {
+      agentId,
+      nudgeCount: worker.nudgeCount,
+      messagesSent: worker.messagesSent.map(m => `${m.type} → ${m.to}`),
+    });
+
+    this.emit('worker:completion-nudge', {
+      agentId,
+      nudgeCount: worker.nudgeCount,
+    });
+
+    // Resume session with nudge prompt
+    await this.resumeSession({
+      reason: 'system-feedback',
+      agentId,
+      sessionId,
+      prompt: nudgePrompt,
+      runner,
+      interrupt: false,  // Don't interrupt - just continue with the nudge
+      metadata: { nudgeReason: 'completion-message-enforcement', nudgeCount: worker.nudgeCount },
+    });
   }
 
 }
