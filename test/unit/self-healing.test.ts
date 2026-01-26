@@ -1,7 +1,7 @@
 /**
  * Self-Healing Component Tests
  *
- * Tests for stuck agent detector, stale message cleaner, and deadlock detector
+ * Tests for stale message cleaner and deadlock detector
  */
 
 import { test, describe, beforeEach, afterEach } from 'node:test';
@@ -13,7 +13,6 @@ import Database from 'better-sqlite3';
 
 import { StaleMessageCleaner, DEFAULT_STALE_CONFIG } from '../../src/queue/stale-cleaner.ts';
 import { DeadlockDetector, DEFAULT_DEADLOCK_CONFIG } from '../../src/queue/deadlock-detector.ts';
-import { StuckAgentDetector, DEFAULT_STUCK_CONFIG } from '../../src/worker/stuck-detector.ts';
 import { MessageQueue } from '../../src/queue/index.ts';
 
 describe('StaleMessageCleaner', () => {
@@ -219,60 +218,5 @@ describe('DeadlockDetector', () => {
     detector.detectAndHandle();
 
     assert.ok(detectedCycle !== null);
-  });
-});
-
-describe('StuckAgentDetector', () => {
-  let detector: StuckAgentDetector;
-
-  beforeEach(() => {
-    detector = new StuckAgentDetector({
-      idleTimeoutMs: 100,
-      activityCheckMs: 50,
-      maxNudges: 2,
-      nudgeIntervalMs: 50,
-      finalGracePeriodMs: 50,
-    });
-  });
-
-  afterEach(() => {
-    detector.stop();
-  });
-
-  test('should have correct default config', () => {
-    assert.strictEqual(DEFAULT_STUCK_CONFIG.idleTimeoutMs, 300000);
-    assert.strictEqual(DEFAULT_STUCK_CONFIG.activityCheckMs, 30000);
-    assert.strictEqual(DEFAULT_STUCK_CONFIG.maxNudges, 3);
-    assert.strictEqual(DEFAULT_STUCK_CONFIG.nudgeIntervalMs, 120000);
-    assert.strictEqual(DEFAULT_STUCK_CONFIG.finalGracePeriodMs, 120000);
-  });
-
-  test('should get config', () => {
-    const config = detector.getConfig();
-    assert.strictEqual(config.idleTimeoutMs, 100);
-    assert.strictEqual(config.maxNudges, 2);
-  });
-
-  test('should start and stop', () => {
-    assert.strictEqual(detector.isRunning(), false);
-
-    // Start requires a getter function
-    const mockGetter = () => new Map();
-    detector.start(mockGetter);
-    assert.strictEqual(detector.isRunning(), true);
-
-    detector.stop();
-    assert.strictEqual(detector.isRunning(), false);
-  });
-
-  test('should clear nudge tracking', () => {
-    // No errors should be thrown
-    detector.clearNudgeTracking('test/agent');
-  });
-
-  test('should emit agent:nudged event on nudge', async () => {
-    // This is a complex test that would require mocking the SdkRunner
-    // For now, just test that the detector can be created and started
-    assert.ok(detector);
   });
 });

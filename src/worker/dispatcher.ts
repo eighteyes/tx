@@ -26,7 +26,6 @@ import {
   QualityExhaustedError,
   type HookContext,
 } from './hooks.ts';
-import { StuckAgentDetector, type StuckAgentConfig, type ActiveWorkerInfo } from './stuck-detector.ts';
 import { MeshValidator } from './mesh-validator.ts';
 import {
   type PreflightOutput,
@@ -356,12 +355,11 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private suspendedSessions: Map<string, SuspendedSession> = new Map();
   private agentLocks: Map<string, AgentLock> = new Map();  // OAOM enforcement
-  private stuckDetector: StuckAgentDetector;
   private ensembleCoordinator: EnsembleCoordinator;
   private sessionStore?: SessionStore;
   private sessionSummarizer?: SessionSummarizer;
 
-  constructor(config: DispatcherConfig, queue: MessageQueue, stuckConfig?: Partial<StuckAgentConfig>) {
+  constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
     this.setMaxListeners(25);
     this.config = config;
@@ -370,7 +368,6 @@ export class WorkerDispatcher extends EventEmitter {
     this.workspaceManager = new WorkspaceManager(config.workDir);
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
-    this.stuckDetector = new StuckAgentDetector(stuckConfig);
     this.ensembleCoordinator = new EnsembleCoordinator();
 
     // Session awareness - use store from config if provided
@@ -380,16 +377,6 @@ export class WorkerDispatcher extends EventEmitter {
       log.debug('dispatcher', 'Session awareness enabled');
     }
 
-    // Wire stuck detector events to dispatcher
-    this.stuckDetector.on('agent:nudged', (data) => {
-      this.emit('agent:nudged', data);
-    });
-    this.stuckDetector.on('agent:escalated', (data) => {
-      // Clean up active worker on escalation
-      this.activeWorkers.delete(data.agentId);
-      this.writeWorkerState();
-      this.emit('agent:escalated', data);
-    });
   }
 
   private writeWorkerState(): void {
@@ -926,9 +913,6 @@ export class WorkerDispatcher extends EventEmitter {
       };
       consumer.on('worker-message', this.boundWorkerMessageTrackingHandler);
     }
-
-    // Start stuck agent detector
-    this.stuckDetector.start(() => this.getActiveWorkersForDetector());
   }
 
   /**
@@ -1016,26 +1000,6 @@ export class WorkerDispatcher extends EventEmitter {
 
       return false;
     }
-  }
-
-  /**
-   * Get active workers in format needed by stuck detector
-   * Returns all worker instances (flattened from array-based tracking)
-   */
-  private getActiveWorkersForDetector(): Map<string, ActiveWorkerInfo> {
-    const result = new Map<string, ActiveWorkerInfo>();
-    for (const [_agentId, workers] of this.activeWorkers) {
-      for (const worker of workers) {
-        result.set(worker.workerId, {
-          runner: worker.runner,
-          machine: worker.machine,
-          startedAt: worker.startedAt,
-          hookContext: worker.hookContext,
-          lastOutputAt: worker.lastOutputAt,
-        });
-      }
-    }
-    return result;
   }
 
   /**
@@ -2141,9 +2105,6 @@ The system will resume your session when the human responds.`;
       this.boundSystemFeedbackHandler = null;
     }
 
-    // Stop stuck agent detector
-    this.stuckDetector.stop();
-
     // Kill all active workers (iterate through all instances)
     for (const [agentId, workers] of this.activeWorkers) {
       for (const worker of workers) {
@@ -3070,7 +3031,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.removeActiveWorker(agentId, currentWorkerId);
-        this.stuckDetector.clearNudgeTracking(agentId);
         this.writeWorkerState();
 
         // Check for buffered ask-responses that arrived during race window

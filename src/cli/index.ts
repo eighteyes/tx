@@ -489,6 +489,15 @@ async function main() {
   const flags = parseFlags(args);
   const wantsHelp = Boolean(flags.h || flags.help);
 
+  // Block AI agents from running commands that spawn mesh workers
+  const blockedCommands = ['start', 'run', 'msg'];
+  if (process.env.CLAUDECODE === '1' && blockedCommands.includes(command)) {
+    console.error('\n🚫 AI USE NOT ALLOWED\n');
+    console.error(`The "${command}" command cannot be run from Claude Code.`);
+    console.error('These commands spawn mesh workers that would create recursive AI calls.\n');
+    process.exit(1);
+  }
+
   switch (command) {
     case 'start':
       if (wantsHelp) { showHelp('start'); break; }
