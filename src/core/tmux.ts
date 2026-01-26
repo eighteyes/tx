@@ -683,9 +683,11 @@ export type StatusBarState = 'IDLE' | 'BUSY' | 'AWAIT' | 'RETRY';
 interface StatusBarData {
   state: StatusBarState;
   retryAttempt?: number;
-  pendingCount?: number;
+  pendingCount?: number;       // legacy - keep for compat
   activeWorkers?: number;
   suspendedCount?: number;
+  messagesForCore?: number;    // pending-for-core.json count (unread)
+  pendingAsks?: number;        // ask-human count awaiting response
 }
 
 const STATUS_FILE = '.ai/tx/status.txt';
@@ -704,7 +706,17 @@ export function writeStatusBar(data: StatusBarData): void {
       parts.push(data.state);
     }
 
-    // Pending messages
+    // Messages for core (unread) - new indicator
+    if (data.messagesForCore !== undefined && data.messagesForCore > 0) {
+      parts.push(`${data.messagesForCore}📨`);
+    }
+
+    // Pending ask-human messages - new indicator
+    if (data.pendingAsks !== undefined && data.pendingAsks > 0) {
+      parts.push(`${data.pendingAsks}❓`);
+    }
+
+    // Pending messages (legacy)
     if (data.pendingCount !== undefined && data.pendingCount > 0) {
       parts.push(`${data.pendingCount}⏳`);
     }

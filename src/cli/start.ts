@@ -532,6 +532,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   };
 
   // Write status.json for hook consumption (mirrors worker state)
+  // Also updates status bar with current counts
   const writeStatusFile = () => {
     try {
       const statusPath = path.join(dataDir, 'status.json');
@@ -541,6 +542,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       let meshes: Record<string, { activeWorkers: number; state: string }> = {};
       let workers: string[] = [];
       let pendingAsks = 0;
+      let activeWorkerCount = 0;
+      let suspendedCount = 0;
 
       if (fs.existsSync(workersPath)) {
         const workersData = JSON.parse(fs.readFileSync(workersPath, 'utf-8'));
@@ -554,11 +557,35 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
           }
           meshes[meshName].activeWorkers++;
           workers.push(w.agentId);
+          activeWorkerCount++;
 
-          // Count awaiting workers as pending asks
+          // Count awaiting workers as pending asks and suspended
           if (w.status === 'awaiting') {
             pendingAsks++;
+            suspendedCount++;
           }
+        }
+      }
+
+      // Read pending-for-core.json and hook-state.json to get unread message count
+      let messagesForCore = 0;
+      const pendingForCorePath = path.join(dataDir, 'pending-for-core.json');
+      const hookStatePath = path.join(dataDir, 'hook-state.json');
+
+      if (fs.existsSync(pendingForCorePath)) {
+        try {
+          const pending = JSON.parse(fs.readFileSync(pendingForCorePath, 'utf-8'));
+          let lastSeenId = 0;
+
+          if (fs.existsSync(hookStatePath)) {
+            const hookState = JSON.parse(fs.readFileSync(hookStatePath, 'utf-8'));
+            lastSeenId = hookState.lastSeenId || 0;
+          }
+
+          // Count unread messages (id > lastSeenId)
+          messagesForCore = (pending.messages || []).filter((m: { id: number }) => m.id > lastSeenId).length;
+        } catch {
+          // Ignore JSON parse errors
         }
       }
 
@@ -570,6 +597,15 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       };
 
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
+
+      // Update status bar with all counts
+      writeStatusBar({
+        state: 'IDLE',
+        messagesForCore,
+        pendingAsks,
+        activeWorkers: activeWorkerCount,
+        suspendedCount,
+      });
     } catch (err) {
       log.debug('injector', 'Failed to write status.json', { error: String(err) });
     }
@@ -580,13 +616,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
     appendPendingMessage(id, filepath, from, type);
     queue.markProcessed(id);
-    writeStatusFile();
-    writeStatusBar({ state: 'IDLE', pendingCount: 0 });
+    writeStatusFile();  // This now updates status bar with all counts
   });
 
   // Initialize status bar and status file
-  writeStatusBar({ state: 'IDLE', pendingCount: 0 });
-  writeStatusFile();
+  writeStatusFile();  // This now updates status bar with all counts
 
   // Update status.json on dispatcher events
   dispatcher.on('worker:spawn', () => {
