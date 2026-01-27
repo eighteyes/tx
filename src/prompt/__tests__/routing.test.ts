@@ -1,0 +1,134 @@
+/**
+ * Routing Section tests
+ *
+ * Tests routing injection into agent prompts.
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { buildRoutingSection, injectRoutingInstructions } from '../sections/routing.js';
+
+describe('buildRoutingSection', () => {
+  it('should build routing section with single status', () => {
+    const routing = {
+      complete: {
+        reviewer: 'Work complete, ready for review',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('## Message Routing'));
+    assert.ok(section.includes('**Status: `complete`**'));
+    assert.ok(section.includes('dev/reviewer'));
+    assert.ok(section.includes('Work complete, ready for review'));
+  });
+
+  it('should build routing section with multiple statuses', () => {
+    const routing = {
+      complete: {
+        reviewer: 'Ready for review',
+      },
+      error: {
+        core: 'Error occurred',
+      },
+      blocked: {
+        planner: 'Needs clarification',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('**Status: `complete`**'));
+    assert.ok(section.includes('**Status: `error`**'));
+    assert.ok(section.includes('**Status: `blocked`**'));
+  });
+
+  it('should build routing section with multiple destinations per status', () => {
+    const routing = {
+      complete: {
+        reviewer: 'For code review',
+        tester: 'For testing',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('dev/reviewer'));
+    assert.ok(section.includes('dev/tester'));
+    assert.ok(section.includes('For code review'));
+    assert.ok(section.includes('For testing'));
+  });
+
+  it('should handle core destination specially', () => {
+    const routing = {
+      complete: {
+        core: 'Return to core',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('core/core'));
+    assert.ok(!section.includes('dev/core'));
+  });
+
+  it('should preserve fully qualified agent paths', () => {
+    const routing = {
+      complete: {
+        'other-mesh/agent': 'Cross-mesh routing',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('other-mesh/agent'));
+    assert.ok(!section.includes('dev/other-mesh/agent'));
+  });
+
+  it('should include instructions about frontmatter', () => {
+    const routing = {
+      complete: { reviewer: 'Done' },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('`to` field'));
+    assert.ok(section.includes('frontmatter'));
+  });
+});
+
+describe('injectRoutingInstructions', () => {
+  it('should inject routing into system prompt', () => {
+    const systemPrompt = '# Test Agent\n\nYou are a test agent.';
+    const routing = {
+      complete: {
+        reviewer: 'Work complete',
+      },
+    };
+
+    const result = injectRoutingInstructions(systemPrompt, routing, 'dev');
+
+    assert.ok(result.startsWith('# Test Agent'));
+    assert.ok(result.includes('## Message Routing'));
+    assert.ok(result.includes('dev/reviewer'));
+  });
+
+  it('should return original prompt when routing is empty', () => {
+    const systemPrompt = '# Test Agent\n\nYou are a test agent.';
+    const routing = {};
+
+    const result = injectRoutingInstructions(systemPrompt, routing, 'dev');
+
+    assert.strictEqual(result, systemPrompt);
+  });
+
+  it('should return original prompt when routing is undefined', () => {
+    const systemPrompt = '# Test Agent\n\nYou are a test agent.';
+
+    // @ts-expect-error - testing undefined case
+    const result = injectRoutingInstructions(systemPrompt, undefined, 'dev');
+
+    assert.strictEqual(result, systemPrompt);
+  });
+});

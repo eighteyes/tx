@@ -50,7 +50,8 @@ export interface MeshConfig {
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
-  completion_agent?: string;
+  completion_agent?: string;  // DEPRECATED: Use completion_agents
+  completion_agents?: string[];  // Agents that can complete the mesh (first-wins)
   continuation?: boolean | string[];
   workspace?: WorkspaceConfig;
   routing?: MeshRouting;

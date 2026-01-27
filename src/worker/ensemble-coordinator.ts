@@ -6,12 +6,17 @@
  * 2. Collects results with timeout handling
  * 3. Aggregates results using configured strategy
  * 4. Returns synthesized output
+ *
+ * Phase 2 refactoring: Added orchestration methods extracted from dispatcher.
  */
 
-import type { EnsembleConfig } from '../shared/types.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { EnsembleConfig, FSMStateConfig } from '../shared/types.ts';
 import { AggregationEngine, type AgentResult } from '../mesh/aggregation.ts';
 import { log } from '../shared/logger.ts';
 import type { Message } from '../queue/index.ts';
+import type { MeshFSM } from '../mesh/fsm.ts';
 
 export interface EnsembleExecutionState {
   ensembleId: string;
@@ -21,6 +26,18 @@ export interface EnsembleExecutionState {
   agentStartTimes: Map<string, number>;  // Track when each agent was spawned
   originalTask: Message;
   aggregationStarted: boolean;  // Prevents concurrent aggregation
+}
+
+/**
+ * Options for triggering next state agent
+ */
+export interface TriggerNextAgentOptions {
+  meshName: string;
+  nextState: string;
+  targetAgent: string;
+  ensembleOutput: string;
+  ensembleMetadata: Record<string, unknown>;
+  msgsDir: string;
 }
 
 export class EnsembleCoordinator {
@@ -232,5 +249,196 @@ export class EnsembleCoordinator {
    */
   getActiveEnsembleCount(): number {
     return this.activeEnsembles.size;
+  }
+
+  // ============================================================================
+  // Orchestration Methods (Phase 2 extraction from dispatcher)
+  // ============================================================================
+
+  /**
+   * Resolve ensemble count from config
+   * Can be a literal number or a $variable reference to FSM context
+   */
+  resolveEnsembleCount(count: number | string | undefined, fsm: MeshFSM): number {
+    if (typeof count === 'number') return count;
+
+    if (typeof count === 'string') {
+      // Resolve from FSM context: $subtask_count
+      const varName = count.startsWith('$') ? count.slice(1) : count;
+      const value = fsm.getContext()[varName];
+      if (typeof value === 'number') return value;
+      if (typeof value === 'string') {
+        const parsed = parseInt(value, 10);
+        if (!isNaN(parsed)) return parsed;
+      }
+      log.warn('ensemble', 'Could not resolve ensemble count from context', {
+        varName,
+        value,
+        fallback: 3,
+      });
+      return 3;  // default fallback
+    }
+
+    return 3;  // default
+  }
+
+  /**
+   * Wait for ensemble completion with timeout
+   * Returns true if completed, false if timed out
+   */
+  async waitForCompletion(ensembleId: string, timeoutMs: number = 120000): Promise<boolean> {
+    const startTime = Date.now();
+
+    while (!this.isComplete(ensembleId)) {
+      if (Date.now() - startTime > timeoutMs) {
+        log.warn('ensemble', 'Ensemble timeout reached', {
+          ensembleId,
+          timeout: timeoutMs,
+        });
+        return false;
+      }
+      // Brief pause before checking again
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    return true;
+  }
+
+  /**
+   * Build the ensemble config from FSM state config
+   */
+  buildEnsembleConfig(
+    stateConfig: FSMStateConfig,
+    fsm: MeshFSM
+  ): EnsembleConfig | null {
+    const { ensemble } = stateConfig;
+    if (!ensemble) return null;
+
+    // Determine agents to spawn
+    const agentsToSpawn = ensemble.agents
+      || Array(this.resolveEnsembleCount(ensemble.count, fsm)).fill(ensemble.agent!);
+
+    if (agentsToSpawn.length === 0) {
+      return null;
+    }
+
+    return {
+      agents: agentsToSpawn,
+      aggregation_strategy: ensemble.aggregation,
+      timeout_ms: ensemble.timeout_ms,
+      fault_tolerance: ensemble.fault_tolerance,
+    };
+  }
+
+  /**
+   * Write a trigger message for the next state agent after ensemble completion
+   */
+  writeTriggerMessage(options: TriggerNextAgentOptions): { success: boolean; filepath?: string; error?: string } {
+    const { meshName, nextState, targetAgent, ensembleOutput, ensembleMetadata, msgsDir } = options;
+    const targetAgentId = `${meshName}/${targetAgent}`;
+
+    // Generate message ID
+    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = Date.now();
+    const toSafe = targetAgentId.replace(/\//g, '-');
+    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
+    const filepath = path.join(msgsDir, filename);
+
+    // Build message content with aggregated output
+    const messageContent = `---
+to: ${targetAgentId}
+from: dispatcher/ensemble
+type: task
+msg-id: ${msgId}
+headline: Ensemble aggregation complete
+timestamp: ${new Date().toISOString()}
+---
+
+# Aggregated Ensemble Results
+
+The following content has been collected and aggregated from parallel ensemble agents.
+
+${ensembleOutput}
+
+---
+**Aggregation Metadata:**
+- Strategy: ${ensembleMetadata.strategy || 'unknown'}
+- Agent Count: ${ensembleMetadata.agent_count || 'unknown'}
+- Success: ${ensembleMetadata.success ?? 'unknown'}
+`;
+
+    try {
+      fs.writeFileSync(filepath, messageContent);
+      log.info('ensemble', 'Wrote message to trigger next state agent', {
+        meshName,
+        nextState,
+        targetAgent,
+        msgId,
+        filepath,
+        outputLength: ensembleOutput.length,
+      });
+      return { success: true, filepath };
+    } catch (err) {
+      const error = (err as Error).message;
+      log.error('ensemble', 'Failed to write trigger message', {
+        meshName,
+        nextState,
+        targetAgent,
+        error,
+      });
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Process FSM exit block after ensemble completion
+   * Evaluates routing and returns the next state
+   */
+  async evaluateExitRouting(
+    fsm: MeshFSM,
+    stateConfig: FSMStateConfig
+  ): Promise<string | null> {
+    const exit = stateConfig.exit;
+    if (!exit) {
+      log.warn('ensemble', 'No exit config for state, cannot route', {
+        state: stateConfig.name,
+      });
+      return null;
+    }
+
+    // Process exit.set first if present (extract values before routing)
+    if (exit.set) {
+      log.debug('ensemble', 'Setting exit context variables', {
+        state: stateConfig.name,
+        vars: Object.keys(exit.set),
+      });
+      fsm.updateContext(exit.set as Record<string, unknown>);
+    }
+
+    // Evaluate routing using FSM's evaluateExitRouting
+    const context = fsm.getContext();
+    const nextState = await fsm.evaluateExitRouting(exit, context);
+
+    return nextState;
+  }
+
+  /**
+   * Get the target agent for the next state
+   * Returns the first agent in the state's agents list
+   */
+  getNextStateTargetAgent(fsm: MeshFSM, nextState: string): string | null {
+    const nextStateConfig = fsm.getStateConfig(nextState);
+    if (!nextStateConfig) {
+      log.warn('ensemble', 'No state config for next state', { nextState });
+      return null;
+    }
+
+    const targetAgents = nextStateConfig.agents || [];
+    if (targetAgents.length === 0) {
+      log.debug('ensemble', 'Next state has no agents', { nextState });
+      return null;
+    }
+
+    return targetAgents[0];
   }
 }

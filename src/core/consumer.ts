@@ -54,6 +54,7 @@ export interface ParityReminderEvent {
 export interface MeshCompleteEvent {
   meshName: string;
   completionAgent: string;  // Full agentId (mesh/agent)
+  cancelAgents?: string[];  // Other completion agents to kill (first-wins)
 }
 
 interface Frontmatter {
@@ -99,7 +100,8 @@ interface CachedMeshConfig {
 interface MeshConfig {
   mesh: string;
   routing?: Record<string, Record<string, Record<string, string>>>;
-  completion_agent?: string;
+  completion_agent?: string;  // DEPRECATED: Use completion_agents
+  completion_agents?: string[];  // Agents that can complete the mesh (first-wins)
 }
 
 export class MessageConsumer extends EventEmitter {
@@ -689,10 +691,11 @@ ${body}
             return;
           }
 
-          // Parity gate passed - check if this is the completion_agent
+          // Parity gate passed - check if this is a completion agent
           const [meshName, agentName] = fromAgent.split('/');
           const meshConfig = await this.loadMeshConfig(meshName);
-          const isCompletionAgent = meshConfig?.completion_agent === agentName;
+          const completionAgents = this.normalizeCompletionAgents(meshConfig);
+          const isCompletionAgent = completionAgents.includes(agentName);
 
           if (isCompletionAgent) {
             // Completion agent: clear ALL asks for the mesh
@@ -707,10 +710,16 @@ ${body}
               this.meshStateManager.clearMeshState(meshName);
             }
 
+            // First-wins: list other completion agents to cancel
+            const cancelAgents = completionAgents
+              .filter(a => a !== agentName)
+              .map(a => `${meshName}/${a}`);
+
             // Emit mesh-complete event for analytics summary logging
             this.emit('mesh-complete', {
               meshName,
               completionAgent: fromAgent,
+              cancelAgents,
             } as MeshCompleteEvent);
           } else {
             // Non-completion agent: only clear this agent's asks
@@ -842,6 +851,17 @@ ${body}
   // ==========================================================================
   // ROUTING SELF-HEAL METHODS
   // ==========================================================================
+
+  /**
+   * Normalize completion_agent / completion_agents into an array
+   * Supports backward compatibility with singular completion_agent field
+   */
+  private normalizeCompletionAgents(config: MeshConfig | null): string[] {
+    if (!config) return [];
+    if (config.completion_agents?.length) return config.completion_agents;
+    if (config.completion_agent) return [config.completion_agent];
+    return [];
+  }
 
   /**
    * Load mesh config from file system (cached)

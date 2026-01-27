@@ -8,6 +8,7 @@
  * - FSMPersistence: SQLite persistence layer with backup/restore
  * - ScriptExecutor: Bash script runner with timeout and env injection
  * - AggregationEngine: Result aggregation for ensemble execution
+ * - MeshConfigLoader: Config file loading and validation
  */
 
 export {
@@ -56,3 +57,17 @@ export {
   type AgentResult,
   type AggregationOptions,
 } from './aggregation.ts';
+
+// Mesh Config Loader (Phase 2 extraction)
+export {
+  MeshConfigLoader,
+  type MeshConfig,
+  type AgentConfig,
+  type MeshRouting,
+  type MeshAgentRouting,
+  type MeshRoutingDestination,
+  type IterationConfig,
+  type RearmatterConfig,
+  type MeshConfigLoaderOptions,
+  type MeshConfigLoaderEvents,
+} from './config-loader.ts';

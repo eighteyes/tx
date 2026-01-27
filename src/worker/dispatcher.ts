@@ -11,7 +11,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import YAML from 'yaml';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
 import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
@@ -26,19 +25,19 @@ import {
   QualityExhaustedError,
   type HookContext,
 } from './hooks.ts';
-import { MeshValidator } from './mesh-validator.ts';
 import {
   type PreflightOutput,
 } from '../quality/index.ts';
 import type { ParityReminderEvent, MeshCompleteEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
-import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent} from '../mesh/index.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent, MeshConfigLoader, type MeshConfig, type AgentConfig} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
 import { LockManager, type AgentLock, type LockReason } from './lock-manager.ts';
 import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
+import { injectRoutingInstructions } from '../prompt/index.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -75,78 +74,8 @@ function loadMcpEnv(workDir: string): Record<string, string> {
   }
 }
 
-/**
- * Routing destination in mesh config
- * Format: { destination_agent: "reason string" }
- */
-type MeshRoutingDestination = Record<string, string>;
-
-/**
- * Agent routing in mesh config
- * Format: { status_type: { destination_agent: "reason" } }
- */
-type MeshAgentRouting = Record<string, MeshRoutingDestination>;
-
-/**
- * Mesh routing config
- * Format: { agent_name: { status_type: { destination_agent: "reason" } } }
- */
-type MeshRouting = Record<string, MeshAgentRouting>;
-
-/**
- * Iteration config for quality gates
- */
-interface IterationConfig {
-  maxIterations?: number;  // Max re-runs on quality failure (default: 3)
-  onFail?: 'loop' | 'halt';  // What to do on quality failure (default: loop)
-}
-
-// continuation field: boolean | string[] | undefined
-// - true = all agents persist sessions
-// - string[] = only listed agents persist sessions
-// - undefined/false = no session persistence
-
-/**
- * Rearmatter (transparency metadata) configuration
- */
-interface RearmatterConfig {
-  enabled?: boolean;
-  fields?: string[];
-  thresholds?: {
-    confidence?: number;
-    grade?: string;
-  };
-}
-
-interface MeshConfig {
-  mesh: string;
-  description?: string;
-  agents: AgentConfig[];
-  entry_point?: string;
-  completion_agent?: string;  // Agent that sends task-complete to core
-  workspace?: WorkspaceConfig;  // Optional workspace output schema
-  worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
-  continuation?: boolean | string[];  // true = all, array = specific agents, omit = none
-  lifecycle?: {
-    pre?: string[];   // Pre-hooks executed before worker spawn
-    post?: string[];  // Post-hooks executed after worker completion
-  };
-  routing?: MeshRouting;  // Agent routing tables
-  toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
-  iteration?: IterationConfig;  // Iteration config for quality gates
-  fsm?: FSMConfig;  // FSM config for workflow orchestration
-  ensemble?: EnsembleConfig;  // Ensemble execution config
-  rearmatter?: RearmatterConfig;  // Transparency metadata config
-  _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
-}
-
-interface AgentConfig {
-  name: string;
-  model: SemanticModel;
-  prompt: string;  // Path to prompt file
-  workspace?: WorkspaceConfig;  // Optional per-agent workspace config
-  mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
-}
+// MeshConfig, AgentConfig, and related types are now imported from '../mesh/index.ts'
+// via the MeshConfigLoader module (Phase 2 refactoring)
 
 export interface DispatcherConfig {
   workDir: string;
@@ -316,6 +245,9 @@ export class WorkerDispatcher extends EventEmitter {
   private workerLifecycle: WorkerLifecycleManager;
   private sessionManager: SessionManager;
 
+  // Extracted modules (Phase 2 refactoring)
+  private configLoader: MeshConfigLoader;
+
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
     this.setMaxListeners(25);
@@ -328,10 +260,16 @@ export class WorkerDispatcher extends EventEmitter {
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.ensembleCoordinator = new EnsembleCoordinator();
 
-    // Initialize extracted managers
+    // Initialize extracted managers (Phase 1)
     this.lockManager = new LockManager();
     this.workerLifecycle = new WorkerLifecycleManager(stateFile);
     this.sessionManager = new SessionManager(queue);
+
+    // Initialize extracted modules (Phase 2)
+    this.configLoader = new MeshConfigLoader({
+      workDir: config.workDir,
+      meshesDir: config.meshesDir,
+    });
 
     // Wire up lock manager to process queued messages on unlock
     this.lockManager.setOnUnlockCallback((agentId) => {
@@ -360,12 +298,10 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Check if an agent should have session continuation enabled
+   * Delegates to MeshConfigLoader (Phase 2 refactoring)
    */
   private shouldContinueAgent(agentName: string, continuation: boolean | string[] | undefined): boolean {
-    if (!continuation) return false;
-    if (continuation === true) return true;
-    if (Array.isArray(continuation)) return continuation.includes(agentName);
-    return false;
+    return this.configLoader.shouldContinueAgent(agentName, continuation);
   }
 
   // ============================================================================
@@ -471,6 +407,17 @@ export class WorkerDispatcher extends EventEmitter {
    */
   private removeActiveWorker(agentId: string, workerId: string): boolean {
     return this.workerLifecycle.remove(agentId, workerId);
+  }
+
+  /**
+   * Normalize completion_agent / completion_agents into an array
+   * Supports backward compatibility with singular completion_agent field
+   */
+  private normalizeCompletionAgents(config: MeshConfig | undefined): string[] {
+    if (!config) return [];
+    if (config.completion_agents?.length) return config.completion_agents;
+    if (config.completion_agent) return [config.completion_agent];
+    return [];
   }
 
   /**
@@ -1259,7 +1206,7 @@ The system will resume your session when the human responds.`;
 
       // Create a new FSM for the resumed worker
       const meshConfig = this.meshConfigs.get(meshName);
-      const isCompletionAgent = agentConfig.name === meshConfig?.completion_agent;
+      const isCompletionAgent = this.normalizeCompletionAgents(meshConfig).includes(agentConfig.name);
       const workerConfig: WorkerConfig = {
         id: agentId,
         model: agentConfig.model,
@@ -2076,8 +2023,8 @@ The system will resume your session when the human responds.`;
         prompt: systemPrompt
       };
 
-      // Check if this is the completion agent (parity gates only apply to completion agent)
-      const isCompletionAgent = agent.name === meshConfig?.completion_agent;
+      // Check if this is a completion agent (parity gates only apply to completion agents)
+      const isCompletionAgent = this.normalizeCompletionAgents(meshConfig).includes(agent.name);
 
       // Create state machine
       const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agent.name, 300000, isCompletionAgent);
@@ -2134,9 +2081,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Extract routing config for this agent
       const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
 
-      // Inject routing instructions into system prompt
+      // Inject routing instructions into system prompt (using extracted module)
       if (routing && Object.keys(routing).length > 0) {
-        systemPrompt = this.injectRoutingInstructions(systemPrompt, routing, meshName);
+        systemPrompt = injectRoutingInstructions(systemPrompt, routing, meshName);
         log.info('dispatcher', `Injected routing instructions into system prompt`, {
           agentId,
           routes: Object.keys(routing),
@@ -2941,107 +2888,29 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
     }
   }
 
-  /**
-   * Normalize FSM config to support both array and object-style states
-   * Transforms object-style states: { state_name: {...} } → array: [{ name: state_name, ...}]
-   */
-  private normalizeFSMConfig(fsm: any): FSMConfig {
-    // If states is already an array, return as-is
-    if (Array.isArray(fsm.states)) {
-      return fsm as FSMConfig;
-    }
-
-    // Transform object-style states to array-style
-    const states: any[] = [];
-    for (const [stateName, stateConfig] of Object.entries(fsm.states || {})) {
-      const normalized: any = { name: stateName, ...(stateConfig as any) };
-
-      // Transform 'agents' array → coordinator + participants
-      if (normalized.agents) {
-        const agentList = normalized.agents as string[];
-        normalized.coordinator = agentList[0];
-        if (agentList.length > 1) {
-          normalized.participants = agentList.slice(1);
-        }
-        delete normalized.agents;
-      }
-
-      states.push(normalized);
-    }
-
-    return {
-      initialState: fsm.initial || fsm.initialState,
-      states,
-      transitions: fsm.transitions || [],
-      context: fsm.context,
-      context_descriptions: fsm.context_descriptions,
-    } as FSMConfig;
-  }
+  // normalizeFSMConfig moved to MeshConfigLoader (Phase 2)
 
   /**
    * Try to load a mesh on-demand when a message arrives for an unloaded mesh
-   * Searches project meshes/ and global TX_ROOT/meshes/
-   * Returns true if mesh was loaded successfully
+   * Delegates to MeshConfigLoader (Phase 2 refactoring)
    */
   private tryLoadMeshOnDemand(meshName: string): boolean {
     try {
-      const searchDirs: Array<{ dir: string; isGlobal: boolean }> = [];
+      const loaded = this.configLoader.loadOnDemand(meshName);
 
-      // Project meshes
-      if (fs.existsSync(this.config.meshesDir)) {
-        searchDirs.push({ dir: this.config.meshesDir, isGlobal: false });
-      }
+      if (loaded) {
+        // Sync the newly loaded config to local map
+        const config = this.configLoader.get(meshName);
+        if (config) {
+          this.meshConfigs.set(meshName, config);
 
-      // Global TX_ROOT meshes
-      const globalMeshDir = process.env.TX_ROOT
-        ? path.join(process.env.TX_ROOT, 'meshes')
-        : null;
-      if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
-        searchDirs.push({ dir: globalMeshDir, isGlobal: true });
-      }
-
-      // Search for mesh directory and config file
-      for (const { dir: searchRoot, isGlobal } of searchDirs) {
-        // Try direct: meshes/{meshName}/config.yaml
-        const directPath = path.join(searchRoot, meshName);
-        if (fs.existsSync(directPath)) {
-          const configPath = this.findConfigInDir(directPath);
-          if (configPath) {
-            log.info('dispatcher', 'Found mesh config (JIT)', { meshName, configPath });
-            this.loadMeshConfigFromFile(configPath, directPath, isGlobal);
-
-            // Initialize FSM if needed
-            const config = this.meshConfigs.get(meshName);
-            if (config?.fsm) {
-              this.initializeSingleFSM(meshName, config);
-            }
-
-            return true;
+          // Initialize FSM if needed
+          if (config.fsm) {
+            this.initializeSingleFSM(meshName, config);
           }
         }
-
-        // Try nested: meshes/{category}/{meshName}/config.yaml
-        const categories = fs.readdirSync(searchRoot, { withFileTypes: true })
-          .filter(e => e.isDirectory() && !e.name.startsWith('.'));
-
-        for (const category of categories) {
-          const nestedPath = path.join(searchRoot, category.name, meshName);
-          if (fs.existsSync(nestedPath)) {
-            const configPath = this.findConfigInDir(nestedPath);
-            if (configPath) {
-              log.info('dispatcher', 'Found mesh config (JIT, nested)', { meshName, configPath, category: category.name });
-              this.loadMeshConfigFromFile(configPath, nestedPath, isGlobal);
-
-              // Initialize FSM if needed
-              const config = this.meshConfigs.get(meshName);
-              if (config?.fsm) {
-                this.initializeSingleFSM(meshName, config);
-              }
-
-              return true;
-            }
-          }
-        }
+        log.info('dispatcher', 'Mesh loaded on-demand', { meshName });
+        return true;
       }
 
       return false;
@@ -3054,26 +2923,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
     }
   }
 
-  /**
-   * Find config file in directory (prioritize YAML over JSON)
-   * Returns absolute path to config file, or null if not found
-   */
-  private findConfigInDir(dir: string): string | null {
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
-      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
-
-      if (yamlConfig) {
-        return path.join(dir, yamlConfig.name);
-      } else if (jsonConfig) {
-        return path.join(dir, jsonConfig.name);
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
+  // findConfigInDir moved to MeshConfigLoader (Phase 2)
 
   /**
    * Initialize FSM for a single mesh (called during JIT loading)
@@ -3147,54 +2997,19 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
   /**
    * Load all mesh configs from meshes/ directory structure
-   * Supports: meshes/{mesh}/config.yaml and meshes/{category}/{mesh}/config.yaml
-   * Falls back to TX_ROOT/meshes/ if project doesn't have meshes
+   * Delegates to MeshConfigLoader (Phase 2 refactoring)
    */
   private loadMeshConfigs(): void {
-    try {
-      const meshRoots: Array<{ dir: string; isGlobal: boolean }> = [];
+    // Wire up config loader events
+    this.configLoader.on('mesh:loaded', (data) => this.emit('mesh:loaded', data));
+    this.configLoader.on('mesh:invalid', (data) => this.emit('mesh:invalid', data));
+    this.configLoader.on('error', (data) => this.emit('error', data));
 
-      // Project meshes
-      if (fs.existsSync(this.config.meshesDir)) {
-        meshRoots.push({ dir: this.config.meshesDir, isGlobal: false });
-      }
+    // Load all configs using the extracted module
+    this.meshConfigs = this.configLoader.loadAll();
 
-      // Global TX_ROOT meshes (fallback)
-      const globalMeshDir = process.env.TX_ROOT
-        ? path.join(process.env.TX_ROOT, 'meshes')
-        : null;
-      if (globalMeshDir && fs.existsSync(globalMeshDir) && globalMeshDir !== this.config.meshesDir) {
-        meshRoots.push({ dir: globalMeshDir, isGlobal: true });
-      }
-
-      // Legacy: check for meshes/configs/ directory (old structure)
-      const legacyConfigDir = path.join(this.config.meshesDir, 'configs');
-      if (fs.existsSync(legacyConfigDir)) {
-        this.loadMeshConfigsFromLegacyDir(legacyConfigDir, false);
-      }
-
-      if (meshRoots.length === 0) {
-        log.warn('dispatcher', 'No mesh directories found', {
-          projectDir: this.config.meshesDir,
-          globalDir: globalMeshDir
-        });
-        return;
-      }
-
-      // Scan meshes/*/ and meshes/*/*/ for config files
-      for (const { dir: meshRoot, isGlobal } of meshRoots) {
-        this.scanMeshDir(meshRoot, isGlobal, 0);
-      }
-
-      // Initialize FSMs for meshes that have fsm config
-      this.initializeFSMs();
-    } catch (error) {
-      log.error('dispatcher', 'Failed to load mesh configs', {
-        error: (error as Error).message,
-        stack: (error as Error).stack
-      });
-      this.emit('error', { error: `Failed to load mesh configs: ${(error as Error).message}` });
-    }
+    // Initialize FSMs for meshes that have fsm config
+    this.initializeFSMs();
   }
 
   /**
@@ -3270,113 +3085,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
     }
   }
 
-  /**
-   * Recursively scan mesh directory for config files (max depth 2)
-   * Supports: config.yaml, config.yml (preferred) and config.json (legacy)
-   */
-  private scanMeshDir(dir: string, isGlobal: boolean, depth: number): void {
-    if (depth > 2) return;  // meshes/category/mesh/ is max depth
-    if (!fs.existsSync(dir)) return;
-
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-      // Check for config files in this directory (priority: YAML > JSON)
-      const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
-      const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
-
-      if (yamlConfig) {
-        this.loadMeshConfigFromFile(path.join(dir, yamlConfig.name), dir, isGlobal);
-      } else if (jsonConfig) {
-        this.loadMeshConfigFromFile(path.join(dir, 'config.json'), dir, isGlobal);
-      }
-
-      // Recurse into subdirectories
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'configs') {
-          this.scanMeshDir(path.join(dir, entry.name), isGlobal, depth + 1);
-        }
-      }
-    } catch (error) {
-      log.error('dispatcher', `Failed to scan mesh directory: ${dir}`, {
-        error: (error as Error).message
-      });
-    }
-  }
-
-  /**
-   * Load a single mesh config from a file
-   * Uses MeshValidator for comprehensive validation
-   * Supports both YAML (.yaml, .yml) and JSON (.json) formats
-   */
-  private loadMeshConfigFromFile(configPath: string, basePath: string, isGlobal: boolean): void {
-    const filename = path.basename(configPath);
-    try {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      const isYaml = filename.endsWith('.yaml') || filename.endsWith('.yml');
-      const rawConfig = isYaml ? YAML.parse(content) : JSON.parse(content);
-
-      // Validate using MeshValidator
-      const validation = MeshValidator.validate(rawConfig, filename);
-
-      if (!validation.valid) {
-        log.error('dispatcher', `Invalid mesh config: ${rawConfig.mesh || filename}`, {
-          mesh: rawConfig.mesh,
-          configPath,
-          errors: validation.errors
-        });
-        this.emit('mesh:invalid', {
-          file: filename,
-          errors: validation.errors,
-          warnings: validation.warnings
-        });
-        return;
-      }
-
-      // Validation passed (warnings are silent unless there are errors)
-      const config = validation.config as MeshConfig;
-
-      // Don't override project configs with global ones
-      if (this.meshConfigs.has(config.mesh) && isGlobal) {
-        return;
-      }
-
-      // Transform FSM config if needed (object-style states → array-style)
-      if (config.fsm) {
-        config.fsm = this.normalizeFSMConfig(config.fsm);
-      }
-
-      // Store base path for relative prompt resolution
-      config._basePath = basePath;
-
-      this.meshConfigs.set(config.mesh, config);
-      this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });
-    } catch (error) {
-      log.error('dispatcher', `Failed to parse mesh config: ${filename}`, {
-        configPath,
-        error: (error as Error).message
-      });
-      this.emit('mesh:invalid', {
-        file: filename,
-        errors: [(error as Error).message],
-        warnings: []
-      });
-    }
-  }
-
-  /**
-   * Legacy: Load configs from meshes/configs/ directory (old structure)
-   */
-  private loadMeshConfigsFromLegacyDir(configDir: string, isGlobal: boolean): void {
-    const files = fs.readdirSync(configDir);
-
-    for (const file of files) {
-      if (!file.endsWith('.json')) continue;
-      const configPath = path.join(configDir, file);
-      // Legacy configs use workDir-relative prompt paths, so basePath is workDir
-      this.loadMeshConfigFromFile(configPath, this.config.workDir, isGlobal);
-    }
-  }
+  // scanMeshDir, loadMeshConfigFromFile, loadMeshConfigsFromLegacyDir
+  // have been extracted to MeshConfigLoader (Phase 2 refactoring)
 
   /**
    * Save session output to .ai/tx/sessions/{agentId}/{timestamp}.md
@@ -3412,52 +3122,18 @@ ${output}
   }
 
   /**
-   * Inject routing instructions into system prompt
-   * Appends routing table to end of system prompt
-   */
-  private injectRoutingInstructions(
-    systemPrompt: string,
-    routing: Record<string, Record<string, string>>,
-    meshName: string
-  ): string {
-    const lines: string[] = [];
-    lines.push('\n\n## Message Routing\n');
-    lines.push('When you complete your work, route your response message based on the outcome:\n');
-
-    for (const [status, destinations] of Object.entries(routing)) {
-      lines.push(`\n**Status: \`${status}\`**`);
-      
-      for (const [destination, reason] of Object.entries(destinations)) {
-        const targetAgent = destination === 'core' ? 'core/core' : 
-                           destination.includes('/') ? destination : 
-                           `${meshName}/${destination}`;
-        lines.push(`- Send message to: \`${targetAgent}\``);
-        lines.push(`  Reason: ${reason}`);
-      }
-    }
-
-    lines.push('\n\nSet the `to` field in your message frontmatter based on which status applies.');
-
-    return systemPrompt + lines.join('\n');
-  }
-
-  /**
    * Extract routing config for a specific agent from mesh config
-   * Returns routing in format: { status: { destination: "reason" } }
+   * Delegates to MeshConfigLoader (Phase 2 refactoring)
    */
   private extractAgentRouting(
     meshName: string,
     agentName: string,
     meshConfig?: MeshConfig
   ): Record<string, Record<string, string>> | undefined {
-    if (!meshConfig?.routing) return undefined;
-
-    const agentRouting = meshConfig.routing[agentName];
-    if (!agentRouting) return undefined;
-
-    // Return raw routing config (status -> destination -> reason)
-    return Object.keys(agentRouting).length > 0 ? agentRouting : undefined;
+    return this.configLoader.extractAgentRouting(meshName, agentName, meshConfig);
   }
+
+  // injectRoutingInstructions moved to prompt/sections/routing.ts (Phase 2)
 
   /**
    * Get total active worker count across all agents
@@ -3617,18 +3293,19 @@ ${output}
       session.completedAt = Date.now();
       session.totalDurationMs = session.completedAt - session.startedAt;
 
-      // Check if mesh has a completion_agent configured
+      // Check if mesh has completion_agent(s) configured
       const meshConfig = this.meshConfigs.get(session.meshName);
-      const hasCompletionAgent = !!meshConfig?.completion_agent;
+      const completionAgents = this.normalizeCompletionAgents(meshConfig);
+      const hasCompletionAgent = completionAgents.length > 0;
 
       if (hasCompletionAgent) {
-        // Mesh has completion_agent - logging will happen in handleMeshComplete
-        // when completion_agent sends task-complete to core/core
+        // Mesh has completion_agent(s) - logging will happen in handleMeshComplete
+        // when a completion_agent sends task-complete to core/core
         // Just mark the session as ready for final logging
         log.debug('dispatcher', 'Session ready for completion_agent', {
           meshInstance,
           meshName: session.meshName,
-          completionAgent: meshConfig?.completion_agent,
+          completionAgents,
         });
       } else {
         // No completion_agent - log and cleanup immediately (fallback behavior)
@@ -3645,7 +3322,25 @@ ${output}
    * Logs the session analytics summary and cleans up
    */
   private handleMeshComplete(event: MeshCompleteEvent): void {
-    const { meshName, completionAgent } = event;
+    const { meshName, completionAgent, cancelAgents } = event;
+
+    // FIRST-WINS: Cancel losing completion agents
+    if (cancelAgents?.length) {
+      for (const agentId of cancelAgents) {
+        const killed = this.workerLifecycle.killForAgent(
+          agentId,
+          `first-wins: ${completionAgent} completed mesh first`
+        );
+        if (killed > 0) {
+          log.info('dispatcher', 'Cancelled losing completion agent', {
+            meshName,
+            winner: completionAgent,
+            loser: agentId,
+            killed,
+          });
+        }
+      }
+    }
 
     // Find session by meshName (sessionMetrics is keyed by meshInstance = meshName-timestamp)
     let sessionKey: string | undefined;
@@ -4001,71 +3696,29 @@ Routes to \`core/core\` or other meshes are always permitted.`;
 
   /**
    * Resolve ensemble count from config
-   * Can be a literal number or a $variable reference to FSM context
+   * Delegates to EnsembleCoordinator (Phase 2 refactoring)
    */
   private resolveEnsembleCount(count: number | string | undefined, fsm: MeshFSM): number {
-    if (typeof count === 'number') return count;
-
-    if (typeof count === 'string') {
-      // Resolve from FSM context: $subtask_count
-      const varName = count.startsWith('$') ? count.slice(1) : count;
-      const value = fsm.getContext()[varName];
-      if (typeof value === 'number') return value;
-      if (typeof value === 'string') {
-        const parsed = parseInt(value, 10);
-        if (!isNaN(parsed)) return parsed;
-      }
-      log.warn('dispatcher', 'Could not resolve ensemble count from context', {
-        varName,
-        value,
-        fallback: 3,
-      });
-      return 3;  // default fallback
-    }
-
-    return 3;  // default
+    return this.ensembleCoordinator.resolveEnsembleCount(count, fsm);
   }
 
   /**
    * Process FSM exit block after ensemble completion
-   * Runs gates, set, when/run/default routing, and transitions to next state
+   * Uses EnsembleCoordinator for routing evaluation (Phase 2 refactoring)
    */
   private async processFSMExit(
     meshName: string,
     fsm: MeshFSM,
     stateConfig: FSMStateConfig
   ): Promise<void> {
-    const exit = stateConfig.exit;
-    if (!exit) {
-      log.warn('dispatcher', 'No exit config for state, cannot route', {
-        meshName,
-        state: stateConfig.name,
-      });
-      return;
-    }
-
     log.info('mesh-fsm', 'Processing FSM exit', {
       meshName,
       state: stateConfig.name,
-      hasGates: !!exit.gates,
-      hasWhen: !!exit.when,
-      hasRun: !!exit.run,
-      hasDefault: !!exit.default,
+      hasExit: !!stateConfig.exit,
     });
 
-    // Process exit.set first if present (extract values before routing)
-    if (exit.set) {
-      log.debug('mesh-fsm', 'Setting exit context variables', {
-        meshName,
-        state: stateConfig.name,
-        vars: Object.keys(exit.set),
-      });
-      fsm.updateContext(exit.set as Record<string, unknown>);
-    }
-
-    // Evaluate routing using FSM's evaluateExitRouting
-    const context = fsm.getContext();
-    const nextState = await fsm.evaluateExitRouting(exit, context);
+    // Evaluate routing using EnsembleCoordinator
+    const nextState = await this.ensembleCoordinator.evaluateExitRouting(fsm, stateConfig);
 
     if (!nextState) {
       log.error('mesh-fsm', 'FSM exit routing failed - no valid next state', {
@@ -4110,7 +3763,7 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       });
 
       // Trigger next state's agent with aggregated content
-      await this.triggerNextStateAgent(meshName, fsm, nextState, context);
+      await this.triggerNextStateAgent(meshName, fsm, nextState, fsm.getContext());
     } else {
       log.error('mesh-fsm', 'FSM transition failed', {
         meshName,
@@ -4122,7 +3775,7 @@ Routes to \`core/core\` or other meshes are always permitted.`;
 
   /**
    * Trigger the next state's agent by writing a message with aggregated content
-   * This bridges ensemble completion to the synthesizer/next agent
+   * Uses EnsembleCoordinator for message writing (Phase 2 refactoring)
    */
   private async triggerNextStateAgent(
     meshName: string,
@@ -4130,19 +3783,10 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     nextState: string,
     context: Record<string, unknown>
   ): Promise<void> {
-    // Get the next state's configuration
-    const nextStateConfig = fsm.getStateConfig(nextState);
-    if (!nextStateConfig) {
-      log.warn('dispatcher', 'No state config for next state, skipping agent trigger', {
-        meshName,
-        nextState,
-      });
-      return;
-    }
+    // Get the target agent using EnsembleCoordinator
+    const targetAgent = this.ensembleCoordinator.getNextStateTargetAgent(fsm, nextState);
 
-    // Determine the target agent - use first agent in the state
-    const targetAgents = nextStateConfig.agents || [];
-    if (targetAgents.length === 0) {
+    if (!targetAgent) {
       log.debug('dispatcher', 'Next state has no agents, skipping trigger', {
         meshName,
         nextState,
@@ -4150,59 +3794,26 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       return;
     }
 
-    const targetAgent = targetAgents[0];
-    const targetAgentId = `${meshName}/${targetAgent}`;
-
     // Get ENSEMBLE_OUTPUT from context
     const ensembleOutput = context.ENSEMBLE_OUTPUT as string || '';
     const ensembleMetadata = context.ENSEMBLE_METADATA as Record<string, unknown> || {};
 
-    // Generate message ID
-    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const timestamp = Date.now();
-    const toSafe = targetAgentId.replace(/\//g, '-');
-    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
-    const filepath = path.join(this.config.msgsDir, filename);
+    // Write trigger message using EnsembleCoordinator
+    const result = this.ensembleCoordinator.writeTriggerMessage({
+      meshName,
+      nextState,
+      targetAgent,
+      ensembleOutput,
+      ensembleMetadata,
+      msgsDir: this.config.msgsDir,
+    });
 
-    // Build message content with aggregated output
-    const messageContent = `---
-to: ${targetAgentId}
-from: dispatcher/ensemble
-type: task
-msg-id: ${msgId}
-headline: Ensemble aggregation complete
-timestamp: ${new Date().toISOString()}
----
-
-# Aggregated Ensemble Results
-
-The following content has been collected and aggregated from parallel ensemble agents.
-
-${ensembleOutput}
-
----
-**Aggregation Metadata:**
-- Strategy: ${ensembleMetadata.strategy || 'unknown'}
-- Agent Count: ${ensembleMetadata.agent_count || 'unknown'}
-- Success: ${ensembleMetadata.success ?? 'unknown'}
-`;
-
-    try {
-      fs.writeFileSync(filepath, messageContent);
-      log.info('dispatcher', 'Wrote message to trigger next state agent', {
-        meshName,
-        nextState,
-        targetAgent,
-        msgId,
-        filepath,
-        outputLength: ensembleOutput.length,
-      });
-    } catch (err) {
+    if (!result.success) {
       log.error('dispatcher', 'Failed to write trigger message', {
         meshName,
         nextState,
         targetAgent,
-        error: (err as Error).message,
+        error: result.error,
       });
     }
   }

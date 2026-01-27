@@ -4,11 +4,14 @@
  */
 
 export { PromptBuilder } from './builder.js';
-export type { PromptContext, PromptSection, BuildOptions } from './types.js';
+export type { PromptContext, PromptSection, BuildOptions, RoutingConfig } from './types.js';
 
 // Core agent prompt
 export { buildCorePrompt, buildMeshList } from './core.js';
 export type { CorePromptConfig } from './core.js';
+
+// Routing section (extracted from dispatcher)
+export { buildRoutingSection, injectRoutingInstructions } from './sections/routing.js';
 
 // Convenience functions
 import { PromptBuilder } from './builder.js';

@@ -79,7 +79,8 @@ export interface MeshConfig {
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
-  completion_agent?: string;  // Agent that sends task-complete to core
+  completion_agent?: string;  // DEPRECATED: Use completion_agents
+  completion_agents?: string[];  // Agents that can complete the mesh (first-wins)
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
   continuation?: boolean | string[];  // true = all, array = specific agents, omit = none

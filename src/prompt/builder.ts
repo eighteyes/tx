@@ -8,6 +8,7 @@ import { buildPreamble } from './sections/preamble.js';
 import { buildAgentPrompt } from './sections/agent-prompt.js';
 import { buildTaskContext } from './sections/task-context.js';
 import { buildRearmatter } from './sections/rearmatter.js';
+import { buildRoutingSection } from './sections/routing.js';
 
 export class PromptBuilder {
   private context: PromptContext;
@@ -20,6 +21,7 @@ export class PromptBuilder {
       includeAgentPrompt: options.includeAgentPrompt ?? true,
       includeTaskContext: options.includeTaskContext ?? true,
       includeRearmatter: options.includeRearmatter ?? true,
+      includeRouting: options.includeRouting ?? (!!context.routing),
     };
   }
 
@@ -65,6 +67,14 @@ export class PromptBuilder {
       sections.push({
         name: 'rearmatter',
         content: buildRearmatter(this.context),
+        enabled: true,
+      });
+    }
+
+    if (this.options.includeRouting && this.context.routing) {
+      sections.push({
+        name: 'routing',
+        content: buildRoutingSection(this.context.routing, this.context.mesh),
         enabled: true,
       });
     }

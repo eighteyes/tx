@@ -125,7 +125,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Optional fields
   description: { type: 'string' },
   entry_point: { type: 'string' },
-  completion_agent: { type: 'string' },
+  completion_agent: { type: 'string' },  // DEPRECATED: Use completion_agents
+  completion_agents: { type: 'array' },  // Agents that can complete the mesh (first-wins)
   type: { type: 'string', enum: ['persistent', 'ephemeral'] },
   auto_despawn: { type: 'boolean' },
   keepalive: { type: 'boolean' },
@@ -249,9 +250,9 @@ export class MeshValidator {
       warnings.push(`No entry_point specified${context}, will use first agent`);
     }
 
-    // Validate completion_agent if present
-    if (cfg.completion_agent && Array.isArray(cfg.agents)) {
-      this.validateCompletionAgent(cfg.completion_agent as string, cfg.agents, warnings, context);
+    // Validate completion_agent(s) if present
+    if (Array.isArray(cfg.agents)) {
+      this.validateCompletionAgents(cfg, cfg.agents, warnings, context);
     }
 
     // Validate routing if present
@@ -445,10 +446,11 @@ export class MeshValidator {
   }
 
   /**
-   * Validate completion_agent matches an agent name
+   * Validate completion_agent(s) - supports both singular and array formats
+   * Array format takes precedence if both are specified
    */
-  private static validateCompletionAgent(
-    completionAgent: string,
+  private static validateCompletionAgents(
+    config: Record<string, unknown>,
     agents: unknown[],
     warnings: string[],
     context: string
@@ -457,8 +459,22 @@ export class MeshValidator {
       .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
       .map(a => a.name as string);
 
-    if (!agentNames.includes(completionAgent)) {
-      warnings.push(`completion_agent '${completionAgent}' not found in agents${context}`);
+    // Array format (takes precedence)
+    if (Array.isArray(config.completion_agents)) {
+      for (const name of config.completion_agents) {
+        if (!agentNames.includes(name as string)) {
+          warnings.push(`completion_agents '${name}' not found in agents${context}`);
+        }
+      }
+      if (config.completion_agent) {
+        warnings.push(`Both completion_agent and completion_agents set - array takes precedence${context}`);
+      }
+      return;
+    }
+
+    // Singular format (backward compat)
+    if (config.completion_agent && !agentNames.includes(config.completion_agent as string)) {
+      warnings.push(`completion_agent '${config.completion_agent}' not found in agents${context}`);
     }
   }
 
