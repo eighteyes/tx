@@ -14,6 +14,14 @@ export { LockManager, type AgentLock, type LockReason } from './lock-manager.ts'
 export { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
 export { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 
+// Export extracted modules (Phase 3 refactoring)
+export {
+  MetricsAggregator,
+  type SessionInitOptions,
+  type WorkerMetricsData,
+  type MetricsSummary,
+} from './metrics-aggregator.ts';
+
 // Export mesh validator
 export {
   MeshValidator,

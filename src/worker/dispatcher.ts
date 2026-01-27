@@ -13,7 +13,7 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
-import type {SemanticModel, WorkerConfig, SessionMetrics, WorkerMetrics, FSMConfig, EnsembleConfig} from '../shared/types.ts';
+import type {SemanticModel, WorkerConfig, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
@@ -37,6 +37,7 @@ import { SessionStore, SessionSummarizer } from '../session/index.ts';
 import { LockManager, type AgentLock, type LockReason } from './lock-manager.ts';
 import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
+import { MetricsAggregator } from './metrics-aggregator.ts';
 import { injectRoutingInstructions } from '../prompt/index.ts';
 
 /**
@@ -235,7 +236,6 @@ export class WorkerDispatcher extends EventEmitter {
   // Message tracking handlers for completion enforcement
   private boundCoreMessageTrackingHandler: ((event: { from: string; type: string; filepath: string }) => void) | null = null;
   private boundWorkerMessageTrackingHandler: ((event: { from: string; type: string; agentId: string; filepath?: string }) => void) | null = null;
-  private sessionMetrics: Map<string, SessionMetrics> = new Map();
   private ensembleCoordinator: EnsembleCoordinator;
   private sessionStore?: SessionStore;
   private sessionSummarizer?: SessionSummarizer;
@@ -247,6 +247,9 @@ export class WorkerDispatcher extends EventEmitter {
 
   // Extracted modules (Phase 2 refactoring)
   private configLoader: MeshConfigLoader;
+
+  // Extracted modules (Phase 3 refactoring)
+  private metricsAggregator: MetricsAggregator;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -270,6 +273,9 @@ export class WorkerDispatcher extends EventEmitter {
       workDir: config.workDir,
       meshesDir: config.meshesDir,
     });
+
+    // Initialize extracted modules (Phase 3)
+    this.metricsAggregator = new MetricsAggregator(config.workDir);
 
     // Wire up lock manager to process queued messages on unlock
     this.lockManager.setOnUnlockCallback((agentId) => {
@@ -1804,19 +1810,11 @@ The system will resume your session when the human responds.`;
         });
       }
 
-      // Initialize session metrics if first worker in this mesh instance
-      if (meshInstance && !this.sessionMetrics.has(meshInstance)) {
-        this.sessionMetrics.set(meshInstance, {
+      // Initialize session metrics if first worker in this mesh instance (delegates to MetricsAggregator)
+      if (meshInstance && !this.metricsAggregator.hasSession(meshInstance)) {
+        this.metricsAggregator.initSession({
           meshInstance,
           meshName: meshConfig?.mesh || meshName,
-          workers: [],
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          totalCostUsd: 0,
-          totalDurationMs: 0,
-          totalToolCalls: 0,
-          workerCount: 0,
-          startedAt: Date.now(),
         });
       }
 
@@ -2625,21 +2623,21 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           throw completeError;
         }
 
-        // Accumulate worker metrics into session metrics
+        // Accumulate worker metrics into session metrics (delegates to MetricsAggregator)
         if (data.metrics && workerHookContext.meshInstance) {
-          const session = this.sessionMetrics.get(workerHookContext.meshInstance);
-          if (session) {
-            const workerMetrics: WorkerMetrics = {
-              ...data.metrics,
-              completedAt: Date.now(),
-            };
-            session.workers.push(workerMetrics);
-            session.totalInputTokens += data.metrics.totalInputTokens;
-            session.totalOutputTokens += data.metrics.totalOutputTokens;
-            session.totalCostUsd += data.metrics.totalCostUsd;
-            session.totalToolCalls += data.metrics.totalToolCalls || 0;
-            session.workerCount++;
-          }
+          this.metricsAggregator.trackWorkerComplete(workerHookContext.meshInstance, {
+            agentId,
+            model: agent.model,
+            queries: data.metrics.queries,
+            totalInputTokens: data.metrics.totalInputTokens,
+            totalOutputTokens: data.metrics.totalOutputTokens,
+            totalCostUsd: data.metrics.totalCostUsd,
+            totalDurationMs: data.metrics.totalDurationMs,
+            totalToolCalls: data.metrics.totalToolCalls,
+            startedAt: data.metrics.startedAt,
+            messageCount: data.metrics.messageCount,
+            toolCalls: data.metrics.toolCalls,
+          });
         }
 
         this.removeActiveWorker(agentId, currentWorkerId);
@@ -3276,7 +3274,7 @@ ${output}
   private checkSessionComplete(meshInstance: string | undefined): void {
     if (!meshInstance) return;
 
-    const session = this.sessionMetrics.get(meshInstance);
+    const session = this.metricsAggregator.getSession(meshInstance);
     if (!session) return;
 
     // Check if any workers from this mesh are still active (flatten arrays)
@@ -3289,9 +3287,8 @@ ${output}
     }
 
     if (!activeInMesh) {
-      // Session complete metadata
-      session.completedAt = Date.now();
-      session.totalDurationMs = session.completedAt - session.startedAt;
+      // Mark session complete (sets timestamps and duration)
+      this.metricsAggregator.markSessionComplete(meshInstance);
 
       // Check if mesh has completion_agent(s) configured
       const meshConfig = this.meshConfigs.get(session.meshName);
@@ -3311,7 +3308,7 @@ ${output}
         // No completion_agent - log and cleanup immediately (fallback behavior)
         log.sessionComplete(session);
         this.emit('session:complete', session);
-        this.sessionMetrics.delete(meshInstance);
+        this.metricsAggregator.finalizeSession(meshInstance);
       }
     }
   }
@@ -3342,48 +3339,42 @@ ${output}
       }
     }
 
-    // Find session by meshName (sessionMetrics is keyed by meshInstance = meshName-timestamp)
-    let sessionKey: string | undefined;
-    let session: SessionMetrics | undefined;
+    // Find session by meshName (delegates to MetricsAggregator)
+    const result = this.metricsAggregator.findSessionByMeshName(meshName);
 
-    for (const [key, value] of this.sessionMetrics.entries()) {
-      if (value.meshName === meshName) {
-        sessionKey = key;
-        session = value;
-        break;
-      }
-    }
-
-    if (!session || !sessionKey) {
+    if (!result) {
       log.warn('dispatcher', 'Mesh complete event but no session metrics found', {
         meshName,
         completionAgent,
-        availableSessions: Array.from(this.sessionMetrics.keys()),
+        availableSessions: this.metricsAggregator.getSessionKeys(),
       });
       return;
     }
 
+    const { key: sessionKey, session } = result;
+
     // Ensure completion timestamps are set
-    if (!session.completedAt) {
-      session.completedAt = Date.now();
-      session.totalDurationMs = session.completedAt - session.startedAt;
-    }
+    this.metricsAggregator.markSessionComplete(sessionKey);
+
+    // Re-fetch session to get updated timestamps
+    const finalSession = this.metricsAggregator.getSession(sessionKey);
+    if (!finalSession) return;
 
     // Log session summary
-    log.sessionComplete(session);
+    log.sessionComplete(finalSession);
 
     // Emit event for external consumers
-    this.emit('session:complete', session);
+    this.emit('session:complete', finalSession);
 
-    // Cleanup
-    this.sessionMetrics.delete(sessionKey);
+    // Cleanup (finalize removes from tracking)
+    this.metricsAggregator.finalizeSession(sessionKey);
 
     log.debug('dispatcher', 'Mesh analytics logged on completion', {
       meshName,
       completionAgent,
       sessionKey,
-      workerCount: session.workerCount,
-      totalCost: session.totalCostUsd,
+      workerCount: finalSession.workerCount,
+      totalCost: finalSession.totalCostUsd,
     });
   }
 

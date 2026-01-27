@@ -171,7 +171,13 @@ agents:
     # Duration/time contradictions across turns
 
 entry_point: entry
-completion_agent: compress-coord
+
+# Two completion agents for different workflows (first-wins):
+# - game-coord: New Game workflow ends after calibration
+# - compress-coord: Write Turn workflow ends after compression
+completion_agents:
+  - game-coord
+  - compress-coord
 
 # Session persistence (coordinators share state via session.yaml)
 # continuation: true
@@ -197,8 +203,8 @@ routing:
   game-coord:
     ask:
       narrator: "HITL game creation"
-    task:
-      prologue-coord: "Game created, start prologue"
+    task-complete:
+      core: "New game calibration complete"
 
   prologue-coord:
     task:
