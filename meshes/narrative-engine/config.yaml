@@ -246,6 +246,14 @@ routing:
   # CREATIVE AGENT ROUTING
   # ==========================================
 
+  calibrator:
+    ask-human:
+      core: "HITL extraction / worldbuilder tuning"
+    task-complete:
+      core: "Worldbuilder session complete"
+    task:
+      prologue-coord: "Game creation complete"
+
   narrator:
     ask:
       dramaturg: "Analyze story context"
