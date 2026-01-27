@@ -399,7 +399,7 @@ describe('MeshFSM.evaluateExitRouting', () => {
       await fsm.initialize();
 
       const exit: FSMExitConfig = {
-        run: 'if [ "$signal" = "PASS" ]; then echo "pass-state"; else echo "fail-state"; fi',
+        run: 'if [ "$FSM_CTX_SIGNAL" = "PASS" ]; then echo "pass-state"; else echo "fail-state"; fi',
       };
       const context = { signal: 'PASS' };
 
@@ -496,7 +496,7 @@ describe('MeshFSM.evaluateExitRouting', () => {
 
       const exit: FSMExitConfig = {
         run: `
-          signal="$signal"
+          signal="$FSM_CTX_SIGNAL"
           if [ "$signal" = "PASS" ]; then
             echo "computed-state"
           fi
