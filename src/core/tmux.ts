@@ -737,12 +737,12 @@ export function writeStatusBar(data: StatusBarData): void {
 
     // Active workers
     if (data.activeWorkers !== undefined && data.activeWorkers > 0) {
-      parts.push(`${data.activeWorkers}⚙`);
+      parts.push(`${data.activeWorkers}🔧`);
     }
 
     // Suspended/awaiting
     if (data.suspendedCount !== undefined && data.suspendedCount > 0) {
-      parts.push(`${data.suspendedCount}⏸`);
+      parts.push(`${data.suspendedCount}💤`);
     }
 
     const statusText = parts.join(' │ ');
