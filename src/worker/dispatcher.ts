@@ -462,6 +462,108 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   // ============================================================================
+  // P1 Consolidation Helpers (Phase 2.5)
+  // ============================================================================
+
+  /**
+   * Get first worker for agent with warning if not found
+   * Consolidates the repeated pattern of lookup + warn
+   */
+  private getWorkerOrWarn(agentId: string, action: string): ActiveWorker | undefined {
+    const worker = this.workerLifecycle.getFirst(agentId);
+    if (!worker) {
+      log.warn('dispatcher', `${action} but no active worker found`, { agentId });
+    }
+    return worker;
+  }
+
+  /**
+   * Clean up a worker instance with configurable options
+   * Consolidates the repeated cleanup sequence across multiple code paths
+   */
+  private cleanupWorker(
+    agentId: string,
+    workerId: string,
+    options?: {
+      releaseLock?: boolean;
+      emitUnhalted?: boolean;
+      meshName?: string;
+      clearBuffer?: boolean;
+      unhaltReason?: string;
+    }
+  ): void {
+    // Remove from lifecycle manager
+    this.workerLifecycle.remove(agentId, workerId);
+
+    // Clear session buffer (default: true)
+    if (options?.clearBuffer !== false) {
+      this.sessionManager.clearBuffer(agentId);
+    }
+
+    // Persist state
+    this.workerLifecycle.writeState();
+
+    // Release lock (default: true)
+    if (options?.releaseLock !== false) {
+      this.lockManager.release(agentId);
+    }
+
+    // Emit mesh unhalted event if requested
+    if (options?.emitUnhalted && options?.meshName) {
+      this.emit('mesh:unhalted', {
+        meshName: options.meshName,
+        reason: options.unhaltReason || 'worker-cleanup',
+      });
+    }
+  }
+
+  /**
+   * Wire FSM events for observability
+   * Consolidates the identical event wiring in initializeSingleFSM() and initializeFSMs()
+   */
+  private wireFSMEvents(fsm: MeshFSM, meshName: string): void {
+    fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
+      log.debug('mesh-fsm', 'State transition', {
+        meshName: event.meshName,
+        from: event.from,
+        to: event.to,
+        trigger: event.trigger,
+        triggerAgent: event.triggerAgent,
+      });
+      this.emit('fsm:transition', event);
+    });
+
+    fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
+      log.debug('mesh-fsm', 'Gate check', {
+        meshName: event.meshName,
+        state: event.state,
+        passed: event.passed,
+        retryCount: event.retryCount,
+      });
+      this.emit('fsm:gate-check', event);
+    });
+
+    fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
+      if (!event.success) {
+        log.error('mesh-fsm', 'Script failed', {
+          meshName: event.meshName,
+          scriptType: event.scriptType,
+          scriptPath: event.scriptPath,
+          error: event.error,
+        });
+      }
+      this.emit('fsm:script-run', event);
+    });
+
+    // Handle FSM feedback - inject directly into agent instead of writing file
+    fsm.on('fsm:feedback', (event: FSMFeedbackEvent) => {
+      if (!event.escalated) {
+        this.handleFSMFeedback(event);
+      }
+    });
+  }
+
+  // ============================================================================
   // Session Management (delegates to SessionManager)
   // ============================================================================
 
@@ -1653,13 +1755,8 @@ The system will resume your session when the human responds.`;
         awaitingResponses: Array.from(machine.getAwaitingResponses()),
       });
 
-      // Cleanup using workerId
-      this.removeActiveWorker(agentId, workerId);
-      this.sessionManager.clearBuffer(agentId);
-      this.writeWorkerState();
-
-      // OAOM: Release lock on await timeout
-      this.releaseAgentLock(agentId);
+      // Cleanup using consolidated helper
+      this.cleanupWorker(agentId, workerId);
     } catch (error) {
       log.error('dispatcher', `Failed to handle await timeout`, {
         agentId,
@@ -2295,13 +2392,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             undefined // no error
           );
 
-          // Cleanup
-          this.removeActiveWorker(agentId, currentWorkerId);
-          this.sessionManager.clearBuffer(agentId);
-          this.writeWorkerState();
-
-          // OAOM: Release lock on ensemble completion
-          this.releaseAgentLock(agentId);
+          // Cleanup using consolidated helper
+          this.cleanupWorker(agentId, currentWorkerId);
 
           this.emit('worker:complete', {
             ...data,
@@ -2377,9 +2469,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
                 // Complete FSM first to avoid race condition
                 await machine.complete(data);
-                this.removeActiveWorker(agentId, currentWorkerId);
-                this.sessionManager.clearBuffer(agentId);
-                this.writeWorkerState();
+                // Cleanup without lock release (respawn needs lock)
+                this.cleanupWorker(agentId, currentWorkerId, { releaseLock: false });
 
                 // Then respawn after a delay
                 setTimeout(() => {
@@ -2406,12 +2497,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
               // Complete FSM before emitting events
               await machine.complete(data);
-              this.removeActiveWorker(agentId, currentWorkerId);
-              this.sessionManager.clearBuffer(agentId);
-              this.writeWorkerState();
-
-              // OAOM: Release lock on quality halt
-              this.releaseAgentLock(agentId);
+              // Cleanup using consolidated helper
+              this.cleanupWorker(agentId, currentWorkerId);
 
               this.emit('quality:halt', {
                 agentId,
@@ -2779,13 +2866,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             data.error
           );
 
-          // Cleanup
-          this.removeActiveWorker(agentId, errorWorkerId);
-          this.sessionManager.clearBuffer(agentId);
-          this.writeWorkerState();
-
-          // OAOM: Release lock on ensemble error
-          this.releaseAgentLock(agentId);
+          // Cleanup using consolidated helper
+          this.cleanupWorker(agentId, errorWorkerId);
 
           this.emit('worker:error', {
             ...data,
@@ -2831,11 +2913,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }, 1000);
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
-          this.removeActiveWorker(agentId, errorWorkerId);
-          this.sessionManager.clearBuffer(agentId);
-          this.writeWorkerState();
-          // OAOM: Release lock after exhausting retries
-          this.releaseAgentLock(agentId);
+          // Cleanup using consolidated helper
+          this.cleanupWorker(agentId, errorWorkerId);
         }
 
         this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
@@ -2935,46 +3014,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         config._basePath || this.config.workDir
       );
 
-      // Wire FSM events (same as initializeFSMs)
-      fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-        log.debug('mesh-fsm', 'State transition', {
-          meshName: event.meshName,
-          from: event.from,
-          to: event.to,
-          trigger: event.trigger,
-          triggerAgent: event.triggerAgent,
-        });
-        this.emit('fsm:transition', event);
-      });
-
-      fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
-        log.debug('mesh-fsm', 'Gate check', {
-          meshName: event.meshName,
-          state: event.state,
-          passed: event.passed,
-          retryCount: event.retryCount,
-        });
-        this.emit('fsm:gate-check', event);
-      });
-
-      fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
-        if (!event.success) {
-          log.error('mesh-fsm', 'Script failed', {
-            meshName: event.meshName,
-            scriptType: event.scriptType,
-            scriptPath: event.scriptPath,
-            error: event.error,
-          });
-        }
-        this.emit('fsm:script-run', event);
-      });
-
-      // Handle FSM feedback - inject directly into agent instead of writing file
-      fsm.on('fsm:feedback', (event: FSMFeedbackEvent) => {
-        if (!event.escalated) {
-          this.handleFSMFeedback(event);
-        }
-      });
+      // Wire FSM events using consolidated helper
+      this.wireFSMEvents(fsm, meshName);
 
       // Initialize the FSM
       fsm.initialize().catch(error => {
@@ -3025,46 +3066,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           config._basePath || this.config.workDir  // Use mesh directory for script resolution
         );
 
-        // Wire FSM events for observability
-        fsm.on('fsm:transition', (event: FSMTransitionEvent) => {
-          log.debug('mesh-fsm', 'State transition', {
-            meshName: event.meshName,
-            from: event.from,
-            to: event.to,
-            trigger: event.trigger,
-            triggerAgent: event.triggerAgent,
-          });
-          this.emit('fsm:transition', event);
-        });
-
-        fsm.on('fsm:gate-check', (event: FSMGateEvent) => {
-          log.debug('mesh-fsm', 'Gate check', {
-            meshName: event.meshName,
-            state: event.state,
-            passed: event.passed,
-            retryCount: event.retryCount,
-          });
-          this.emit('fsm:gate-check', event);
-        });
-
-        fsm.on('fsm:script-run', (event: FSMScriptEvent) => {
-          if (!event.success) {
-            log.error('mesh-fsm', 'Script failed', {
-              meshName: event.meshName,
-              scriptType: event.scriptType,
-              scriptPath: event.scriptPath,
-              error: event.error,
-            });
-          }
-          this.emit('fsm:script-run', event);
-        });
-
-        // Handle FSM feedback - inject directly into agent instead of writing file
-        fsm.on('fsm:feedback', (event: FSMFeedbackEvent) => {
-          if (!event.escalated) {
-            this.handleFSMFeedback(event);
-          }
-        });
+        // Wire FSM events using consolidated helper
+        this.wireFSMEvents(fsm, meshName);
 
         // Initialize the FSM (loads or creates state)
         fsm.initialize().catch(error => {
@@ -3929,9 +3932,8 @@ If you attempt to complete again without responding to these asks, your session 
     // Transition to error state
     await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);
 
-    // Clean up using workerId for proper removal
-    this.removeActiveWorker(agentId, workerId);
-    this.writeWorkerState();
+    // Cleanup without buffer clear or lock release (intentional for error state)
+    this.cleanupWorker(agentId, workerId, { clearBuffer: false, releaseLock: false });
 
     this.emit('worker:error', {
       id: agentId,
