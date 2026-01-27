@@ -631,14 +631,15 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Update status.json on dispatcher events
   dispatcher.on('worker:spawn', () => {
-    // Give time for workers.json to be written first
-    setTimeout(writeStatusFile, 100);
+    // Immediate update on spawn - workers.json is written synchronously before event
+    writeStatusFile();
   });
   dispatcher.on('worker:complete', () => {
-    setTimeout(writeStatusFile, 100);
+    // Slight delay on complete to batch rapid completions
+    setTimeout(writeStatusFile, 50);
   });
   dispatcher.on('worker:error', () => {
-    setTimeout(writeStatusFile, 100);
+    setTimeout(writeStatusFile, 50);
   });
 
   await dispatcher.start(consumer);
