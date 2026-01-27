@@ -538,6 +538,55 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
   };
 
+  // Track outgoing tasks from core to meshes
+  const outgoingTasksPath = path.join(dataDir, 'outgoing-tasks.json');
+
+  const addOutgoingTask = (mesh: string, msgId: string) => {
+    try {
+      const data = fs.existsSync(outgoingTasksPath)
+        ? JSON.parse(fs.readFileSync(outgoingTasksPath, 'utf-8'))
+        : {};
+
+      if (!data[mesh]) {
+        data[mesh] = [];
+      }
+      data[mesh].push({ msgId, timestamp: new Date().toISOString() });
+
+      fs.writeFileSync(outgoingTasksPath, JSON.stringify(data, null, 2));
+      log.info('injector', 'Added outgoing task', { mesh, msgId });
+    } catch (err) {
+      log.error('injector', 'Failed to add outgoing task', { mesh, msgId, error: String(err) });
+    }
+  };
+
+  const removeOutgoingTask = (mesh: string) => {
+    try {
+      if (!fs.existsSync(outgoingTasksPath)) return;
+
+      const data = JSON.parse(fs.readFileSync(outgoingTasksPath, 'utf-8'));
+      if (data[mesh] && data[mesh].length > 0) {
+        const removed = data[mesh].shift(); // FIFO pop
+        if (data[mesh].length === 0) {
+          delete data[mesh];
+        }
+        fs.writeFileSync(outgoingTasksPath, JSON.stringify(data, null, 2));
+        log.info('injector', 'Removed outgoing task (FIFO)', { mesh, removed });
+      }
+    } catch (err) {
+      log.error('injector', 'Failed to remove outgoing task', { mesh, error: String(err) });
+    }
+  };
+
+  const getOutgoingTaskCount = (): number => {
+    try {
+      if (!fs.existsSync(outgoingTasksPath)) return 0;
+      const data = JSON.parse(fs.readFileSync(outgoingTasksPath, 'utf-8'));
+      return Object.values(data).reduce((sum: number, tasks) => sum + (tasks as unknown[]).length, 0);
+    } catch {
+      return 0;
+    }
+  };
+
   // Write status.json for hook consumption (mirrors worker state)
   // Also updates status bar with current counts
   const writeStatusFile = () => {
@@ -612,6 +661,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
         pendingAsks,
         activeWorkers: activeWorkerCount,
         suspendedCount,
+        outgoingTasks: getOutgoingTaskCount(),
       });
     } catch (err) {
       log.debug('injector', 'Failed to write status.json', { error: String(err) });
@@ -623,7 +673,23 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
     appendPendingMessage(id, filepath, from, type);
     queue.markProcessed(id);
+
+    // Remove outgoing task on task-complete from a mesh
+    if (type === 'task-complete') {
+      const [mesh] = from.split('/');
+      removeOutgoingTask(mesh);
+    }
+
     writeStatusFile();  // This now updates status bar with all counts
+  });
+
+  // Track outgoing tasks when core sends tasks to meshes
+  consumer.on('worker-message', ({ agentId, from, type }) => {
+    if (from === 'core/core' && type === 'task') {
+      const [mesh] = agentId.split('/');
+      addOutgoingTask(mesh, `task-${Date.now()}`);
+      writeStatusFile();
+    }
   });
 
   // Initialize status bar and status file

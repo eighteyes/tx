@@ -688,6 +688,7 @@ interface StatusBarData {
   suspendedCount?: number;
   messagesForCore?: number;    // pending-for-core.json count (unread)
   pendingAsks?: number;        // ask-human count awaiting response
+  outgoingTasks?: number;      // tasks sent from core awaiting completion
 }
 
 // Status file path - set by init, defaults to cwd-relative
@@ -714,12 +715,17 @@ export function writeStatusBar(data: StatusBarData): void {
       parts.push(data.state);
     }
 
-    // Messages for core (unread) - new indicator
+    // Messages for core (unread)
     if (data.messagesForCore !== undefined && data.messagesForCore > 0) {
       parts.push(`${data.messagesForCore}📨`);
     }
 
-    // Pending ask-human messages - new indicator
+    // Outgoing tasks from core awaiting completion
+    if (data.outgoingTasks !== undefined && data.outgoingTasks > 0) {
+      parts.push(`${data.outgoingTasks}📤`);
+    }
+
+    // Pending ask-human messages
     if (data.pendingAsks !== undefined && data.pendingAsks > 0) {
       parts.push(`${data.pendingAsks}❓`);
     }
