@@ -13,3 +13,7 @@ node_modules
 # Playwright test artifacts
 playwright-report/
 test-results/
+
+# Test lifecycle hooks and artifacts
+.test-lifecycle-hooks/
+test-queue.db*
