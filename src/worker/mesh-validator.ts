@@ -1114,6 +1114,25 @@ export class MeshValidator {
     const agents = config.agents as unknown[];
     const routing = config.routing as Record<string, unknown> | undefined;
     const fsm = config.fsm as Record<string, unknown> | undefined;
+    const ensemble = config.ensemble as Record<string, unknown> | undefined;
+
+    // Top-level ensemble configs don't need routing - EnsembleCoordinator handles output
+    // Check if this is a pure ensemble mesh (all agents are in the ensemble)
+    if (ensemble && !routing) {
+      const ensembleAgentList = ensemble.agents as string[] | undefined;
+      if (Array.isArray(ensembleAgentList)) {
+        const agentNames = (agents as Array<Record<string, unknown>>)
+          .filter(a => a !== null && typeof a === 'object')
+          .map(a => a.name as string);
+
+        // If all agents are in the ensemble, routing is not required
+        const allInEnsemble = agentNames.every(name => ensembleAgentList.includes(name));
+        if (allInEnsemble) {
+          // Pure ensemble mesh - no routing needed
+          return;
+        }
+      }
+    }
 
     // Multi-agent mesh without any routing is an error
     if (!routing) {
