@@ -9,6 +9,11 @@
 export { SdkRunner, type SdkRunnerConfig } from './sdk-runner.ts';
 export { WorkerDispatcher, type DispatcherConfig } from './dispatcher.ts';
 
+// Export extracted data managers (Phase 1 refactoring)
+export { LockManager, type AgentLock, type LockReason } from './lock-manager.ts';
+export { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
+export { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
+
 // Export mesh validator
 export {
   MeshValidator,

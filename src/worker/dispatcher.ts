@@ -36,6 +36,9 @@ import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
+import { LockManager, type AgentLock, type LockReason } from './lock-manager.ts';
+import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
+import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 
 /**
  * Load environment variables from .mcp.env file
@@ -217,31 +220,7 @@ interface AskResponseMessageEvent {
   msgId?: string;
 }
 
-/**
- * Tracked message sent by worker (for completion message enforcement)
- */
-interface TrackedMessage {
-  to: string;
-  type: string;
-  msgId?: string;
-  filepath: string;
-}
-
-/**
- * Active worker state
- */
-interface ActiveWorker {
-  workerId: string;  // Unique instance ID (agentId-uuid) for parallel execution
-  runner: SdkRunner;
-  machine: WorkerStateMachine;
-  startedAt: number;
-  hookContext: HookContext;  // Lifecycle hook context (includes quality state)
-  startedPromise?: Promise<void>;  // Resolves when FSM 'start' transition completes
-  lastOutputAt?: number;  // Timestamp of last output (for stuck detection)
-  messagesSent: TrackedMessage[];  // Messages written by this worker (for completion enforcement)
-  taskFrom?: string;  // Who sent the initial task (e.g., 'core/core')
-  nudgeCount: number;  // Number of completion nudges sent
-}
+// TrackedMessage and ActiveWorker types are now imported from './worker-lifecycle.ts'
 
 /**
  * Reason for session resume - used for logging and event naming
@@ -305,39 +284,15 @@ interface SystemFeedbackEvent {
   reason: string;
 }
 
-/**
- * Suspended session state (worker killed, awaiting resume)
- */
-interface SuspendedSession {
-  sessionId: string;
-  reason: 'ask-human' | 'await-response';  // ask-human = explicitly killed, await-response = exited while awaiting
-  suspendedAt: number;
-  targetAgents: Set<string>;  // All agents we're awaiting responses from (e.g., Set<"core/core">)
-  pendingResponseCount: number;  // Number of responses still awaited
-  meshName: string;
-  agentConfig: AgentConfig;
-  hookContext?: HookContext;  // Preserved for await-response resumption
-}
-
-/**
- * Agent lock state for OAOM (One-Agent-One-Message) enforcement
- * Each agent processes exactly one message at a time; subsequent messages queue
- */
-interface AgentLock {
-  reason: 'processing' | 'awaiting-human' | 'awaiting-agent';
-  since: number;
-  workerId?: string;
-  sessionId?: string;
-}
+// SuspendedSession is now imported from './session-manager.ts'
+// AgentLock is now imported from './lock-manager.ts'
 
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
   private running = false;
-  private activeWorkers: Map<string, ActiveWorker[]> = new Map();
   private meshConfigs: Map<string, MeshConfig> = new Map();
   private meshFSMs: Map<string, MeshFSM> = new Map();  // mesh name -> FSM instance
-  private stateFile: string;
   private workspaceManager: WorkspaceManager;
   private promptInjector: PromptInjector;
   private lifecycleHooks: LifecycleHooks;
@@ -351,24 +306,41 @@ export class WorkerDispatcher extends EventEmitter {
   // Message tracking handlers for completion enforcement
   private boundCoreMessageTrackingHandler: ((event: { from: string; type: string; filepath: string }) => void) | null = null;
   private boundWorkerMessageTrackingHandler: ((event: { from: string; type: string; agentId: string; filepath?: string }) => void) | null = null;
-  private askResponseBuffer: Map<string, Array<{ from: string; content: string; headline?: string }>> = new Map();
   private sessionMetrics: Map<string, SessionMetrics> = new Map();
-  private suspendedSessions: Map<string, SuspendedSession> = new Map();
-  private agentLocks: Map<string, AgentLock> = new Map();  // OAOM enforcement
   private ensembleCoordinator: EnsembleCoordinator;
   private sessionStore?: SessionStore;
   private sessionSummarizer?: SessionSummarizer;
+
+  // Extracted managers (Phase 1 refactoring)
+  private lockManager: LockManager;
+  private workerLifecycle: WorkerLifecycleManager;
+  private sessionManager: SessionManager;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
     this.setMaxListeners(25);
     this.config = config;
     this.queue = queue;
-    this.stateFile = path.join(config.workDir, '.ai', 'tx', 'data', 'workers.json');
+
+    const stateFile = path.join(config.workDir, '.ai', 'tx', 'data', 'workers.json');
     this.workspaceManager = new WorkspaceManager(config.workDir);
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
     this.ensembleCoordinator = new EnsembleCoordinator();
+
+    // Initialize extracted managers
+    this.lockManager = new LockManager();
+    this.workerLifecycle = new WorkerLifecycleManager(stateFile);
+    this.sessionManager = new SessionManager(queue);
+
+    // Wire up lock manager to process queued messages on unlock
+    this.lockManager.setOnUnlockCallback((agentId) => {
+      this.processNextQueuedMessage(agentId);
+    });
+
+    // Forward manager events
+    this.lockManager.on('agent:locked', (data) => this.emit('agent:locked', data));
+    this.lockManager.on('agent:unlocked', (data) => this.emit('agent:unlocked', data));
 
     // Session awareness - use store from config if provided
     if (config.sessionStore) {
@@ -379,39 +351,11 @@ export class WorkerDispatcher extends EventEmitter {
 
   }
 
+  /**
+   * Write worker state to disk (delegates to WorkerLifecycleManager)
+   */
   private writeWorkerState(): void {
-    const state = {
-      workers: Array.from(this.activeWorkers.entries()).flatMap(([agentId, workers]) =>
-        workers.map((w) => {
-          const status = w.machine.getStatus();
-          const baseState = {
-            id: w.workerId,  // Use unique workerId instead of agentId
-            agentId,
-            status,
-            startedAt: w.startedAt,
-            messagesProcessed: w.machine.getMessagesProcessed(),
-            duration: w.machine.getDuration()
-          };
-
-          // Add awaiting-specific fields if in awaiting state
-          if (status === 'awaiting') {
-            return {
-              ...baseState,
-              awaitingResponses: Array.from(w.machine.getAwaitingResponses()),
-              awaitDuration: w.machine.getAwaitDuration()
-            };
-          }
-
-          return baseState;
-        })
-      ),
-      updatedAt: Date.now(),
-    };
-    try {
-      fs.writeFileSync(this.stateFile, JSON.stringify(state, null, 2));
-    } catch {
-      // Ignore write errors
-    }
+    this.workerLifecycle.writeState();
   }
 
   /**
@@ -512,230 +456,119 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   // ============================================================================
-  // Worker Instance Management (Array-based for Runtime Parallelism)
+  // Worker Instance Management (delegates to WorkerLifecycleManager)
   // ============================================================================
 
   /**
-   * Add a worker instance to the active workers map
-   * Generates a unique workerId for parallel execution tracking
+   * Add a worker instance (delegates to WorkerLifecycleManager)
    */
   private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount'>, taskFrom?: string): string {
-    const workerId = `${agentId}-${crypto.randomUUID().slice(0, 8)}`;
-    const workerWithId: ActiveWorker = {
-      ...worker,
-      workerId,
-      messagesSent: [],  // Initialize empty message tracking
-      nudgeCount: 0,  // Initialize nudge counter
-      taskFrom,  // Track who sent the initial task
-    };
-
-    const workers = this.activeWorkers.get(agentId) || [];
-    workers.push(workerWithId);
-    this.activeWorkers.set(agentId, workers);
-
-    log.debug('dispatcher', 'Added active worker', {
-      workerId,
-      agentId,
-      taskFrom,
-      totalWorkersForAgent: workers.length,
-    });
-
-    return workerId;
+    return this.workerLifecycle.add(agentId, worker, taskFrom);
   }
 
   /**
-   * Remove a specific worker instance by workerId
-   * Returns true if worker was found and removed
+   * Remove a worker instance (delegates to WorkerLifecycleManager)
    */
   private removeActiveWorker(agentId: string, workerId: string): boolean {
-    const workers = this.activeWorkers.get(agentId);
-    if (!workers) return false;
-
-    const filtered = workers.filter(w => w.workerId !== workerId);
-
-    if (filtered.length === workers.length) {
-      // Worker not found
-      return false;
-    }
-
-    if (filtered.length === 0) {
-      this.activeWorkers.delete(agentId);
-    } else {
-      this.activeWorkers.set(agentId, filtered);
-    }
-
-    log.debug('dispatcher', 'Removed active worker', {
-      workerId,
-      agentId,
-      remainingWorkersForAgent: filtered.length,
-    });
-
-    return true;
+    return this.workerLifecycle.remove(agentId, workerId);
   }
 
   /**
-   * Get a specific worker by workerId (searches across all agents)
+   * Get worker by workerId (delegates to WorkerLifecycleManager)
    */
   private getWorkerByWorkerId(workerId: string): { agentId: string; worker: ActiveWorker } | undefined {
-    for (const [agentId, workers] of this.activeWorkers) {
-      const worker = workers.find(w => w.workerId === workerId);
-      if (worker) {
-        return { agentId, worker };
-      }
-    }
-    return undefined;
+    return this.workerLifecycle.getByWorkerId(workerId);
   }
 
   /**
-   * Get the first worker for an agent (for backwards compatibility)
-   * Used when a specific workerId is not available
+   * Get first worker for agent (delegates to WorkerLifecycleManager)
    */
   private getFirstWorkerForAgent(agentId: string): ActiveWorker | undefined {
-    const workers = this.activeWorkers.get(agentId);
-    return workers?.[0];
+    return this.workerLifecycle.getFirst(agentId);
   }
 
   /**
-   * Get all workers for an agent
+   * Get all workers for an agent (delegates to WorkerLifecycleManager)
    */
   getActiveWorkersForAgent(agentId: string): ActiveWorker[] {
-    return this.activeWorkers.get(agentId) || [];
+    return this.workerLifecycle.getForAgent(agentId);
   }
 
   /**
-   * Check if agent has any active workers
+   * Check if agent has any active workers (delegates to WorkerLifecycleManager)
    */
   hasActiveWorkers(agentId: string): boolean {
-    const workers = this.activeWorkers.get(agentId);
-    return workers !== undefined && workers.length > 0;
+    return this.workerLifecycle.hasWorkers(agentId);
   }
 
   /**
-   * Track a message sent by an active worker
-   * Called when consumer detects a message written by a worker
+   * Track a message sent by an active worker (delegates to WorkerLifecycleManager)
    */
   private trackMessageSent(fromAgentId: string, toAgentId: string, messageType: string, filepath?: string): void {
-    const workers = this.activeWorkers.get(fromAgentId);
-    if (!workers || workers.length === 0) {
-      // No active worker for this agent - might be a manual message or timing issue
-      return;
-    }
-
-    // Track on the first (usually only) worker for this agent
-    const worker = workers[0];
-    worker.messagesSent.push({
-      to: toAgentId,
-      type: messageType,
-      filepath: filepath || '',
-    });
-
-    log.debug('dispatcher', 'Tracked message sent by worker', {
-      fromAgentId,
-      toAgentId,
-      messageType,
-      totalMessagesSent: worker.messagesSent.length,
-    });
+    this.workerLifecycle.trackMessage(fromAgentId, toAgentId, messageType, filepath);
   }
 
+  // ============================================================================
+  // Session Management (delegates to SessionManager)
+  // ============================================================================
+
   /**
-   * Check if a mesh has any pending ask-human (suspended sessions)
-   * When ask-human is pending, the entire mesh should be halted - no new workers spawn.
+   * Check if a mesh has any pending ask-human (delegates to SessionManager)
    */
   hasPendingAskHumanForMesh(meshName: string): boolean {
-    for (const [agentId, suspended] of this.suspendedSessions) {
-      if (suspended.meshName === meshName && suspended.reason === 'ask-human') {
-        return true;
-      }
-    }
-    return false;
+    return this.sessionManager.hasPendingAskHumanForMesh(meshName);
   }
 
   /**
-   * Get suspended session info for a mesh (for debugging/logging)
+   * Get suspended session info for a mesh (delegates to SessionManager)
    */
   getSuspendedSessionForMesh(meshName: string): { agentId: string; suspended: SuspendedSession } | undefined {
-    for (const [agentId, suspended] of this.suspendedSessions) {
-      if (suspended.meshName === meshName) {
-        return { agentId, suspended };
-      }
-    }
-    return undefined;
+    return this.sessionManager.getForMesh(meshName);
   }
 
   // ============================================================================
-  // OAOM (One-Agent-One-Message) Lock Management
+  // OAOM (One-Agent-One-Message) Lock Management (delegates to LockManager)
   // ============================================================================
 
   /**
-   * Check if an agent is currently locked (processing a message or awaiting response)
+   * Check if an agent is currently locked (delegates to LockManager)
    */
   private isAgentLocked(agentId: string): boolean {
-    return this.agentLocks.has(agentId);
+    return this.lockManager.isLocked(agentId);
   }
 
   /**
-   * Acquire a lock for an agent before processing a message
+   * Acquire a lock for an agent (delegates to LockManager)
    */
   private acquireAgentLock(
     agentId: string,
-    reason: 'processing' | 'awaiting-human' | 'awaiting-agent',
+    reason: LockReason,
     workerId?: string,
     sessionId?: string
   ): void {
-    this.agentLocks.set(agentId, {
-      reason,
-      since: Date.now(),
-      workerId,
-      sessionId,
-    });
-    this.emit('agent:locked', { agentId, reason });
-    log.debug('dispatcher', 'Agent lock acquired', { agentId, reason, workerId });
+    this.lockManager.acquire(agentId, reason, workerId, sessionId);
   }
 
   /**
-   * Update the reason for an existing lock (e.g., processing -> awaiting)
+   * Update the reason for an existing lock (delegates to LockManager)
    */
-  private updateAgentLockReason(
-    agentId: string,
-    reason: 'processing' | 'awaiting-human' | 'awaiting-agent'
-  ): void {
-    const lock = this.agentLocks.get(agentId);
-    if (lock) {
-      const oldReason = lock.reason;
-      lock.reason = reason;
-      log.debug('dispatcher', 'Agent lock reason updated', { agentId, oldReason, newReason: reason });
-    }
+  private updateAgentLockReason(agentId: string, reason: LockReason): void {
+    this.lockManager.updateReason(agentId, reason);
   }
 
   /**
-   * Release an agent's lock and process next queued message
+   * Release an agent's lock (delegates to LockManager)
+   * Note: LockManager will invoke processNextQueuedMessage via callback
    */
   private releaseAgentLock(agentId: string): void {
-    const lock = this.agentLocks.get(agentId);
-    if (lock) {
-      const duration = Date.now() - lock.since;
-      this.agentLocks.delete(agentId);
-      this.emit('agent:unlocked', {
-        agentId,
-        wasLocked: lock.reason,
-        duration,
-      });
-      log.debug('dispatcher', 'Agent lock released', {
-        agentId,
-        wasLocked: lock.reason,
-        duration,
-      });
-
-      // Check for queued messages after unlock
-      this.processNextQueuedMessage(agentId);
-    }
+    this.lockManager.release(agentId);
   }
 
   /**
-   * Get the current lock state for an agent (for debugging/status)
+   * Get the current lock state for an agent (delegates to LockManager)
    */
   getAgentLockState(agentId: string): AgentLock | undefined {
-    return this.agentLocks.get(agentId);
+    return this.lockManager.getState(agentId);
   }
 
   /**
@@ -801,44 +634,13 @@ export class WorkerDispatcher extends EventEmitter {
    * Called on startup to restore in-memory state from SQLite persistence
    */
   restoreSuspendedSessions(): void {
-    const suspended = this.queue.listSuspendedSessions();
+    const count = this.sessionManager.restoreFromDatabase((meshName, agentName) => {
+      const meshConfig = this.meshConfigs.get(meshName);
+      return meshConfig?.agents.find(a => a.name === agentName);
+    });
 
-    for (const s of suspended) {
-      // Find the mesh config and agent config
-      const meshConfig = this.meshConfigs.get(s.meshName);
-      const [, agentName] = s.agentId.split('/');
-      const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
-
-      if (!agentConfig) {
-        log.warn('dispatcher', 'Cannot restore suspended session: agent config not found', {
-          agentId: s.agentId,
-          meshName: s.meshName,
-        });
-        continue;
-      }
-
-      // Restore to in-memory map
-      this.suspendedSessions.set(s.agentId, {
-        sessionId: s.sessionId,
-        reason: s.reason as 'ask-human' | 'await-response',
-        suspendedAt: s.suspendedAt,
-        targetAgents: new Set(s.targetAgents || []),
-        pendingResponseCount: s.pendingCount,
-        meshName: s.meshName,
-        agentConfig,
-        hookContext: s.hookContext ? JSON.parse(s.hookContext) : undefined,
-      });
-
-      log.info('dispatcher', 'Restored suspended session', {
-        agentId: s.agentId,
-        sessionId: s.sessionId.slice(0, 8),
-        reason: s.reason,
-        suspendedFor: Date.now() - s.suspendedAt,
-      });
-    }
-
-    if (suspended.length > 0) {
-      log.info('dispatcher', `Restored ${suspended.length} suspended session(s) from previous run`);
+    if (count > 0) {
+      log.info('dispatcher', `Restored ${count} suspended session(s) from previous run`);
     }
   }
 
@@ -1011,7 +813,7 @@ export class WorkerDispatcher extends EventEmitter {
 
     // OAOM (One-Agent-One-Message): Check if agent is locked
     // Each agent processes exactly one message at a time; subsequent messages queue
-    const lock = this.agentLocks.get(agentId);
+    const lock = this.lockManager.getState(agentId);
     if (lock) {
       const queueDepth = this.queue.countPending(agentId);
       log.info('dispatcher', 'Agent locked, message remains queued (OAOM)', {
@@ -1087,12 +889,12 @@ export class WorkerDispatcher extends EventEmitter {
         log.info('dispatcher', `Resuming mesh (resume-mesh flag set)`, {
           meshName,
           agentId,
-          hasSuspendedSessions: this.suspendedSessions.size > 0,
+          hasSuspendedSessions: this.sessionManager.getSuspendedCount() > 0,
         });
       } else {
         // Clear any stale state from previous incomplete run
-        const hadState = this.suspendedSessions.size > 0 ||
-                        this.askResponseBuffer.size > 0 ||
+        const hadState = this.sessionManager.getSuspendedCount() > 0 ||
+                        this.sessionManager.getBufferedResponseCount(agentId) > 0 ||
                         this.meshFSMs.has(meshName);
         if (hadState) {
           log.info('dispatcher', `New mesh run at entry point, clearing stale state`, {
@@ -1291,25 +1093,13 @@ export class WorkerDispatcher extends EventEmitter {
         const pendingAsks = this.queue.getPendingAsks(senderAgentId);
         const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
         const pendingCount = pendingAskHumans.length;
-        const suspendedAt = Date.now();
 
-        // Store session for later resume (in-memory)
-        this.suspendedSessions.set(senderAgentId, {
+        // Store session for later resume (via SessionManager)
+        this.sessionManager.suspend(senderAgentId, {
           sessionId,
           reason: 'ask-human',
-          suspendedAt,
-          targetAgents: new Set([targetAgentId]),
-          pendingResponseCount: pendingCount,
           meshName,
           agentConfig,
-        });
-
-        // Persist to SQLite for crash recovery
-        this.queue.suspendSession(senderAgentId, {
-          sessionId,
-          reason: 'ask-human',
-          suspendedAt,
-          meshName,
           targetAgents: [targetAgentId],
           pendingCount,
         });
@@ -1446,17 +1236,14 @@ The system will resume your session when the human responds.`;
     });
 
     try {
-      // Remove from suspended (in-memory and SQLite)
-      this.suspendedSessions.delete(agentId);
-      this.queue.resumeSession(agentId);
+      // Remove from suspended (via SessionManager - handles both in-memory and SQLite)
+      this.sessionManager.markResumed(agentId);
 
       // OAOM: Transition lock back to processing (was awaiting-human or awaiting-agent)
       this.updateAgentLockReason(agentId, 'processing');
 
       // Build the resume prompt with human response
-      const resumePrompt = headline
-        ? `## Human Response: ${headline}\n\n${responseContent}`
-        : `## Human Response\n\n${responseContent}`;
+      const resumePrompt = this.sessionManager.buildHumanResponsePrompt(responseContent, headline);
 
       // Create new runner config (minimal - session has system prompt)
       const runnerConfig: SdkRunnerConfig = {
@@ -1572,10 +1359,9 @@ The system will resume your session when the human responds.`;
         agentId,
         error: (error as Error).message,
       });
-      // Clean up on failure - remove all workers for this agent
-      this.suspendedSessions.delete(agentId);
-      // For cleanup, we delete the entire array for this agent
-      this.activeWorkers.delete(agentId);
+      // Clean up on failure - remove session and all workers for this agent
+      this.sessionManager.markResumed(agentId);
+      this.workerLifecycle.deleteForAgent(agentId);
     }
   }
 
@@ -1590,15 +1376,12 @@ The system will resume your session when the human responds.`;
     const { from: respondingAgentId, to: awaitingAgentId, content, msgId: correlationId } = event;
 
     // Check for suspended session
-    const suspended = this.suspendedSessions.get(awaitingAgentId);
+    const suspended = this.sessionManager.get(awaitingAgentId);
     if (suspended) {
       // Handle ask-human responses (from core/core)
       if (suspended.reason === 'ask-human' && respondingAgentId === 'core/core') {
         // Buffer this response
-        if (!this.askResponseBuffer.has(awaitingAgentId)) {
-          this.askResponseBuffer.set(awaitingAgentId, []);
-        }
-        this.askResponseBuffer.get(awaitingAgentId)!.push({
+        this.sessionManager.bufferResponse(awaitingAgentId, {
           from: respondingAgentId,
           content,
           headline: event.headline,
@@ -1618,13 +1401,13 @@ The system will resume your session when the human responds.`;
           sessionId: suspended.sessionId.slice(0, 8),
           suspendedFor: Date.now() - suspended.suspendedAt,
           remainingPendingAsks: remainingCount,
-          bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
+          bufferedResponses: this.sessionManager.getBufferedResponseCount(awaitingAgentId),
         });
 
         // Only resume when ALL pending ask-humans to core/core have been resolved
         if (remainingCount === 0) {
           // Get all buffered responses
-          const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
+          const bufferedResponses = this.sessionManager.getAndClearBufferedResponses(awaitingAgentId);
 
           log.info('dispatcher', `All ask-human responses received, resuming suspended session`, {
             from: respondingAgentId,
@@ -1633,11 +1416,8 @@ The system will resume your session when the human responds.`;
             responseCount: bufferedResponses.length,
           });
 
-          // Build combined content from all responses
-          const combinedContent = this.buildBatchedAskResponseContent(bufferedResponses);
-
-          // Clear buffer before resume
-          this.askResponseBuffer.delete(awaitingAgentId);
+          // Build combined content from all responses (buffer already cleared by getAndClearBufferedResponses)
+          const combinedContent = this.sessionManager.buildBatchedAskResponseContent(bufferedResponses);
 
           // Resume the suspended session with all human responses
           await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
@@ -1655,10 +1435,7 @@ The system will resume your session when the human responds.`;
       // Handle agent-to-agent ask-responses for sessions suspended due to exiting while awaiting
       if (suspended.reason === 'await-response' && suspended.targetAgents.has(respondingAgentId)) {
         // Buffer this response
-        if (!this.askResponseBuffer.has(awaitingAgentId)) {
-          this.askResponseBuffer.set(awaitingAgentId, []);
-        }
-        this.askResponseBuffer.get(awaitingAgentId)!.push({
+        this.sessionManager.bufferResponse(awaitingAgentId, {
           from: respondingAgentId,
           content,
           headline: event.headline,
@@ -1667,9 +1444,8 @@ The system will resume your session when the human responds.`;
         // Resolve the pending ask now that response is received
         this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
 
-        // Remove responder from target agents
-        suspended.targetAgents.delete(respondingAgentId);
-        suspended.pendingResponseCount = suspended.targetAgents.size;
+        // Remove responder from target agents (returns true if all responded)
+        const allResponded = this.sessionManager.removeTargetAgent(awaitingAgentId, respondingAgentId);
 
         log.info('dispatcher', `Agent response received for suspended session`, {
           from: respondingAgentId,
@@ -1677,12 +1453,12 @@ The system will resume your session when the human responds.`;
           sessionId: suspended.sessionId.slice(0, 8),
           suspendedFor: Date.now() - suspended.suspendedAt,
           remainingTargetAgents: Array.from(suspended.targetAgents),
-          bufferedResponses: this.askResponseBuffer.get(awaitingAgentId)?.length || 0,
+          bufferedResponses: this.sessionManager.getBufferedResponseCount(awaitingAgentId),
         });
 
         // Resume when all awaited agents have responded
-        if (suspended.targetAgents.size === 0) {
-          const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
+        if (allResponded) {
+          const bufferedResponses = this.sessionManager.getAndClearBufferedResponses(awaitingAgentId);
 
           log.info('dispatcher', `All agent responses received, resuming suspended session`, {
             from: respondingAgentId,
@@ -1691,11 +1467,8 @@ The system will resume your session when the human responds.`;
             responseCount: bufferedResponses.length,
           });
 
-          // Build combined content from all responses
-          const combinedContent = this.buildAskResponsePrompt(bufferedResponses);
-
-          // Clear buffer before resume
-          this.askResponseBuffer.delete(awaitingAgentId);
+          // Build combined content from all responses (buffer already cleared)
+          const combinedContent = this.sessionManager.buildAskResponsePrompt(bufferedResponses);
 
           // Resume the suspended session
           await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent,
@@ -1752,10 +1525,7 @@ The system will resume your session when the human responds.`;
       });
 
       // Buffer this response for aggregation
-      if (!this.askResponseBuffer.has(awaitingAgentId)) {
-        this.askResponseBuffer.set(awaitingAgentId, []);
-      }
-      this.askResponseBuffer.get(awaitingAgentId)!.push({
+      this.sessionManager.bufferResponse(awaitingAgentId, {
         from: respondingAgentId,
         content,
         headline: event.headline,
@@ -1809,17 +1579,14 @@ The system will resume your session when the human responds.`;
         }
 
         // Get ALL buffered responses for this agent
-        const bufferedResponses = this.askResponseBuffer.get(awaitingAgentId) || [];
-
-        // Clear buffer before resume
-        this.askResponseBuffer.delete(awaitingAgentId);
+        const bufferedResponses = this.sessionManager.getAndClearBufferedResponses(awaitingAgentId);
 
         // Resume the session with all buffered responses
         await this.resumeSession({
           reason: 'ask-response',
           agentId: awaitingAgentId,
           sessionId,
-          prompt: this.buildAskResponsePrompt(bufferedResponses),
+          prompt: this.sessionManager.buildAskResponsePrompt(bufferedResponses),
           runner,
           metadata: { responseCount: bufferedResponses.length, from: respondingAgentId },
         });
@@ -1835,78 +1602,7 @@ The system will resume your session when the human responds.`;
     }
   }
 
-  /**
-   * Build a prompt for resuming with ask-response content
-   * Accepts an array of responses to aggregate multiple responses received while awaiting
-   */
-  private buildAskResponsePrompt(responses: Array<{ from: string; content: string; headline?: string }>): string {
-    const parts: string[] = [];
-
-    if (responses.length === 1) {
-      // Single response - use simpler format
-      const response = responses[0];
-      parts.push('## Ask Response Received\n');
-      parts.push(`Response received from **${response.from}**:\n`);
-
-      if (response.headline) {
-        parts.push(`**Subject**: ${response.headline}\n`);
-      }
-
-      parts.push('---\n');
-      parts.push(response.content);
-      parts.push('\n---');
-      parts.push('\n**Action**: Process this response and continue with your task.');
-    } else {
-      // Multiple responses - aggregate them
-      parts.push(`## Ask Responses Received (${responses.length} total)\n`);
-      parts.push('All requested responses have arrived:\n');
-
-      for (let i = 0; i < responses.length; i++) {
-        const response = responses[i];
-        parts.push(`\n### Response ${i + 1} from **${response.from}**\n`);
-
-        if (response.headline) {
-          parts.push(`**Subject**: ${response.headline}\n`);
-        }
-
-        parts.push('---\n');
-        parts.push(response.content);
-        parts.push('\n---\n');
-      }
-
-      parts.push('\n**Action**: Process all responses above and continue with your task.');
-    }
-
-    return parts.join('\n');
-  }
-
-  /**
-   * Build batched content from multiple ask-human responses
-   * Used when resuming a suspended session that was waiting for multiple human responses
-   */
-  private buildBatchedAskResponseContent(responses: Array<{ from: string; content: string; headline?: string }>): string {
-    if (responses.length === 1) {
-      // Single response - just return the content
-      return responses[0].content;
-    }
-
-    // Multiple responses - build a combined document
-    const parts: string[] = [];
-    parts.push(`# Human Responses (${responses.length} total)\n`);
-    parts.push('All requested human responses have arrived:\n');
-
-    for (let i = 0; i < responses.length; i++) {
-      const response = responses[i];
-      parts.push(`\n## Response ${i + 1}${response.headline ? `: ${response.headline}` : ''}\n`);
-      parts.push(response.content);
-      parts.push('\n');
-    }
-
-    parts.push('\n---\n');
-    parts.push('**All responses received.** You may now continue with your task.');
-
-    return parts.join('\n');
-  }
+  // Note: buildAskResponsePrompt and buildBatchedAskResponseContent moved to SessionManager
 
   /**
    * Handle parity reminder - inject feedback into worker when task-complete is blocked
@@ -2006,7 +1702,7 @@ The system will resume your session when the human responds.`;
 
       // Cleanup using workerId
       this.removeActiveWorker(agentId, workerId);
-      this.askResponseBuffer.delete(agentId);
+      this.sessionManager.clearBuffer(agentId);
       this.writeWorkerState();
 
       // OAOM: Release lock on await timeout
@@ -2026,33 +1722,11 @@ The system will resume your session when the human responds.`;
    * Also called on new run at entry point (unless resume-mesh flag set)
    */
   clearMeshState(meshName: string): void {
-    let clearedSessions = 0;
-    let clearedBuffers = 0;
-
-    // Clear in-memory suspended sessions for this mesh
-    for (const [agentId, _] of this.suspendedSessions) {
-      if (agentId.startsWith(`${meshName}/`)) {
-        this.suspendedSessions.delete(agentId);
-        clearedSessions++;
-      }
-    }
-
-    // Clear in-memory ask response buffers for this mesh
-    for (const [agentId, _] of this.askResponseBuffer) {
-      if (agentId.startsWith(`${meshName}/`)) {
-        this.askResponseBuffer.delete(agentId);
-        clearedBuffers++;
-      }
-    }
+    // Clear sessions and buffers via SessionManager (handles both in-memory and SQLite)
+    const { sessions: clearedSessions, buffers: clearedBuffers } = this.sessionManager.clearForMesh(meshName);
 
     // OAOM: Clear agent locks for this mesh
-    let clearedLocks = 0;
-    for (const [agentId, _] of this.agentLocks) {
-      if (agentId.startsWith(`${meshName}/`)) {
-        this.agentLocks.delete(agentId);
-        clearedLocks++;
-      }
-    }
+    const clearedLocks = this.lockManager.clearForMesh(meshName);
 
     // Clear FSM state for this mesh
     const fsm = this.meshFSMs.get(meshName);
@@ -2113,20 +1787,14 @@ The system will resume your session when the human responds.`;
       this.boundSystemFeedbackHandler = null;
     }
 
-    // Kill all active workers (iterate through all instances)
-    for (const [agentId, workers] of this.activeWorkers) {
-      for (const worker of workers) {
-        worker.runner.kill(`shutdown: dispatcher stopping, agentId=${agentId}`);
-      }
-    }
-    this.activeWorkers.clear();
-    this.askResponseBuffer.clear();
+    // Kill all active workers (via WorkerLifecycleManager)
+    this.workerLifecycle.killAll('shutdown: dispatcher stopping');
+    this.workerLifecycle.clear();
     this.writeWorkerState();
 
-    // Clean shutdown: clear suspended sessions so they don't restore on next start
+    // Clean shutdown: clear all sessions so they don't restore on next start
     // Crash recovery still works - only clean shutdown clears
-    const clearedSessions = this.queue.clearAllSuspendedSessions();
-    this.suspendedSessions.clear();
+    const clearedSessions = this.sessionManager.clearAll();
     if (clearedSessions > 0) {
       log.info('dispatcher', 'Clean shutdown: cleared suspended sessions', { count: clearedSessions });
     }
@@ -2583,7 +2251,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       this.emit('session-start', { agentId });
 
       // Clear any stale ask-response buffer for this agent
-      this.askResponseBuffer.delete(agentId);
+      this.sessionManager.clearBuffer(agentId);
 
       // Track when FSM 'start' transition completes to avoid race condition
       // When queue is empty, 'complete' fires before 'start' async handler finishes
@@ -2684,7 +2352,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Cleanup
           this.removeActiveWorker(agentId, currentWorkerId);
-          this.askResponseBuffer.delete(agentId);
+          this.sessionManager.clearBuffer(agentId);
           this.writeWorkerState();
 
           // OAOM: Release lock on ensemble completion
@@ -2765,7 +2433,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 // Complete FSM first to avoid race condition
                 await machine.complete(data);
                 this.removeActiveWorker(agentId, currentWorkerId);
-                this.askResponseBuffer.delete(agentId);
+                this.sessionManager.clearBuffer(agentId);
                 this.writeWorkerState();
 
                 // Then respawn after a delay
@@ -2794,7 +2462,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               // Complete FSM before emitting events
               await machine.complete(data);
               this.removeActiveWorker(agentId, currentWorkerId);
-              this.askResponseBuffer.delete(agentId);
+              this.sessionManager.clearBuffer(agentId);
               this.writeWorkerState();
 
               // OAOM: Release lock on quality halt
@@ -2872,26 +2540,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               mergedTargets: Array.from(allTargets),
             });
 
-            // Save to suspendedSessions (same mechanism as ask-human)
-            this.suspendedSessions.set(agentId, {
+            // Save to suspendedSessions via SessionManager (handles both in-memory and SQLite)
+            this.sessionManager.suspend(agentId, {
               sessionId,
               reason: 'await-response',
-              suspendedAt: Date.now(),
-              targetAgents: allTargets,
-              pendingResponseCount: pendingCount,
               meshName,
               agentConfig: agent,
-              hookContext: workerHookContext,
-            });
-
-            // Persist to SQLite for crash recovery (matches ask-human behavior)
-            this.queue.suspendSession(agentId, {
-              sessionId,
-              reason: 'await-response',
-              suspendedAt: Date.now(),
-              meshName,
               targetAgents: Array.from(allTargets),
               pendingCount,
+              hookContext: workerHookContext,
             });
 
             // Remove from activeWorkers but DON'T complete FSM - keep it in awaiting state
@@ -3043,30 +2700,31 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Check for buffered ask-responses that arrived during race window
         // (between isRunning() check and completion)
-        const bufferedResponses = this.askResponseBuffer.get(agentId);
-        if (bufferedResponses?.length && data.sessionId) {
+        const bufferedResponses = this.sessionManager.getBufferedResponses(agentId);
+        if (bufferedResponses.length > 0 && data.sessionId) {
           log.info('dispatcher', `Processing buffered ask-responses post-completion`, {
             agentId,
             sessionId: data.sessionId.slice(0, 8),
             responseCount: bufferedResponses.length,
           });
 
-          this.askResponseBuffer.delete(agentId);
+          // Clear and get responses atomically
+          const responses = this.sessionManager.getAndClearBufferedResponses(agentId);
 
           // Resume session with buffered responses
           await this.resumeSession({
             reason: 'ask-response',
             agentId,
             sessionId: data.sessionId,
-            prompt: this.buildAskResponsePrompt(bufferedResponses),
+            prompt: this.sessionManager.buildAskResponsePrompt(responses),
             runner: worker,
-            metadata: { responseCount: bufferedResponses.length, postCompletion: true },
+            metadata: { responseCount: responses.length, postCompletion: true },
           });
 
           return; // New complete event will fire when resume finishes
         }
 
-        this.askResponseBuffer.delete(agentId);
+        this.sessionManager.clearBuffer(agentId);
 
         // Check if mesh session is complete
         this.checkSessionComplete(workerHookContext.meshInstance);
@@ -3178,7 +2836,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Cleanup
           this.removeActiveWorker(agentId, errorWorkerId);
-          this.askResponseBuffer.delete(agentId);
+          this.sessionManager.clearBuffer(agentId);
           this.writeWorkerState();
 
           // OAOM: Release lock on ensemble error
@@ -3229,7 +2887,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
           this.removeActiveWorker(agentId, errorWorkerId);
-          this.askResponseBuffer.delete(agentId);
+          this.sessionManager.clearBuffer(agentId);
           this.writeWorkerState();
           // OAOM: Release lock after exhausting retries
           this.releaseAgentLock(agentId);
@@ -3805,11 +3463,7 @@ ${output}
    * Get total active worker count across all agents
    */
   getActiveWorkerCount(): number {
-    let count = 0;
-    for (const workers of this.activeWorkers.values()) {
-      count += workers.length;
-    }
-    return count;
+    return this.workerLifecycle.getCount();
   }
 
   /**
@@ -3817,7 +3471,7 @@ ${output}
    * For backwards compatibility - returns unique agentIds that have workers
    */
   getActiveWorkerIds(): string[] {
-    return Array.from(this.activeWorkers.keys());
+    return this.workerLifecycle.getAgentIds();
   }
 
   /**
@@ -3825,13 +3479,7 @@ ${output}
    * Returns unique workerIds for all running workers
    */
   getAllActiveWorkerIds(): string[] {
-    const ids: string[] = [];
-    for (const workers of this.activeWorkers.values()) {
-      for (const worker of workers) {
-        ids.push(worker.workerId);
-      }
-    }
-    return ids;
+    return this.workerLifecycle.getAllWorkerIds();
   }
 
   /**
@@ -3845,8 +3493,7 @@ ${output}
    * Get worker state machine by agent ID (returns first worker's machine)
    */
   getWorkerMachine(agentId: string): WorkerStateMachine | undefined {
-    const workers = this.activeWorkers.get(agentId);
-    return workers?.[0]?.machine;
+    return this.workerLifecycle.getFirst(agentId)?.machine;
   }
 
   /**
@@ -3855,7 +3502,7 @@ ${output}
    */
   getAllWorkerMachines(): Map<string, WorkerStateMachine> {
     const machines = new Map<string, WorkerStateMachine>();
-    for (const workers of this.activeWorkers.values()) {
+    for (const [, workers] of this.workerLifecycle.entries()) {
       for (const worker of workers) {
         machines.set(worker.workerId, worker.machine);
       }
@@ -3957,9 +3604,13 @@ ${output}
     if (!session) return;
 
     // Check if any workers from this mesh are still active (flatten arrays)
-    const activeInMesh = Array.from(this.activeWorkers.values())
-      .flat()
-      .some(w => w.hookContext?.meshInstance === meshInstance);
+    let activeInMesh = false;
+    for (const [, workers] of this.workerLifecycle.entries()) {
+      if (workers.some(w => w.hookContext?.meshInstance === meshInstance)) {
+        activeInMesh = true;
+        break;
+      }
+    }
 
     if (!activeInMesh) {
       // Session complete metadata
@@ -4049,8 +3700,8 @@ ${output}
     const { agentId, feedback, reason } = event;
 
     // Find active worker for this agent
-    const workers = this.activeWorkers.get(agentId);
-    if (!workers || workers.length === 0) {
+    const workers = this.workerLifecycle.getForAgent(agentId);
+    if (workers.length === 0) {
       log.warn('dispatcher', 'System feedback: no active worker to inject into', {
         agentId,
         reason,
@@ -4123,8 +3774,8 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     });
 
     // Find active worker and inject directly
-    const workers = this.activeWorkers.get(agentId);
-    if (!workers || workers.length === 0) {
+    const workers = this.workerLifecycle.getForAgent(agentId);
+    if (workers.length === 0) {
       log.warn('dispatcher', 'FSM feedback: no active worker to inject into', {
         agentId,
         currentState,
