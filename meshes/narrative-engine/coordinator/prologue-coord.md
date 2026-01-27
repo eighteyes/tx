@@ -72,6 +72,41 @@ scene:
 # NO player_action field - atmospheric setup only
 ```
 
+## Actor Population & Validation (REQUIRED)
+
+**Populate actor traits FROM canonical entity files. Never invent.**
+
+### Step 1: Read Entity File
+```bash
+cat {game_path}/entities/characters/protagonist.yaml
+```
+
+### Step 2: Extract Canonical Data
+From entity file, extract:
+- `traits.voices` → list of trait names (keys only)
+- `current_state.trait_pressures` → pressure levels per trait
+
+### Step 3: Write Populated Context
+```yaml
+turn: 0
+type: prologue
+entropy_pool: [values from bash]
+actor:
+  id: protagonist
+  traits: [PATTERN-SEEKER, GUARDED]  # FROM entity file
+  trait_pressures:
+    PATTERN-SEEKER: 0
+    GUARDED: 0
+scene:
+  location: {from arc.yaml opening}
+  present: [protagonist]
+```
+
+### Validation Rules
+- **Entity file missing?** → HALT, flag error
+- **Traits ONLY from `traits.voices` keys**
+- **Never invent traits not in the entity file**
+
 ## Session Update (FULL)
 
 ```yaml

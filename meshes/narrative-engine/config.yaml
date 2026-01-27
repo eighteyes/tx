@@ -75,6 +75,14 @@ agents:
     # Orchestrates dramaturg, system, cast, scene-crafter
     # Handles mid-turn player decisions
 
+  - name: calibrator
+    model: opus
+    prompt: calibrator/prompt.md
+    # Game creation - HITL worldbuilding extraction
+    # 9-phase extraction loop via ask-human
+    # Creates author.yaml, setting.yaml, arc.yaml, entities
+    # Hands off to prologue-coord when complete
+
   - name: editor
     model: opus
     prompt: editor/prompt.md

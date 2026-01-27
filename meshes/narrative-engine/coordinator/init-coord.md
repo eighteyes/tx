@@ -73,6 +73,59 @@ scene:
   present: [relevant NPCs]
 ```
 
+## Actor Population & Validation (REQUIRED)
+
+**Populate actor traits FROM canonical entity files. Never invent.**
+
+### Step 1: Read Entity File
+```bash
+# For actor.id: protagonist
+cat {game_path}/entities/characters/protagonist.yaml
+```
+
+### Step 2: Extract Canonical Data
+From entity file, extract:
+- `traits.voices` → list of trait names (keys only)
+- `current_state.trait_pressures` → pressure levels per trait
+- `bonds` → relationship list
+
+### Step 3: Write Populated Context
+```yaml
+turn: {N}
+type: action
+player_action: {from task body}
+entropy_pool: [values from bash]
+actor:
+  id: protagonist
+  traits: [PATTERN-SEEKER, GUARDED]  # FROM entity file, not invented
+  trait_pressures:                    # FROM entity current_state
+    PATTERN-SEEKER: 2
+    GUARDED: 1
+  bonds:                              # FROM entity bonds
+    - target: merchant
+      type: suspicious_of
+scene:
+  location: {from previous turn or arc.yaml}
+  present: [relevant NPCs]
+```
+
+### Validation Rules
+- **Entity file missing?** → HALT, flag error, do not proceed
+- **Traits ONLY from `traits.voices` keys** — no invention
+- **Pressure values ONLY from `current_state.trait_pressures`**
+- **If trait exists in voices but not in pressures** → default to 0
+
+### Validation Error Format
+```yaml
+# If someone manually added traits not in entity:
+validation_error:
+  actor_id: sool
+  canonical_traits: [PATTERN-SEEKER, GUARDED, WITNESSED]
+  attempted_traits: [PATTERN-SEEKER, GUARDED, BRAVE]
+  invalid: ["BRAVE not in entities/characters/sool.yaml"]
+  action: "HALT - cannot proceed with invented traits"
+```
+
 ## Session Update (FULL - preserve game_id, campaign_id)
 
 ```yaml

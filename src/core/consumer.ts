@@ -933,11 +933,11 @@ ${body}
         // Soft violation: no rules for this message type, but target exists
         // Clear violation tracker - this is a config gap, not agent error
         this.routingViolationTracker.delete(fromAgent);
-        log.warn('consumer', 'Routing violation (soft): no rules for message type, but target exists', {
+        log.warn('consumer', 'Routing violation (soft): target exists, sending anyway', {
           from: fromAgent,
           to: toAgent,
           type: messageType,
-          definedTypes: Object.keys(agentRouting),
+          expectedRoutes: Object.keys(agentRouting),
         });
         return true; // Allow through
       }
@@ -959,11 +959,11 @@ ${body}
         // Soft violation: agent exists but not in routing table
         // Clear violation tracker - this is a config gap, not agent error
         this.routingViolationTracker.delete(fromAgent);
-        log.warn('consumer', 'Routing violation (soft): target exists, allowing message', {
+        log.warn('consumer', 'Routing violation (soft): target exists, sending anyway', {
           from: fromAgent,
           to: toAgent,
           type: messageType,
-          expectedTargets: Object.keys(typeRouting || {}),
+          expectedRoutes: Object.keys(typeRouting || {}),
         });
         return true; // Allow through
       }
