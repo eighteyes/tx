@@ -182,6 +182,7 @@ export interface RevisionMessageEvent {
 
 /**
  * Event emitted by Consumer when an ask message is detected
+ * Phase 3: Enhanced with boundary detection for terminal-by-default
  */
 export interface AskMessageEvent {
   id: number;
@@ -191,10 +192,15 @@ export interface AskMessageEvent {
   type: string;  // 'ask' or 'ask-human'
   headline?: string;
   msgId?: string;
+  // Phase 3: Boundary detection
+  crossesHumanBoundary?: boolean;  // true if to === 'core/core' and type === 'ask-human'
+  crossesCompletionBoundary?: boolean;  // true if from is a boundary_agent messaging core
+  isTerminal?: boolean;  // true if sender should suspend awaiting response
 }
 
 /**
  * Event emitted by Consumer when an ask-response message is detected
+ * Phase 3: Enhanced with boundary detection for terminal-by-default
  */
 export interface AskResponseMessageEvent {
   id: number;
@@ -204,6 +210,9 @@ export interface AskResponseMessageEvent {
   content: string;
   headline?: string;
   msgId?: string;
+  // Phase 3: Boundary detection
+  fromHumanBoundary?: boolean;  // true if from === 'core/core' (human response)
+  resumesSuspension?: boolean;  // true if this should resume a suspended session
 }
 
 /**

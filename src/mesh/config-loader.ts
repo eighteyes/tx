@@ -81,8 +81,9 @@ export interface MeshConfig {
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
-  completion_agent?: string;  // DEPRECATED: Use completion_agents
-  completion_agents?: string[];  // Agents that can complete the mesh (first-wins)
+  completion_agent?: string;  // DEPRECATED: Use completion_agents or boundary_agents
+  completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5 terminal-by-default)
+  boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
   continuation?: boolean | string[];  // true = all, array = specific agents, omit = none

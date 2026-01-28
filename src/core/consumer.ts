@@ -100,9 +100,11 @@ interface CachedMeshConfig {
 interface MeshConfig {
   mesh: string;
   routing?: Record<string, Record<string, Record<string, string>>>;
-  completion_agent?: string;  // DEPRECATED: Use completion_agents
-  completion_agents?: string[];  // Agents that can complete the mesh (first-wins)
+  completion_agent?: string;  // DEPRECATED: Use completion_agents or boundary_agents
+  completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5)
+  boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
 }
+
 
 export class MessageConsumer extends EventEmitter {
   private watchDir: string;
@@ -422,6 +424,8 @@ ${body}
       // Validates that routing rules exist for intra-mesh messages.
       // Self-heals on first violation, escalates on second.
       // =================================================================
+
+      // Phase 7: Type is always set by parseMessage() (either from file or inferred)
       const messageType = parsed.frontmatter.type;
 
       if (fromAgent && toAgent && messageType) {
@@ -563,17 +567,22 @@ ${body}
           file: filename
         });
 
-        // Parity gate: track pending ask in SQLite (survives restarts)
-        if (msgId) {
+        // Parity gate: ONLY track asks to core/core (human boundary)
+        // Agent-to-agent asks don't require parity tracking in terminal-by-default
+        if (msgId && toAgent === 'core/core') {
           this.queue.trackPendingAsk(fromAgent, toAgent, msgId);
           const counts = this.queue.getPendingAskCounts(fromAgent);
-          log.info('consumer', `Parity gate: tracking ask`, {
+          log.info('consumer', `Parity gate: tracking ask to human boundary`, {
             fromAgent,
             msgId,
             to: toAgent,
             pendingCount: counts.get(toAgent) || 1,
           });
         }
+
+        // Phase 3: Boundary detection for terminal-by-default
+        const crossesHumanBoundary = toAgent === 'core/core' && messageType === 'ask-human';
+        const isTerminal = true;  // All asks are terminal by default (sender suspends)
 
         this.emit('ask-message', {
           id,
@@ -582,7 +591,9 @@ ${body}
           to: toAgent,
           type: messageType,
           headline: parsed.frontmatter.headline,
-          msgId
+          msgId,
+          crossesHumanBoundary,
+          isTerminal
         });
       }
 
@@ -604,39 +615,47 @@ ${body}
           file: filename
         });
 
-        // Parity gate: validate response matches a pending ask (don't delete yet)
-        // Deletion happens in dispatcher after successful delivery
-        const result = this.queue.findPendingAsk(respondingAgent, toAgent, correlationId);
+        // Parity gate: ONLY validate responses from core/core (human boundary)
+        // Agent-to-agent responses don't need parity tracking in terminal-by-default
+        if (respondingAgent === 'core/core') {
+          // Parity gate: validate response matches a pending ask (don't delete yet)
+          // Deletion happens in dispatcher after successful delivery
+          const result = this.queue.findPendingAsk(respondingAgent, toAgent, correlationId);
 
-        if (result.found) {
-          if (result.matchType === 'msg-id') {
-            log.info('consumer', `Parity gate: found pending ask by msg-id`, {
+          if (result.found) {
+            if (result.matchType === 'msg-id') {
+              log.info('consumer', `Parity gate: found pending ask by msg-id`, {
+                agentId: toAgent,
+                msgId,
+                from: respondingAgent,
+                originalMsgId: result.ask?.msg_id,
+              });
+            } else {
+              // Agent fallback - msg-id didn't match but found pending ask to this agent
+              log.warn('consumer', `Parity gate: found pending ask by agent (msg-id mismatch)`, {
+                agentId: toAgent,
+                responseMsgId: msgId,
+                originalMsgId: result.ask?.msg_id,
+                from: respondingAgent,
+              });
+            }
+          } else {
+            // No match found - could be a race or truly unknown
+            const pending = this.queue.getPendingAsks(toAgent);
+            const counts = this.queue.getPendingAskCounts(toAgent);
+            log.debug('consumer', `Parity gate: no pending ask found for response`, {
               agentId: toAgent,
               msgId,
               from: respondingAgent,
-              originalMsgId: result.ask?.msg_id,
-            });
-          } else {
-            // Agent fallback - msg-id didn't match but found pending ask to this agent
-            log.warn('consumer', `Parity gate: found pending ask by agent (msg-id mismatch)`, {
-              agentId: toAgent,
-              responseMsgId: msgId,
-              originalMsgId: result.ask?.msg_id,
-              from: respondingAgent,
+              knownMsgIds: pending.map(p => p.msg_id),
+              knownTargets: Array.from(counts.keys()),
             });
           }
-        } else {
-          // No match found - could be a race or truly unknown
-          const pending = this.queue.getPendingAsks(toAgent);
-          const counts = this.queue.getPendingAskCounts(toAgent);
-          log.debug('consumer', `Parity gate: no pending ask found for response`, {
-            agentId: toAgent,
-            msgId,
-            from: respondingAgent,
-            knownMsgIds: pending.map(p => p.msg_id),
-            knownTargets: Array.from(counts.keys()),
-          });
         }
+
+        // Phase 3: Boundary detection for terminal-by-default
+        const fromHumanBoundary = respondingAgent === 'core/core';
+        const resumesSuspension = fromHumanBoundary;  // Human responses resume suspensions
 
         this.emit('ask-response-message', {
           id,
@@ -645,7 +664,9 @@ ${body}
           to: toAgent,
           content: parsed.body,
           headline: parsed.frontmatter.headline,
-          msgId
+          msgId,
+          fromHumanBoundary,
+          resumesSuspension
         });
         return;  // ask-response handled - do NOT fall through to worker-message
       }
@@ -798,72 +819,15 @@ ${body}
     }
   }
 
-  /**
-   * Infer message type when not explicitly provided.
-   * Terminal-by-default: agents can omit type field and we'll infer based on context.
-   *
-   * Inference rules:
-   * 1. If `in-reply-to` is present → ask-response (replying to a previous ask)
-   * 2. If from is `core/core` → ask-response (core responding to agent)
-   * 3. If to is `core/core` → ask-human (agent asking for human input)
-   * 4. Otherwise → ask (agent-to-agent question)
-   */
-  private inferMessageType(frontmatter: Frontmatter): string {
-    const to = frontmatter.to;
-    const from = frontmatter.from;
-    const inReplyTo = frontmatter['in-reply-to'];
-
-    // Rule 1: If replying to a previous message, it's an ask-response
-    if (inReplyTo) {
-      log.debug('consumer', 'Inferred type: ask-response (in-reply-to present)', {
-        from,
-        to,
-        inReplyTo,
-      });
-      return 'ask-response';
-    }
-
-    // Rule 2: If from core/core, it's a response to an agent's ask
-    if (from === 'core/core') {
-      log.debug('consumer', 'Inferred type: ask-response (from core/core)', {
-        from,
-        to,
-      });
-      return 'ask-response';
-    }
-
-    // Rule 3: If to core/core, agent is asking for human input
-    if (to === 'core/core') {
-      log.debug('consumer', 'Inferred type: ask-human (to core/core)', {
-        from,
-        to,
-      });
-      return 'ask-human';
-    }
-
-    // Rule 4: Default to ask for agent-to-agent messages
-    log.debug('consumer', 'Inferred type: ask (agent-to-agent)', {
-      from,
-      to,
-    });
-    return 'ask';
-  }
-
   private parseMessage(content: string): ParsedMessage | null {
     const parts = content.split(/^---$/m);
     if (parts.length < 3) return null;
 
     const frontmatter = this.parseFrontmatter(parts[1].trim());
+    // Phase 7: type field is optional (will be inferred from routing context)
     if (!frontmatter.to || !frontmatter.from) return null;
-
-    // Terminal-by-default: infer type if not provided
     if (!frontmatter.type) {
-      frontmatter.type = this.inferMessageType(frontmatter);
-      log.info('consumer', 'Type inferred for message', {
-        from: frontmatter.from,
-        to: frontmatter.to,
-        inferredType: frontmatter.type,
-      });
+      frontmatter.type = this.inferMessageType(frontmatter, frontmatter.to, frontmatter.from);
     }
 
     const hasRearmatter = parts.length >= 4;
@@ -911,17 +875,39 @@ ${body}
     return data;
   }
 
+  /**
+   * Infer message type when not explicitly provided (Phase 7: Terminal-by-default)
+   * This enables simpler message authoring by inferring type from routing context
+   */
+  private inferMessageType(fm: Frontmatter, to: string, from: string): string {
+    // To core/core = ask-human (or task-complete if status=complete)
+    if (to === 'core/core' && !from.startsWith('core/')) {
+      return fm.status === 'complete' ? 'task-complete' : 'ask-human';
+    }
+    // From core/core = ask-response
+    if (from === 'core/core') return 'ask-response';
+    // Has in-reply-to = ask-response
+    if (fm['in-reply-to']) return 'ask-response';
+    // Default = ask
+    return 'ask';
+  }
+
   // ==========================================================================
   // ROUTING SELF-HEAL METHODS
   // ==========================================================================
 
   /**
-   * Normalize completion_agent / completion_agents into an array
-   * Supports backward compatibility with singular completion_agent field
+   * Normalize completion_agent / completion_agents / boundary_agents into an array
+   * Phase 5: Supports boundary_agents (terminal-by-default) with backward compatibility
+   * Priority: boundary_agents > completion_agents > completion_agent
    */
   private normalizeCompletionAgents(config: MeshConfig | null): string[] {
     if (!config) return [];
+    // Phase 5: Prefer boundary_agents (terminal-by-default naming)
+    if (config.boundary_agents?.length) return config.boundary_agents;
+    // Backward compat: completion_agents
     if (config.completion_agents?.length) return config.completion_agents;
+    // Legacy: singular completion_agent
     if (config.completion_agent) return [config.completion_agent];
     return [];
   }

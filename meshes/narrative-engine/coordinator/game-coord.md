@@ -123,7 +123,8 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
    campaign_id: {preserve}
    workspace: {preserve}
    game_path: {preserve}
-   waiting_on: []
+   last_ask_sent: worldbuilder-{timestamp}
+   prep_pending: []
    entropy_pool: {preserve}
    ```
 4. Send task to CALIBRATOR with worldbuilder mode

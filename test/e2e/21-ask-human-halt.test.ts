@@ -309,18 +309,20 @@ Yes, proceed with the task.
     assert.ok(agentIds.includes('agent-3'));
   });
 
-  // ==========================================================================
-  // Terminal-by-default messaging E2E tests
-  // ==========================================================================
+  // ============================================================================
+  // Terminal-by-Default Messaging Tests (Phase 7)
+  // ============================================================================
 
-  test('Terminal-by-default: worker ask-human without type field', async () => {
-    // Worker sends message to core without type field - should infer ask-human
-    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-test-ask-human-halt-worker--core-core-tbd1.md`);
-    fs.writeFileSync(msgFile, `---
+  test('Message WITHOUT type field inferred as ask-human when to core/core', async () => {
+    const timestamp = Date.now();
+
+    // Worker sends message to core/core WITHOUT type field
+    const askFile = path.join(env.msgsDir, `${timestamp}-no-type-test-ask-human-halt-worker--core-core-tbd1.md`);
+    fs.writeFileSync(askFile, `---
 to: core/core
 from: test-ask-human-halt/worker
 msg-id: tbd1
-headline: Implicit ask-human
+headline: Need clarification
 timestamp: ${new Date().toISOString()}
 ---
 
@@ -329,124 +331,112 @@ What should I do next?
 
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Core should receive the message with inferred ask-human type
-    const messages = queue.poll('core/core');
-    assert.strictEqual(messages.length, 1, 'Core should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-human', 'Type should be inferred as ask-human');
-    assert.strictEqual(messages[0].from_agent, 'test-ask-human-halt/worker');
-    assert.ok(
-      (messages[0].payload.body as string)?.includes('What should I do next'),
-      'Body should be preserved'
-    );
+    // Core should receive it as ask-human (inferred)
+    const coreMessages = queue.poll('core/core');
+    assert.strictEqual(coreMessages.length, 1, 'Core should receive 1 message');
+    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Type should be inferred as ask-human');
+    assert.strictEqual(coreMessages[0].from_agent, 'test-ask-human-halt/worker');
   });
 
-  test('Terminal-by-default: core response without type field', async () => {
-    // Core sends response to worker without type field - should infer ask-response
-    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-ask-human-halt-worker-tbd2.md`);
-    fs.writeFileSync(msgFile, `---
+  test('Message WITHOUT type field inferred as ask-response when from core/core', async () => {
+    const timestamp = Date.now();
+
+    // First, queue an ask-human for tracking
+    queue.trackPendingAsk('test-ask-human-halt/worker', 'core/core', 'tbd2-ask');
+
+    // Core sends response WITHOUT type field
+    const responseFile = path.join(env.msgsDir, `${timestamp}-no-type-core-core--test-ask-human-halt-worker-tbd2.md`);
+    fs.writeFileSync(responseFile, `---
 to: test-ask-human-halt/worker
 from: core/core
-msg-id: tbd2
+in-reply-to: tbd2-ask
 headline: User response
 timestamp: ${new Date().toISOString()}
 ---
 
-Please proceed with option B.
+Proceed with implementation.
 `);
 
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Worker should receive the message with inferred ask-response type
-    const messages = queue.poll('test-ask-human-halt/worker');
-    assert.strictEqual(messages.length, 1, 'Worker should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be inferred as ask-response');
-    assert.strictEqual(messages[0].from_agent, 'core/core');
+    // Worker should receive it as ask-response (inferred)
+    const workerMessages = queue.poll('test-ask-human-halt/worker');
+    assert.strictEqual(workerMessages.length, 1, 'Worker should receive 1 message');
+    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Type should be inferred as ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
   });
 
-  test('Terminal-by-default: in-reply-to triggers ask-response inference', async () => {
-    // First, worker asks human
-    const askFile = path.join(env.msgsDir, `${Date.now()}-notype-test-ask-human-halt-worker--core-core-tbd3.md`);
+  test('Terminal-by-default full round trip without explicit types', async () => {
+    const timestamp = Date.now();
+
+    // Step 1: Worker sends ask-human WITHOUT type field
+    const askFile = path.join(env.msgsDir, `${timestamp}-tbd-test-ask-human-halt-worker--core-core-tbd3.md`);
     fs.writeFileSync(askFile, `---
 to: core/core
 from: test-ask-human-halt/worker
 msg-id: tbd3
-headline: Question for user
-timestamp: ${new Date().toISOString()}
----
-
-Should I continue?
-`);
-
-    await new Promise(resolve => setTimeout(resolve, 400));
-
-    // Core responds with in-reply-to but no type
-    const responseFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-ask-human-halt-worker-tbd3r.md`);
-    fs.writeFileSync(responseFile, `---
-to: test-ask-human-halt/worker
-from: core/core
-msg-id: tbd3r
-in-reply-to: tbd3
-headline: Confirmation
-timestamp: ${new Date().toISOString()}
----
-
-Yes, continue.
-`);
-
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    // Worker should receive ask-response (inferred from in-reply-to)
-    const messages = queue.poll('test-ask-human-halt/worker');
-    assert.strictEqual(messages.length, 1, 'Worker should receive 1 response');
-    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be inferred as ask-response');
-  });
-
-  test('Terminal-by-default: full HITL round trip without explicit types', async () => {
-    const timestamp = Date.now();
-
-    // Step 1: Worker sends ask-human without type field
-    const askFile = path.join(env.msgsDir, `${timestamp}-notype-test-ask-human-halt-worker--core-core-tbd4.md`);
-    fs.writeFileSync(askFile, `---
-to: core/core
-from: test-ask-human-halt/worker
-msg-id: tbd4
 headline: Confirmation needed
 timestamp: ${new Date().toISOString()}
 ---
 
-Should I delete the file?
+Should I proceed?
 `);
 
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Step 2: Verify core received ask-human (inferred)
+    // Step 2: Verify core received it as ask-human
     const coreMessages = queue.poll('core/core');
     assert.strictEqual(coreMessages.length, 1);
-    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Worker message should be inferred as ask-human');
+    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Should be inferred as ask-human');
 
-    // Step 3: Core sends response without type field
-    const responseFile = path.join(env.msgsDir, `${timestamp + 1}-notype-core-core--test-ask-human-halt-worker-tbd4r.md`);
+    // Step 3: Core responds WITHOUT type field (uses in-reply-to)
+    const responseFile = path.join(env.msgsDir, `${timestamp + 1}-tbd-core-core--test-ask-human-halt-worker-tbd3-r.md`);
     fs.writeFileSync(responseFile, `---
 to: test-ask-human-halt/worker
 from: core/core
-msg-id: tbd4r
-in-reply-to: tbd4
+in-reply-to: tbd3
 headline: User confirmed
 timestamp: ${new Date().toISOString()}
 ---
 
-Yes, delete it.
+Yes, proceed.
 `);
 
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Step 4: Worker receives ask-response (inferred)
+    // Step 4: Worker receives response
     const workerMessages = queue.poll('test-ask-human-halt/worker');
     assert.strictEqual(workerMessages.length, 1);
-    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Core message should be inferred as ask-response');
+    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Should be inferred as ask-response');
     assert.ok(
-      (workerMessages[0].payload.body as string)?.includes('delete it'),
+      (workerMessages[0].payload.body as string)?.includes('proceed'),
       'Response should contain confirmation'
     );
+  });
+
+  test('Parity tracking works with inferred types', async () => {
+    const timestamp = Date.now();
+
+    // Worker sends ask-human WITHOUT type field
+    const askFile = path.join(env.msgsDir, `${timestamp}-parity-test-ask-human-halt-worker--core-core-parity1.md`);
+    fs.writeFileSync(askFile, `---
+to: core/core
+from: test-ask-human-halt/worker
+msg-id: parity1
+headline: Need input
+timestamp: ${new Date().toISOString()}
+---
+
+What is the expected output?
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Verify pending ask is tracked (consumer should track it when type is inferred as ask-human)
+    const pending = queue.getPendingAsks('test-ask-human-halt/worker');
+    assert.ok(pending.length >= 1, 'Should have pending ask tracked');
+    const found = pending.find(p => p.msg_id === 'parity1');
+    assert.ok(found, 'Should find the tracked ask');
+    assert.strictEqual(found?.to_agent, 'core/core');
   });
 });

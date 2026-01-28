@@ -78,15 +78,17 @@ export function createTestEnv(prefix: string = 'tx-v4-test'): TestEnv {
 
 /**
  * Helper to create a test message file
+ * Note: type is optional to support Phase 7 terminal-by-default inference
  */
 export function createTestMessage(msgsDir: string, filename: string, content: {
   to: string;
   from: string;
-  type: string;
+  type?: string;
   status?: string;
   msgId?: string;
   headline?: string;
   command?: string;
+  'in-reply-to'?: string;
   body: string;
   rearmatter?: Record<string, unknown>;
 }): string {
@@ -94,13 +96,16 @@ export function createTestMessage(msgsDir: string, filename: string, content: {
     '---',
     `to: ${content.to}`,
     `from: ${content.from}`,
-    `type: ${content.type}`,
   ];
+
+  // Phase 7: type is optional - will be inferred by consumer
+  if (content.type) frontmatter.push(`type: ${content.type}`);
 
   if (content.status) frontmatter.push(`status: ${content.status}`);
   if (content.msgId) frontmatter.push(`msg-id: ${content.msgId}`);
   if (content.headline) frontmatter.push(`headline: ${content.headline}`);
   if (content.command) frontmatter.push(`command: ${content.command}`);
+  if (content['in-reply-to']) frontmatter.push(`in-reply-to: ${content['in-reply-to']}`);
   frontmatter.push(`timestamp: ${new Date().toISOString()}`);
   frontmatter.push('---');
 

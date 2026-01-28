@@ -57,6 +57,15 @@ export interface SuspendedSessionData {
   pendingCount: number;
 }
 
+export interface AwaitState {
+  agent_id: string;
+  session_id: string;
+  target_agents: string;  // JSON array
+  received_from: string;  // JSON array
+  created_at: number;
+  updated_at: number;
+}
+
 export class MessageQueue {
   private db: Database.Database;
   private insertStmt: Database.Statement;
@@ -131,6 +140,16 @@ export class MessageQueue {
         hook_context TEXT,
         pending_count INTEGER DEFAULT 0
       );
+
+      CREATE TABLE IF NOT EXISTS await_state (
+        agent_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        target_agents TEXT NOT NULL,
+        received_from TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_await_agent ON await_state(agent_id);
     `);
   }
 
@@ -761,6 +780,120 @@ export class MessageQueue {
    */
   clearPendingAsk(id: number): void {
     this.db.prepare('DELETE FROM pending_asks WHERE id = ?').run(id);
+  }
+
+  // ============================================
+  // Await State Tracking (Phase 2: Terminal-by-Default)
+  // ============================================
+
+  /**
+   * Set an agent to awaiting state for multiple target agents
+   * @param agentId - The agent entering await state
+   * @param sessionId - The current session ID
+   * @param targetAgents - Array of agent IDs to await responses from
+   */
+  setAwaiting(agentId: string, sessionId: string, targetAgents: string[]): void {
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT OR REPLACE INTO await_state
+        (agent_id, session_id, target_agents, received_from, created_at, updated_at)
+      VALUES (?, ?, ?, '[]', ?, ?)
+    `).run(
+      agentId,
+      sessionId,
+      JSON.stringify(targetAgents),
+      now,
+      now
+    );
+  }
+
+  /**
+   * Record that a response was received from a target agent
+   * @param agentId - The agent awaiting responses
+   * @param fromAgent - The agent that sent a response
+   * @returns Object with:
+   *  - allReceived: true if all awaited responses have arrived
+   *  - remaining: array of agents still pending
+   *  - receivedFrom: array of agents that have responded
+   */
+  receiveAwaitResponse(
+    agentId: string,
+    fromAgent: string
+  ): { allReceived: boolean; remaining: string[]; receivedFrom: string[] } {
+    const state = this.getAwaitState(agentId);
+    if (!state) {
+      return { allReceived: false, remaining: [], receivedFrom: [] };
+    }
+
+    const targetAgents = JSON.parse(state.target_agents) as string[];
+    const receivedFrom = JSON.parse(state.received_from) as string[];
+
+    // Add this response if not already recorded
+    if (!receivedFrom.includes(fromAgent)) {
+      receivedFrom.push(fromAgent);
+
+      this.db.prepare(`
+        UPDATE await_state
+        SET received_from = ?, updated_at = ?
+        WHERE agent_id = ?
+      `).run(
+        JSON.stringify(receivedFrom),
+        Date.now(),
+        agentId
+      );
+    }
+
+    const remaining = targetAgents.filter(t => !receivedFrom.includes(t));
+    const allReceived = remaining.length === 0;
+
+    // If all received, clear the await state
+    if (allReceived) {
+      this.clearAwaitState(agentId);
+    }
+
+    return { allReceived, remaining, receivedFrom };
+  }
+
+  /**
+   * Get the current await state for an agent
+   * @param agentId - The agent ID to query
+   * @returns AwaitState or null if not awaiting
+   */
+  getAwaitState(agentId: string): AwaitState | null {
+    const row = this.db.prepare(`
+      SELECT agent_id, session_id, target_agents, received_from, created_at, updated_at
+      FROM await_state WHERE agent_id = ?
+    `).get(agentId) as AwaitState | undefined;
+
+    return row || null;
+  }
+
+  /**
+   * Clear await state for an agent
+   * @param agentId - The agent ID to clear
+   */
+  clearAwaitState(agentId: string): void {
+    this.db.prepare('DELETE FROM await_state WHERE agent_id = ?').run(agentId);
+  }
+
+  /**
+   * Get all agents currently in await state
+   */
+  getAllAwaitStates(): AwaitState[] {
+    return this.db.prepare(`
+      SELECT agent_id, session_id, target_agents, received_from, created_at, updated_at
+      FROM await_state ORDER BY created_at ASC
+    `).all() as AwaitState[];
+  }
+
+  /**
+   * Clear await states for a mesh
+   */
+  clearAwaitStatesForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM await_state WHERE agent_id LIKE ?'
+    ).run(`${meshName}/%`);
+    return result.changes;
   }
 
   // ============================================
