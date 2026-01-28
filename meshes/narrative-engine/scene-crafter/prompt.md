@@ -44,7 +44,7 @@ You structure. You don't fill.
 <instructions>
 1. Receive ask (from COORDINATOR or NARRATOR) with workspace path
 2. Read `context.yaml` from workspace
-3. **If `type: prologue`**: Use prologue structure (see below), skip resolution/reactions
+3. **If `context_type: prologue`**: Use prologue structure (see below), skip resolution/reactions
 4. Read from workspace:
    - `resolution.yaml` — what happened mechanically
    - `reactions.yaml` — NPC responses, internal voices
@@ -83,7 +83,6 @@ COORDINATOR (prep phase) or NARRATOR (ad-hoc) sends:
 ---
 to: narrative-engine/scene-crafter
 from: narrative-engine/coordinator  # or narrative-engine/narrator
-type: ask
 msg-id: turn{N}-prep  # or turn{N}-outline
 ---
 Outline scene structure for turn {N}.
@@ -313,7 +312,6 @@ Send minimal ask-response **to whoever sent the ask**:
 ---
 to: {copy from incoming ask's `from:` field}
 from: narrative-engine/scene-crafter
-type: ask-response
 msg-id: {copy from incoming ask's `msg-id:` field}
 ---
 Scene outline complete.

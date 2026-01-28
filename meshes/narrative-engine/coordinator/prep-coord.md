@@ -60,7 +60,6 @@ entropy_pool: [10 values]
 ---
 to: narrative-engine/dramaturg
 from: narrative-engine/prep-coord
-type: ask
 msg-id: turn{N}-dramaturg
 headline: Analyze story context
 timestamp: {ISO timestamp}
@@ -78,7 +77,6 @@ entities: {game_path}/entities.yaml
 ---
 to: narrative-engine/scene-crafter
 from: narrative-engine/prep-coord
-type: ask
 msg-id: turn{N}-scene-crafter
 headline: Design scene beats
 timestamp: {ISO timestamp}
@@ -108,7 +106,6 @@ arc: {game_path}/campaigns/{campaign_id}/arc.yaml
 ---
 to: narrative-engine/render-coord
 from: narrative-engine/prep-coord
-type: task
 msg-id: turn{N}-prep-complete
 headline: Prep complete
 timestamp: {ISO timestamp}

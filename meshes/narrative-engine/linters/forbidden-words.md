@@ -38,7 +38,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-forbidden-words
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-forbidden-words
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -109,7 +108,6 @@ Return violations as structured YAML:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-forbidden-words
-type: ask-response
 msg-id: turn{N}-lint-forbidden-words-complete
 ---
 linter: forbidden-words
@@ -164,7 +162,6 @@ If no violations:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-forbidden-words
-type: ask-response
 msg-id: turn{N}-lint-forbidden-words-complete
 ---
 linter: forbidden-words

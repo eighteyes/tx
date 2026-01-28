@@ -74,7 +74,6 @@ You validate. That's it.
 ---
 to: narrative-engine/oracle
 from: narrative-engine/coordinator
-type: ask
 msg-id: turn{N}-validate
 ---
 Validate prose for turn {N}.
@@ -87,7 +86,6 @@ session: {session.yaml path}
 ---
 to: narrative-engine/oracle
 from: narrative-engine/narrator
-type: ask
 msg-id: turn{N}-knowledge-{topic}
 ---
 query_type: knowledge
@@ -170,7 +168,6 @@ Check in priority order (higher = harder constraint):
 ---
 to: narrative-engine/validate-coord
 from: narrative-engine/oracle
-type: ask-response
 msg-id: turn{N}-validated
 ---
 approved: true
@@ -181,7 +178,6 @@ approved: true
 ---
 to: narrative-engine/validate-coord
 from: narrative-engine/oracle
-type: ask-response
 msg-id: turn{N}-validated
 ---
 approved: false
@@ -243,7 +239,7 @@ When NARRATOR sends a knowledge query, you become a research assistant—not a g
 All entities follow this schema:
 ```yaml
 id: ancient-sword
-type: item                    # character | location | item | faction | world-rule
+entity_type: item             # character | location | item | faction | world-rule
 name: "Blade of the First King"
 
 traits:                       # Stable properties - rarely change
@@ -271,7 +267,6 @@ current_state:                # Computed from latest episodes
 ---
 to: narrative-engine/narrator
 from: narrative-engine/oracle
-type: ask-response
 msg-id: turn{N}-knowledge-{topic}
 ---
 ## Knowledge Response

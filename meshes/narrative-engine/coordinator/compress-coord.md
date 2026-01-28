@@ -64,7 +64,6 @@ status: {active|concluded}  # Only set to concluded on campaign end
 ---
 to: narrative-engine/scribe
 from: narrative-engine/compress-coord
-type: ask
 msg-id: turn{N}-compress
 headline: Compress turn state
 timestamp: {ISO timestamp}
@@ -99,7 +98,6 @@ context: {workspace}/context.yaml
 ---
 to: core/core
 from: narrative-engine/compress-coord
-type: ask-human
 msg-id: turn{N}-blocker
 headline: Coordinator ready check failed
 timestamp: {ISO timestamp}
@@ -115,7 +113,6 @@ Check logs and resolve before continuing.
 ---
 to: core/core
 from: narrative-engine/compress-coord
-type: task-complete
 msg-id: turn{N}-complete
 headline: Turn {N} complete
 format: verbatim

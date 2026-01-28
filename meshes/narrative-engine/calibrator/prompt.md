@@ -47,18 +47,18 @@ ALWAYS:
 
 ### Receives
 
-| From | Type | When |
-|------|------|------|
-| `narrative-engine/game-coord` | `task` | New game (mode: new-game) or worldbuilder (mode: worldbuilder) |
-| `core/core` | `ask-response` | Player answers to HITL questions |
+| From | When |
+|------|------|
+| `narrative-engine/game-coord` | New game (mode: new-game) or worldbuilder (mode: worldbuilder) |
+| `core/core` | Player answers to HITL questions |
 
 ### Sends
 
-| To | Type | When |
-|----|------|------|
-| `core/core` | `ask-human` | Each HITL extraction/tuning question |
-| `narrative-engine/prologue-coord` | `task` | Game creation complete (new-game mode only) |
-| `core/core` | `task-complete` | Worldbuilder session complete (worldbuilder mode only) |
+| To | When |
+|----|------|
+| `core/core` | Each HITL extraction/tuning question |
+| `narrative-engine/prologue-coord` | Game creation complete (new-game mode only) |
+| `core/core` | Worldbuilder session complete (worldbuilder mode only) |
 
 ### Message Templates
 
@@ -67,7 +67,6 @@ ALWAYS:
 ---
 to: narrative-engine/calibrator
 from: narrative-engine/game-coord
-type: task
 msg-id: game-creation-{timestamp}
 ---
 mode: new-game
@@ -80,7 +79,6 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: calibration-{phase}-{subphase}
 headline: {short question summary}
 timestamp: {ISO timestamp}
@@ -93,7 +91,6 @@ timestamp: {ISO timestamp}
 ---
 to: narrative-engine/calibrator
 from: core/core
-type: ask-response
 msg-id: calibration-{phase}-{subphase}
 ---
 {player's answer}
@@ -104,7 +101,6 @@ msg-id: calibration-{phase}-{subphase}
 ---
 to: narrative-engine/prologue-coord
 from: narrative-engine/calibrator
-type: task
 msg-id: calibration-complete-{timestamp}
 headline: Game ready for prologue
 timestamp: {ISO timestamp}
@@ -121,7 +117,6 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 ---
 to: narrative-engine/calibrator
 from: narrative-engine/game-coord
-type: task
 msg-id: worldbuilder-{timestamp}
 ---
 mode: worldbuilder
@@ -136,7 +131,6 @@ request: {what user wants to edit}
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: task-complete
 msg-id: worldbuilder-complete-{timestamp}
 headline: Worldbuilder session complete
 timestamp: {ISO timestamp}
@@ -213,7 +207,6 @@ Extract the raw creative impulse.
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: calibration-phase1-spark
 headline: What draws you to this story?
 ---
@@ -288,7 +281,6 @@ This phase requires iteration. Do not rush.
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: calibration-phase6c-voice-{iteration}
 headline: Which voice feels right?
 ---
@@ -338,7 +330,6 @@ Review all artifacts with player.
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: calibration-phase9-confirm
 headline: Ready to begin?
 ---
@@ -383,7 +374,6 @@ Shall we begin the prologue?
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-select-{timestamp}
 headline: What would you like to tune?
 ---
@@ -409,7 +399,6 @@ Read the target artifact YAML, extract key fields, present readable summary.
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-display-{artifact}-{timestamp}
 headline: Current {artifact} state
 ---
@@ -433,7 +422,6 @@ Render the same scene passage in 2-3 variant styles based on user's change reque
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-tune-author-{iteration}
 headline: Voice variations
 ---
@@ -459,7 +447,6 @@ Pick one, blend elements, or ask for more variations.
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-confirm-{artifact}-{timestamp}
 headline: Apply changes?
 ---
@@ -482,7 +469,6 @@ Apply these changes?
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: task-complete
 msg-id: worldbuilder-complete-{timestamp}
 headline: Worldbuilder session complete
 timestamp: {ISO timestamp}
@@ -567,7 +553,6 @@ When Phase 9 confirmed, send task to prologue-coord:
 ---
 to: narrative-engine/prologue-coord
 from: narrative-engine/calibrator
-type: task
 msg-id: calibration-complete-{timestamp}
 headline: Game ready for prologue
 timestamp: {ISO timestamp}

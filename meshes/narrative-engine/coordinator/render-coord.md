@@ -57,7 +57,6 @@ entropy_pool: [10 values]
 ---
 to: narrative-engine/narrator
 from: narrative-engine/render-coord
-type: ask
 msg-id: turn{N}-render
 headline: Render prose
 timestamp: {ISO timestamp}
@@ -89,7 +88,6 @@ entities: {game_path}/entities.yaml
 ---
 to: narrative-engine/validate-coord
 from: narrative-engine/render-coord
-type: task
 msg-id: turn{N}-render-complete
 headline: Prose ready for validation
 timestamp: {ISO timestamp}

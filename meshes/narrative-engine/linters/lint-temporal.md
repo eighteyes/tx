@@ -36,7 +36,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-temporal
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-temporal
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -100,7 +99,6 @@ If no contradictions found:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-temporal
-type: ask-response
 msg-id: turn{N}-lint-temporal
 ---
 violations: []
@@ -118,7 +116,6 @@ If contradictions found:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-temporal
-type: ask-response
 msg-id: turn{N}-lint-temporal
 ---
 violations:

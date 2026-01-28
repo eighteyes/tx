@@ -88,7 +88,6 @@ completed:
 ---
 to: dev-mesh/{specialist}
 from: dev-mesh/coordinator
-type: ask
 msg-id: {task_id}-{specialist}
 command: /know:build {entity-id}
 ---
@@ -105,7 +104,6 @@ command: /know:build {entity-id}
 ---
 to: dev-mesh/{specialist}
 from: dev-mesh/coordinator
-type: ask
 msg-id: {task_id}-{specialist}
 ---
 ## Instructions
@@ -124,7 +122,6 @@ msg-id: {task_id}-{specialist}
 ---
 to: dev-mesh/{specialist}
 from: dev-mesh/coordinator
-type: ask
 msg-id: {task_id}-{specialist}
 ---
 ## Instructions
@@ -141,7 +138,6 @@ Search: {domain keywords from spec}
 ---
 to: core/core
 from: dev-mesh/coordinator
-type: ask-human
 msg-id: {task_id}-clarify
 headline: Need clarification
 ---
@@ -159,7 +155,6 @@ B) {option}
 ---
 to: core/core
 from: dev-mesh/coordinator
-type: task-complete
 msg-id: {task_id}-complete
 ---
 ## Summary

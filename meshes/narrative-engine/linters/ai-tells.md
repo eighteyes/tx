@@ -38,7 +38,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-ai-tells
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-ai-tells
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -294,7 +293,6 @@ If prose explicitly tells the reader WHY something matters, flag it.
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-ai-tells
-type: ask-response
 msg-id: turn{N}-lint-ai-tells-complete
 ---
 linter: ai-tells
@@ -365,7 +363,6 @@ If no violations:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-ai-tells
-type: ask-response
 msg-id: turn{N}-lint-ai-tells-complete
 ---
 linter: ai-tells

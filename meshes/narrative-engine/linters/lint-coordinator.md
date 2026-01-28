@@ -39,7 +39,6 @@ NARRATOR sends absolute paths (narrator owns the render/lint/edit cycle):
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/narrator
-type: ask
 msg-id: turn{N}-lint
 ---
 workspace: /absolute/path/to/turns/turn-{N}/
@@ -62,7 +61,6 @@ Send 10 asks in a SINGLE message (parallel dispatch):
 ---
 to: narrative-engine/lint-forbidden-words
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-forbidden-words
 ---
 prose_draft: {path}
@@ -204,7 +202,6 @@ Send aggregated violations to EDITOR:
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask-response
 msg-id: turn{N}-lint-complete
 ---
 verdict: VIOLATIONS | CLEAN
@@ -253,7 +250,6 @@ If a linter times out or errors:
 ---
 to: narrative-engine/lint-{type}
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-{type}
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -267,7 +263,6 @@ workspace: /absolute/path/to/workspace/
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask-response
 msg-id: turn{N}-lint-complete
 ---
 verdict: VIOLATIONS

@@ -75,7 +75,6 @@ You are REVIEWER — the code quality guardian. Tests pass, but does the code de
 ---
 to: core/core
 from: dev/reviewer
-type: ask-response
 msg-id: {task-id}-approved
 ---
 ## Code Review: Approved
@@ -100,7 +99,6 @@ This code is production-ready. Implement signals completion.
 ---
 to: dev/implementer
 from: dev/reviewer
-type: ask-response
 msg-id: {task-id}-review-changes
 ---
 ## Code Review: Changes Requested

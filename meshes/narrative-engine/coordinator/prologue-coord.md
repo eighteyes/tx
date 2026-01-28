@@ -62,7 +62,7 @@ entropy_pool: [10 values]
 
 ```yaml
 turn: 0
-type: prologue
+context_type: prologue
 entropy_pool: [values from bash]
 actor:
   id: protagonist
@@ -89,7 +89,7 @@ From entity file, extract:
 ### Step 3: Write Populated Context
 ```yaml
 turn: 0
-type: prologue
+context_type: prologue
 entropy_pool: [values from bash]
 actor:
   id: protagonist
@@ -127,13 +127,12 @@ entropy_pool: [values from bash]
 ---
 to: narrative-engine/prep-coord
 from: narrative-engine/prologue-coord
-type: task
 msg-id: prologue-prep-{timestamp}
 headline: Prologue workspace ready
 timestamp: {ISO timestamp}
 ---
 turn: 0
-type: prologue
+context_type: prologue
 workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
 game_path: /workspace/tx-core/.ai/games/{game_id}/
 campaign_id: {campaign_id}

@@ -50,7 +50,6 @@ When tests fail, send clear feedback:
 ---
 to: dev/implementer
 from: dev/tester
-type: ask-response
 msg-id: {task-id}-test-fail
 ---
 ## Test Failures Detected
@@ -77,7 +76,6 @@ When all tests pass:
 ---
 to: dev/reviewer
 from: dev/tester
-type: ask-response
 msg-id: {task-id}-tests-pass
 ---
 ## Tests Passing

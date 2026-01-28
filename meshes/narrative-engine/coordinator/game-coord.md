@@ -96,7 +96,6 @@ ELSE (mode == "new-game" or missing):
 ---
 to: narrative-engine/calibrator
 from: narrative-engine/game-coord
-type: task
 msg-id: game-creation-{timestamp}
 headline: Create new game
 timestamp: {ISO timestamp}
@@ -138,7 +137,6 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 ---
 to: narrative-engine/calibrator
 from: narrative-engine/game-coord
-type: task
 msg-id: worldbuilder-{timestamp}
 headline: Worldbuilder session
 timestamp: {ISO timestamp}

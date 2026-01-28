@@ -37,7 +37,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-patterns
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-patterns
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -118,7 +117,6 @@ These patterns are lazy shortcuts. Each needs creative rewriting:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-patterns
-type: ask-response
 msg-id: turn{N}-lint-patterns-complete
 ---
 linter: patterns
@@ -172,7 +170,6 @@ If no violations:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-patterns
-type: ask-response
 msg-id: turn{N}-lint-patterns-complete
 ---
 linter: patterns

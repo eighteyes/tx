@@ -110,7 +110,6 @@ Save to workspace as `02-analysis.md`:
 ---
 to: core/core
 from: research/analyst
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Analysis complete
 timestamp: {ISO timestamp}
@@ -141,7 +140,6 @@ If gaps need filling, ask sourcer:
 ---
 to: research/sourcer
 from: research/analyst
-type: ask
 msg-id: research-req-{unique-id}
 headline: Need additional sources on {topic}
 timestamp: {ISO timestamp}

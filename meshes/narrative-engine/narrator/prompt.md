@@ -108,7 +108,6 @@ If YES:
    ---
    to: narrative-engine/oracle
    from: narrative-engine/narrator
-   type: ask
    msg-id: turn{N}-knowledge-{topic}
    ---
    query_type: knowledge
@@ -131,7 +130,6 @@ If NO (basic action, dialogue-only, you already have the info):
    ---
    to: narrative-engine/system
    from: narrative-engine/narrator
-   type: ask
    msg-id: turn{N}-resolve
    ---
    Resolve turn {N}.
@@ -150,7 +148,6 @@ If NO (basic action, dialogue-only, you already have the info):
    ---
    to: narrative-engine/cast
    from: narrative-engine/narrator
-   type: ask
    msg-id: turn{N}-react
    ---
    React to turn {N}.
@@ -212,7 +209,6 @@ If NO (basic action, dialogue-only, you already have the info):
     ---
     to: narrative-engine/lint-coordinator
     from: narrative-engine/narrator
-    type: ask
     msg-id: turn{N}-lint
     ---
     workspace: {workspace path}
@@ -253,7 +249,6 @@ When `scene-outline.yaml` marks a beat with `decision_point: true`, pause render
 ---
 to: core/core
 from: narrative-engine/narrator
-type: ask-human
 msg-id: turn{N}-decision-{beat_id}
 headline: {short description from outline}
 ---
@@ -298,7 +293,7 @@ Your next activation will include the player's choice. Resume from where you pau
 
 ## Prologue Rendering (Turn 0)
 
-When context.yaml has `type: prologue`, render atmospheric setup instead of action resolution.
+When context.yaml has `context_type: prologue`, render atmospheric setup instead of action resolution.
 
 **Prologue purpose:** Let the player arrive. Settle into the world. Feel the character before acting.
 
@@ -351,7 +346,6 @@ All paths are **absolute**. Use them directly, no searching.
 ---
 to: narrative-engine/narrator
 from: narrative-engine/coordinator
-type: ask
 msg-id: turn{N}-render
 ---
 workspace: /absolute/path/to/turns/turn-{N}/
@@ -371,7 +365,6 @@ Editor sends directly during revision loop:
 ---
 to: narrative-engine/narrator
 from: narrative-engine/editor
-type: ask
 msg-id: turn{N}-revise-{iteration}
 ---
 iteration: {1|2|3}
@@ -579,7 +572,6 @@ When you receive an `ask` from `narrative-engine/editor`:
 ---
 to: narrative-engine/editor
 from: narrative-engine/narrator
-type: ask-response
 msg-id: turn{N}-revised-{iteration}
 ---
 Prose revised.
@@ -595,7 +587,6 @@ When you receive an `ask-response` from `narrative-engine/editor` with `verdict`
 ---
 to: narrative-engine/validate-coord
 from: narrative-engine/narrator
-type: ask-response
 msg-id: turn{N}-rendered
 ---
 verdict: {CLEAN|MAX_ITERATIONS}
@@ -733,7 +724,6 @@ Or—this could be the end. The questions are answered. You could let the story 
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/narrator
-type: ask
 msg-id: turn{N}-lint
 ---
 workspace: {absolute path}
@@ -751,7 +741,6 @@ dialogue_pairs: {workspace}/dialogue-pairs.txt
 ---
 to: narrative-engine/editor
 from: narrative-engine/narrator
-type: ask-response
 msg-id: turn{N}-revised-{iteration}
 ---
 Prose revised.
@@ -765,7 +754,6 @@ Prose revised.
 ---
 to: narrative-engine/validate-coord
 from: narrative-engine/narrator
-type: ask-response
 msg-id: turn{N}-rendered
 ---
 verdict: {CLEAN|MAX_ITERATIONS}

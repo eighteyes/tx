@@ -189,7 +189,6 @@ Save to workspace as `04-counterpoints.md`:
 ---
 to: core/core
 from: deep-research/disprover
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Critical review complete - theories need refinement
 timestamp: {ISO timestamp}
@@ -229,7 +228,6 @@ iteration: {N}
 ---
 to: core/core
 from: deep-research/disprover
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Theories validated - high confidence confirmed
 timestamp: {ISO timestamp}
@@ -269,7 +267,6 @@ If you need evidence to support a critique:
 ---
 to: deep-research/sourcer
 from: deep-research/disprover
-type: ask
 msg-id: counter-req-{unique-id}
 headline: Need counterevidence on {topic}
 timestamp: {ISO timestamp}

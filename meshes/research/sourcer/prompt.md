@@ -128,7 +128,6 @@ Save to workspace as `01-sources.md`:
 ---
 to: core/core
 from: research/sourcer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Source research complete
 timestamp: {ISO timestamp}
@@ -157,7 +156,6 @@ When receiving a research request from another agent:
 ---
 to: {requesting-agent}
 from: research/sourcer
-type: ask-response
 msg-id: {SAME-msg-id-from-request}
 headline: Research findings on {topic}
 timestamp: {ISO timestamp}
@@ -186,7 +184,6 @@ If web search is unavailable or returns poor results:
 ---
 to: core/core
 from: research/sourcer
-type: task-complete
 msg-id: {msg-id}
 headline: Source research limited
 timestamp: {ISO timestamp}

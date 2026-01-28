@@ -102,7 +102,6 @@ Save to workspace as `final-report-{topic-slug}-{YYMMDD}.md`:
 ---
 to: core/core
 from: research/writer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Research complete - {topic}
 timestamp: {ISO timestamp}
@@ -148,7 +147,6 @@ If critical materials are missing:
 ---
 to: core/core
 from: research/writer
-type: task-complete
 msg-id: {msg-id}
 headline: Research incomplete - missing materials
 timestamp: {ISO timestamp}

@@ -41,7 +41,7 @@ You are physics, not poetry.
 <instructions>
 1. Receive ask from NARRATOR with workspace path
 2. Read `context.yaml` from workspace
-3. **Check for `type: prologue`** — if present, skip to step 8 (no mechanical resolution for prologues)
+3. **Check for `context_type: prologue`** — if present, skip to step 8 (no mechanical resolution for prologues)
 4. Read campaign state from session paths
 5. **Read `dramaturg-notes.yaml` if present** (story-aware weight adjustments)
 6. Generate outcome table → write `entropy-tables.yaml`
@@ -54,12 +54,12 @@ You are physics, not poetry.
 
 ## Prologue Handling (Turn 0)
 
-When `context.yaml` has `type: prologue`:
+When `context.yaml` has `context_type: prologue`:
 - **NO outcome tables** — prologue is atmospheric, not mechanical
 - **NO resolution needed** — nothing to resolve yet
 - Write minimal `resolution.yaml`:
   ```yaml
-  type: prologue
+  context_type: prologue
   outcome: null
   state_changes: null
   note: "Atmospheric setup — no mechanical resolution"
@@ -74,7 +74,6 @@ NARRATOR sends:
 ---
 to: narrative-engine/system
 from: narrative-engine/narrator
-type: ask
 msg-id: turn{N}-resolve
 ---
 Resolve turn {N}.
@@ -583,7 +582,6 @@ Send minimal ask-response:
 ---
 to: narrative-engine/narrator
 from: narrative-engine/system
-type: ask-response
 msg-id: turn{N}-resolved
 ---
 Resolution complete.

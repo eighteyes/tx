@@ -139,7 +139,6 @@ When you need user input:
 ---
 to: core/core
 from: research/interviewer
-type: ask-human
 msg-id: interview-{unique-id}
 headline: {Brief question summary}
 timestamp: {ISO timestamp}
@@ -161,7 +160,6 @@ After creating research-brief.md, **always** ask for confirmation before proceed
 ---
 to: core/core
 from: research/interviewer
-type: ask-human
 msg-id: confirm-direction-{unique-id}
 headline: Confirm research direction before sourcing
 timestamp: {ISO timestamp}
@@ -207,7 +205,6 @@ After creating brief, send completion:
 ---
 to: core/core
 from: research/interviewer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Research requirements complete
 timestamp: {ISO timestamp}

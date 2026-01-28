@@ -37,7 +37,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-litotes
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-litotes
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -137,7 +136,6 @@ For violations, identify:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-litotes
-type: ask-response
 msg-id: turn{N}-lint-litotes-complete
 ---
 linter: litotes
@@ -190,7 +188,6 @@ If within budget:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-litotes
-type: ask-response
 msg-id: turn{N}-lint-litotes-complete
 ---
 linter: litotes

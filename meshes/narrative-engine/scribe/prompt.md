@@ -68,7 +68,6 @@ COORDINATOR sends:
 ---
 to: narrative-engine/scribe
 from: narrative-engine/coordinator
-type: ask
 msg-id: turn{N}-compress
 ---
 Process turn {N}.
@@ -124,7 +123,7 @@ After turn compression, scan for entity state changes and update the entity file
 All entities use this universal schema:
 ```yaml
 id: ancient-sword
-type: item                    # character | location | item | faction | world-rule
+entity_type: item             # character | location | item | faction | world-rule
 name: "Blade of the First King"
 
 traits:                       # Stable - NEVER modify here
@@ -579,7 +578,6 @@ entities:
 ---
 to: narrative-engine/compress-coord
 from: narrative-engine/scribe
-type: ask-response
 msg-id: turn{N}-compressed
 ---
 Turn processed.

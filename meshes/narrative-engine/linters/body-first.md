@@ -37,7 +37,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-body-first
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-body-first
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -155,7 +154,6 @@ For each violation, note what's missing:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-body-first
-type: ask-response
 msg-id: turn{N}-lint-body-first-complete
 ---
 linter: body-first
@@ -205,7 +203,6 @@ If all scenes pass:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-body-first
-type: ask-response
 msg-id: turn{N}-lint-body-first-complete
 ---
 linter: body-first

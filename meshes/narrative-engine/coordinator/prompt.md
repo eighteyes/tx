@@ -116,7 +116,6 @@ Get timestamp: `date +%s`
 ---
 to: narrative-engine/narrator
 from: narrative-engine/coordinator
-type: ask
 msg-id: turn{N}-render
 ---
 workspace: /absolute/path/to/turns/turn-{N}/
@@ -136,7 +135,6 @@ entities: /absolute/path/to/games/{game-id}/entities.yaml
 ---
 to: {mesh}/{agent}
 from: narrative-engine/coordinator
-type: {ask|task-complete|ask-human}
 msg-id: turn{N}-{action}
 ---
 {body with ABSOLUTE paths}
@@ -148,7 +146,6 @@ msg-id: turn{N}-{action}
 ---
 to: core/core
 from: narrative-engine/coordinator
-type: task-complete
 msg-id: turn{N}-complete
 format: verbatim
 ---
@@ -193,7 +190,7 @@ The prologue lets the player settle into the world before acting. Turn 1 begins 
 **context.yaml for prologue:**
 ```yaml
 turn: 0
-type: prologue
+context_type: prologue
 entropy_pool: [72, 34, 91, 15, 56, 83, 7, 44, 68, 29]  # 10 values
 actor:
   id: protagonist
@@ -321,7 +318,6 @@ Only ask human when:
 ---
 to: core/core
 from: narrative-engine/coordinator
-type: ask-human
 msg-id: state-anomaly
 headline: Cannot rebuild state
 ---

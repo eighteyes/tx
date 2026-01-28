@@ -249,7 +249,6 @@ ELSE:
 ---
 to: narrative-engine/game-coord
 from: narrative-engine/entry
-type: task
 msg-id: entry-game-{timestamp}
 headline: New game request
 timestamp: {ISO timestamp}
@@ -264,7 +263,6 @@ mode: new-game
 ---
 to: narrative-engine/game-coord
 from: narrative-engine/entry
-type: task
 msg-id: entry-worldbuilder-{timestamp}
 headline: Worldbuilder request
 timestamp: {ISO timestamp}
@@ -281,7 +279,6 @@ request: {what user wants to edit - extract from message}
 ---
 to: narrative-engine/init-coord
 from: narrative-engine/entry
-type: task
 msg-id: entry-init-{timestamp}
 headline: Player action
 timestamp: {ISO timestamp}
@@ -297,7 +294,6 @@ When routing after recovery, include recovery context:
 ---
 to: narrative-engine/{coordinator}
 from: narrative-engine/entry
-type: task
 msg-id: entry-recovery-{timestamp}
 headline: Recovered session - resuming
 timestamp: {ISO timestamp}
@@ -315,7 +311,6 @@ phase: {detected phase}
 ---
 to: core/core
 from: narrative-engine/entry
-type: ask-human
 msg-id: entry-blocked-{timestamp}
 headline: Turn in progress
 timestamp: {ISO timestamp}
@@ -333,7 +328,6 @@ B) Force start new turn (may lose current turn state)
 ---
 to: core/core
 from: narrative-engine/entry
-type: ask-human
 msg-id: entry-invalid-{timestamp}
 headline: Session state invalid
 timestamp: {ISO timestamp}
