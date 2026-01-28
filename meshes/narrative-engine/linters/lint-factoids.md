@@ -35,7 +35,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-factoids
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-factoids
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -78,7 +77,6 @@ If no duplicates found:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-factoids
-type: ask-response
 msg-id: turn{N}-lint-factoids
 ---
 violations: []
@@ -93,7 +91,6 @@ If duplicates found:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-factoids
-type: ask-response
 msg-id: turn{N}-lint-factoids
 ---
 violations:

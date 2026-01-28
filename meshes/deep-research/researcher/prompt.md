@@ -10,6 +10,17 @@ Write all messages to: `.ai/tx/msgs/`
 
 Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 
+### Terminal-by-Default Messaging
+
+The system infers message intent from **routing and boundaries**:
+
+- **To core/core**: Questions for human → session suspends awaiting response
+- **From core/core**: Human responses → session resumes with answer
+- **To other agents**: Collaboration requests → session awaits response
+- **Agent → Agent (reply)**: Use `in-reply-to` field → resumes awaiting session
+
+No explicit `type` field needed - the system detects boundaries automatically.
+
 ## Workflow
 
 ### Initial Synthesis
@@ -134,7 +145,6 @@ When complete, write a task-complete message with the appropriate status in the 
 ---
 to: {determined by routing based on status}
 from: deep-research/researcher
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: {Brief summary of outcome}
 timestamp: {ISO timestamp}
@@ -182,7 +192,6 @@ If gaps need filling:
 ---
 to: deep-research/sourcer
 from: deep-research/researcher
-type: ask
 msg-id: research-req-{unique-id}
 headline: Need additional evidence on {topic}
 timestamp: {ISO timestamp}

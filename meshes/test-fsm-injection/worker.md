@@ -26,7 +26,6 @@ Each variable should also have a description explaining what it means.
 ---
 to: core/core
 from: test-fsm-injection/worker
-type: task-complete
 status: complete
 headline: FSM variables reported
 ---

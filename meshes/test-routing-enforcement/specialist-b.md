@@ -23,7 +23,6 @@ You CANNOT send messages to:
 ---
 to: test-routing-enforcement/coordinator
 from: test-routing-enforcement/specialist-b
-type: ask-response
 headline: Type B work complete
 ---
 

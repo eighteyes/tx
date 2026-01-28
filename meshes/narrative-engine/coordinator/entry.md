@@ -71,7 +71,7 @@ IF session.yaml missing OR unreadable:
 IF phase is null/empty:
    → INVALID: "phase missing"
 
-IF phase NOT IN [init, complete, game_creation, prologue,
+IF phase NOT IN [init, complete, game_creation, worldbuilding, prologue,
                  awaiting_prep, awaiting_narrator,
                  awaiting_oracle, awaiting_scribe]:
    → INVALID: "unknown phase: {phase}"
@@ -212,8 +212,11 @@ ls {workspace}/
 **Only reached after validation passes:**
 
 ```
-IF game creation requested (see indicators below):
-   → route to game-coord
+IF worldbuilder keywords detected (see indicators below):
+   → route to game-coord (mode: worldbuilder)
+
+ELSE IF game creation requested (see indicators below):
+   → route to game-coord (mode: new-game)
 
 ELSE IF phase == "complete" OR phase == "init":
    → route to init-coord
@@ -225,6 +228,14 @@ ELSE:
    → send ask-human: "Turn {N} in progress (phase: {phase})"
 ```
 
+**Worldbuilder indicators:**
+- "worldbuilder", "world builder", "build world"
+- "edit world", "modify world", "tune world"
+- "edit author", "change voice", "modify prose"
+- "edit setting", "edit arc", "edit protagonist"
+- "edit entities", "add npc", "change npc"
+- "tune", "adjust", "refine" (with artifact names: author, setting, arc, protagonist, entities)
+
 **Game creation indicators:**
 - Message contains "new game", "start game", "create game"
 - Message contains "game:" field in frontmatter
@@ -232,18 +243,34 @@ ELSE:
 
 ## Message Templates
 
-### Route to game-coord
+### Route to game-coord (new-game)
 
 ```yaml
 ---
 to: narrative-engine/game-coord
 from: narrative-engine/entry
-type: task
 msg-id: entry-game-{timestamp}
 headline: New game request
 timestamp: {ISO timestamp}
 ---
+mode: new-game
 {original request body}
+```
+
+### Route to game-coord (worldbuilder)
+
+```yaml
+---
+to: narrative-engine/game-coord
+from: narrative-engine/entry
+msg-id: entry-worldbuilder-{timestamp}
+headline: Worldbuilder request
+timestamp: {ISO timestamp}
+---
+mode: worldbuilder
+game_id: {from session.yaml}
+game_path: {from session.yaml}
+request: {what user wants to edit - extract from message}
 ```
 
 ### Route to init-coord
@@ -252,7 +279,6 @@ timestamp: {ISO timestamp}
 ---
 to: narrative-engine/init-coord
 from: narrative-engine/entry
-type: task
 msg-id: entry-init-{timestamp}
 headline: Player action
 timestamp: {ISO timestamp}
@@ -268,7 +294,6 @@ When routing after recovery, include recovery context:
 ---
 to: narrative-engine/{coordinator}
 from: narrative-engine/entry
-type: task
 msg-id: entry-recovery-{timestamp}
 headline: Recovered session - resuming
 timestamp: {ISO timestamp}
@@ -286,7 +311,6 @@ phase: {detected phase}
 ---
 to: core/core
 from: narrative-engine/entry
-type: ask-human
 msg-id: entry-blocked-{timestamp}
 headline: Turn in progress
 timestamp: {ISO timestamp}
@@ -304,7 +328,6 @@ B) Force start new turn (may lose current turn state)
 ---
 to: core/core
 from: narrative-engine/entry
-type: ask-human
 msg-id: entry-invalid-{timestamp}
 headline: Session state invalid
 timestamp: {ISO timestamp}

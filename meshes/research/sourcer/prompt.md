@@ -10,6 +10,17 @@ Write all messages to: `.ai/tx/msgs/`
 
 Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 
+### Terminal-by-Default Messaging
+
+The system infers message intent from **routing and boundaries**:
+
+- **To core/core**: Questions for human → session suspends awaiting response
+- **From core/core**: Human responses → session resumes with answer
+- **To other agents**: Collaboration requests → session awaits response
+- **Agent → Agent (reply)**: Use `in-reply-to` field → resumes awaiting session
+
+No explicit `type` field needed - the system detects boundaries automatically.
+
 ## Two Modes
 
 ### Mode 1: Initial Research
@@ -117,7 +128,6 @@ Save to workspace as `01-sources.md`:
 ---
 to: core/core
 from: research/sourcer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Source research complete
 timestamp: {ISO timestamp}
@@ -146,7 +156,6 @@ When receiving a research request from another agent:
 ---
 to: {requesting-agent}
 from: research/sourcer
-type: ask-response
 msg-id: {SAME-msg-id-from-request}
 headline: Research findings on {topic}
 timestamp: {ISO timestamp}
@@ -175,7 +184,6 @@ If web search is unavailable or returns poor results:
 ---
 to: core/core
 from: research/sourcer
-type: task-complete
 msg-id: {msg-id}
 headline: Source research limited
 timestamp: {ISO timestamp}

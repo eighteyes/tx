@@ -133,6 +133,34 @@ function writeMessage(msgsDir: string, opts: {
   return filepath;
 }
 
+// Helper to write a message WITHOUT type field (Phase 7: Terminal-by-default)
+function writeMessageNoType(msgsDir: string, opts: {
+  from: string;
+  to: string;
+  msgId?: string;
+  status?: string;
+  'in-reply-to'?: string;
+  body?: string;
+}): string {
+  const filename = `${Date.now()}-no-type-test.md`;
+  const filepath = path.join(msgsDir, filename);
+
+  const lines = [
+    '---',
+    `to: ${opts.to}`,
+    `from: ${opts.from}`,
+  ];
+  if (opts.msgId) lines.push(`msg-id: ${opts.msgId}`);
+  if (opts.status) lines.push(`status: ${opts.status}`);
+  if (opts['in-reply-to']) lines.push(`in-reply-to: ${opts['in-reply-to']}`);
+  lines.push('---');
+  lines.push('');
+  lines.push(opts.body || 'Test body');
+
+  fs.writeFileSync(filepath, lines.join('\n'));
+  return filepath;
+}
+
 // Helper to wait for event
 function waitForEvent(emitter: EventEmitter, eventName: string, timeout = 2000): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -803,6 +831,239 @@ it('should allow task-complete when ask has no msg-id (not tracked for parity)',
 
       await coreMessagePromise;
       assert.strictEqual(deletedFiles.length, 0);
+    });
+  });
+});
+
+// ============================================================================
+// Terminal-by-Default Messaging Tests (Phase 7)
+// ============================================================================
+describe('Terminal-by-Default Messaging', () => {
+  let temp: { dir: string; cleanup: () => void };
+  let consumer: MessageConsumer;
+  let mockQueue: MessageQueue;
+  let deletedFiles: string[] = [];
+  let originalUnlink: typeof fs.unlinkSync;
+
+  beforeEach(async () => {
+    temp = createTempDir('terminal-default-test');
+    mockQueue = createMockQueue();
+    consumer = new MessageConsumer(temp.dir, mockQueue);
+    deletedFiles = [];
+
+    // Mock unlinkSync to track deleted files
+    originalUnlink = fs.unlinkSync;
+    fs.unlinkSync = ((filepath: string) => {
+      deletedFiles.push(filepath);
+      // Actually delete the file for clean test environment
+      originalUnlink(filepath);
+    }) as typeof fs.unlinkSync;
+
+    await consumer.start();
+
+    // Simulate dispatcher: resolve pending asks when responses arrive
+    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+      mockQueue.resolvePendingAsk(event.from, event.to, event.msgId);
+    });
+  });
+
+  afterEach(async () => {
+    fs.unlinkSync = originalUnlink;
+    await consumer.stop();
+    temp.cleanup();
+  });
+
+  describe('Type Inference', () => {
+    it('should infer ask-human when message to core/core has no type field', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'inferred-ask-human-001';
+
+      // Worker sends message to core/core WITHOUT type field
+      const askPromise = waitForEvent(consumer, 'ask-message');
+
+      writeMessageNoType(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        msgId,
+        body: 'Need clarification on requirements'
+      });
+
+      // Should emit ask-message with inferred type
+      const event = await askPromise as { from: string; to: string; type: string; msgId: string };
+      assert.strictEqual(event.from, agentId);
+      assert.strictEqual(event.to, 'core/core');
+      assert.strictEqual(event.type, 'ask-human', 'Type should be inferred as ask-human');
+      assert.strictEqual(event.msgId, msgId);
+    });
+
+    it('should infer ask-response when in-reply-to is present', async () => {
+      const agentId = 'dev/worker';
+      const originalMsgId = 'original-ask-001';
+
+      // First, send an ask (with explicit type for setup)
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'brain/brain',
+        type: 'ask',
+        msgId: originalMsgId,
+        body: 'What is the format?'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Now send response WITHOUT type field but WITH in-reply-to
+      const responsePromise = waitForEvent(consumer, 'ask-response-message');
+
+      writeMessageNoType(temp.dir, {
+        from: 'brain/brain',
+        to: agentId,
+        'in-reply-to': originalMsgId,
+        body: 'The format is JSON'
+      });
+
+      const event = await responsePromise as { from: string; to: string };
+      assert.strictEqual(event.from, 'brain/brain');
+      assert.strictEqual(event.to, agentId);
+    });
+
+    it('should infer ask-response when from core/core (human response)', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'human-response-001';
+
+      // First, send ask-human for setup
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        type: 'ask-human',
+        msgId: 'ask-' + msgId,
+        body: 'Need user input'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Human responds WITHOUT type field
+      const responsePromise = waitForEvent(consumer, 'ask-response-message');
+
+      writeMessageNoType(temp.dir, {
+        from: 'core/core',
+        to: agentId,
+        msgId,
+        body: 'User says: approved'
+      });
+
+      const event = await responsePromise as { from: string; to: string };
+      assert.strictEqual(event.from, 'core/core');
+      assert.strictEqual(event.to, agentId);
+    });
+
+    it('should infer ask for agent-to-agent messages without type', async () => {
+      const agentId = 'dev/worker';
+      const targetAgent = 'brain/brain';
+      const msgId = 'inferred-ask-001';
+
+      // Worker sends to another agent WITHOUT type field
+      const askPromise = waitForEvent(consumer, 'ask-message');
+
+      writeMessageNoType(temp.dir, {
+        from: agentId,
+        to: targetAgent,
+        msgId,
+        body: 'What is the API format?'
+      });
+
+      // Should emit ask-message with inferred type
+      const event = await askPromise as { from: string; to: string; type: string };
+      assert.strictEqual(event.from, agentId);
+      assert.strictEqual(event.to, targetAgent);
+      assert.strictEqual(event.type, 'ask', 'Type should be inferred as ask');
+    });
+  });
+
+  describe('Parity Gate with Inferred Types', () => {
+    it('should track pending ask when type is inferred as ask-human', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'inferred-parity-001';
+
+      // Worker sends message to core/core WITHOUT type field
+      writeMessageNoType(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        msgId,
+        body: 'Need clarification'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Verify pending ask is tracked
+      const pendingAsks = mockQueue.getPendingAsks(agentId);
+      assert.strictEqual(pendingAsks.length, 1, 'Should have one pending ask');
+      assert.strictEqual(pendingAsks[0].msg_id, msgId, 'Should track the correct msg-id');
+      assert.strictEqual(pendingAsks[0].to_agent, 'core/core', 'Should track ask to core/core');
+    });
+
+    it('should block task-complete with pending inferred ask-human', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'block-test-001';
+
+      // Worker sends message to core/core WITHOUT type field (inferred as ask-human)
+      writeMessageNoType(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        msgId,
+        body: 'Need user input'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Try to complete - should be blocked
+      const parityPromise = waitForEvent(consumer, 'parity-reminder');
+
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        type: 'task-complete',
+        body: 'Done'
+      });
+
+      const parityEvent = await parityPromise as ParityReminderEvent;
+      assert.strictEqual(parityEvent.agentId, agentId);
+      assert.strictEqual(parityEvent.pendingAsks.length, 1);
+      assert.strictEqual(parityEvent.pendingAsks[0].msgId, msgId);
+      assert.ok(deletedFiles.some(f => f.includes(temp.dir)), 'task-complete file should be deleted');
+    });
+
+    it('should allow task-complete after inferred ask-human is resolved', async () => {
+      const agentId = 'dev/worker';
+      const msgId = 'resolve-test-001';
+
+      // Worker sends message to core/core WITHOUT type field (inferred as ask-human)
+      writeMessageNoType(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        msgId,
+        body: 'Need user input'
+      });
+      await waitForEvent(consumer, 'ask-message');
+
+      // Human responds (core/core → agent) WITHOUT type field (inferred as ask-response)
+      writeMessageNoType(temp.dir, {
+        from: 'core/core',
+        to: agentId,
+        'in-reply-to': msgId,
+        body: 'Approved'
+      });
+      await waitForEvent(consumer, 'ask-response-message');
+
+      // Now task-complete should pass
+      const coreMessagePromise = waitForEvent(consumer, 'core-message');
+
+      writeMessage(temp.dir, {
+        from: agentId,
+        to: 'core/core',
+        type: 'task-complete',
+        body: 'Done'
+      });
+
+      const event = await coreMessagePromise as { from: string; type: string };
+      assert.strictEqual(event.from, agentId);
+      assert.strictEqual(event.type, 'task-complete');
+      assert.strictEqual(deletedFiles.length, 0, 'No files should be deleted on success');
     });
   });
 });

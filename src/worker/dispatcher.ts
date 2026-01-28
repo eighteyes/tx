@@ -132,9 +132,12 @@ interface AskMessageEvent {
   filepath: string;
   from: string;  // Agent that sent the ask (e.g., "narrative-engine/narrator")
   to: string;    // Agent being asked (e.g., "narrative-engine/system")
-  type: string;  // 'ask' or 'ask-human'
+  type: string;  // 'ask' or 'ask-human' (may be inferred from boundaries in Phase 7)
   headline?: string;
   msgId?: string;
+  // Phase 3: Terminal-by-default additions
+  crossesHumanBoundary?: boolean;  // True if ask targets core/core (human)
+  isTerminal?: boolean;            // True if ask suspends the sender (always true for now)
 }
 
 /**
@@ -416,12 +419,17 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
-   * Normalize completion_agent / completion_agents into an array
-   * Supports backward compatibility with singular completion_agent field
+   * Normalize completion_agent / completion_agents / boundary_agents into an array
+   * Phase 5: Supports boundary_agents (terminal-by-default) with backward compatibility
+   * Priority: boundary_agents > completion_agents > completion_agent
    */
   private normalizeCompletionAgents(config: MeshConfig | undefined): string[] {
     if (!config) return [];
+    // Phase 5: Prefer boundary_agents (terminal-by-default naming)
+    if (config.boundary_agents?.length) return config.boundary_agents;
+    // Backward compat: completion_agents
     if (config.completion_agents?.length) return config.completion_agents;
+    // Legacy: singular completion_agent
     if (config.completion_agent) return [config.completion_agent];
     return [];
   }
@@ -515,6 +523,70 @@ export class WorkerDispatcher extends EventEmitter {
         reason: options.unhaltReason || 'worker-cleanup',
       });
     }
+  }
+
+  /**
+   * Defer worker kill until safe state to avoid SDK abort errors
+   * Used for ask-human flow where the worker may still be writing the message file
+   * when the ask-message event fires (race condition).
+   *
+   * This waits for the worker to finish its current operation before killing.
+   */
+  private async deferWorkerKill(
+    agentId: string,
+    workerId: string,
+    reason: string
+  ): Promise<void> {
+    const workerInfo = this.getWorkerByWorkerId(workerId);
+    if (!workerInfo) {
+      log.debug('dispatcher', 'deferWorkerKill: worker already cleaned up', { agentId, workerId });
+      return;
+    }
+
+    const { runner } = workerInfo.worker;
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Always wait a tick for SDK cleanup
+    await delay(100);
+
+    // If runner is not actively processing, kill now
+    if (!runner.isRunning()) {
+      log.debug('dispatcher', 'deferWorkerKill: runner idle, killing', { agentId, workerId });
+      runner.kill(reason);
+      this.removeActiveWorker(agentId, workerId);
+      return;
+    }
+
+    log.info('dispatcher', 'deferWorkerKill: waiting for safe state', { agentId, workerId, reason });
+
+    // Wait for safe state or timeout
+    await new Promise<void>((resolve) => {
+      const cleanup = () => {
+        runner.off('output', onSafe);
+        runner.off('message:idle', onSafe);
+        clearTimeout(timeoutId);
+      };
+
+      const onSafe = async () => {
+        cleanup();
+        await delay(100);  // Extra delay for file write completion
+        log.info('dispatcher', 'deferWorkerKill: killing after safe state', { agentId, workerId });
+        runner.kill(reason);
+        this.removeActiveWorker(agentId, workerId);
+        resolve();
+      };
+
+      const timeoutId = setTimeout(async () => {
+        cleanup();
+        log.warn('dispatcher', 'deferWorkerKill: timeout, forcing kill', { agentId, workerId });
+        runner.kill(reason);
+        this.removeActiveWorker(agentId, workerId);
+        resolve();
+      }, 5000);
+
+      runner.once('output', onSafe);
+      runner.once('message:idle', onSafe);
+    });
   }
 
   /**
@@ -1159,8 +1231,9 @@ export class WorkerDispatcher extends EventEmitter {
           pendingCount,
         });
 
-        // Kill the worker - mesh halted until human responds
-        runner.kill('ask-human: mesh halted for human response');
+        // Defer worker kill to avoid race condition with SDK message processing
+        // The worker may still be writing the ask-human message file when this event fires
+        await this.deferWorkerKill(senderAgentId, workerId, 'ask-human: mesh halted for human response');
 
         this.emit('worker:suspended', {
           agentId: senderAgentId,
@@ -1170,9 +1243,6 @@ export class WorkerDispatcher extends EventEmitter {
           pendingResponseCount: pendingCount,
           targetAgents: [targetAgentId],
         });
-
-        // Remove from active workers
-        this.removeActiveWorker(senderAgentId, workerId);
 
         // OAOM: Transition lock to awaiting-human (keep locked, but different reason)
         this.updateAgentLockReason(senderAgentId, 'awaiting-human');
@@ -1195,6 +1265,16 @@ export class WorkerDispatcher extends EventEmitter {
           existingTargets: Array.from(machine.getAwaitingResponses()),
         });
         await machine.addAwaitTarget(targetAgentId);
+
+        // Phase 4: Update queue await state with new target
+        const existingState = this.queue.getAwaitState(senderAgentId);
+        if (existingState) {
+          const currentTargets = JSON.parse(existingState.target_agents);
+          if (!currentTargets.includes(targetAgentId)) {
+            currentTargets.push(targetAgentId);
+            this.queue.setAwaiting(senderAgentId, sessionId, currentTargets);
+          }
+        }
       } else if (currentStatus === 'running' || currentStatus === 'idle') {
         // Enter awaiting state
         log.debug('dispatcher', `Worker entering await state`, {
@@ -1204,6 +1284,9 @@ export class WorkerDispatcher extends EventEmitter {
           sessionId: sessionId.slice(0, 8),
         });
         await machine.enterAwait(targetAgentId, sessionId);
+
+        // Phase 4: Set await state in queue for persistence
+        this.queue.setAwaiting(senderAgentId, sessionId, [targetAgentId]);
 
         // OAOM: Transition lock to awaiting-agent
         this.updateAgentLockReason(senderAgentId, 'awaiting-agent');
@@ -1372,11 +1455,26 @@ The system will resume your session when the human responds.`;
       });
 
       runner.on('error', (error) => {
-        log.error('dispatcher', `Resumed worker error`, {
-          agentId,
-          workerId,
-          error: error.message,
-        });
+        // Check if recovery will handle this (queued work exists)
+        const hasQueuedWork = this.queue.countPending(agentId) > 0;
+        const isAbortError = error.message.includes('aborted by user') ||
+                            error.message.includes('process aborted');
+
+        if (isAbortError && hasQueuedWork) {
+          // Recovery will spawn new worker - not an error
+          log.debug('dispatcher', 'Resume interrupted, recovery will handle', {
+            agentId,
+            workerId,
+            queuedMessages: hasQueuedWork,
+          });
+        } else {
+          log.error('dispatcher', `Resumed worker error`, {
+            agentId,
+            workerId,
+            error: error.message,
+          });
+        }
+
         this.removeActiveWorker(agentId, workerId);
         this.emit('worker:error', { id: agentId, error: error.message });
         this.writeWorkerState();
@@ -1389,7 +1487,8 @@ The system will resume your session when the human responds.`;
         this.processQueuedMeshMessages(meshName);
       });
 
-      // Start the FSM (use process.pid as the runner pid)
+      // Initialize and start the FSM (use process.pid as the runner pid)
+      await machine.initialize();
       await machine.start(process.pid);
 
       this.emit('worker:resumed', {
@@ -1402,10 +1501,23 @@ The system will resume your session when the human responds.`;
       const result = await runner.resume(sessionId, resumePrompt);
 
       if (!result.success) {
-        log.error('dispatcher', `Resume failed`, {
-          agentId,
-          error: result.error,
-        });
+        // Check if recovery will handle this (queued work exists)
+        const hasQueuedWork = this.queue.countPending(agentId) > 0;
+        const isAbortError = result.error?.includes('aborted by user') ||
+                            result.error?.includes('process aborted');
+
+        if (isAbortError && hasQueuedWork) {
+          // Recovery will spawn new worker - not an error
+          log.debug('dispatcher', 'Resume failed, recovery will handle', {
+            agentId,
+            queuedMessages: hasQueuedWork,
+          });
+        } else {
+          log.error('dispatcher', `Resume failed`, {
+            agentId,
+            error: result.error,
+          });
+        }
       }
 
       this.writeWorkerState();
@@ -1429,6 +1541,10 @@ The system will resume your session when the human responds.`;
    */
   private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content, msgId: correlationId } = event;
+
+    // NOTE: pending_asks table only tracks core/core boundary (parity gate)
+    // await_state table tracks ALL agent-to-agent awaiting (session management)
+    // We only call resolvePendingAsk() for responses from core/core
 
     // Check for suspended session
     const suspended = this.sessionManager.get(awaitingAgentId);
@@ -1488,16 +1604,33 @@ The system will resume your session when the human responds.`;
       }
 
       // Handle agent-to-agent ask-responses for sessions suspended due to exiting while awaiting
-      if (suspended.reason === 'await-response' && suspended.targetAgents.has(respondingAgentId)) {
-        // Buffer this response
+      if (suspended.reason === 'await-response') {
+        const isDuplicate = !suspended.targetAgents.has(respondingAgentId);
+
+        if (isDuplicate) {
+          log.debug('dispatcher', `Ask-response from agent not in target set, injecting at runtime`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            sessionId: suspended.sessionId.slice(0, 8),
+          });
+
+          // Inject duplicate response immediately at runtime (don't buffer)
+          const combinedContent = this.sessionManager.buildAskResponsePrompt([{
+            from: respondingAgentId,
+            content,
+            headline: event.headline,
+          }]);
+
+          await this.resumeSuspendedSession(awaitingAgentId, suspended, combinedContent, event.headline);
+          return;
+        }
+
+        // Buffer this response (first response from this agent)
         this.sessionManager.bufferResponse(awaitingAgentId, {
           from: respondingAgentId,
           content,
           headline: event.headline,
         });
-
-        // Resolve the pending ask now that response is received
-        this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
 
         // Remove responder from target agents (returns true if all responded)
         const allResponded = this.sessionManager.removeTargetAgent(awaitingAgentId, respondingAgentId);
@@ -1563,12 +1696,46 @@ The system will resume your session when the human responds.`;
 
     // Check if we're actually waiting for this agent
     const awaitingResponses = machine.getAwaitingResponses();
-    if (!awaitingResponses.has(respondingAgentId)) {
-      log.warn('dispatcher', `Ask-response from unexpected agent`, {
+    const isDuplicate = !awaitingResponses.has(respondingAgentId);
+
+    if (isDuplicate) {
+      log.debug('dispatcher', `Ask-response from agent not in await set, injecting at runtime`, {
         from: respondingAgentId,
         to: awaitingAgentId,
-        awaiting: Array.from(awaitingResponses),
       });
+
+      // Inject duplicate response immediately if runner is active
+      if (runner.isRunning()) {
+        const sessionId = machine.getAwaitSessionId();
+        if (sessionId) {
+          log.info('dispatcher', `Injecting duplicate response to active runner`, {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            sessionId: sessionId.slice(0, 8),
+          });
+
+          // Inject directly to the running session
+          const injectionContent = this.sessionManager.buildAskResponsePrompt([{
+            from: respondingAgentId,
+            content,
+            headline: event.headline,
+          }]);
+
+          await this.resumeSession({
+            reason: 'ask-response',
+            agentId: awaitingAgentId,
+            sessionId,
+            prompt: injectionContent,
+            runner,
+            metadata: { responseCount: 1, from: respondingAgentId, duplicate: true },
+          });
+        }
+      } else {
+        log.debug('dispatcher', `Duplicate response but runner not active, discarding`, {
+          from: respondingAgentId,
+          to: awaitingAgentId,
+        });
+      }
       return;
     }
 
@@ -1586,9 +1753,6 @@ The system will resume your session when the human responds.`;
         headline: event.headline,
       });
 
-      // Resolve the pending ask now that response is received
-      this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
-
       // Remove incoming ask from responding agent
       const respondingWorker = this.getFirstWorkerForAgent(respondingAgentId);
       if (respondingWorker) {
@@ -1601,8 +1765,21 @@ The system will resume your session when the human responds.`;
         });
       }
 
-      // Remove responder from awaiting set
+      // Phase 4: Track response in queue await state
+      const queueResult = this.queue.receiveAwaitResponse(awaitingAgentId, respondingAgentId);
+
+      // Remove responder from awaiting set (FSM machine)
       const allReceived = await machine.receiveResponse(respondingAgentId);
+
+      // Verify queue and FSM agree on completion
+      if (allReceived !== queueResult.allReceived) {
+        log.warn('dispatcher', `Queue and FSM disagree on await completion`, {
+          awaitingAgentId,
+          queueAllReceived: queueResult.allReceived,
+          fsmAllReceived: allReceived,
+          queueRemaining: queueResult.remaining,
+        });
+      }
 
       this.emit('worker:resume', {
         workerId: awaitingAgentId,

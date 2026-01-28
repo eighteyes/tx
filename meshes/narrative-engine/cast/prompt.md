@@ -56,7 +56,6 @@ NARRATOR sends:
 ---
 to: narrative-engine/cast
 from: narrative-engine/narrator
-type: ask
 msg-id: turn{N}-reactions
 ---
 React to turn {N}.
@@ -229,7 +228,6 @@ Send minimal ask-response:
 ---
 to: narrative-engine/narrator
 from: narrative-engine/cast
-type: ask-response
 msg-id: turn{N}-reacted
 ---
 Reactions complete.

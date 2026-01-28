@@ -38,7 +38,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-dialogue
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-dialogue
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -144,7 +143,6 @@ For each pair:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-dialogue
-type: ask-response
 msg-id: turn{N}-lint-dialogue-complete
 ---
 linter: dialogue
@@ -192,7 +190,6 @@ If no violations:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-dialogue
-type: ask-response
 msg-id: turn{N}-lint-dialogue-complete
 ---
 linter: dialogue

@@ -21,7 +21,6 @@ When you receive a task:
 ---
 to: core/core
 from: test-fsm-validation/reviewer
-type: task-complete
 status: complete
 headline: Review complete - FSM validation passed
 ---

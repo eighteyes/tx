@@ -20,7 +20,6 @@ You can send messages to:
 ---
 to: test-routing-enforcement/specialist-a
 from: test-routing-enforcement/coordinator
-type: ask
 headline: Request type A work
 ---
 
@@ -33,7 +32,6 @@ Please complete this type A task: [task details]
 ---
 to: core/core
 from: test-routing-enforcement/coordinator
-type: task-complete
 status: complete
 headline: Routing test complete
 ---

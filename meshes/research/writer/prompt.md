@@ -12,6 +12,17 @@ Write all messages to: `.ai/tx/msgs/`
 
 Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 
+### Terminal-by-Default Messaging
+
+The system infers message intent from **routing and boundaries**:
+
+- **To core/core**: Questions for human → session suspends awaiting response
+- **From core/core**: Human responses → session resumes with answer
+- **To other agents**: Collaboration requests → session awaits response
+- **Agent → Agent (reply)**: Use `in-reply-to` field → resumes awaiting session
+
+No explicit `type` field needed - the system detects boundaries automatically.
+
 ## Workflow
 
 1. Receive research completion notification
@@ -91,7 +102,6 @@ Save to workspace as `final-report-{topic-slug}-{YYMMDD}.md`:
 ---
 to: core/core
 from: research/writer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Research complete - {topic}
 timestamp: {ISO timestamp}
@@ -137,7 +147,6 @@ If critical materials are missing:
 ---
 to: core/core
 from: research/writer
-type: task-complete
 msg-id: {msg-id}
 headline: Research incomplete - missing materials
 timestamp: {ISO timestamp}

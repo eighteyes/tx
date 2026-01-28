@@ -45,7 +45,6 @@ COORDINATOR (prep phase) or NARRATOR (ad-hoc) sends:
 ---
 to: narrative-engine/dramaturg
 from: narrative-engine/coordinator  # or narrative-engine/narrator
-type: ask
 msg-id: turn{N}-prep  # or turn{N}-analyze
 ---
 Analyze story context for turn {N}.
@@ -262,12 +261,12 @@ ending:
 
 ## Prologue (Turn 0)
 
-If `type: prologue` in context.yaml:
+If `context_type: prologue` in context.yaml:
 
 ```yaml
 # Dramaturg Notes: Prologue
 turn: 0
-type: prologue
+context_type: prologue
 
 guidance:
   atmosphere: "Quiet before the storm. Mundane surface, unease beneath."
@@ -286,7 +285,6 @@ Send minimal ask-response **to whoever sent the ask**:
 ---
 to: {copy from incoming ask's `from:` field}
 from: narrative-engine/dramaturg
-type: ask-response
 msg-id: {copy from incoming ask's `msg-id:` field}
 ---
 Done. See dramaturg-notes.yaml.

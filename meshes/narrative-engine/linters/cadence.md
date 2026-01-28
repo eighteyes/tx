@@ -37,7 +37,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-cadence
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-cadence
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -116,7 +115,6 @@ If climax uses medium/long sentences → flag
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-cadence
-type: ask-response
 msg-id: turn{N}-lint-cadence-complete
 ---
 linter: cadence
@@ -164,7 +162,6 @@ If cadence is good:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-cadence
-type: ask-response
 msg-id: turn{N}-lint-cadence-complete
 ---
 linter: cadence

@@ -128,7 +128,6 @@ Standard TX V4 format with frontmatter:
 ---
 to: rewriter/writer
 from: core/core
-type: ask
 msg-id: unique-id
 ---
 [Task description]

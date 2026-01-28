@@ -21,7 +21,6 @@ When you receive a task:
 ---
 to: test-fsm-validation/implementer
 from: test-fsm-validation/planner
-type: task-complete
 status: complete
 headline: Planning complete
 ---

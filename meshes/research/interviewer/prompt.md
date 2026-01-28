@@ -10,6 +10,17 @@ Write all messages to: `.ai/tx/msgs/`
 
 Filename format: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 
+### Terminal-by-Default Messaging
+
+The system infers message intent from **routing and boundaries**:
+
+- **To core/core**: Questions for human → session suspends awaiting response
+- **From core/core**: Human responses → session resumes with answer
+- **To other agents**: Collaboration requests → session awaits response
+- **Agent → Agent (reply)**: Use `in-reply-to` field → resumes awaiting session
+
+No explicit `type` field needed - the system detects boundaries automatically.
+
 ## Workflow
 
 ### If task arrives with Grade-A criteria already met:
@@ -128,7 +139,6 @@ When you need user input:
 ---
 to: core/core
 from: research/interviewer
-type: ask-human
 msg-id: interview-{unique-id}
 headline: {Brief question summary}
 timestamp: {ISO timestamp}
@@ -150,7 +160,6 @@ After creating research-brief.md, **always** ask for confirmation before proceed
 ---
 to: core/core
 from: research/interviewer
-type: ask-human
 msg-id: confirm-direction-{unique-id}
 headline: Confirm research direction before sourcing
 timestamp: {ISO timestamp}
@@ -196,7 +205,6 @@ After creating brief, send completion:
 ---
 to: core/core
 from: research/interviewer
-type: task-complete
 msg-id: {correlate with incoming task msg-id}
 headline: Research requirements complete
 timestamp: {ISO timestamp}

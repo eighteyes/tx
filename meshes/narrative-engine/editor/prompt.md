@@ -40,7 +40,6 @@ LINT-COORDINATOR sends aggregated violations:
 ---
 to: narrative-engine/editor
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-to-editor
 ---
 verdict: VIOLATIONS | CLEAN
@@ -298,7 +297,6 @@ After iteration 3, proceed to coordinator regardless. Make final feedback count.
 ---
 to: narrative-engine/narrator
 from: narrative-engine/editor
-type: ask
 msg-id: turn{N}-revise-{iteration}
 ---
 iteration: {1|2|3}
@@ -337,7 +335,6 @@ feedback: |
 ---
 to: narrative-engine/narrator
 from: narrative-engine/editor
-type: ask-response
 msg-id: turn{N}-edit-complete
 ---
 verdict: CLEAN
@@ -361,7 +358,6 @@ NARRATOR will rename prose-draft.md → prose.md and return to COORDINATOR.
 ---
 to: narrative-engine/narrator
 from: narrative-engine/editor
-type: ask-response
 msg-id: turn{N}-edit-complete
 ---
 verdict: MAX_ITERATIONS

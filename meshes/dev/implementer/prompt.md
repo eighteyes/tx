@@ -53,7 +53,6 @@ Send complete when implementation complete:
 ---
 to: dev/tester
 from: dev/implementer
-type: complete
 msg-id: {task-id}
 ---
 ## Implementation Complete

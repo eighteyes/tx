@@ -16,7 +16,6 @@ Ask message:
 ---
 to: core/core
 from: test/asker
-type: ask-human
 msg-id: ask-001
 headline: Need your favorite color
 timestamp: 2025-12-22T00:00:00.000Z
@@ -30,7 +29,6 @@ Task to looper:
 ---
 to: test/looper
 from: test/asker
-type: task
 msg-id: task-loop-001
 headline: Start iteration with user input
 timestamp: 2025-12-22T00:00:01.000Z

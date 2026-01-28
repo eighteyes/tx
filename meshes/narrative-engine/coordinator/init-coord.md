@@ -63,7 +63,7 @@ entropy_pool: [10 values]
 
 ```yaml
 turn: {N}
-type: action
+context_type: action
 player_action: {from task body}
 entropy_pool: [values from bash]
 actor:
@@ -92,7 +92,7 @@ From entity file, extract:
 ### Step 3: Write Populated Context
 ```yaml
 turn: {N}
-type: action
+context_type: action
 player_action: {from task body}
 entropy_pool: [values from bash]
 actor:
@@ -146,13 +146,12 @@ entropy_pool: [values from bash]
 ---
 to: narrative-engine/prep-coord
 from: narrative-engine/init-coord
-type: task
 msg-id: init-prep-{timestamp}
 headline: Turn {N} workspace ready
 timestamp: {ISO timestamp}
 ---
 turn: {N}
-type: action
+context_type: action
 workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-{N}/
 game_path: /workspace/tx-core/.ai/games/{game_id}/
 campaign_id: {campaign_id}

@@ -37,7 +37,6 @@ LINT-COORDINATOR sends:
 ---
 to: narrative-engine/lint-metaphor
 from: narrative-engine/lint-coordinator
-type: ask
 msg-id: turn{N}-lint-metaphor
 ---
 prose_draft: /absolute/path/to/prose-draft.md
@@ -168,7 +167,6 @@ Flag channels where same function appears 2+ times.
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-metaphor
-type: ask-response
 msg-id: turn{N}-lint-metaphor-complete
 ---
 linter: metaphor
@@ -247,7 +245,6 @@ If no duplicates:
 ---
 to: narrative-engine/lint-coordinator
 from: narrative-engine/lint-metaphor
-type: ask-response
 msg-id: turn{N}-lint-metaphor-complete
 ---
 linter: metaphor

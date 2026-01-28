@@ -864,7 +864,16 @@ export class SdkRunner extends EventEmitter {
       if (err.code !== undefined) errorContext.code = err.code;
       if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
 
-      log.error('sdk-runner', `Resume error`, errorContext);
+      // Demote abort errors to debug - dispatcher will determine if it's recoverable
+      const isAbortError = err.message.includes('aborted by user') ||
+                          err.message.includes('process aborted');
+
+      if (isAbortError) {
+        log.debug('sdk-runner', `Resume interrupted (may recover)`, errorContext);
+      } else {
+        log.error('sdk-runner', `Resume error`, errorContext);
+      }
+
       this.emit('error', {
         id: workerId,
         error: err.message,

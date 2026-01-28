@@ -58,7 +58,6 @@ entropy_pool: [10 values]
 ---
 to: narrative-engine/oracle
 from: narrative-engine/validate-coord
-type: ask
 msg-id: turn{N}-validate
 headline: Validate prose
 timestamp: {ISO timestamp}
@@ -86,7 +85,6 @@ entities: {game_path}/entities.yaml
 ---
 to: narrative-engine/compress-coord
 from: narrative-engine/validate-coord
-type: task
 msg-id: turn{N}-validated
 headline: Prose approved
 timestamp: {ISO timestamp}
@@ -105,7 +103,6 @@ campaign_concluded: {true if present in incoming task, omit otherwise}
 ---
 to: narrative-engine/narrator
 from: narrative-engine/validate-coord
-type: ask
 msg-id: turn{N}-fix-{iteration}
 headline: Fix oracle violations
 timestamp: {ISO timestamp}
