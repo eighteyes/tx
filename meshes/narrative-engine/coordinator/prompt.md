@@ -75,11 +75,11 @@ ELSE:
 5. Write context.yaml to workspace (include entropy pool)
 6. Set phase → `awaiting_prep`
 7. Send asks to DRAMATURG + SCENE-CRAFTER
-8. Set `prep_pending: [dramaturg, scene-crafter]`
+8. Set `waiting_on: [dramaturg, scene-crafter]`
 
 **PHASE 2 - PREP** (phase: `awaiting_prep`)
-1. On ask-response, remove sender from `prep_pending`
-2. When `prep_pending` empty: verify files exist, set phase → `awaiting_narrator`
+1. On ask-response, remove sender from `waiting_on`
+2. When `waiting_on` empty: verify files exist, set phase → `awaiting_narrator`
 3. Send ask to NARRATOR with **absolute paths** (see Message Templates below)
 
 **PHASE 3 - RENDER** (phase: `awaiting_narrator`)
@@ -162,9 +162,19 @@ format: verbatim
 | prose_violations | {bool} |
 ```
 
-## Duplicate Prevention
+## Dispatch Gating
 
-Before sending: check `last_ask_sent` in session.yaml. If matches msg-id, skip. Update after sending.
+Before sending ANY message to a downstream agent:
+1. Read session.yaml
+2. If `waiting_on` is non-empty: STOP. You are already waiting for a response.
+3. If `waiting_on` is empty: set `waiting_on: [{target_agent}]`, write session.yaml, THEN send message.
+
+On response from downstream agent:
+1. Read session.yaml
+2. Remove responder from `waiting_on`
+3. Write session.yaml
+4. If `waiting_on` is now empty: proceed with next step
+5. If `waiting_on` still has entries: STOP. Still waiting.
 
 ## New Game Flow
 
@@ -222,8 +232,7 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: [agent-ids]  # only during awaiting_prep phase
+waiting_on: []  # Agent names this coordinator is waiting on
 entropy_pool: [72, 34, 91, 15, 56, 83, 7, 44, 68, 29]  # 10 values, SYSTEM uses as needed
 ```
 

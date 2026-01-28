@@ -41,16 +41,31 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: []
+waiting_on: []
 entropy_pool: [10 values]
 ```
+
+## Dispatch Gating
+
+Before sending ANY message to a downstream agent:
+1. Read session.yaml
+2. If `waiting_on` is non-empty: STOP. You are already waiting for a response.
+3. If `waiting_on` is empty: set `waiting_on: [{target_agent}]`, write session.yaml, THEN send message.
+
+On response from downstream agent:
+1. Read session.yaml
+2. Remove responder from `waiting_on`
+3. Write session.yaml
+4. If `waiting_on` is now empty: proceed with next step
+5. If `waiting_on` still has entries: STOP. Still waiting.
 
 ## On Task Receipt
 
 1. Read session.yaml for ALL fields
-2. Read workspace, game_path, campaign_id from task body
-3. Send ask to ORACLE
+2. If `waiting_on` is non-empty: STOP (already dispatched)
+3. Read workspace, game_path, campaign_id from task body
+4. Set `waiting_on: [oracle]`, write session.yaml
+5. Send ask to ORACLE
 
 ### Ask to Oracle
 
@@ -72,12 +87,15 @@ entities: {game_path}/entities.yaml
 
 **If approved:**
 1. Read session.yaml for ALL fields
-2. Update phase → `awaiting_scribe`
+2. Remove responder from `waiting_on`, write session.yaml
+3. Update phase → `awaiting_scribe`
 3. **Write session.yaml FIRST (ALL fields)**
 4. Send task to compress-coord
 
 **If violations:**
-1. Send ask to NARRATOR with violations (stays in validate-coord, no phase change)
+1. Remove responder from `waiting_on`, write session.yaml
+2. Set `waiting_on: [narrator]`, write session.yaml
+3. Send ask to NARRATOR with violations (stays in validate-coord, no phase change)
 
 ### Oracle Approved → Task to Compress-Coord
 
@@ -117,7 +135,9 @@ Fix these violations and update prose.md.
 
 ## On Ask-Response (from narrator - fix complete)
 
-1. Send ask to ORACLE again (re-validate)
+1. Remove `narrator` from `waiting_on`, write session.yaml
+2. Set `waiting_on: [oracle]`, write session.yaml
+3. Send ask to ORACLE again (re-validate)
 2. Loop continues until oracle approves or max iterations
 
 **Max iterations: 3.** After 3 narrator fixes, send to compress-coord regardless with note in message body.
@@ -131,8 +151,7 @@ game_id: {preserved}
 campaign_id: {preserved}
 workspace: {preserved}
 game_path: {preserved}
-last_ask_sent: turn{N}-validated
-prep_pending: []
+waiting_on: []
 entropy_pool: {preserved}
 ```
 
@@ -143,7 +162,7 @@ entropy_pool: {preserved}
 
 On narrator fix (no phase change - still in validation loop):
 - Session stays at `phase: awaiting_oracle`
-- Only update `last_ask_sent`
+- Update `waiting_on` per gating rules above
 
 ## Rejection Loop (stays inside this coordinator)
 

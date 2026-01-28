@@ -43,7 +43,6 @@ When WRITER sends extracted voice profile:
      ---
      to: rewriter/writer
      from: rewriter/editor
-     type: ask
      msg-id: {profile-revision}
      ---
      ## Profile Refinement Needed
@@ -99,7 +98,6 @@ When WRITER sends rewritten text:
      ---
      to: rewriter/writer
      from: rewriter/editor
-     type: ask
      msg-id: {rewrite-revision}
      ---
      ## Rewrite Refinement Needed
@@ -155,7 +153,6 @@ Rewrite is APPROVED when:
 ---
 to: rewriter/writer
 from: rewriter/editor
-type: ask
 msg-id: {revision-request}
 ---
 ## Feedback for Revision
@@ -169,7 +166,6 @@ msg-id: {revision-request}
 ---
 to: core/core
 from: rewriter/editor
-type: ask-response
 msg-id: {task-id}
 ---
 verdict: APPROVED
@@ -183,7 +179,6 @@ verdict: APPROVED
 ---
 to: core/core
 from: rewriter/editor
-type: ask-response
 msg-id: {task-id}
 ---
 verdict: NEEDS_INPUT

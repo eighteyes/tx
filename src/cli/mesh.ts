@@ -4,6 +4,7 @@
  * Commands:
  *   tx mesh list              List meshes with activity
  *   tx mesh status <mesh>     Show mesh state snapshot
+ *   tx mesh kill <mesh>       Kill all workers for a mesh (via tmux)
  *   tx mesh clear <mesh>      Clear SQLite state (suspended sessions, pending asks, FSM)
  */
 
@@ -12,8 +13,12 @@ import { SessionStore } from '../session/index.ts';
 import { log } from '../shared/logger.ts';
 import { chalk } from '../shared/colors.ts';
 import { formatTimeAgo } from '../shared/time.ts';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
+
+const execAsync = promisify(exec);
 
 interface MeshFlags {
   json?: boolean;
@@ -471,6 +476,69 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
 }
 
 /**
+ * Kill all workers for a mesh by killing matching tmux sessions
+ * Session naming pattern: tx-tx-{meshname}-{hash}
+ */
+async function killMeshWorkers(meshName: string, flags: MeshFlags): Promise<void> {
+  try {
+    // List all tmux sessions
+    const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}"');
+    const sessions = stdout.trim().split('\n').filter(Boolean);
+
+    // Find sessions matching this mesh (pattern: tx-tx-{meshname}-{hash})
+    const pattern = `tx-tx-${meshName}-`;
+    const matchingSessions = sessions.filter(s => s.startsWith(pattern));
+
+    if (matchingSessions.length === 0) {
+      if (flags.json) {
+        console.log(JSON.stringify({ killed: 0, message: 'No active sessions found for mesh' }));
+      } else {
+        console.log(chalk.yellow(`No active sessions found for mesh: ${meshName}`));
+      }
+      return;
+    }
+
+    // Kill each matching session
+    let killed = 0;
+    const errors: string[] = [];
+
+    for (const session of matchingSessions) {
+      try {
+        await execAsync(`tmux kill-session -t '${session}'`);
+        killed++;
+        log.info('cli-mesh', 'Killed tmux session', { session, meshName });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`${session}: ${msg}`);
+        log.error('cli-mesh', 'Failed to kill session', { session, error: msg });
+      }
+    }
+
+    if (flags.json) {
+      console.log(JSON.stringify({
+        killed,
+        total: matchingSessions.length,
+        sessions: matchingSessions,
+        errors: errors.length > 0 ? errors : undefined
+      }));
+    } else {
+      console.log(chalk.green(`✓ Killed ${killed}/${matchingSessions.length} session(s) for ${meshName}`));
+      if (errors.length > 0) {
+        console.log(chalk.yellow('Some sessions failed to kill:'));
+        errors.forEach(e => console.log(chalk.dim(`  ${e}`)));
+      }
+    }
+  } catch (err) {
+    // tmux list-sessions fails if no sessions exist
+    if (flags.json) {
+      console.log(JSON.stringify({ killed: 0, message: 'No tmux sessions running' }));
+    } else {
+      console.log(chalk.yellow('No tmux sessions running'));
+    }
+  }
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -480,6 +548,7 @@ ${chalk.bold('Usage:')} tx mesh <action> [mesh] [options]
 ${chalk.bold('Actions:')}
   ${chalk.cyan('list')}                    List meshes with activity
   ${chalk.cyan('status')} <mesh>           Show mesh state snapshot
+  ${chalk.cyan('kill')} <mesh>             Kill all workers for a mesh (via tmux)
   ${chalk.cyan('clear')} <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
 
 ${chalk.bold('Options:')}
@@ -491,6 +560,7 @@ ${chalk.bold('Examples:')}
   tx mesh list --json
   tx mesh status narrative-engine
   tx mesh status dev --json
+  tx mesh kill narrative-engine
   tx mesh clear test-mesh
   tx mesh clear test-mesh --force
 `);
@@ -517,6 +587,15 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await showMeshStatus(meshName, flags);
+        break;
+
+      case 'kill':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh kill narrative-engine'));
+          return;
+        }
+        await killMeshWorkers(meshName, flags);
         break;
 
       case 'clear':

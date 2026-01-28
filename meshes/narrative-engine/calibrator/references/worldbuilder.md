@@ -128,7 +128,6 @@ Generate 2-3 versions of a characteristic scene from the current game:
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-tune-author-{iteration}
 headline: Voice variations
 ---
@@ -304,7 +303,6 @@ Tell me about the new character:
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: ask-human
 msg-id: worldbuilder-confirm-{artifact}-{timestamp}
 headline: Apply changes?
 ---
@@ -330,7 +328,6 @@ Apply these changes?
 ---
 to: core/core
 from: narrative-engine/calibrator
-type: task-complete
 msg-id: worldbuilder-complete-{timestamp}
 headline: Worldbuilder session complete
 ---

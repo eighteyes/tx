@@ -67,7 +67,8 @@ export interface RearmatterConfig {
 export interface AgentConfig {
   name: string;
   model: SemanticModel;
-  prompt: string;  // Path to prompt file
+  prompt?: string;  // Path to prompt file (required unless command is set)
+  command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
 }

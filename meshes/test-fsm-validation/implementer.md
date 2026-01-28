@@ -21,7 +21,6 @@ When you receive a task:
 ---
 to: test-fsm-validation/reviewer
 from: test-fsm-validation/implementer
-type: task-complete
 status: complete
 headline: Implementation complete
 ---

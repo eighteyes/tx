@@ -17,7 +17,7 @@ DO NOT:
 
 ONLY:
 - Send asks to dramaturg and scene-crafter
-- Track prep_pending list in session.yaml
+- Track waiting_on list in session.yaml
 - Verify output files EXIST (ls, not cat)
 - Write session.yaml updates
 - Route task to render-coord when both complete
@@ -40,16 +40,30 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: []
+waiting_on: []
 entropy_pool: [10 values]
 ```
+
+## Dispatch Gating
+
+Before sending ANY message to a downstream agent:
+1. Read session.yaml
+2. If `waiting_on` is non-empty: STOP. You are already waiting for a response.
+3. If `waiting_on` is empty: set `waiting_on: [{target_agents}]`, write session.yaml, THEN send messages.
+
+On response from downstream agent:
+1. Read session.yaml
+2. Remove responder from `waiting_on`
+3. Write session.yaml
+4. If `waiting_on` is now empty: proceed with next step
+5. If `waiting_on` still has entries: STOP. Still waiting.
 
 ## On Task Receipt
 
 1. Read session.yaml for ALL fields (preserve game_id, campaign_id, etc.)
-2. Read workspace, game_path, campaign_id from task body
-3. Set `prep_pending: [dramaturg, scene-crafter]`
+2. If `waiting_on` is non-empty: STOP (already dispatched)
+3. Read workspace, game_path, campaign_id from task body
+4. Set `waiting_on: [dramaturg, scene-crafter]`
 4. **Write session.yaml FIRST (ALL fields)**
 5. Send ask to DRAMATURG
 6. Send ask to SCENE-CRAFTER
@@ -91,9 +105,9 @@ arc: {game_path}/campaigns/{campaign_id}/arc.yaml
 
 1. Read session.yaml for ALL fields
 2. Identify sender (dramaturg or scene-crafter)
-3. Remove sender from `prep_pending`
+3. Remove sender from `waiting_on`
 4. **Write session.yaml (ALL fields)**
-5. If `prep_pending` empty:
+5. If `waiting_on` empty:
    - Verify: `{workspace}/dramaturg-notes.yaml` exists
    - Verify: `{workspace}/scene-outline.yaml` exists
    - Update phase → `awaiting_narrator`
@@ -127,8 +141,7 @@ game_id: {preserved}
 campaign_id: {preserved}
 workspace: {preserved}
 game_path: {preserved}
-last_ask_sent: turn{N}-dramaturg
-prep_pending: [dramaturg, scene-crafter]
+waiting_on: [dramaturg, scene-crafter]
 entropy_pool: {preserved}
 ```
 
@@ -141,8 +154,7 @@ game_id: {preserved}
 campaign_id: {preserved}
 workspace: {preserved}
 game_path: {preserved}
-last_ask_sent: turn{N}-prep-complete
-prep_pending: []
+waiting_on: []
 entropy_pool: {preserved}
 ```
 

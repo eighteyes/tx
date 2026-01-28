@@ -13,7 +13,6 @@ You complete the workflow.
 ---
 to: core/core
 from: test/writer
-type: task-complete
 msg-id: topology-complete
 headline: Topology test complete
 timestamp: 2025-12-22T00:00:04.000Z

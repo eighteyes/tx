@@ -264,7 +264,6 @@ Each agent writes a message with frontmatter containing `success_signal`:
 ---
 to: [next-agent]
 from: ralph-ice-cream-2/[agent-name]
-type: task-complete
 msg-id: [unique-id]
 headline: [brief summary]
 timestamp: [ISO-8601]

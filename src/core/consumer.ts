@@ -490,15 +490,17 @@ ${body}
           file: filename
         });
 
-        // Emit revision event for dispatcher to handle interrupt+resume
+        // Emit revision event for dispatcher to handle based on mode
         if (toAgent !== 'core/core') {
+          const mode = parsed.frontmatter.revision as 'interrupt' | 'append' | 'replace' | undefined;
           this.emit('revision-message', {
             filepath,
             agentId: toAgent,
             from: parsed.frontmatter.from,
             type: parsed.frontmatter.type,
             content: parsed.body,
-            headline: parsed.frontmatter.headline
+            headline: parsed.frontmatter.headline,
+            mode: mode || 'interrupt'  // Default to interrupt (hot inject)
           });
         }
         return; // Don't queue revisions - they're handled via interrupt+resume

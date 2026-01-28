@@ -15,7 +15,6 @@ When you receive a task that says "request input":
 ---
 to: core/core
 from: test-ask-human-halt/worker
-type: ask-human
 headline: Need user input
 ---
 
@@ -30,7 +29,6 @@ When you receive an ask-response with the user's name:
 ---
 to: core/core
 from: test-ask-human-halt/worker
-type: task-complete
 status: complete
 headline: Greeting complete
 ---

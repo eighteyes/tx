@@ -24,7 +24,8 @@ import type { SemanticModel } from '../shared/types.ts';
 export interface AgentConfigMinimal {
   name: string;
   model: SemanticModel;
-  prompt: string;
+  prompt?: string;
+  command?: string;
 }
 
 /**

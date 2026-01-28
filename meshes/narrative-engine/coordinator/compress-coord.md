@@ -42,20 +42,35 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: []
+waiting_on: []
 entropy_pool: [10 values]
 status: {active|concluded}  # Only set to concluded on campaign end
 ```
+
+## Dispatch Gating
+
+Before sending ANY message to a downstream agent:
+1. Read session.yaml
+2. If `waiting_on` is non-empty: STOP. You are already waiting for a response.
+3. If `waiting_on` is empty: set `waiting_on: [{target_agent}]`, write session.yaml, THEN send message.
+
+On response from downstream agent:
+1. Read session.yaml
+2. Remove responder from `waiting_on`
+3. Write session.yaml
+4. If `waiting_on` is now empty: proceed with next step
+5. If `waiting_on` still has entries: STOP. Still waiting.
 
 ## On Task Receipt
 
 **Send ask to scribe, then STOP. Do NOT send task-complete yet.**
 
 1. Read session.yaml for ALL fields
-2. Read workspace, game_path from task body
-3. Note if `campaign_concluded: true` is present (use in completion step)
-4. Send ask to SCRIBE
+2. If `waiting_on` is non-empty: STOP (already dispatched)
+3. Read workspace, game_path from task body
+4. Note if `campaign_concluded: true` is present (use in completion step)
+5. Set `waiting_on: [scribe]`, write session.yaml
+6. Send ask to SCRIBE
 5. **STOP HERE** - wait for scribe's ask-response before continuing
 
 ### Ask to Scribe
@@ -80,7 +95,8 @@ context: {workspace}/context.yaml
 **If you just received a task, go to "On Task Receipt" above instead.**
 
 1. Read session.yaml for ALL fields
-2. Verify `{workspace}/summary.md` exists
+2. Remove `scribe` from `waiting_on`, write session.yaml
+3. Verify `{workspace}/summary.md` exists
 3. Run coordinator-ready script:
    ```bash
    ./scripts/coordinator-ready.sh
@@ -141,8 +157,7 @@ game_id: {preserved}
 campaign_id: {preserved}
 workspace: {preserved}
 game_path: {preserved}
-last_ask_sent: turn{N}-complete
-prep_pending: []
+waiting_on: []
 entropy_pool: {preserved}
 status: {concluded if campaign_concluded was true, otherwise active}
 ```

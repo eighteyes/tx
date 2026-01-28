@@ -396,6 +396,31 @@ export class PromptInjector {
   }
 
   // ============================================
+  // Escalation Policy Injection
+  // ============================================
+
+  private static readonly ESCALATION_POLICY = `
+## Uncertainty Escalation
+
+When you are confused, uncertain, or encounter unexpected state:
+1. Do NOT guess, improvise, or re-derive data that should already exist.
+2. Send a message to core/core describing what you expected vs what you found.
+3. STOP processing until you receive a response.
+
+Escalation triggers: expected state missing, conflicting instructions,
+ambiguous routing, or any situation where proceeding risks overwriting
+existing work.
+`;
+
+  /**
+   * Inject escalation policy into a system prompt
+   * Provides uncertainty handling guidance to all mesh agents
+   */
+  injectEscalationPolicy(basePrompt: string): string {
+    return `${basePrompt}\n\n${PromptInjector.ESCALATION_POLICY}`;
+  }
+
+  // ============================================
   // Session Awareness Injection
   // ============================================
 

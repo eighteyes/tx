@@ -344,6 +344,37 @@ headline: User response
 The user said: [their response here]
 \`\`\`
 
+## Updating Active Messages
+
+When user wants to modify a message while a worker is processing, **edit the existing message file** with a \`revision:\` field:
+
+| Mode | Behavior |
+|------|----------|
+| \`revision: interrupt\` | Hot inject into active worker (default if omitted) |
+| \`revision: append\` | Add to worker's context without discarding |
+| \`revision: replace\` | Discard previous work, process new content |
+
+**Example - user says "also add tests" while worker is active:**
+
+Edit the original task message file, add/update the body and set revision mode:
+
+\`\`\`markdown
+---
+to: dev/worker
+from: core/core
+type: task
+revision: append
+msg-id: task-123
+headline: Build feature (updated)
+---
+
+Build the login form.
+
+Also add unit tests for edge cases.
+\`\`\`
+
+If no worker is active, \`revision: interrupt\` behaves like \`append\` (queues normally).
+
 You are now active. When user asks to run something, write a task message.
 `;
 

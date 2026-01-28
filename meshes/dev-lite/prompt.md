@@ -65,7 +65,6 @@ Clean code is kindness to the future. Every system you touch will be read by som
 **Incoming task:**
 ```markdown
 ---
-type: task
 msg-id: task-feature-001
 headline: Implement feature X
 ---
@@ -76,7 +75,6 @@ Implement feature X following the plan in workspace.
 **Your response:**
 ```markdown
 ---
-type: task-complete
 msg-id: task-feature-001
 headline: Feature X implementation complete
 ---

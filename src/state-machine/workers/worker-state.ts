@@ -22,11 +22,6 @@ export type WorkerState =
   | { status: 'complete'; config: WorkerConfig; startedAt: number; endedAt: number; result: WorkerResult }
   | { status: 'error'; config: WorkerConfig; startedAt: number; endedAt: number; error: string };
 
-export interface IncomingAsk {
-  from: string;
-  msgId: string;
-}
-
 export interface WorkerContext extends Context {
   readonly id: string;
   readonly createdAt: number;
@@ -43,10 +38,6 @@ export interface WorkerContext extends Context {
   awaitTimeout: number;
   /** Whether this worker is the completion agent (parity gates only apply to completion agent) */
   readonly isCompletionAgent: boolean;
-  /** Incoming asks that this worker has received and not yet responded to */
-  incomingAsks: Set<IncomingAsk>;
-  /** Count of reminders sent about unanswered incoming asks */
-  incomingAskReminderCount: number;
 }
 
 export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext> {
@@ -60,9 +51,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       maxRetries: 3,
       retryCount: 0,
       awaitTimeout,
-      isCompletionAgent,
-      incomingAsks: new Set(),
-      incomingAskReminderCount: 0
+      isCompletionAgent
     });
 
     this.setupGuards();
@@ -110,15 +99,6 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
     this.registerGuard('complete', async (from, _to, context) => {
       if (from.status !== 'running' && from.status !== 'idle' && from.status !== 'awaiting') {
         return { valid: false, reason: `Cannot complete from ${from.status}` };
-      }
-
-      // Check for unanswered incoming asks
-      if (context.incomingAsks.size > 0) {
-        const pending = Array.from(context.incomingAsks).map(a => `${a.from} (${a.msgId})`).join(', ');
-        return {
-          valid: false,
-          reason: `PROTOCOL VIOLATION: Cannot complete with unanswered incoming asks: [${pending}]`
-        };
       }
 
       // Only block completion for the completion_agent when awaiting responses
@@ -516,45 +496,4 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
     return this.state.config;
   }
 
-  /**
-   * Add an incoming ask that this worker must respond to
-   */
-  addIncomingAsk(from: string, msgId: string): void {
-    this.context.incomingAsks.add({ from, msgId });
-  }
-
-  /**
-   * Remove an incoming ask (after response sent)
-   */
-  removeIncomingAsk(from: string, msgId: string): void {
-    // Find and remove matching ask
-    for (const ask of this.context.incomingAsks) {
-      if (ask.from === from && ask.msgId === msgId) {
-        this.context.incomingAsks.delete(ask);
-        break;
-      }
-    }
-  }
-
-  /**
-   * Get all incoming asks
-   */
-  getIncomingAsks(): IncomingAsk[] {
-    return Array.from(this.context.incomingAsks);
-  }
-
-  /**
-   * Increment incoming ask reminder count
-   */
-  incrementIncomingAskReminder(): number {
-    this.context.incomingAskReminderCount++;
-    return this.context.incomingAskReminderCount;
-  }
-
-  /**
-   * Get incoming ask reminder count
-   */
-  getIncomingAskReminderCount(): number {
-    return this.context.incomingAskReminderCount;
-  }
 }

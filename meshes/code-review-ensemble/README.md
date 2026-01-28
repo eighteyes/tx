@@ -36,7 +36,6 @@ Submit code via task message:
 ---
 to: code-review-ensemble/entry
 from: core/core
-type: task
 ---
 
 Review this code:

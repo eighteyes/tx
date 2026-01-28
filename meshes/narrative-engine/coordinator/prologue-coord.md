@@ -40,8 +40,7 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: []
+waiting_on: []
 entropy_pool: [10 values]
 ```
 
@@ -116,8 +115,7 @@ game_id: {from task body}
 campaign_id: {from task body}
 workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
 game_path: {from task body}
-last_ask_sent: prologue-prep-{timestamp}
-prep_pending: []
+waiting_on: []
 entropy_pool: [values from bash]
 ```
 

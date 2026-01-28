@@ -432,6 +432,7 @@ Usage: tx mesh <action> [mesh] [options]
 Actions:
   list                    List meshes with activity
   status <mesh>           Show mesh state snapshot
+  kill <mesh>             Kill all workers for a mesh (via tmux)
   clear <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
 
 Options:
@@ -442,12 +443,12 @@ Examples:
   tx mesh list
   tx mesh list --json
   tx mesh status narrative-engine
-  tx mesh status dev --json
+  tx mesh kill narrative-engine
   tx mesh clear test-mesh
   tx mesh clear test-mesh --force
 
 Notes:
-  - If workers are running, use 'tx mesh clear --force' or stop workers first
+  - 'kill' stops active workers via tmux session termination
   - 'clear' removes suspended sessions, pending asks, and FSM state from SQLite`,
 
   forensics: `tx forensics - Analyze mesh execution sessions

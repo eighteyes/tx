@@ -153,13 +153,29 @@ describe('V4 Mesh Validator Test', () => {
       assert.ok(result.errors.some(e => e.includes('must be one of [opus, sonnet, haiku]')));
     });
 
-    test('should fail if agent is missing prompt', () => {
+    test('should fail if agent has neither prompt nor command', () => {
       const result = MeshValidator.validate({
         mesh: 'test',
         agents: [{ name: 'worker', model: 'haiku' }]
       });
       assert.strictEqual(result.valid, false);
-      assert.ok(result.errors.some(e => e.includes("missing required field 'prompt'")));
+      assert.ok(result.errors.some(e => e.includes("must have at least one of 'prompt' or 'command'")));
+    });
+
+    test('should accept agent with command but no prompt', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', command: '/know:build' }]
+      });
+      assert.strictEqual(result.valid, true);
+    });
+
+    test('should accept agent with both prompt and command', () => {
+      const result = MeshValidator.validate({
+        mesh: 'test',
+        agents: [{ name: 'worker', model: 'haiku', prompt: 'test.md', command: '/know:build' }]
+      });
+      assert.strictEqual(result.valid, true);
     });
 
     test('should fail on duplicate agent names', () => {

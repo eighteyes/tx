@@ -55,7 +55,6 @@ fsm:
   scripts: {}
 
 # Optional config
-type: ephemeral          # or persistent
 auto_despawn: true       # for ephemeral only
 continuation: true       # for session persistence
 toolRestriction: mcp-only  # if MCP tools only

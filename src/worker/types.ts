@@ -65,7 +65,8 @@ export interface RearmatterConfig {
 export interface AgentConfig {
   name: string;
   model: SemanticModel;
-  prompt: string;  // Path to prompt file
+  prompt?: string;  // Path to prompt file (required unless command is set)
+  command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
 }
@@ -158,6 +159,14 @@ export interface SpawnContext {
 // =============================================================================
 
 /**
+ * Revision mode for message updates
+ * - interrupt: Hot inject via SDK (only if worker active, else normal message)
+ * - append: Queue message normally (add to context)
+ * - replace: Queue with "discard previous work" preamble
+ */
+export type RevisionMode = 'interrupt' | 'append' | 'replace';
+
+/**
  * Event emitted by Consumer when a message file is revised (edited)
  */
 export interface RevisionMessageEvent {
@@ -167,6 +176,8 @@ export interface RevisionMessageEvent {
   type: string;
   content: string;
   headline?: string;
+  /** Revision mode - core decides behavior based on worker state */
+  mode?: RevisionMode;
 }
 
 /**

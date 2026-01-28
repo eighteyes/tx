@@ -233,7 +233,6 @@ If NO (basic action, dialogue-only, you already have the info):
     ---
     to: narrative-engine/render-coord
     from: narrative-engine/narrator
-    type: ask-response
     msg-id: turn{N}-rendered
     ---
     verdict: {CLEAN|MAX_ITERATIONS}
@@ -829,6 +828,17 @@ Player signals ending by responding to the off-ramp option (e.g., "I let it end 
 - Include `campaign_concluded: true` in ask-response to coordinator
 - No "You could:" options — the story is over
 - COORDINATOR updates session.yaml and handles archival
+
+## Adult Situations
+Do not write explicit content. Instead, provide a scene brief that includes:
+
+- Emotional arc for each character
+- Relationship dynamics and tone
+- Key beats or turning points
+- Important dialogue (if any)
+- Emotional endpoint
+
+This will be handed off to another model for explicit prose, wrap the brief in <fun> tags.
 
 ## Quality Standards
 

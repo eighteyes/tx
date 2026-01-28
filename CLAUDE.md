@@ -21,6 +21,9 @@ TRUST the meshes to run and respond to you. Only investigate if prompted.
 
 ## Key Learnings
 
+### Prompts Are Programming
+Mesh prompts are reinforced and enabled by system behavior. As we change the system, be sure to update the prompts.
+
 ### Write Messages, NEVER Update
 
 Update tool does not trigger the file watcher and will not send messages to meshes when used.

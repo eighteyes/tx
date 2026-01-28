@@ -56,8 +56,7 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-last_ask_sent: {msg-id}
-prep_pending: []
+waiting_on: []
 entropy_pool: []
 ```
 
@@ -84,8 +83,7 @@ ELSE (mode == "new-game" or missing):
    campaign_id: null
    workspace: null
    game_path: null
-   last_ask_sent: game-creation-{timestamp}
-   prep_pending: []
+   waiting_on: []
    entropy_pool: []
    ```
 3. Send task to CALIBRATOR
@@ -125,8 +123,7 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
    campaign_id: {preserve}
    workspace: {preserve}
    game_path: {preserve}
-   last_ask_sent: worldbuilder-{timestamp}
-   prep_pending: []
+   waiting_on: []
    entropy_pool: {preserve}
    ```
 4. Send task to CALIBRATOR with worldbuilder mode

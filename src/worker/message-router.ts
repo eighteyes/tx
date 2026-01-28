@@ -150,39 +150,57 @@ export class MessageRouter extends EventEmitter {
   // ===========================================================================
 
   /**
-   * Handle message revision - interrupt active worker and resume with revised content
-   * This enables mid-flight corrections when message files are edited.
+   * Handle message revision based on mode:
+   * - interrupt: Hot inject via SDK (only if worker active, else emit for queue)
+   * - append: Emit for queue (add to context)
+   * - replace: Emit for queue with "discard previous" preamble
    */
   async handleRevision(event: RevisionMessageEvent): Promise<void> {
-    const { agentId, content, headline } = event;
+    const { agentId, content, headline, mode = 'interrupt' } = event;
 
     const activeWorker = this.deps.getActiveWorker(agentId);
-    if (!activeWorker) {
-      log.warn('message-router', `Revision received but no active worker found`, {
-        agentId,
-        headline,
-      });
-      return;
-    }
+    const hasActiveWorker = !!activeWorker && !!activeWorker.runner.getSessionId();
 
-    const sessionId = activeWorker.runner.getSessionId();
-    if (!sessionId) {
-      log.warn('message-router', `Revision received but worker has no session ID`, {
-        agentId,
-        headline,
-      });
-      return;
-    }
-
-    log.info('message-router', `Handling message revision`, {
+    log.info('message-router', `Handling revision`, {
       agentId,
-      sessionId: sessionId.slice(0, 8),
+      mode,
+      hasActiveWorker,
       headline,
       contentLength: content.length,
     });
 
+    // For interrupt mode: hot inject if worker active, else treat as normal message
+    if (mode === 'interrupt') {
+      if (!hasActiveWorker) {
+        log.info('message-router', `No active worker for interrupt - treating as normal message`, { agentId });
+        this.emit('revision:queue', { ...event, mode: 'append' });  // Queue as append
+        return;
+      }
+      await this.handleInterruptRevision(event, activeWorker!);
+      return;
+    }
+
+    // For append/replace modes: emit for queue handling
+    this.emit('revision:queue', event);
+  }
+
+  /**
+   * Handle interrupt mode - hot inject into active worker
+   */
+  private async handleInterruptRevision(
+    event: RevisionMessageEvent,
+    activeWorker: { runner: { getSessionId(): string | null; interrupt(): Promise<void>; resume(sessionId: string, prompt: string): Promise<{ success: boolean; error?: string }> } }
+  ): Promise<void> {
+    const { agentId, content, headline } = event;
+    const sessionId = activeWorker.runner.getSessionId()!;
+
+    log.info('message-router', `Hot injecting revision`, {
+      agentId,
+      sessionId: sessionId.slice(0, 8),
+      headline,
+    });
+
     try {
-      // Interrupt the current query
       await activeWorker.runner.interrupt();
 
       this.emit('revision:interrupt', {
@@ -191,70 +209,62 @@ export class MessageRouter extends EventEmitter {
         headline,
       });
 
-      // Resume with the revised content
-      const revisionPrompt = this.buildRevisionPrompt(content, headline);
-
-      log.info('message-router', `Resuming session with revised content`, {
-        agentId,
-        sessionId: sessionId.slice(0, 8),
-      });
-
-      // Resume the session with the revised content
-      const result = await activeWorker.runner.resume(sessionId, revisionPrompt);
+      // Use append-style prompt for hot injection (don't discard, add context)
+      const prompt = this.buildAppendPrompt(content, headline);
+      const result = await activeWorker.runner.resume(sessionId, prompt);
 
       if (result.success) {
-        log.info('message-router', `Revision resume completed successfully`, {
+        log.info('message-router', `Interrupt revision completed`, {
           agentId,
           sessionId: sessionId.slice(0, 8),
         });
-        this.emit('revision:complete', {
-          agentId,
-          sessionId,
-          success: true,
-        });
+        this.emit('revision:complete', { agentId, sessionId, success: true });
       } else {
-        log.error('message-router', `Revision resume failed`, {
+        log.error('message-router', `Interrupt revision failed`, {
           agentId,
           sessionId: sessionId.slice(0, 8),
           error: result.error,
         });
-        this.emit('revision:error', {
-          agentId,
-          sessionId,
-          error: result.error,
-        });
+        this.emit('revision:error', { agentId, sessionId, error: result.error });
       }
     } catch (error) {
       const errorMsg = (error as Error).message;
-      log.error('message-router', `Failed to handle message revision`, {
-        agentId,
-        error: errorMsg,
-      });
-      this.emit('revision:error', {
-        agentId,
-        error: errorMsg,
-      });
+      log.error('message-router', `Failed to handle interrupt revision`, { agentId, error: errorMsg });
+      this.emit('revision:error', { agentId, error: errorMsg });
     }
   }
 
   /**
-   * Build a prompt for the revised message content
+   * Build prompt for append mode - add to context without discarding
    */
-  buildRevisionPrompt(content: string, headline?: string): string {
+  buildAppendPrompt(content: string, headline?: string): string {
     const parts: string[] = [];
+    parts.push('## Human Follow-up\n');
+    parts.push('The human added to their request while you were working:\n');
+    if (headline) {
+      parts.push(`**Subject**: ${headline}\n`);
+    }
+    parts.push('---\n');
+    parts.push(content);
+    parts.push('\n---');
+    parts.push('\n**Action**: Incorporate this additional context into your current work.');
+    return parts.join('\n');
+  }
 
+  /**
+   * Build prompt for replace mode - discard previous work
+   */
+  buildReplacePrompt(content: string, headline?: string): string {
+    const parts: string[] = [];
     parts.push('## Message Revision\n');
     parts.push('The task message has been revised. Please discard your previous work and process this updated message:\n');
-
     if (headline) {
       parts.push(`**Updated Headline**: ${headline}\n`);
     }
-
     parts.push('---\n');
     parts.push(content);
     parts.push('\n---');
     parts.push('\n**Action**: Process the revised message above. Your previous response is no longer needed.');
-
     return parts.join('\n');
   }
 

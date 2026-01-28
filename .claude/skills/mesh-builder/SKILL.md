@@ -39,6 +39,30 @@ agents:
 entry_point: worker
 ```
 
+## Command Agents
+
+Agents can invoke slash commands instead of (or in addition to) prompt files. The command is prepended to the user prompt when processing messages.
+
+```yaml
+agents:
+  - name: builder
+    model: opus
+    command: "/know:build"
+    prompt: builder/prompt.md  # optional extra context
+
+  - name: reviewer
+    model: sonnet
+    command: "/know:review"
+    # no prompt needed - command expands to full workflow
+```
+
+**Precedence:**
+1. Message frontmatter `command:` (highest)
+2. Agent config `command:` (default)
+3. No command (just prompt as system prompt)
+
+Requires `settingSources: ['project']` (already enabled by default).
+
 ## Writing Prompts
 
 Focus on **workflow only**.
@@ -362,6 +386,18 @@ For ensemble `aggregation` field:
 | `state.type: ensemble` | `state.ensemble: { type: parallel }` | Old FSM syntax |
 | `state.subtask: true` | Explicit ensemble routing | Implicit behavior |
 | `workspace: "string"` | `workspace: { path: "..." }` | Object format preferred |
+
+## Agent Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Agent identifier |
+| `model` | string | yes | `opus` / `sonnet` / `haiku` |
+| `prompt` | string | one of prompt/command | Path to prompt file |
+| `command` | string | one of prompt/command | Slash command (e.g., `/know:build`) |
+| `workspace` | object | no | Per-agent workspace config |
+| `mcpServers` | object | no | MCP server configurations |
+| `description` | string | no | Agent documentation |
 
 ## Additional Config Fields
 

@@ -22,7 +22,6 @@ When you receive a task like "Remember the word: [WORD]":
 ---
 to: core/core
 from: test-continuation/worker
-type: task-complete
 status: complete
 headline: Word remembered
 ---
@@ -45,7 +44,6 @@ When you receive a task like "What was the secret word?":
 ---
 to: core/core
 from: test-continuation/worker
-type: task-complete
 status: complete
 headline: Word recalled
 ---

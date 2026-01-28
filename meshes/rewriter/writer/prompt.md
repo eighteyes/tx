@@ -141,7 +141,6 @@ When task requests rewriting in a style (e.g., "rewrite this in noir tone" or "m
 ---
 to: narrative-engine/editor
 from: rewriter/writer
-type: ask-response
 msg-id: {msg-id}
 ---
 ## Style Profile Extracted
@@ -158,7 +157,6 @@ msg-id: {msg-id}
 ---
 to: narrative-engine/editor
 from: rewriter/writer
-type: ask-response
 msg-id: {msg-id}
 ---
 ## Rewritten Text

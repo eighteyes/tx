@@ -71,7 +71,6 @@ cat > /workspace/tx-cli-v4/.ai/tx/msgs/test-fsm.md << 'TASK'
 ---
 to: dev-haiku/coordinator
 from: core/core
-type: task
 msg-id: dev-haiku-test-1
 headline: Test FSM workflow
 ---

@@ -122,6 +122,8 @@ interface RevisionMessageEvent {
   type: string;
   content: string;
   headline?: string;
+  /** Revision mode - core decides behavior based on worker state */
+  mode?: 'interrupt' | 'append' | 'replace';
 }
 
 /**
@@ -1007,79 +1009,128 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
-   * Handle message revision - interrupt active worker and resume with revised content
-   * This enables mid-flight corrections when message files are edited.
+   * Handle message revision based on mode:
+   * - interrupt: Hot inject via SDK (only if worker active, else treat as normal)
+   * - append: Queue message (add to context)
+   * - replace: Queue with "discard previous" preamble
    * Note: With parallelism, revisions affect the first worker for the agent
    */
   private async handleRevisionMessage(event: RevisionMessageEvent): Promise<void> {
-    const { agentId, content, headline } = event;
+    const { agentId, content, headline, mode = 'interrupt' } = event;
 
-    // Get first worker for this agent (revision applies to oldest running worker)
     const activeWorker = this.getFirstWorkerForAgent(agentId);
-    if (!activeWorker) {
-      log.warn('dispatcher', `Revision received but no active worker found`, {
-        agentId,
-        headline,
-      });
-      return;
-    }
+    const sessionId = activeWorker?.runner.getSessionId();
+    const hasActiveWorker = !!activeWorker && !!sessionId;
 
-    const sessionId = activeWorker.runner.getSessionId();
-    if (!sessionId) {
-      log.warn('dispatcher', `Revision received but worker has no session ID`, {
-        agentId,
-        headline,
-      });
-      return;
-    }
-
-    log.info('dispatcher', `Handling message revision`, {
+    log.info('dispatcher', `Handling revision`, {
       agentId,
-      sessionId: sessionId.slice(0, 8),
+      mode,
+      hasActiveWorker,
+      sessionId: sessionId?.slice(0, 8),
       headline,
       contentLength: content.length,
     });
 
-    // If worker is running, kill it first so we can resume with revision
-    if (activeWorker.runner.isRunning()) {
-      log.info('dispatcher', `Killing worker for revision`, {
+    // interrupt mode: hot inject if worker active, else queue as append
+    if (mode === 'interrupt') {
+      if (!hasActiveWorker) {
+        log.info('dispatcher', `No active worker for interrupt - queueing as append`, { agentId });
+        // Re-emit as normal message for queue processing
+        this.emit('revision:fallback', { ...event, mode: 'append' });
+        return;
+      }
+
+      // Hot inject into running worker
+      if (activeWorker.runner.isRunning()) {
+        activeWorker.runner.kill('revision: hot inject');
+      }
+
+      await this.resumeSession({
+        reason: 'revision',
         agentId,
-        sessionId: sessionId.slice(0, 8),
-        headline,
+        sessionId: sessionId!,
+        prompt: this.buildAppendPrompt(content, headline),
+        runner: activeWorker.runner,
+        interrupt: false,
+        metadata: { headline, mode: 'interrupt' },
       });
-      activeWorker.runner.kill('revision: user edited message');
+      return;
     }
 
-    // Resume with the revised content
-    await this.resumeSession({
-      reason: 'revision',
-      agentId,
-      sessionId,
-      prompt: this.buildRevisionPrompt(content, headline),
-      runner: activeWorker.runner,
-      interrupt: false,  // Already killed if was running
-      metadata: { headline },
-    });
+    // append mode: queue normally (handled by consumer as new message)
+    if (mode === 'append') {
+      if (hasActiveWorker && activeWorker.runner.isRunning()) {
+        activeWorker.runner.kill('revision: append queued');
+      }
+      if (hasActiveWorker) {
+        await this.resumeSession({
+          reason: 'revision',
+          agentId,
+          sessionId: sessionId!,
+          prompt: this.buildAppendPrompt(content, headline),
+          runner: activeWorker.runner,
+          interrupt: false,
+          metadata: { headline, mode: 'append' },
+        });
+      }
+      // If no active worker, consumer already queued the message
+      return;
+    }
+
+    // replace mode: discard previous work
+    if (mode === 'replace') {
+      if (!hasActiveWorker) {
+        log.warn('dispatcher', `Replace revision but no active worker`, { agentId });
+        return;
+      }
+
+      if (activeWorker.runner.isRunning()) {
+        activeWorker.runner.kill('revision: replace');
+      }
+
+      await this.resumeSession({
+        reason: 'revision',
+        agentId,
+        sessionId: sessionId!,
+        prompt: this.buildReplacePrompt(content, headline),
+        runner: activeWorker.runner,
+        interrupt: false,
+        metadata: { headline, mode: 'replace' },
+      });
+    }
   }
 
   /**
-   * Build a prompt for the revised message content
+   * Build prompt for append mode - add to context without discarding
    */
-  private buildRevisionPrompt(content: string, headline?: string): string {
+  private buildAppendPrompt(content: string, headline?: string): string {
     const parts: string[] = [];
+    parts.push('## Human Follow-up\n');
+    parts.push('The human added to their request while you were working:\n');
+    if (headline) {
+      parts.push(`**Subject**: ${headline}\n`);
+    }
+    parts.push('---\n');
+    parts.push(content);
+    parts.push('\n---');
+    parts.push('\n**Action**: Incorporate this additional context into your current work.');
+    return parts.join('\n');
+  }
 
+  /**
+   * Build prompt for replace mode - discard previous work
+   */
+  private buildReplacePrompt(content: string, headline?: string): string {
+    const parts: string[] = [];
     parts.push('## Message Revision\n');
     parts.push('The task message has been revised. Please discard your previous work and process this updated message:\n');
-
     if (headline) {
       parts.push(`**Updated Headline**: ${headline}\n`);
     }
-
     parts.push('---\n');
     parts.push(content);
     parts.push('\n---');
     parts.push('\n**Action**: Process the revised message above. Your previous response is no longer needed.');
-
     return parts.join('\n');
   }
 
@@ -1230,20 +1281,6 @@ export class WorkerDispatcher extends EventEmitter {
         });
       }
 
-      // Track incoming ask on target agent (if not ask-human and target exists)
-      if (messageType !== 'ask-human') {
-        const targetWorker = this.getFirstWorkerForAgent(targetAgentId);
-        if (targetWorker) {
-          const msgId = event.msgId || `${senderAgentId}->${targetAgentId}-${Date.now()}`;
-          targetWorker.machine.addIncomingAsk(senderAgentId, msgId);
-          log.debug('dispatcher', `Tracked incoming ask on target`, {
-            from: senderAgentId,
-            to: targetAgentId,
-            msgId,
-          });
-        }
-      }
-
       this.writeWorkerState();
     } catch (error) {
       log.error('dispatcher', `Failed to enter await state`, {
@@ -1318,7 +1355,7 @@ The system will resume your session when the human responds.`;
       const workerConfig: WorkerConfig = {
         id: agentId,
         model: agentConfig.model,
-        prompt: agentConfig.prompt,
+        prompt: agentConfig.prompt || '',
         workDir: this.config.workDir,
       };
       const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agentConfig.name, 300000, isCompletionAgent);
@@ -1588,18 +1625,6 @@ The system will resume your session when the human responds.`;
 
       // Resolve the pending ask now that response is received
       this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
-
-      // Remove incoming ask from responding agent
-      const respondingWorker = this.getFirstWorkerForAgent(respondingAgentId);
-      if (respondingWorker) {
-        const msgId = event.msgId || `${awaitingAgentId}->${respondingAgentId}`;
-        respondingWorker.machine.removeIncomingAsk(awaitingAgentId, msgId);
-        log.debug('dispatcher', `Removed incoming ask from responder`, {
-          from: respondingAgentId,
-          to: awaitingAgentId,
-          msgId,
-        });
-      }
 
       // Remove responder from awaiting set
       const allReceived = await machine.receiveResponse(respondingAgentId);
@@ -1973,37 +1998,45 @@ The system will resume your session when the human responds.`;
       // 1. Relative to mesh's basePath (new structure: meshes/dev/prompt.md)
       // 2. Relative to workDir (legacy: meshes/agents/dev/prompt.md)
       // 3. Global TX_ROOT fallback
-      let promptPath: string | null = null;
+      // If agent has command but no prompt, use minimal system prompt
+      let systemPrompt: string;
 
-      // Try mesh basePath first (new flat structure)
-      if (meshConfig?._basePath) {
-        const meshRelativePath = path.join(meshConfig._basePath, agent.prompt);
-        if (fs.existsSync(meshRelativePath)) {
-          promptPath = meshRelativePath;
+      if (agent.prompt) {
+        let promptPath: string | null = null;
+
+        // Try mesh basePath first (new flat structure)
+        if (meshConfig?._basePath) {
+          const meshRelativePath = path.join(meshConfig._basePath, agent.prompt);
+          if (fs.existsSync(meshRelativePath)) {
+            promptPath = meshRelativePath;
+          }
         }
-      }
 
-      // Fall back to workDir-relative (legacy structure)
-      if (!promptPath) {
-        const workDirPath = path.join(this.config.workDir, agent.prompt);
-        if (fs.existsSync(workDirPath)) {
-          promptPath = workDirPath;
+        // Fall back to workDir-relative (legacy structure)
+        if (!promptPath) {
+          const workDirPath = path.join(this.config.workDir, agent.prompt);
+          if (fs.existsSync(workDirPath)) {
+            promptPath = workDirPath;
+          }
         }
-      }
 
-      // Fall back to global TX_ROOT
-      if (!promptPath && process.env.TX_ROOT) {
-        const globalPath = path.join(process.env.TX_ROOT, agent.prompt);
-        if (fs.existsSync(globalPath)) {
-          promptPath = globalPath;
+        // Fall back to global TX_ROOT
+        if (!promptPath && process.env.TX_ROOT) {
+          const globalPath = path.join(process.env.TX_ROOT, agent.prompt);
+          if (fs.existsSync(globalPath)) {
+            promptPath = globalPath;
+          }
         }
-      }
 
-      if (!promptPath) {
-        this.emit('error', { agentId, error: `Prompt not found: ${agent.prompt}` });
-        return;
+        if (!promptPath) {
+          this.emit('error', { agentId, error: `Prompt not found: ${agent.prompt}` });
+          return;
+        }
+        systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+      } else {
+        // Command-only agent: minimal system prompt (routing/preamble injected below)
+        systemPrompt = `You are agent ${agent.name}. Execute the command provided in the user prompt.`;
       }
-      let systemPrompt = fs.readFileSync(promptPath, 'utf-8');
 
       // Inject preamble (tool guidance based on mesh agent count)
       const agentCount = meshConfig?.agents?.length ?? 1;
@@ -2052,21 +2085,16 @@ The system will resume your session when the human responds.`;
       // Inject situational context (pending asks, queued tasks)
       // Gives agent full awareness of obligations when starting/resuming
       const outgoingAsks = this.queue.getPendingAsks(agentId);
-      const incomingAsks = this.queue.getIncomingAsks(agentId);
       const pendingTasks = this.queue.getPendingTasks(agentId);
 
-      if (outgoingAsks.length > 0 || incomingAsks.length > 0 || pendingTasks.length > 0) {
+      if (outgoingAsks.length > 0 || pendingTasks.length > 0) {
         systemPrompt = this.promptInjector.injectSituationalContext(systemPrompt, {
           outgoingAsks: outgoingAsks.map(a => ({
             msg_id: a.msg_id,
             to_agent: a.to_agent,
             created_at: a.created_at,
           })),
-          incomingAsks: incomingAsks.map(a => ({
-            msg_id: a.msg_id,
-            from_agent: a.from_agent,
-            created_at: a.created_at,
-          })),
+          incomingAsks: [], // No longer tracking agent-to-agent incoming asks
           pendingTasks: pendingTasks.map(t => ({
             from_agent: t.from_agent,
             type: t.type,
@@ -2077,7 +2105,6 @@ The system will resume your session when the human responds.`;
         log.info('dispatcher', `Injected situational context`, {
           agentId,
           outgoingAsks: outgoingAsks.length,
-          incomingAsks: incomingAsks.length,
           pendingTasks: pendingTasks.length,
         });
       }
@@ -2194,6 +2221,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
+      // Inject escalation policy for all agents
+      systemPrompt = this.promptInjector.injectEscalationPolicy(systemPrompt);
+
       // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
       const promptMetadata: Record<string, unknown> = {
@@ -2284,6 +2314,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         mcpServers,
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
         sessionId,  // Resume session if continuation enabled
+        command: agent.command,  // Agent-level slash command
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -2660,34 +2691,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Check if this is a protocol violation (completing with pending asks)
           if (errorMsg.includes('PROTOCOL VIOLATION') || errorMsg.includes('outstanding asks')) {
-            // Check if it's unanswered INCOMING asks (need to remind/escalate)
-            if (errorMsg.includes('unanswered incoming asks')) {
-              const incomingAsks = machine.getIncomingAsks();
-              const reminderCount = machine.getIncomingAskReminderCount();
-
-              log.warn('dispatcher', `BLOCKED: task-complete with unanswered incoming asks`, {
-                agentId,
-                incomingAsks: incomingAsks.map(a => `${a.from} (${a.msgId})`),
-                reminderCount,
-              });
-
-              // Check if we've exceeded max reminders
-              if (reminderCount >= 3) {
-                // Force error after 3 reminders
-                if (activeWorker) {
-                  await this.forceErrorForUnansweredAsks(agentId, activeWorker, incomingAsks, currentWorkerId);
-                }
-                return;
-              }
-
-              // Inject reminder and continue
-              if (activeWorker) {
-                await this.injectIncomingAskReminder(agentId, activeWorker, incomingAsks, reminderCount);
-              }
-              return;
-            }
-
-            // Otherwise, it's OUTGOING asks (awaiting responses) - just block
+            // It's OUTGOING asks (awaiting responses) - just block
             log.warn('dispatcher', `BLOCKED: task-complete while awaiting responses`, {
               agentId,
               error: errorMsg,
@@ -3812,138 +3816,6 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     }
   }
 
-  /**
-   * Inject reminder about unanswered incoming asks
-   * Escalating prompts based on reminder count
-   */
-  private async injectIncomingAskReminder(
-    agentId: string,
-    worker: ActiveWorker,
-    incomingAsks: Array<{ from: string; msgId: string }>,
-    currentReminderCount: number
-  ): Promise<void> {
-    const { machine, runner } = worker;
-    const sessionId = runner.getSessionId();
-
-    if (!sessionId) {
-      log.error('dispatcher', 'Cannot inject reminder without session ID', { agentId });
-      return;
-    }
-
-    // Increment reminder count
-    const newReminderCount = machine.incrementIncomingAskReminder();
-
-    const askList = incomingAsks.map(a => `- **${a.from}** (msg-id: ${a.msgId})`).join('\n');
-
-    const reminderPrompts = [
-      // Reminder 1: Gentle
-      `## System Notice: Unanswered Ask Messages
-
-You have received ask messages that require responses:
-
-${askList}
-
-**You cannot complete this task until you respond to these asks.**
-
-Please send ask-response messages to each agent listed above before attempting to complete.
-
-If you don't have the information to respond, you can:
-1. Send an ask-response explaining what information you need
-2. Send an ask-human to escalate
-3. Continue working to gather the needed information
-
-What would you like to do?`,
-
-      // Reminder 2: Firm
-      `## IMPORTANT: Completion Blocked - Unanswered Asks
-
-**ATTENTION**: You attempted to complete but have ${incomingAsks.length} unanswered ask message(s):
-
-${askList}
-
-**This is your second reminder.**
-
-You MUST send ask-response messages to all agents above before you can complete.
-
-**Required Action**: Send ask-response to each agent immediately.`,
-
-      // Reminder 3: Final warning
-      `## FINAL WARNING: Session Termination Imminent
-
-**CRITICAL**: You have ${incomingAsks.length} unanswered ask message(s):
-
-${askList}
-
-**This is your FINAL warning.**
-
-If you attempt to complete again without responding to these asks, your session will be **TERMINATED** and the task will be marked as **FAILED**.
-
-**Send ask-response messages NOW.**`
-    ];
-
-    const prompt = reminderPrompts[Math.min(newReminderCount - 1, reminderPrompts.length - 1)];
-
-    log.info('dispatcher', `Injecting incoming ask reminder (attempt ${newReminderCount})`, {
-      agentId,
-      reminderCount: newReminderCount,
-      incomingAsks: incomingAsks.map(a => a.from),
-    });
-
-    this.emit('worker:incoming-ask-reminder', {
-      agentId,
-      reminderCount: newReminderCount,
-      incomingAsks,
-    });
-
-    // Interrupt current run and resume with reminder
-    await this.resumeSession({
-      reason: 'incoming-ask-reminder',
-      agentId,
-      sessionId,
-      prompt,
-      runner,
-      interrupt: true,
-      metadata: { reminderCount: newReminderCount, incomingAsks: incomingAsks.map(a => a.from) },
-    });
-  }
-
-  /**
-   * Force error state after 3 failed reminder attempts
-   */
-  private async forceErrorForUnansweredAsks(
-    agentId: string,
-    worker: ActiveWorker,
-    incomingAsks: Array<{ from: string; msgId: string }>,
-    workerId: string
-  ): Promise<void> {
-    const { machine, runner } = worker;
-    const askList = incomingAsks.map(a => `${a.from} (${a.msgId})`).join(', ');
-
-    log.error('dispatcher', 'Forcing error after max reminders about unanswered asks', {
-      agentId,
-      workerId,
-      incomingAsks: askList,
-      reminderAttempts: 3,
-    });
-
-    // Kill the worker
-    runner.kill(`unanswered-asks: ${agentId} failed to respond to [${askList}] after 3 reminders`);
-
-    // Transition to error state
-    await machine.error(`Failed to respond to incoming asks after 3 reminders: [${askList}]`);
-
-    // Cleanup without buffer clear or lock release (intentional for error state)
-    this.cleanupWorker(agentId, workerId, { clearBuffer: false, releaseLock: false });
-
-    this.emit('worker:error', {
-      id: agentId,
-      workerId,
-      error: `Unanswered incoming asks after 3 reminders: [${askList}]`,
-      transitionName: 'error',
-    });
-
-    log.info('dispatcher', 'Worker terminated for unanswered asks', { agentId, workerId });
-  }
 
   /**
    * Nudge a worker to send a task-complete message to core/core

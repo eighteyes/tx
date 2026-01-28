@@ -26,7 +26,8 @@ import { log } from '../shared/logger.ts';
 export interface MeshAgentConfig {
   name: string;
   model: SemanticModel;
-  prompt: string;  // Path to prompt file relative to workDir
+  prompt?: string;  // Path to prompt file relative to workDir (required unless command is set)
+  command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfigSchema;
 }
 
@@ -181,8 +182,10 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
 const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   name: { type: 'string', required: true },
   model: { type: 'string', required: true, enum: ['opus', 'sonnet', 'haiku'] },
-  prompt: { type: 'string', required: true },
+  prompt: { type: 'string' },
+  command: { type: 'string' },
   workspace: { type: 'object' },
+  mcpServers: { type: 'object' },
   description: { type: 'string' },  // Optional agent documentation
 };
 
@@ -415,10 +418,15 @@ export class MeshValidator {
         errors.push(`${prefix}: 'model' must be one of [opus, sonnet, haiku], got '${agentObj.model}'${context}`);
       }
 
-      if (!agentObj.prompt) {
-        errors.push(`${prefix}: missing required field 'prompt'${context}`);
-      } else if (typeof agentObj.prompt !== 'string') {
+      // Require at least one of prompt or command
+      if (!agentObj.prompt && !agentObj.command) {
+        errors.push(`${prefix}: must have at least one of 'prompt' or 'command'${context}`);
+      }
+      if (agentObj.prompt && typeof agentObj.prompt !== 'string') {
         errors.push(`${prefix}: 'prompt' must be a string${context}`);
+      }
+      if (agentObj.command && typeof agentObj.command !== 'string') {
+        errors.push(`${prefix}: 'command' must be a string${context}`);
       }
 
       // Check for unknown agent fields

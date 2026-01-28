@@ -60,6 +60,7 @@ export interface SdkRunnerConfig {
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
   sessionId?: string;  // Resume existing session (for interrupt/revision flow)
+  command?: string;  // Agent-level slash command (fallback if message has no command)
 }
 
 export class SdkRunner extends EventEmitter {
@@ -574,8 +575,10 @@ export class SdkRunner extends EventEmitter {
     const parts: string[] = [];
 
     // Slash command at start - requires settingSources: ['project'] to work
-    if (msg.payload.command) {
-      parts.push(msg.payload.command as string);
+    // Message frontmatter command takes priority over agent config command
+    const command = (msg.payload.command as string) || this.config.command;
+    if (command) {
+      parts.push(command);
       parts.push('\n\n');
     }
 
