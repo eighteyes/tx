@@ -5,6 +5,54 @@ All notable changes to TX V4 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-01-28
+
+### Added
+
+#### Terminal-by-Default Messaging
+- **Type inference**: Agents omit `type:` field - system infers from routing boundaries
+- **Inference rules**: `in-reply-to` → ask-response, from core → ask-response, to core → ask-human, default → ask
+- **Prompt cleanup**: Stripped explicit `type:` from 70+ mesh prompt files
+
+#### Human Boundary Enforcement
+- **Parity gate scoped**: Only tracks asks at human boundary (core/core), not agent-to-agent
+- **Incoming asks removed**: No more blocking on agent-to-agent message obligations
+- **Boundary agents config**: `boundary_agents` replaces `completion_agent` (backward compatible)
+
+#### Message Revision System
+- **`revision:` frontmatter**: Three modes for mid-flight message updates
+  - `interrupt`: Hot inject via SDK (default, falls back to append if no worker)
+  - `append`: Add to worker context ("also do X")
+  - `replace`: Discard previous work, process new content
+- **Core prompt updated**: Instructions for editing active messages with revision modes
+
+#### Operator Tools
+- **`tx mesh kill <mesh>`**: Kill all workers for a mesh via tmux session termination
+- **JSON output**: `--json` flag for programmatic usage
+
+#### Queue Await Tracking
+- **`await_state` table**: SQLite persistence for session suspension state (all agents)
+- **Dual-table design**: `pending_asks` for parity (core/core) vs `await_state` for sessions
+
+#### Soft Routing
+- **Warn on violation**: Messages to valid agents pass through with warning when routing table incomplete
+- **Hard block preserved**: Messages to non-existent agents still blocked with feedback
+
+### Changed
+
+- **Revision prompts**: Append uses "incorporate this" language, replace uses "discard previous"
+- **Worker lifecycle**: `deferWorkerKill` promisified to avoid SDK abort race condition
+- **Recovery logging**: Demoted to debug when recovery succeeds (less noise)
+- **FSM resume**: Added missing `machine.initialize()` before `machine.start()` in resume flow
+- **Duplicate ask-responses**: Now injected at runtime instead of dropped
+
+### Fixed
+
+- **"Cannot start from pending"**: Missing FSM initialization in resume flow
+- **"No pending ask found"**: Parity gate was tracking agent-to-agent (now human-only)
+- **"BLOCKED: unanswered incoming asks"**: Removed enforcement entirely for agent-to-agent
+- **Race condition in deferWorkerKill**: Promisified delay prevents SDK abort errors
+
 ## [0.2.1] - 2026-01-21
 
 ### Added
@@ -125,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace manager for task-scoped outputs
 - Prompt injection system
 
+[0.2.2]: https://github.com/eighteyes/tx/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eighteyes/tx/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/eighteyes/tx/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/eighteyes/tx/releases/tag/v0.1.0
