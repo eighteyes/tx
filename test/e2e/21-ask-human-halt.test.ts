@@ -308,4 +308,145 @@ Yes, proceed with the task.
     assert.ok(agentIds.includes('agent-2'));
     assert.ok(agentIds.includes('agent-3'));
   });
+
+  // ==========================================================================
+  // Terminal-by-default messaging E2E tests
+  // ==========================================================================
+
+  test('Terminal-by-default: worker ask-human without type field', async () => {
+    // Worker sends message to core without type field - should infer ask-human
+    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-test-ask-human-halt-worker--core-core-tbd1.md`);
+    fs.writeFileSync(msgFile, `---
+to: core/core
+from: test-ask-human-halt/worker
+msg-id: tbd1
+headline: Implicit ask-human
+timestamp: ${new Date().toISOString()}
+---
+
+What should I do next?
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Core should receive the message with inferred ask-human type
+    const messages = queue.poll('core/core');
+    assert.strictEqual(messages.length, 1, 'Core should receive 1 message');
+    assert.strictEqual(messages[0].type, 'ask-human', 'Type should be inferred as ask-human');
+    assert.strictEqual(messages[0].from_agent, 'test-ask-human-halt/worker');
+    assert.ok(
+      (messages[0].payload.body as string)?.includes('What should I do next'),
+      'Body should be preserved'
+    );
+  });
+
+  test('Terminal-by-default: core response without type field', async () => {
+    // Core sends response to worker without type field - should infer ask-response
+    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-ask-human-halt-worker-tbd2.md`);
+    fs.writeFileSync(msgFile, `---
+to: test-ask-human-halt/worker
+from: core/core
+msg-id: tbd2
+headline: User response
+timestamp: ${new Date().toISOString()}
+---
+
+Please proceed with option B.
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Worker should receive the message with inferred ask-response type
+    const messages = queue.poll('test-ask-human-halt/worker');
+    assert.strictEqual(messages.length, 1, 'Worker should receive 1 message');
+    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be inferred as ask-response');
+    assert.strictEqual(messages[0].from_agent, 'core/core');
+  });
+
+  test('Terminal-by-default: in-reply-to triggers ask-response inference', async () => {
+    // First, worker asks human
+    const askFile = path.join(env.msgsDir, `${Date.now()}-notype-test-ask-human-halt-worker--core-core-tbd3.md`);
+    fs.writeFileSync(askFile, `---
+to: core/core
+from: test-ask-human-halt/worker
+msg-id: tbd3
+headline: Question for user
+timestamp: ${new Date().toISOString()}
+---
+
+Should I continue?
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    // Core responds with in-reply-to but no type
+    const responseFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-ask-human-halt-worker-tbd3r.md`);
+    fs.writeFileSync(responseFile, `---
+to: test-ask-human-halt/worker
+from: core/core
+msg-id: tbd3r
+in-reply-to: tbd3
+headline: Confirmation
+timestamp: ${new Date().toISOString()}
+---
+
+Yes, continue.
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Worker should receive ask-response (inferred from in-reply-to)
+    const messages = queue.poll('test-ask-human-halt/worker');
+    assert.strictEqual(messages.length, 1, 'Worker should receive 1 response');
+    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be inferred as ask-response');
+  });
+
+  test('Terminal-by-default: full HITL round trip without explicit types', async () => {
+    const timestamp = Date.now();
+
+    // Step 1: Worker sends ask-human without type field
+    const askFile = path.join(env.msgsDir, `${timestamp}-notype-test-ask-human-halt-worker--core-core-tbd4.md`);
+    fs.writeFileSync(askFile, `---
+to: core/core
+from: test-ask-human-halt/worker
+msg-id: tbd4
+headline: Confirmation needed
+timestamp: ${new Date().toISOString()}
+---
+
+Should I delete the file?
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Step 2: Verify core received ask-human (inferred)
+    const coreMessages = queue.poll('core/core');
+    assert.strictEqual(coreMessages.length, 1);
+    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Worker message should be inferred as ask-human');
+
+    // Step 3: Core sends response without type field
+    const responseFile = path.join(env.msgsDir, `${timestamp + 1}-notype-core-core--test-ask-human-halt-worker-tbd4r.md`);
+    fs.writeFileSync(responseFile, `---
+to: test-ask-human-halt/worker
+from: core/core
+msg-id: tbd4r
+in-reply-to: tbd4
+headline: User confirmed
+timestamp: ${new Date().toISOString()}
+---
+
+Yes, delete it.
+`);
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Step 4: Worker receives ask-response (inferred)
+    const workerMessages = queue.poll('test-ask-human-halt/worker');
+    assert.strictEqual(workerMessages.length, 1);
+    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Core message should be inferred as ask-response');
+    assert.ok(
+      (workerMessages[0].payload.body as string)?.includes('delete it'),
+      'Response should contain confirmation'
+    );
+  });
 });

@@ -796,12 +796,73 @@ ${body}
     }
   }
 
+  /**
+   * Infer message type when not explicitly provided.
+   * Terminal-by-default: agents can omit type field and we'll infer based on context.
+   *
+   * Inference rules:
+   * 1. If `in-reply-to` is present → ask-response (replying to a previous ask)
+   * 2. If from is `core/core` → ask-response (core responding to agent)
+   * 3. If to is `core/core` → ask-human (agent asking for human input)
+   * 4. Otherwise → ask (agent-to-agent question)
+   */
+  private inferMessageType(frontmatter: Frontmatter): string {
+    const to = frontmatter.to;
+    const from = frontmatter.from;
+    const inReplyTo = frontmatter['in-reply-to'];
+
+    // Rule 1: If replying to a previous message, it's an ask-response
+    if (inReplyTo) {
+      log.debug('consumer', 'Inferred type: ask-response (in-reply-to present)', {
+        from,
+        to,
+        inReplyTo,
+      });
+      return 'ask-response';
+    }
+
+    // Rule 2: If from core/core, it's a response to an agent's ask
+    if (from === 'core/core') {
+      log.debug('consumer', 'Inferred type: ask-response (from core/core)', {
+        from,
+        to,
+      });
+      return 'ask-response';
+    }
+
+    // Rule 3: If to core/core, agent is asking for human input
+    if (to === 'core/core') {
+      log.debug('consumer', 'Inferred type: ask-human (to core/core)', {
+        from,
+        to,
+      });
+      return 'ask-human';
+    }
+
+    // Rule 4: Default to ask for agent-to-agent messages
+    log.debug('consumer', 'Inferred type: ask (agent-to-agent)', {
+      from,
+      to,
+    });
+    return 'ask';
+  }
+
   private parseMessage(content: string): ParsedMessage | null {
     const parts = content.split(/^---$/m);
     if (parts.length < 3) return null;
 
     const frontmatter = this.parseFrontmatter(parts[1].trim());
-    if (!frontmatter.to || !frontmatter.from || !frontmatter.type) return null;
+    if (!frontmatter.to || !frontmatter.from) return null;
+
+    // Terminal-by-default: infer type if not provided
+    if (!frontmatter.type) {
+      frontmatter.type = this.inferMessageType(frontmatter);
+      log.info('consumer', 'Type inferred for message', {
+        from: frontmatter.from,
+        to: frontmatter.to,
+        inferredType: frontmatter.type,
+      });
+    }
 
     const hasRearmatter = parts.length >= 4;
     const body = hasRearmatter ? parts[2].trim() : parts.slice(2).join('---').trim();
