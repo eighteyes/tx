@@ -54,7 +54,6 @@ export interface ParityReminderEvent {
 export interface MeshCompleteEvent {
   meshName: string;
   completionAgent: string;  // Full agentId (mesh/agent)
-  cancelAgents?: string[];  // Other completion agents to kill (first-wins)
 }
 
 interface Frontmatter {
@@ -272,6 +271,43 @@ ${body}
    * - to: agent (from narrative-engine/coordinator) → narrative-engine/agent (if agent exists in mesh)
    * - to: mesh → mesh/entry_point (treat as mesh name)
    */
+  /**
+   * Normalize a 'from' field to fully qualified mesh/agent format.
+   * Agents often omit their mesh prefix when writing messages.
+   */
+  private resolveFromAgent(from: string, to: string): string {
+    if (from.includes('/')) return from;
+
+    // Infer mesh from the 'to' field
+    const toParts = to.split('/');
+    const targetMesh = toParts.length > 1 ? toParts[0] : null;
+
+    if (targetMesh) {
+      const meshAgents = this.meshAgents.get(targetMesh);
+      if (meshAgents && meshAgents.has(from)) {
+        log.debug('consumer', 'Resolved partial from agent name', {
+          from,
+          to,
+          resolved: `${targetMesh}/${from}`
+        });
+        return `${targetMesh}/${from}`;
+      }
+    }
+
+    // Check all meshes for this agent name
+    for (const [meshName, agents] of this.meshAgents) {
+      if (agents.has(from)) {
+        log.debug('consumer', 'Resolved from agent via mesh scan', {
+          from,
+          resolved: `${meshName}/${from}`
+        });
+        return `${meshName}/${from}`;
+      }
+    }
+
+    return from;
+  }
+
   private resolveToAgent(to: string, from: string): string {
     // Already fully qualified
     if (to.includes('/')) return to;
@@ -375,7 +411,7 @@ ${body}
       // DROP MESSAGES TO system/*
       // Agents routing to system/* is a mistake - drop silently
       // =================================================================
-      const fromAgent = parsed.frontmatter.from;
+      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
       if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/')) {
         log.warn('consumer', 'Dropped message to system/* (routing mistake)', {
           from: fromAgent,
@@ -677,7 +713,7 @@ ${body}
         // Parity gate: check if task-complete has pending asks
         if (messageType === 'task-complete') {
           log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate core path' });
-          const fromAgent = parsed.frontmatter.from;
+          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -736,16 +772,10 @@ ${body}
               this.meshStateManager.clearMeshState(meshName);
             }
 
-            // First-wins: list other completion agents to cancel
-            const cancelAgents = completionAgents
-              .filter(a => a !== agentName)
-              .map(a => `${meshName}/${a}`);
-
-            // Emit mesh-complete event for analytics summary logging
+            // Emit mesh-complete event — dispatcher handles graceful worker wind-down
             this.emit('mesh-complete', {
               meshName,
               completionAgent: fromAgent,
-              cancelAgents,
             } as MeshCompleteEvent);
           } else {
             // Non-completion agent: only clear this agent's asks
@@ -769,7 +799,7 @@ ${body}
         // Parity gate: check if task-complete TO another worker has pending asks
         if (messageType === 'task-complete') {
           log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate worker path' });
-          const fromAgent = parsed.frontmatter.from;
+          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -1159,15 +1189,14 @@ ${body}
       }
     }
 
-    const feedbackContent = `# Routing Violation
+    const feedbackContent = `# Routing Violation — Retry Required
 
-\`${attemptedTarget}\` is not a valid target for \`${messageType}\` messages.
+Your message to \`${attemptedTarget}\` was blocked. That agent does not exist.
 
-**Valid targets for ${messageType}:**
+**Valid targets:**
 ${targetsFormatted}
 
-**All routes for ${agentName}:**
-${allRoutingFormatted || '_None defined_'}`;
+Re-read your workspace files to determine where you are in your sequence, then send to the correct target from the list above.`;
 
     // Emit event for dispatcher to inject directly into agent session
     this.emit('system-feedback', {
