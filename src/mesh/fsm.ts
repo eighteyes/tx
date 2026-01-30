@@ -439,7 +439,11 @@ export class MeshFSM extends EventEmitter {
       scriptPath,
     });
 
-    const result = await this.scriptExecutor.execute(scriptPath, context);
+    // Resolve named scripts through fsm.scripts config (inline execution)
+    const inlineScript = this.config.scripts?.[scriptPath];
+    const result = inlineScript
+      ? await this.scriptExecutor.executeInline(inlineScript, context)
+      : await this.scriptExecutor.execute(scriptPath, context);
 
     const scriptEvent: FSMScriptEvent = {
       meshName: this.meshName,
@@ -815,7 +819,15 @@ export class MeshFSM extends EventEmitter {
             }
           }
 
-          const result = await this.scriptExecutor.executeInline(expr, scriptContext);
+          // Strip $(...) command substitution wrapper — executeInline captures stdout,
+          // so the wrapper causes bash to execute the captured output as a command.
+          // Preserve $((...)) arithmetic expressions which bash handles directly.
+          let shellExpr = expr;
+          if (shellExpr.startsWith('$(') && !shellExpr.startsWith('$((') && shellExpr.endsWith(')')) {
+            shellExpr = shellExpr.slice(2, -1);
+          }
+
+          const result = await this.scriptExecutor.executeInline(shellExpr, scriptContext);
 
           if (result.success) {
             const output = result.stdout.trim();
