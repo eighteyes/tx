@@ -148,6 +148,43 @@ export interface SessionMetrics {
   completedAt?: number;
 }
 
+// Dispatcher routing types
+
+/**
+ * Routing mode: agent-owned (default) or dispatcher-owned (opt-in)
+ */
+export type RoutingMode = 'agent' | 'dispatcher';
+
+/**
+ * Dispatcher routing config shape
+ * String value = linear (auto-route to next agent)
+ * Object value = branch (outcome → target agent map)
+ *
+ * Agents absent from this map are terminal (route to core/core on complete).
+ */
+export type DispatcherRoutingConfig = Record<string, string | Record<string, string>>;
+
+/**
+ * Resolved route from dispatcher routing
+ */
+export interface ResolvedRoute {
+  target: string;          // Fully qualified agent ID (mesh/agent) or 'core/core'
+  source: 'linear' | 'branch' | 'terminal' | 'override' | 'escalate';
+  outcome?: string;        // Original outcome value (if branch)
+  usedDefault?: boolean;   // Whether default fallback was used
+}
+
+/**
+ * Injection context for dispatcher-mode agents
+ * Provided to prompt builder so agents know their valid actions
+ */
+export interface DispatchInjectionContext {
+  sentinel: string;              // e.g., "mesh-name/dispatch"
+  validOutcomes: string[] | null; // null = linear (any outcome accepted)
+  availableAgents: string[];     // All mesh agents (for route_to override)
+  isTerminal: boolean;           // Agent has no routing entry
+}
+
 // Ensemble types
 
 /**
@@ -245,6 +282,7 @@ export interface FSMStateConfig {
   subtask?: boolean;  // Inject subtask prompt into agent context
   gates?: FSMGateConfig[];  // Gates to check before transition
   entry_gates?: string[];  // Gate scripts to validate BEFORE entering this state
+  entry?: { set?: Record<string, string> };  // Entry actions: evaluate and set context variables
   onEnter?: string;  // Script to run on state entry
   onExit?: string;   // Script to run on state exit
   exit?: FSMExitConfig;  // Exit configuration with conditional routing

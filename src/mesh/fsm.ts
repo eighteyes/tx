@@ -609,6 +609,17 @@ export class MeshFSM extends EventEmitter {
       await this.executeOnEnter(toState);
     }
 
+    // Evaluate entry.set context updates
+    if (toStateConfig.entry?.set) {
+      for (const [key, valueExpr] of Object.entries(toStateConfig.entry.set)) {
+        const evalContext: Record<string, unknown> = { ...this.stateData.context };
+        const simpleResult = this.expressionEvaluator.evaluate(valueExpr, evalContext);
+        if (simpleResult.success && simpleResult.isSimpleExpression) {
+          this.updateContext({ [key]: String(simpleResult.value) });
+        }
+      }
+    }
+
     return true;
   }
 
@@ -1170,6 +1181,58 @@ export class MeshFSM extends EventEmitter {
 
       // Step 4: Execute onEnter for new state
       await this.executeOnEnter(toState);
+
+      // Step 5: Evaluate entry.set context updates for new state
+      if (toStateConfig?.entry?.set) {
+        for (const [key, valueExpr] of Object.entries(toStateConfig.entry.set)) {
+          const evalContext: Record<string, unknown> = { ...this.stateData.context };
+          const simpleResult = this.expressionEvaluator.evaluate(valueExpr, evalContext);
+
+          if (simpleResult.success && simpleResult.isSimpleExpression) {
+            const output = String(simpleResult.value);
+            this.updateContext({ [key]: output });
+            log.debug('mesh-fsm', 'Entry.set evaluated (simple)', {
+              meshName: this.meshName,
+              key,
+              value: output,
+              expression: valueExpr,
+            });
+          } else {
+            // Shell fallback
+            let expr = valueExpr;
+            for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
+              if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
+                expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+              }
+            }
+            let shellExpr = expr;
+            if (shellExpr.startsWith('$(') && !shellExpr.startsWith('$((') && shellExpr.endsWith(')')) {
+              shellExpr = shellExpr.slice(2, -1);
+            }
+            const result = await this.scriptExecutor.executeInline(shellExpr, {
+              fsmState: toState,
+              fsmMeshName: this.meshName,
+              ...this.stateData.context,
+            });
+            if (result.success) {
+              const output = result.stdout.trim();
+              this.updateContext({ [key]: output });
+              log.debug('mesh-fsm', 'Entry.set evaluated (shell)', {
+                meshName: this.meshName,
+                key,
+                value: output,
+              });
+            } else {
+              log.error('mesh-fsm', 'Entry.set failed', {
+                meshName: this.meshName,
+                key,
+                expression: valueExpr,
+                stderr: result.stderr,
+              });
+            }
+          }
+        }
+      }
 
       return true;
     } catch (error) {
