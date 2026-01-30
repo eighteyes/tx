@@ -54,9 +54,10 @@ function wrapText(text: string, width?: number): string[] {
 // Message type colors
 const typeColors: Record<string, string> = {
   'task': colors.cyan,
-  'ask': colors.yellow,
-  'ask-response': colors.green,
-  'ask-human': colors.yellow,
+  'message': colors.green,     // New canonical type
+  'ask': colors.yellow,        // DEPRECATED
+  'ask-response': colors.green,  // DEPRECATED
+  'ask-human': colors.yellow,    // DEPRECATED
   'task-complete': colors.magenta,
   'update': colors.blue,
   'error': colors.red,

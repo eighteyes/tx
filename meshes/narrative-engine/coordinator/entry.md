@@ -14,7 +14,7 @@ DO NOT:
 - Write summary.md, history.md, thread.md, or INDEX.md (scribe does that)
 - Read context.yaml contents beyond checking existence (prep agents do that)
 - Generate entropy (init-coord/prologue-coord do that)
-- Talk to the user (send ask-human for that)
+- Talk to the user (send message to core/core for that)
 - Verify work quality (oracle does that)
 - "Continue the story" or "help the player" - you ROUTE to agents who do that
 
@@ -22,7 +22,7 @@ ONLY:
 - Read session.yaml for routing decisions
 - Check file EXISTENCE (ls), never file CONTENTS
 - Write routing messages to other coordinators
-- Write ask-human when blocked or ambiguous
+- Write message to core/core when blocked or ambiguous
 </boundaries>
 
 ## Output Rules
@@ -43,7 +43,6 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-waiting_on: []
 entropy_pool: [10 values]
 ```
 
@@ -52,8 +51,73 @@ entropy_pool: [10 values]
 1. Read `.ai/tx/narrative-engine/session.yaml`
 2. Run State Validation (see below)
 3. If validation fails → attempt recovery
-4. Apply routing decision tree
-5. Write task message to appropriate coordinator
+4. Run Message-State Coherence Check
+5. If confused → send message to core/core with options
+6. **Write `turn-brief.md`** to workspace (see below)
+7. Apply routing decision tree
+8. Write task message to appropriate coordinator
+
+## Turn Brief
+
+Save the player's proposed actions as `{workspace}/turn-brief.md` before routing. This is the human's raw intent — untouched by any agent.
+
+```markdown
+# Turn {N} Brief
+
+**Player Action**: {action from incoming task}
+
+**Scene**: {scene details if provided}
+
+**Intent**: {what the player wants to happen}
+```
+
+Write this BEFORE routing to any coordinator. Creative agents reference it as ground truth for what the player asked for.
+
+## Redo Turn
+
+If the incoming task contains "redo", "retry", or "again" for the current turn:
+
+1. Read session.yaml for current turn number, workspace path, game_path, campaign_id
+2. Determine archive suffix (a, b, c…):
+   ```bash
+   # Check what already exists
+   ls {game_path}/campaigns/{campaign_id}/turns/turn-{N}[a-z] 2>/dev/null
+   ```
+3. Archive the current workspace:
+   ```bash
+   mv {workspace} {workspace}{suffix}
+   # e.g. turn-5 → turn-5a, or turn-5b if turn-5a exists
+   ```
+4. Archive campaign YAML snapshots (canon rollback):
+   ```bash
+   mkdir -p {workspace}{suffix}/campaign-snapshot
+   cp {game_path}/campaigns/{campaign_id}/arc.yaml {workspace}{suffix}/campaign-snapshot/
+   cp {game_path}/campaigns/{campaign_id}/state.yaml {workspace}{suffix}/campaign-snapshot/
+   cp {game_path}/campaigns/{campaign_id}/continuity.yaml {workspace}{suffix}/campaign-snapshot/
+   cp {game_path}/campaigns/{campaign_id}/entities.yaml {workspace}{suffix}/campaign-snapshot/
+   ```
+5. Restore campaign YAMLs from the prior turn's snapshot (if it exists), otherwise from the prior turn's scribe output:
+   ```bash
+   # Check for prior turn's campaign-snapshot first
+   prior_turn={game_path}/campaigns/{campaign_id}/turns/turn-{N-1}
+   if [ -d "$prior_turn/campaign-snapshot" ]; then
+     cp $prior_turn/campaign-snapshot/*.yaml {game_path}/campaigns/{campaign_id}/
+   fi
+   # If no snapshot exists, the campaign YAMLs as-of prior turn completion are already canon.
+   # Scribe updates these AFTER a turn completes, so if turn N never completed,
+   # the current campaign YAMLs reflect turn N-1 state and need no rollback.
+   ```
+6. Create fresh workspace:
+   ```bash
+   mkdir -p {workspace}
+   ```
+7. Copy `turn-brief.md` from archived workspace:
+   ```bash
+   cp {workspace}{suffix}/turn-brief.md {workspace}/turn-brief.md
+   ```
+8. If the redo task includes new instructions, overwrite `turn-brief.md` with the new intent
+9. Set session: `phase: init`
+10. Route to init-coord (rebuild context.yaml from scratch)
 
 ## State Validation
 
@@ -120,7 +184,134 @@ IF workspace is set AND phase NOT IN [init, complete]:
       → INVALID: "workspace doesn't exist: {workspace}"
 ```
 
-**If all checks pass → proceed to Routing Decision Tree**
+### Check 7: Prior Turn Completeness (self-heal)
+
+When starting a new turn (phase `init` or `complete`, turn > 1), verify the prior turn finished cleanly.
+
+```
+IF phase IN [init, complete] AND turn > 1:
+   prior_workspace = {game_path}/campaigns/{campaign_id}/turns/turn-{turn - 1}
+   ls {prior_workspace}/
+
+   Required artifacts for a complete turn:
+   - context.yaml
+   - dramaturg-notes.yaml
+   - resolution.yaml
+   - reactions.yaml
+   - scene-outline.yaml
+   - prose.md
+   - summary.md
+
+   IF summary.md exists → prior turn complete, proceed normally
+
+   IF prose.md exists but NOT summary.md:
+      → prior turn stuck at oracle/scribe
+      → Self-heal: route to validate-coord with recovered: true
+      → Set workspace to prior_workspace, phase to awaiting_oracle
+
+   IF prose-draft.md exists but NOT prose.md:
+      → prior turn stuck at editor stage
+      → Self-heal: route to render-coord with recovered: true
+      → Set workspace to prior_workspace, phase to awaiting_narrator
+
+   IF scene-outline.yaml exists but NOT prose-draft.md:
+      → prior turn stuck before narrator
+      → Self-heal: route to render-coord with recovered: true
+      → Set workspace to prior_workspace, phase to awaiting_narrator
+
+   IF dramaturg-notes.yaml exists but NOT scene-outline.yaml:
+      → prior turn stuck mid-prep
+      → Self-heal: route to prep-coord with recovered: true
+      → Set workspace to prior_workspace, phase to awaiting_prep
+
+   IF context.yaml missing:
+      → prior turn never initialized properly
+      → Self-heal: route to init-coord with recovered: true, turn: {turn - 1}
+```
+
+**On self-heal: write session.yaml with prior turn state, route to recovery coordinator, include `recovered: true` in message. Do NOT escalate to human.**
+
+**If all checks pass → proceed to Message-State Coherence Check**
+
+## Message-State Coherence Check
+
+**After state validation passes, verify the incoming message makes sense given current state.**
+
+Run these checks BEFORE routing. Stop at first confusion detected.
+
+### Check A: Creation vs Active Game Mismatch
+```
+IF message contains game creation indicators (see Routing section):
+   IF phase IN [awaiting_prep, awaiting_narrator, awaiting_oracle, awaiting_scribe]:
+      → CONFUSED: "New game requested but turn {turn} in progress"
+      → Options: abandon current turn, finish turn first
+```
+
+### Check B: Player Action vs No Game
+```
+IF message appears to be player action (not creation/worldbuilding):
+   IF phase == "game_creation" OR phase == "worldbuilding":
+      → CONFUSED: "Player action received but game setup incomplete"
+      → Options: finish setup, treat as test input
+
+   IF game_id is null AND phase NOT IN [init, complete]:
+      → CONFUSED: "Player action but no game context"
+      → Options: create new game, specify existing game
+```
+
+### Check C: Worldbuilder vs Mid-Turn
+```
+IF message contains worldbuilder indicators:
+   IF phase IN [awaiting_prep, awaiting_narrator, awaiting_oracle, awaiting_scribe]:
+      → CONFUSED: "Edit request but turn {turn} in progress"
+      → Options: finish turn first, force worldbuilder (loses turn)
+```
+
+### Check D: Game Reference Mismatch
+```
+IF message frontmatter contains "game:" or "game_id:":
+   IF session.yaml game_id is set AND differs from message:
+      → CONFUSED: "Message references '{msg_game_id}' but session is on '{session_game_id}'"
+      → Options: switch to referenced game, continue current game
+```
+
+### Check E: Ambiguous Intent
+```
+IF message body is < 10 characters AND not a known command:
+   → CONFUSED: "Message too short to determine intent"
+   → Options: provide full request
+
+IF message contains BOTH creation AND action indicators:
+   → CONFUSED: "Message mixes game creation and player action"
+   → Options: clarify intent
+```
+
+**On CONFUSED: Send message to core/core with detected confusion and options.**
+
+**If no confusion detected → proceed to Routing Decision Tree**
+
+### Message to core (message-state confusion)
+
+```yaml
+---
+to: core/core
+from: narrative-engine/entry
+msg-id: entry-confused-{timestamp}
+headline: Message-state mismatch
+timestamp: {ISO timestamp}
+---
+Confusion detected: {confusion description}
+
+Current state:
+- phase: {phase}
+- game_id: {game_id}
+- turn: {turn}
+
+Your message: "{first 50 chars of message}..."
+
+Options:
+{list options from confusion check}
+```
 
 ## Game Discovery (when session.yaml missing)
 
@@ -141,10 +332,10 @@ IF exactly one game found:
       → attempt Workspace Recovery
 
    IF multiple campaigns:
-      → ask-human: "Multiple campaigns found. Which one?"
+      → message to core/core: "Multiple campaigns found. Which one?"
 
 IF multiple games found:
-   → ask-human: "Multiple games found. Which one?"
+   → message to core/core: "Multiple games found. Which one?"
 ```
 
 ## Workspace Recovery (when game known but session missing)
@@ -200,32 +391,39 @@ ls {workspace}/
    → attempt Workspace Recovery
 
 "path doesn't match":
-   → ask-human with details
+   → message to core/core with details
 
 "game_path doesn't exist":
-   → ask-human: "Game directory missing. Reset session?"
+   → message to core/core: "Game directory missing. Reset session?"
 ```
 
 ## Routing Decision Tree
 
-**Only reached after validation passes:**
+**Only reached after validation passes. Check phase FIRST, then intent.**
 
 ```
-IF worldbuilder keywords detected (see indicators below):
-   → route to game-coord (mode: worldbuilder)
-
-ELSE IF game creation requested (see indicators below):
-   → route to game-coord (mode: new-game)
-
-ELSE IF phase == "complete" OR phase == "init":
-   → route to init-coord
+IF phase == "complete" OR phase == "init":
+   IF game creation requested (see indicators below):
+      → route to game-coord (mode: new-game)
+   ELSE IF worldbuilder keywords detected (see indicators below):
+      → route to game-coord (mode: worldbuilder)
+   ELSE:
+      → route to init-coord (player action)
 
 ELSE IF phase == "prologue":
    → route to prologue-coord
 
+ELSE IF phase == "game_creation" OR phase == "worldbuilding":
+   → route to game-coord (resume)
+
+ELSE IF phase IN [awaiting_prep, awaiting_narrator, awaiting_oracle, awaiting_scribe]:
+   → send message to core/core: "Turn {N} in progress (phase: {phase})"
+
 ELSE:
-   → send ask-human: "Turn {N} in progress (phase: {phase})"
+   → send message to core/core: "Unknown phase: {phase}"
 ```
+
+**game-coord is ONLY for new game creation and worldbuilding. Never route turn pipeline work there.**
 
 **Worldbuilder indicators:**
 - "worldbuilder", "world builder", "build world"
@@ -304,7 +502,7 @@ campaign_id: {campaign_id}
 phase: {detected phase}
 ```
 
-### Ask-human (turn in progress)
+### Message to core (turn in progress)
 
 ```yaml
 ---
@@ -321,7 +519,7 @@ A) Wait for turn to complete
 B) Force start new turn (may lose current turn state)
 ```
 
-### Ask-human (validation failure)
+### Message to core (validation failure)
 
 ```yaml
 ---

@@ -127,19 +127,20 @@ interface RevisionMessageEvent {
 }
 
 /**
- * Event emitted by Consumer when an ask message is detected
+ * Event emitted by Consumer when a message is detected
+ * DEPRECATED ASK: 'ask'/'ask-human' types are deprecated, use 'message' + routing
  */
 interface AskMessageEvent {
   id: number;
   filepath: string;
-  from: string;  // Agent that sent the ask (e.g., "narrative-engine/narrator")
-  to: string;    // Agent being asked (e.g., "narrative-engine/system")
-  type: string;  // 'ask' or 'ask-human' (may be inferred from boundaries in Phase 7)
+  from: string;  // Agent that sent the message
+  to: string;    // Recipient agent
+  type: string;  // 'message' (preferred) or 'ask'/'ask-human' (DEPRECATED)
   headline?: string;
   msgId?: string;
   // Phase 3: Terminal-by-default additions
-  crossesHumanBoundary?: boolean;  // True if ask targets core/core (human)
-  isTerminal?: boolean;            // True if ask suspends the sender (always true for now)
+  crossesHumanBoundary?: boolean;  // True if targets core/core (human)
+  isTerminal?: boolean;            // True if suspends the sender (always true for now)
 }
 
 /**
@@ -255,6 +256,10 @@ export class WorkerDispatcher extends EventEmitter {
 
   // Extracted modules (Phase 3 refactoring)
   private metricsAggregator: MetricsAggregator;
+
+  // Routing error tracking for correction injection (key: "sender→target", value: retry count)
+  private routingErrorCounts: Map<string, number> = new Map();
+
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -741,6 +746,18 @@ export class WorkerDispatcher extends EventEmitter {
       const pendingMsg = this.queue.peekOne(agentId);
 
       if (pendingMsg && !this.hasActiveWorkers(agentId)) {
+        // Skip agents with suspended sessions - batching logic handles resume
+        const suspended = this.sessionManager.get(agentId);
+        if (suspended && suspended.reason === 'await-response') {
+          log.debug('dispatcher', `Skipping queued message for suspended agent (awaiting batched responses)`, {
+            agentId,
+            meshName,
+            remainingTargets: Array.from(suspended.targetAgents),
+            pendingCount: suspended.pendingResponseCount,
+          });
+          continue;
+        }
+
         log.info('dispatcher', `Found queued message for mesh agent, spawning worker`, {
           agentId,
           meshName,
@@ -750,6 +767,13 @@ export class WorkerDispatcher extends EventEmitter {
 
         // Use setTimeout to avoid blocking the current handler
         setTimeout(() => {
+          // Re-check suspension state - could have changed since scheduling
+          const suspendedNow = this.sessionManager.get(agentId);
+          if (suspendedNow && suspendedNow.reason === 'await-response') {
+            log.debug('dispatcher', `Skipping scheduled spawn for agent now suspended`, { agentId });
+            return;
+          }
+
           if (this.running && !this.hasActiveWorkers(agentId) && !this.hasPendingAskHumanForMesh(meshName)) {
             this.spawnWorker(meshName, agent);
           }
@@ -803,12 +827,14 @@ export class WorkerDispatcher extends EventEmitter {
 
       // Subscribe to ask message events for await state handling
       this.boundAskMessageHandler = (event: AskMessageEvent) => {
+        log.warn('DEPRECATE: ask-message consumer event fired', { from: event.from, agentId: event.agentId });
         this.handleAskMessage(event);
       };
       consumer.on('ask-message', this.boundAskMessageHandler);
 
       // Subscribe to ask-response events for resuming awaiting workers
       this.boundAskResponseHandler = (event: AskResponseMessageEvent) => {
+        log.warn('DEPRECATE: ask-response-message consumer event fired', { from: event.from, agentId: event.agentId });
         this.handleAskResponseMessage(event);
       };
       consumer.on('ask-response-message', this.boundAskResponseHandler);
@@ -944,6 +970,45 @@ export class WorkerDispatcher extends EventEmitter {
     // Each agent processes exactly one message at a time; subsequent messages queue
     const lock = this.lockManager.getState(agentId);
     if (lock) {
+      // Check if locked agent is awaiting a response from the sender
+      // Any agent-to-agent message from an awaited agent should resolve the await
+      if (lock.reason === 'awaiting-agent') {
+        const pendingMessage = this.queue.peekOne(agentId);
+        const senderAgent = pendingMessage?.from_agent;
+
+        if (senderAgent) {
+          // Check if sender is in the awaiting set (suspended session)
+          const suspended = this.sessionManager.get(agentId);
+          const isAwaited = suspended?.targetAgents?.has(senderAgent);
+
+          if (isAwaited) {
+            log.info('dispatcher', 'Agent-to-agent message resolves await (type-agnostic)', {
+              agentId,
+              from: senderAgent,
+              lockReason: lock.reason,
+            });
+
+            // Route through ask-response handler to resume the awaiting worker
+            const message = this.queue.pollOne(agentId);
+            if (message) {
+              const payload = message.payload || {};
+              this.handleAskResponseMessage({
+                id: message.id || 0,
+                filepath: message.source_file || '',
+                from: senderAgent,
+                to: agentId,
+                content: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload),
+                headline: typeof payload.headline === 'string' ? payload.headline : '',
+                msgId: typeof payload.msg_id === 'string' ? payload.msg_id : undefined,
+                fromHumanBoundary: false,
+                resumesSuspension: false,
+              });
+            }
+            return;
+          }
+        }
+      }
+
       const queueDepth = this.queue.countPending(agentId);
       log.info('dispatcher', 'Agent locked, message remains queued (OAOM)', {
         agentId,
@@ -973,12 +1038,10 @@ export class WorkerDispatcher extends EventEmitter {
     // Messages remain queued and will be processed after human responds.
     if (this.hasPendingAskHumanForMesh(meshName)) {
       const suspendedInfo = this.getSuspendedSessionForMesh(meshName);
-      log.info('dispatcher', `Mesh halted due to pending ask-human, message queued`, {
+      log.debug('dispatcher', `Mesh halted, message queued`, {
         agentId,
         meshName,
         suspendedAgent: suspendedInfo?.agentId,
-        suspendedAt: suspendedInfo?.suspended.suspendedAt,
-        reason: 'Waiting for human response before processing new messages',
       });
       this.emit('mesh:halted-message', {
         agentId,
@@ -989,6 +1052,10 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
+    // Get sender from the pending message for routing error feedback
+    const pendingMessage = this.queue.peekOne(agentId);
+    const senderAgentId = pendingMessage?.from_agent;
+
     let meshConfig = this.meshConfigs.get(meshName);
     if (!meshConfig) {
       // Try JIT loading before failing
@@ -996,11 +1063,18 @@ export class WorkerDispatcher extends EventEmitter {
       const loaded = this.tryLoadMeshOnDemand(meshName);
       if (!loaded) {
         log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
+        // Inject routing correction back to sender (if we know who sent it)
+        if (senderAgentId && senderAgentId !== 'core/core') {
+          this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+        }
         return;
       }
       meshConfig = this.meshConfigs.get(meshName);
       if (!meshConfig) {
         log.error('dispatcher', 'Mesh loaded but config missing', { meshName, agentId });
+        if (senderAgentId && senderAgentId !== 'core/core') {
+          this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+        }
         return;
       }
     }
@@ -1070,6 +1144,10 @@ export class WorkerDispatcher extends EventEmitter {
     const agent = meshConfig.agents.find(a => a.name === agentName);
     if (!agent) {
       log.error('dispatcher', `Agent not found in mesh`, { meshName, agentName, agentId });
+      // Inject routing correction back to sender (if we know who sent it)
+      if (senderAgentId && senderAgentId !== 'core/core') {
+        this.handleRoutingError(senderAgentId, agentId, meshName, 'agent-not-found');
+      }
       return;
     }
 
@@ -1245,9 +1323,15 @@ export class WorkerDispatcher extends EventEmitter {
     }
 
     try {
-      // ask-human: HALT mesh immediately - kill worker, suspend session
-      // Human responds via ask-response, mesh resumes when received
-      if (messageType === 'ask-human') {
+      // Halt mesh when message crosses human boundary
+      const crossesHumanBoundary = targetAgentId === 'core/core' && messageType !== 'task-complete';
+      if (messageType === 'ask-human' || (messageType === 'message' && crossesHumanBoundary)) {
+        if (messageType === 'ask-human') {
+          log.warn('dispatcher', `DEPRECATED ASK: type 'ask-human' is deprecated, use 'message' to core/core`, {
+            from: senderAgentId,
+            to: targetAgentId,
+          });
+        }
         log.info('dispatcher', `ask-human: halting mesh for human response`, {
           from: senderAgentId,
           to: targetAgentId,
@@ -1282,6 +1366,10 @@ export class WorkerDispatcher extends EventEmitter {
           pendingCount,
         });
 
+        // OAOM: Transition lock to awaiting-human BEFORE kill so error handlers
+        // see the correct lock reason and suppress retry/cleanup
+        this.updateAgentLockReason(senderAgentId, 'awaiting-human');
+
         // Defer worker kill to avoid race condition with SDK message processing
         // The worker may still be writing the ask-human message file when this event fires
         await this.deferWorkerKill(senderAgentId, workerId, 'ask-human: mesh halted for human response');
@@ -1294,9 +1382,6 @@ export class WorkerDispatcher extends EventEmitter {
           pendingResponseCount: pendingCount,
           targetAgents: [targetAgentId],
         });
-
-        // OAOM: Transition lock to awaiting-human (keep locked, but different reason)
-        this.updateAgentLockReason(senderAgentId, 'awaiting-human');
 
         log.info('dispatcher', `Mesh halted - worker killed and suspended`, {
           from: senderAgentId,
@@ -1492,6 +1577,17 @@ The system will resume your session when the human responds.`;
       });
 
       runner.on('error', (error) => {
+        // Suppress error handling for workers killed intentionally (ask-human / ask-agent suspend)
+        const lockState = this.lockManager.getState(agentId);
+        if (lockState && (lockState.reason === 'awaiting-human' || lockState.reason === 'awaiting-agent')) {
+          log.info('dispatcher', 'Suppressing error handling for intentionally killed resumed worker', {
+            agentId, workerId, lockReason: lockState.reason,
+          });
+          this.removeActiveWorker(agentId, workerId);
+          this.writeWorkerState();
+          return;
+        }
+
         // Check if recovery will handle this (queued work exists)
         const hasQueuedWork = this.queue.countPending(agentId) > 0;
         const isAbortError = error.message.includes('aborted by user') ||
@@ -2002,6 +2098,101 @@ The system will resume your session when the human responds.`;
         clearedFSM: !!fsm,
       });
     }
+
+    // Clear routing error counts for this mesh
+    for (const key of this.routingErrorCounts.keys()) {
+      if (key.includes(`${meshName}/`)) {
+        this.routingErrorCounts.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Handle routing errors when a message targets a non-existent mesh or agent.
+   * Injects correction back to sender with valid options. After 3 failures, escalates to user.
+   */
+  private handleRoutingError(
+    senderAgentId: string,
+    targetAgentId: string,
+    targetMeshName: string,
+    errorType: 'mesh-not-found' | 'agent-not-found'
+  ): void {
+    const key = `${senderAgentId}→${targetAgentId}`;
+    const retryCount = (this.routingErrorCounts.get(key) || 0) + 1;
+    this.routingErrorCounts.set(key, retryCount);
+
+    const availableMeshes = Array.from(this.meshConfigs.keys()).join(', ');
+
+    log.info('dispatcher', 'Handling routing error', {
+      senderAgentId,
+      targetAgentId,
+      errorType,
+      retryCount,
+      availableMeshes,
+    });
+
+    if (retryCount >= 3) {
+      log.warn('dispatcher', 'Routing error max retries reached, escalating to user', {
+        senderAgentId,
+        targetAgentId,
+        retryCount,
+      });
+      this.escalateRoutingError(senderAgentId, targetAgentId, targetMeshName, availableMeshes);
+      this.routingErrorCounts.delete(key);
+      return;
+    }
+
+    const errorReason = errorType === 'mesh-not-found'
+      ? `Mesh "${targetMeshName}" does not exist`
+      : `Agent not found in mesh "${targetMeshName}"`;
+
+    const content = `## ROUTING ERROR
+
+Your message to **${targetAgentId}** could not be delivered.
+
+**Reason**: ${errorReason}
+
+**Available meshes**: ${availableMeshes || 'none loaded'}
+
+**Attempt**: ${retryCount}/3
+
+Correct the target agent ID and resend your message.`;
+
+    this.emit('routing-error', {
+      from: 'system/router',
+      to: senderAgentId,
+      content,
+      headline: 'Routing Error - Target Not Found',
+    });
+  }
+
+  /**
+   * Escalate routing error to user after max retries exhausted.
+   * Writes ask-human message for human intervention.
+   */
+  private escalateRoutingError(
+    senderAgentId: string,
+    targetAgentId: string,
+    targetMeshName: string,
+    availableMeshes: string
+  ): void {
+    const content = `## ROUTING ESCALATION
+
+Agent **${senderAgentId}** repeatedly tried to message non-existent target **${targetAgentId}**.
+
+The agent has been corrected 3 times but continues to use invalid routing.
+
+**Target mesh**: ${targetMeshName}
+**Available meshes**: ${availableMeshes || 'none loaded'}
+
+Please advise the agent or check mesh configuration.`;
+
+    this.emit('routing-escalation', {
+      from: senderAgentId,
+      to: 'core/core',
+      content,
+      headline: 'Routing Error - Human Intervention Required',
+    });
   }
 
   /**
@@ -2401,8 +2592,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
-      // Inject escalation policy for all agents
-      systemPrompt = this.promptInjector.injectEscalationPolicy(systemPrompt);
+      // Escalation policy removed — was triggering creative agent name improvisation
 
       // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
@@ -2822,47 +3012,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
-        // =================================================================
-        // COMPLETION MESSAGE ENFORCEMENT
-        // If task was received from core/core, verify worker sent task-complete back
-        // =================================================================
-        if (activeWorker?.taskFrom === 'core/core') {
-          // Check if worker sent task-complete to core/core
-          const sentTaskCompleteToCore = activeWorker.messagesSent.some(
-            msg => msg.to === 'core/core' && msg.type === 'task-complete'
-          );
-
-          // Also check for ask-human (different flow, don't nudge)
-          const sentAskHuman = activeWorker.messagesSent.some(
-            msg => msg.to === 'core/core' && msg.type === 'ask-human'
-          );
-
-          if (!sentTaskCompleteToCore && !sentAskHuman) {
-            // Worker didn't send completion message - nudge for one
-            const maxNudges = 2;
-            if (activeWorker.nudgeCount < maxNudges) {
-              log.warn('dispatcher', 'Worker completing without task-complete to core - nudging', {
-                agentId,
-                workerId: currentWorkerId,
-                nudgeCount: activeWorker.nudgeCount + 1,
-                messagesSent: activeWorker.messagesSent.map(m => `${m.type} → ${m.to}`),
-              });
-
-              await this.nudgeForCompletion(agentId, activeWorker, data.sessionId);
-              return; // Don't complete yet - give worker another turn
-            } else {
-              // Exceeded nudge limit - log warning but allow completion
-              log.error('dispatcher', 'Worker failed to send task-complete after nudges', {
-                agentId,
-                workerId: currentWorkerId,
-                nudgeCount: activeWorker.nudgeCount,
-                messagesSent: activeWorker.messagesSent.map(m => `${m.type} → ${m.to}`),
-              });
-            }
-          }
-        }
-
-        // NOW complete the FSM (after post-hooks pass or exhausted)
+        // Complete the FSM (after post-hooks pass or exhausted)
         // Defense-in-depth: catch ValidationError if worker tries to complete with pending asks
         try {
           await machine.complete(data);
@@ -3028,6 +3178,17 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Error transition with retry logic
       worker.on('error', async (data) => {
         const errorWorkerId = registeredWorkerId || 'unknown';
+
+        // Suppress retry for workers killed intentionally (ask-human / ask-agent suspend).
+        // Lock state already encodes intent — no parallel tracking needed.
+        const lockState = this.lockManager.getState(agentId);
+        if (lockState && (lockState.reason === 'awaiting-human' || lockState.reason === 'awaiting-agent')) {
+          log.info('dispatcher', 'Suppressing retry for intentionally killed worker', {
+            agentId, workerId: errorWorkerId, lockReason: lockState.reason,
+          });
+          this.removeActiveWorker(agentId, errorWorkerId);
+          return;
+        }
 
         // Get hook context for this worker
         const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
@@ -3575,10 +3736,11 @@ ${output}
     // Find active worker for this agent
     const workers = this.workerLifecycle.getForAgent(agentId);
     if (workers.length === 0) {
-      log.warn('dispatcher', 'System feedback: no active worker to inject into', {
+      log.warn('dispatcher', 'System feedback: no active worker, writing message file', {
         agentId,
         reason,
       });
+      this.writeSystemFeedbackMessage(agentId, feedback, reason);
       return;
     }
 
@@ -3587,28 +3749,70 @@ ${output}
     const sessionId = activeWorker.runner.getSessionId();
 
     if (!sessionId) {
-      log.warn('dispatcher', 'System feedback: worker has no session ID', {
+      log.warn('dispatcher', 'System feedback: worker has no session ID, writing message file', {
         agentId,
         reason,
       });
+      this.writeSystemFeedbackMessage(agentId, feedback, reason);
       return;
     }
 
-    log.info('dispatcher', 'Injecting system feedback directly into agent session', {
-      agentId,
-      reason,
-      sessionId: sessionId.slice(0, 8),
-    });
+    // Check if worker has an active API query (mid-turn correction possible)
+    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
 
-    // Inject as user message via session resume
-    await this.resumeSession({
-      reason: 'system-feedback',
+    if (hasActiveQuery) {
+      log.info('dispatcher', 'Injecting system feedback directly into agent session', {
+        agentId,
+        reason,
+        sessionId: sessionId.slice(0, 8),
+      });
+
+      try {
+        await this.resumeSession({
+          reason: 'system-feedback',
+          agentId,
+          sessionId,
+          prompt: feedback,
+          runner: activeWorker.runner,
+          interrupt: true,
+          metadata: { systemFeedback: true, feedbackReason: reason },
+        });
+        return;
+      } catch (error) {
+        log.warn('dispatcher', 'System feedback injection failed, falling back to message file', {
+          agentId,
+          reason,
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    // Fallback: write message file for next invocation
+    this.writeSystemFeedbackMessage(agentId, feedback, reason);
+  }
+
+  private writeSystemFeedbackMessage(agentId: string, feedback: string, reason: string): void {
+    const timestamp = Date.now();
+    const filename = `${Math.floor(timestamp / 1000)}-routing-feedback-system--${agentId.replace('/', '-')}-${reason}-${timestamp}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    const msgContent = `---
+to: ${agentId}
+from: system/routing-validator
+type: message
+msg-id: routing-feedback-${timestamp}
+headline: Routing violation - use correct agent name
+timestamp: ${new Date(timestamp).toISOString()}
+---
+
+${feedback}
+`;
+
+    fs.writeFileSync(filepath, msgContent);
+    log.info('dispatcher', 'Wrote system feedback message for next invocation', {
       agentId,
-      sessionId,
-      prompt: feedback,
-      runner: activeWorker.runner,
-      interrupt: true,
-      metadata: { systemFeedback: true, feedbackReason: reason },
+      filepath,
+      reason,
     });
   }
 
@@ -3665,21 +3869,62 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       return;
     }
 
-    log.info('dispatcher', 'Injecting FSM feedback directly into agent session', {
-      agentId,
-      currentState,
-      attemptedTarget,
-      sessionId: sessionId.slice(0, 8),
-    });
+    // Check if worker has an active API query (mid-turn correction possible)
+    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
 
-    await this.resumeSession({
-      reason: 'system-feedback',
+    if (hasActiveQuery) {
+      // Worker is mid-turn — interrupt and inject feedback in real time
+      log.info('dispatcher', 'Injecting FSM feedback into active session', {
+        agentId,
+        currentState,
+        attemptedTarget,
+        sessionId: sessionId.slice(0, 8),
+      });
+
+      try {
+        await this.resumeSession({
+          reason: 'system-feedback',
+          agentId,
+          sessionId,
+          prompt: feedback,
+          runner: activeWorker.runner,
+          interrupt: true,
+          metadata: { fsmFeedback: true, currentState, attemptedTarget },
+        });
+        return;
+      } catch (error) {
+        log.warn('dispatcher', 'FSM feedback injection failed, falling back to message', {
+          agentId,
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    // Primary path: write routing-feedback message for next invocation
+    // The rejected message was blocked at the gate — agent has already
+    // made its decision and is exiting. Queue feedback for next spawn.
+    const timestamp = Date.now();
+    const filename = `${Math.floor(timestamp / 1000)}-routing-feedback-system--${agentId.replace('/', '-')}-routing-blocked-${timestamp}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    const msgContent = `---
+to: ${agentId}
+from: system/fsm-validator
+type: message
+msg-id: routing-feedback-${timestamp}
+headline: Routing violation - use correct agent name
+timestamp: ${new Date(timestamp).toISOString()}
+---
+
+${feedback}
+`;
+
+    fs.writeFileSync(filepath, msgContent);
+    log.info('dispatcher', 'Wrote routing feedback message for next invocation', {
       agentId,
-      sessionId,
-      prompt: feedback,
-      runner: activeWorker.runner,
-      interrupt: true,
-      metadata: { fsmFeedback: true, currentState, attemptedTarget },
+      filepath,
+      attemptedTarget,
+      reason: hasActiveQuery ? 'injection-failed' : 'worker-post-query',
     });
   }
 
@@ -4001,69 +4246,4 @@ Routes to \`core/core\` or other meshes are always permitted.`;
    * Nudge a worker to send a task-complete message to core/core
    * Called when worker completes without sending the expected completion message
    */
-  private async nudgeForCompletion(
-    agentId: string,
-    worker: ActiveWorker,
-    sessionId?: string
-  ): Promise<void> {
-    const { runner } = worker;
-
-    // Increment nudge count
-    worker.nudgeCount++;
-
-    if (!sessionId) {
-      log.error('dispatcher', 'Cannot nudge for completion without session ID', { agentId });
-      return;
-    }
-
-    const nudgePrompt = `## System Notice: Completion Message Required
-
-Your session is ending but you haven't sent a task-complete message to core/core.
-
-**Please write a task-complete message now:**
-
-\`\`\`markdown
----
-to: core/core
-from: ${agentId}
-type: task-complete
-msg-id: ${agentId.replace('/', '-')}-${Date.now()}
-headline: [Brief summary of what was accomplished]
-status: complete
----
-
-## Summary
-[Brief description of what was implemented or completed]
-
-## Files Changed
-[List key files that were modified, if any]
-\`\`\`
-
-Write this message to: ${this.config.msgsDir}/
-
-**This is required for proper coordination.** Core needs to know when your work is done.`;
-
-    log.info('dispatcher', `Nudging worker for completion message (attempt ${worker.nudgeCount})`, {
-      agentId,
-      nudgeCount: worker.nudgeCount,
-      messagesSent: worker.messagesSent.map(m => `${m.type} → ${m.to}`),
-    });
-
-    this.emit('worker:completion-nudge', {
-      agentId,
-      nudgeCount: worker.nudgeCount,
-    });
-
-    // Resume session with nudge prompt
-    await this.resumeSession({
-      reason: 'system-feedback',
-      agentId,
-      sessionId,
-      prompt: nudgePrompt,
-      runner,
-      interrupt: false,  // Don't interrupt - just continue with the nudge
-      metadata: { nudgeReason: 'completion-message-enforcement', nudgeCount: worker.nudgeCount },
-    });
-  }
-
 }

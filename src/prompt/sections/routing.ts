@@ -9,7 +9,8 @@ import type { PromptContext } from '../types.js';
 
 /**
  * Routing configuration for prompt injection
- * Format: { status: { destination: "reason" } }
+ * Format: { routingCategory: { destination: "reason" } }
+ * Categories are internal (ask, task, etc.) — not exposed to agents.
  */
 export interface RoutingConfig {
   [status: string]: {
@@ -35,21 +36,26 @@ export function buildRoutingSection(
 ): string {
   const lines: string[] = [];
   lines.push('## Message Routing\n');
-  lines.push('When you complete your work, route your response message based on the outcome:\n');
+  lines.push('Route your response message to one of these destinations:\n');
 
-  for (const [status, destinations] of Object.entries(routing)) {
-    lines.push(`\n**Status: \`${status}\`**`);
-
-    for (const [destination, reason] of Object.entries(destinations)) {
+  // Flatten: dedupe destination → collect all reasons
+  const destinations = new Map<string, string[]>();
+  for (const categoryDestinations of Object.values(routing)) {
+    for (const [destination, reason] of Object.entries(categoryDestinations)) {
       const targetAgent = destination === 'core' ? 'core/core' :
                          destination.includes('/') ? destination :
                          `${meshName}/${destination}`;
-      lines.push(`- Send message to: \`${targetAgent}\``);
-      lines.push(`  Reason: ${reason}`);
+      if (!destinations.has(targetAgent)) destinations.set(targetAgent, []);
+      destinations.get(targetAgent)!.push(reason);
     }
   }
 
-  lines.push('\n\nSet the `to` field in your message frontmatter based on which status applies.');
+  for (const [targetAgent, reasons] of destinations) {
+    lines.push(`- **\`${targetAgent}\`**: ${reasons.join(' | ')}`);
+  }
+
+  lines.push('\nSet the `to` field in your message frontmatter. Send to ONLY these destinations.');
+  lines.push('\n**After sending your routing message, STOP. Do not read files, analyze state, write prose, or perform any further work. Send ONE message and exit immediately.**');
 
   return lines.join('\n');
 }

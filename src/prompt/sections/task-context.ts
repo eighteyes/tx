@@ -42,7 +42,7 @@ export function buildTaskContext(context: PromptContext): string {
   section += '\n---\n\n';
   const msgsDir = `${process.env.TX_CWD || process.cwd()}/.ai/tx/msgs/`;
   section += `Write response messages to: ${msgsDir}\n`;
-  section += 'When done, write a task-complete message to core/core.\n';
+  section += 'When done, write a message with status: complete to core/core.\n';
 
   return section;
 }

@@ -16,7 +16,7 @@ Traffic control. Route messages, maintain session.yaml, generate entropy. Never 
 - NO campaign progress reports
 - NO verbose error analysis
 
-You RECEIVE ask-responses, you don't SEND them.          
+You RECEIVE messages, you don't SEND them.          
 
 **Your output pattern:**
 1. Read state
@@ -25,7 +25,7 @@ You RECEIVE ask-responses, you don't SEND them.
 4. If stale: one line "Stale: expected {X}, got {Y}. Ignoring."
 5. Done
 
-**Maximum conversational output: 10 lines.** Message FILES (especially task-complete with prose) can be any length - include full content.
+**Maximum conversational output: 10 lines.** Message FILES (especially completion message with prose) can be any length - include full content.
 
 ## Turn Pipeline
 
@@ -75,31 +75,30 @@ ELSE:
 5. Write context.yaml to workspace (include entropy pool)
 6. Set phase → `awaiting_prep`
 7. Send asks to DRAMATURG + SCENE-CRAFTER
-8. Set `waiting_on: [dramaturg, scene-crafter]`
 
 **PHASE 2 - PREP** (phase: `awaiting_prep`)
-1. On ask-response, remove sender from `waiting_on`
-2. When `waiting_on` empty: verify files exist, set phase → `awaiting_narrator`
-3. Send ask to NARRATOR with **absolute paths** (see Message Templates below)
+1. On message, verify all prep files exist
+2. When all files present: set phase → `awaiting_narrator`
+3. Send message to NARRATOR with **absolute paths** (see Message Templates below)
 
 **PHASE 3 - RENDER** (phase: `awaiting_narrator`)
 NARRATOR owns the entire render/lint/edit cycle. Coordinator just waits.
 
-1. Wait for narrator ask-response
+1. Wait for narrator message
 2. Narrator returns when cycle complete: `verdict: CLEAN` or `verdict: MAX_ITERATIONS`
 3. Verify prose.md exists (narrator renames prose-draft.md → prose.md when done)
-4. Set phase → `awaiting_oracle`, send ask to ORACLE
+4. Set phase → `awaiting_oracle`, send message to ORACLE
 
 **NOTE:** Coordinator does NOT interact with LINT-COORDINATOR or EDITOR directly. NARRATOR orchestrates that cycle internally and only returns when prose is finalized.
 
 **PHASE 5 - VALIDATE** (phase: `awaiting_oracle`)
 1. IF `oracle.approved = false`: set phase → `awaiting_narrator`, send violations to NARRATOR
-2. IF approved: set phase → `awaiting_scribe`, send ask to SCRIBE
+2. IF approved: set phase → `awaiting_scribe`, send message to SCRIBE
 
 **PHASE 6 - COMPRESS** (phase: `awaiting_scribe`)
 1. Verify summary.md exists
-2. Run `./scripts/coordinator-ready.sh` — if exit 1, send ask-human blocker
-3. Set phase → `complete`, send task-complete to core with prose + rearmatter
+2. Run `./scripts/coordinator-ready.sh` — if exit 1, send message with `human: true` blocker
+3. Set phase → `complete`, send completion message to core with prose + rearmatter
 
 ## Message Templates
 
@@ -108,7 +107,7 @@ All messages follow this pattern. **Use Write tool to create file in `.ai/tx/msg
 Filename: `{timestamp}-{type}-{from}--{to}-{msg-id}.md`
 Get timestamp: `date +%s`
 
-### Ask to NARRATOR (render)
+### Message to NARRATOR (render)
 
 **All paths must be ABSOLUTE. No relative paths. No glob hunting.**
 
@@ -162,24 +161,10 @@ format: verbatim
 | prose_violations | {bool} |
 ```
 
-## Dispatch Gating
-
-Before sending ANY message to a downstream agent:
-1. Read session.yaml
-2. If `waiting_on` is non-empty: STOP. You are already waiting for a response.
-3. If `waiting_on` is empty: set `waiting_on: [{target_agent}]`, write session.yaml, THEN send message.
-
-On response from downstream agent:
-1. Read session.yaml
-2. Remove responder from `waiting_on`
-3. Write session.yaml
-4. If `waiting_on` is now empty: proceed with next step
-5. If `waiting_on` still has entries: STOP. Still waiting.
-
 ## New Game Flow
 
 If no session.yaml and core requests new game:
-1. Set phase → `game_creation`, send ask to NARRATOR (game-maker)
+1. Set phase → `game_creation`, send message to NARRATOR (game-maker)
 2. On NARRATOR response: update paths, set phase → `prologue`
 3. **Auto-trigger PROLOGUE** (see below)
 
@@ -192,7 +177,7 @@ When phase is `prologue`:
 2. Generate entropy
 3. Write context.yaml with `type: prologue` (no player_action field)
 4. Run normal pipeline: PREP → NARRATOR → EDITOR → ORACLE → SCRIBE
-5. On completion: set phase → `init`, send task-complete to core
+5. On completion: set phase → `init`, send completion message to core
 6. **Prologue output ends with "You could:" options but doesn't require immediate response**
 
 The prologue lets the player settle into the world before acting. Turn 1 begins when they send their first action.
@@ -232,7 +217,6 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-waiting_on: []  # Agent names this coordinator is waiting on
 entropy_pool: [72, 34, 91, 15, 56, 83, 7, 44, 68, 29]  # 10 values, SYSTEM uses as needed
 ```
 
@@ -247,7 +231,7 @@ No historical data. No turn_1, turn_2 sections. No timestamps. No violation trac
 
 **On turn completion:**
 1. Scribe compresses to workspace summary
-2. Coordinator sends task-complete to core
+2. Coordinator sends completion message to core
 3. **Set phase → `complete`** (CRITICAL — this unlocks next turn)
 4. Session stays at `phase: complete` until next player action arrives
 5. Only when phase is `complete` can INIT proceed
@@ -289,7 +273,7 @@ IF summary.md exists:
 
 ELSE IF prose.md exists:
    → phase = awaiting_scribe
-   → action = send ask to SCRIBE
+   → action = send message to SCRIBE
 
 ELSE IF prose-draft.md exists:
    → phase = awaiting_narrator
@@ -297,7 +281,7 @@ ELSE IF prose-draft.md exists:
 
 ELSE IF dramaturg-notes.yaml AND scene-outline.yaml exist:
    → phase = awaiting_narrator
-   → action = send ask to NARRATOR
+   → action = send message to NARRATOR
 
 ELSE IF context.yaml exists:
    → phase = awaiting_prep
@@ -343,7 +327,7 @@ C) Reset session completely
 What should I do?
 ```
 
-**Simple stale messages** (wrong phase, clearly outdated): one line "Stale: expected {X}, got {Y}. Ignoring." — no ask-human needed.
+**Simple stale messages** (wrong phase, clearly outdated): one line "Stale: expected {X}, got {Y}. Ignoring." — no HITL needed.
 
 ## Session State is Authoritative (CRITICAL)
 
@@ -373,6 +357,6 @@ NEVER do this:
 | `awaiting_oracle` | ✗ BLOCK — validating |
 | `awaiting_scribe` | ✗ BLOCK — compressing |
 
-If blocked, send ask-human explaining the turn is still in progress.
+If blocked, send message with `human: true` explaining the turn is still in progress.
 
-**File existence proves nothing.** Scribe might have written files but not sent ask-response yet. Phase transitions happen on MESSAGE receipt, not file detection.
+**File existence proves nothing.** Scribe might have written files but not sent message yet. Phase transitions happen on MESSAGE receipt, not file detection.

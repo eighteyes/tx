@@ -167,8 +167,12 @@ export async function run(options: RunOptions = {}): Promise<void> {
     if (!isForUser && !msg.to.startsWith(`${mesh}/`)) return;
 
     // Track if this is a question requiring user input
-    // ask-human = HITL, ask = question (when to user/repl), blocked = needs help
-    pendingQuestion = msg.type === 'ask-human' || msg.type === 'ask' || msg.status === 'blocked';
+    // Message to core/core or user/repl = needs response, blocked = needs help
+    // DEPRECATED ASK: ask-human/ask types, use 'message' + routing
+    if (msg.type === 'ask-human' || msg.type === 'ask') {
+      log.warn('deprecated-message-type', `Legacy type="${msg.type}" used in run.ts`, { type: msg.type, file: 'run.ts', detail: 'Use message type with human: true frontmatter instead' });
+    }
+    pendingQuestion = msg.type === 'ask-human' || msg.type === 'ask' || msg.type === 'message' || msg.status === 'blocked';
 
     displayResponse(msg);
   });

@@ -308,6 +308,7 @@ export class MessageRouter extends EventEmitter {
     try {
       // ask-human is fire-and-forget - don't add to awaitingResponses
       if (messageType === 'ask-human') {
+        log.warn('deprecated-message-type', `Legacy type="ask-human" used; boundary inference handles this`, { type: messageType, file: 'message-router.ts', detail: 'Use human: true frontmatter instead' });
         log.info('message-router', `ask-human sent (fire-and-forget, no await)`, {
           from: senderAgentId,
           to: targetAgentId,

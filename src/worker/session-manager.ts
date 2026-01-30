@@ -165,8 +165,38 @@ export class SessionManager extends EventEmitter {
   /**
    * Check if a mesh has any pending ask-human (suspended sessions)
    * When ask-human is pending, the entire mesh should be halted.
+   *
+   * Verifies against SQLite to handle external clears (e.g., `tx mesh clear`).
+   * If in-memory state is stale (cleared externally), syncs to SQLite state.
    */
   hasPendingAskHumanForMesh(meshName: string): boolean {
+    // First check in-memory state for fast path
+    const inMemorySuspended: string[] = [];
+    for (const [agentId, suspended] of this.suspendedSessions) {
+      if (suspended.meshName === meshName && suspended.reason === 'ask-human') {
+        inMemorySuspended.push(agentId);
+      }
+    }
+
+    if (inMemorySuspended.length === 0) {
+      return false;
+    }
+
+    // Verify against SQLite - external clears (tx mesh clear) only hit the database
+    // If SQLite disagrees, sync in-memory state to match
+    for (const agentId of inMemorySuspended) {
+      const dbSession = this.queue.getSuspendedSession(agentId);
+      if (!dbSession) {
+        // Session was cleared externally - remove stale in-memory state
+        log.debug('session-manager', 'Clearing stale in-memory suspended session (cleared externally)', {
+          agentId,
+          meshName,
+        });
+        this.suspendedSessions.delete(agentId);
+      }
+    }
+
+    // Re-check after sync
     for (const [agentId, suspended] of this.suspendedSessions) {
       if (suspended.meshName === meshName && suspended.reason === 'ask-human') {
         return true;
@@ -474,8 +504,15 @@ export class SessionManager extends EventEmitter {
    * Build a resume prompt with human response
    */
   buildHumanResponsePrompt(content: string, headline?: string): string {
-    return headline
-      ? `## Human Response: ${headline}\n\n${content}`
-      : `## Human Response\n\n${content}`;
+    const header = headline
+      ? `## Human Response: ${headline}`
+      : `## Human Response`;
+
+    return `${header}
+
+${content}
+
+---
+Your session was suspended while waiting for this response. Incorporate the answer above and continue your task. Do NOT re-send the question or repeat prior work.`;
   }
 }

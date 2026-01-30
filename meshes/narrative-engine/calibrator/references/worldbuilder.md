@@ -343,7 +343,7 @@ Changes take effect immediately. The next turn will use your updated world.
 
 ## Mid-Creation Detection
 
-During new-game extraction, detect worldbuilder intent in ask-response:
+During new-game extraction, detect worldbuilder intent in message:
 
 **Trigger phrases:**
 - "wait", "hold on", "actually"

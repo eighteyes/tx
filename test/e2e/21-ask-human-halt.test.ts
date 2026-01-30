@@ -349,7 +349,6 @@ What should I do next?
     fs.writeFileSync(responseFile, `---
 to: test-ask-human-halt/worker
 from: core/core
-in-reply-to: tbd2-ask
 headline: User response
 timestamp: ${new Date().toISOString()}
 ---
@@ -389,12 +388,11 @@ Should I proceed?
     assert.strictEqual(coreMessages.length, 1);
     assert.strictEqual(coreMessages[0].type, 'ask-human', 'Should be inferred as ask-human');
 
-    // Step 3: Core responds WITHOUT type field (uses in-reply-to)
+    // Step 3: Core responds WITHOUT type field (inferred from core/core)
     const responseFile = path.join(env.msgsDir, `${timestamp + 1}-tbd-core-core--test-ask-human-halt-worker-tbd3-r.md`);
     fs.writeFileSync(responseFile, `---
 to: test-ask-human-halt/worker
 from: core/core
-in-reply-to: tbd3
 headline: User confirmed
 timestamp: ${new Date().toISOString()}
 ---

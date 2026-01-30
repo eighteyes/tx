@@ -139,7 +139,6 @@ function writeMessageNoType(msgsDir: string, opts: {
   to: string;
   msgId?: string;
   status?: string;
-  'in-reply-to'?: string;
   body?: string;
 }): string {
   const filename = `${Date.now()}-no-type-test.md`;
@@ -152,7 +151,6 @@ function writeMessageNoType(msgsDir: string, opts: {
   ];
   if (opts.msgId) lines.push(`msg-id: ${opts.msgId}`);
   if (opts.status) lines.push(`status: ${opts.status}`);
-  if (opts['in-reply-to']) lines.push(`in-reply-to: ${opts['in-reply-to']}`);
   lines.push('---');
   lines.push('');
   lines.push(opts.body || 'Test body');
@@ -896,35 +894,6 @@ describe('Terminal-by-Default Messaging', () => {
       assert.strictEqual(event.msgId, msgId);
     });
 
-    it('should infer ask-response when in-reply-to is present', async () => {
-      const agentId = 'dev/worker';
-      const originalMsgId = 'original-ask-001';
-
-      // First, send an ask (with explicit type for setup)
-      writeMessage(temp.dir, {
-        from: agentId,
-        to: 'brain/brain',
-        type: 'ask',
-        msgId: originalMsgId,
-        body: 'What is the format?'
-      });
-      await waitForEvent(consumer, 'ask-message');
-
-      // Now send response WITHOUT type field but WITH in-reply-to
-      const responsePromise = waitForEvent(consumer, 'ask-response-message');
-
-      writeMessageNoType(temp.dir, {
-        from: 'brain/brain',
-        to: agentId,
-        'in-reply-to': originalMsgId,
-        body: 'The format is JSON'
-      });
-
-      const event = await responsePromise as { from: string; to: string };
-      assert.strictEqual(event.from, 'brain/brain');
-      assert.strictEqual(event.to, agentId);
-    });
-
     it('should infer ask-response when from core/core (human response)', async () => {
       const agentId = 'dev/worker';
       const msgId = 'human-response-001';
@@ -1045,7 +1014,6 @@ describe('Terminal-by-Default Messaging', () => {
       writeMessageNoType(temp.dir, {
         from: 'core/core',
         to: agentId,
-        'in-reply-to': msgId,
         body: 'Approved'
       });
       await waitForEvent(consumer, 'ask-response-message');

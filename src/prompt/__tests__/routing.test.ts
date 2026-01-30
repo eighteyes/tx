@@ -9,7 +9,7 @@ import assert from 'node:assert';
 import { buildRoutingSection, injectRoutingInstructions } from '../sections/routing.js';
 
 describe('buildRoutingSection', () => {
-  it('should build routing section with single status', () => {
+  it('should build routing section with single destination', () => {
     const routing = {
       complete: {
         reviewer: 'Work complete, ready for review',
@@ -19,12 +19,11 @@ describe('buildRoutingSection', () => {
     const section = buildRoutingSection(routing, 'dev');
 
     assert.ok(section.includes('## Message Routing'));
-    assert.ok(section.includes('**Status: `complete`**'));
     assert.ok(section.includes('dev/reviewer'));
     assert.ok(section.includes('Work complete, ready for review'));
   });
 
-  it('should build routing section with multiple statuses', () => {
+  it('should flatten multiple categories into destination list', () => {
     const routing = {
       complete: {
         reviewer: 'Ready for review',
@@ -39,12 +38,35 @@ describe('buildRoutingSection', () => {
 
     const section = buildRoutingSection(routing, 'dev');
 
-    assert.ok(section.includes('**Status: `complete`**'));
-    assert.ok(section.includes('**Status: `error`**'));
-    assert.ok(section.includes('**Status: `blocked`**'));
+    assert.ok(section.includes('dev/reviewer'));
+    assert.ok(section.includes('core/core'));
+    assert.ok(section.includes('dev/planner'));
+    // Categories should NOT appear in output
+    assert.ok(!section.includes('Status'));
+    assert.ok(!section.includes('`complete`'));
+    assert.ok(!section.includes('`error`'));
+    assert.ok(!section.includes('`blocked`'));
   });
 
-  it('should build routing section with multiple destinations per status', () => {
+  it('should dedupe destinations and collect reasons', () => {
+    const routing = {
+      ask: {
+        reviewer: 'Ask for review',
+      },
+      'ask-response': {
+        reviewer: 'Review response',
+      },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    // Single destination entry with both reasons
+    assert.ok(section.includes('dev/reviewer'));
+    assert.ok(section.includes('Ask for review'));
+    assert.ok(section.includes('Review response'));
+  });
+
+  it('should handle multiple destinations per category', () => {
     const routing = {
       complete: {
         reviewer: 'For code review',
@@ -95,6 +117,16 @@ describe('buildRoutingSection', () => {
 
     assert.ok(section.includes('`to` field'));
     assert.ok(section.includes('frontmatter'));
+  });
+
+  it('should include ONLY these destinations constraint', () => {
+    const routing = {
+      complete: { reviewer: 'Done' },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('ONLY these destinations'));
   });
 });
 

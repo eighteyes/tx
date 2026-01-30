@@ -87,6 +87,19 @@ export interface MeshConfigSchema {
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
   ensemble?: EnsembleConfig;
+  workflow?: WorkflowFileEntry[];
+}
+
+/**
+ * Workflow file entry - declares a file in the mesh workflow
+ */
+export interface WorkflowFileEntry {
+  id: string;
+  location?: string;
+  persistent?: boolean;
+  description?: string;
+  reads: string[];
+  writes: string[];
 }
 
 /**
@@ -174,6 +187,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   playbook_notes: { type: 'string' },
   // Debug mode: enables forensics postHook for mesh execution analysis
   debug: { type: 'boolean' },
+  // Workflow file manifest: declares files, their readers/writers, and locations
+  workflow: { type: 'array' },
 };
 
 /**
@@ -291,6 +306,19 @@ export class MeshValidator {
     // Validate task_distribution if present
     if (cfg.task_distribution && Array.isArray(cfg.agents)) {
       this.validateTaskDistribution(cfg.task_distribution, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate workflow if present
+    if (cfg.workflow && Array.isArray(cfg.agents)) {
+      this.validateWorkflow(
+        cfg.workflow,
+        cfg.routing,
+        cfg.agents,
+        errors,
+        warnings,
+        context,
+        cfg.workspace
+      );
     }
 
     // Check for unknown fields
@@ -950,6 +978,192 @@ export class MeshValidator {
     for (const field of Object.keys(fsmObj)) {
       if (!knownFSMFields.includes(field)) {
         warnings.push(`Unknown fsm field '${field}'${context}`);
+      }
+    }
+  }
+
+  /**
+   * Validate workflow file manifest against routing graph
+   *
+   * Cross-references declared workflow files with routing to verify
+   * that readers have writers in their predecessor set.
+   */
+  static validateWorkflow(
+    workflow: unknown,
+    routing: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string,
+    workspaceConfig?: unknown
+  ): void {
+    if (!Array.isArray(workflow)) {
+      errors.push(`workflow must be an array${context}`);
+      return;
+    }
+
+    const agentNames = new Set(
+      agents
+        .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+        .map(a => a.name as string)
+    );
+
+    // Extract known location names from workspace.locations
+    const knownLocations = new Set<string>();
+    if (workspaceConfig && typeof workspaceConfig === 'object') {
+      const ws = workspaceConfig as Record<string, unknown>;
+      if (ws.locations && typeof ws.locations === 'object' && !Array.isArray(ws.locations)) {
+        for (const loc of Object.keys(ws.locations as Record<string, unknown>)) {
+          knownLocations.add(loc);
+        }
+      }
+    }
+
+    // Structural validation: check each entry
+    const seenIds = new Set<string>();
+
+    for (let i = 0; i < workflow.length; i++) {
+      const entry = workflow[i];
+      const prefix = `workflow[${i}]`;
+
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        errors.push(`${prefix} must be an object${context}`);
+        continue;
+      }
+
+      const file = entry as Record<string, unknown>;
+
+      // Validate id
+      if (!file.id || typeof file.id !== 'string') {
+        errors.push(`${prefix}: missing required field 'id'${context}`);
+        continue;
+      }
+
+      if (seenIds.has(file.id)) {
+        errors.push(`${prefix}: duplicate workflow id '${file.id}'${context}`);
+      }
+      seenIds.add(file.id);
+
+      // Validate description
+      if (file.description !== undefined && typeof file.description !== 'string') {
+        errors.push(`${prefix} '${file.id}': description must be a string${context}`);
+      }
+
+      // Validate persistent
+      if (file.persistent !== undefined && typeof file.persistent !== 'boolean') {
+        errors.push(`${prefix} '${file.id}': persistent must be a boolean${context}`);
+      }
+
+      // Validate location against workspace.locations
+      if (file.location !== undefined) {
+        if (typeof file.location !== 'string') {
+          errors.push(`${prefix} '${file.id}': location must be a string${context}`);
+        } else if (knownLocations.size > 0 && !knownLocations.has(file.location)) {
+          warnings.push(`${prefix} '${file.id}': location '${file.location}' not defined in workspace.locations${context}`);
+        }
+      }
+
+      // Validate reads/writes arrays
+      const reads = Array.isArray(file.reads) ? file.reads as string[] : [];
+      const writes = Array.isArray(file.writes) ? file.writes as string[] : [];
+
+      // Check agent references
+      for (const agent of reads) {
+        if (typeof agent === 'string' && !agentNames.has(agent)) {
+          errors.push(`${prefix}: reads references unknown agent '${agent}'${context}`);
+        }
+      }
+      for (const agent of writes) {
+        if (typeof agent === 'string' && !agentNames.has(agent)) {
+          errors.push(`${prefix}: writes references unknown agent '${agent}'${context}`);
+        }
+      }
+
+      // Check: file has readers but zero writers (persistent files may be pre-existing)
+      if (reads.length > 0 && writes.length === 0 && file.persistent !== true) {
+        errors.push(`${prefix} '${file.id}': has readers but no writers${context}`);
+      }
+    }
+
+    // Ordering validation: only when routing is present
+    if (!routing || typeof routing !== 'object') return;
+
+    // Build execution graph from routing: extract directed edges (sender → target)
+    const edges = new Map<string, Set<string>>(); // agent → set of successors
+    const routingObj = routing as Record<string, unknown>;
+
+    for (const [sender, rules] of Object.entries(routingObj)) {
+      if (!rules || typeof rules !== 'object') continue;
+      const rulesObj = rules as Record<string, unknown>;
+
+      for (const [, targets] of Object.entries(rulesObj)) {
+        if (!targets || typeof targets !== 'object') continue;
+        const targetsObj = targets as Record<string, unknown>;
+
+        for (const target of Object.keys(targetsObj)) {
+          if (target === 'core') continue; // core is not a mesh agent
+          if (!edges.has(sender)) edges.set(sender, new Set());
+          edges.get(sender)!.add(target);
+        }
+      }
+    }
+
+    // Compute predecessors via transitive closure of reverse edges
+    const predecessors = new Map<string, Set<string>>();
+
+    const getPredecessors = (agent: string): Set<string> => {
+      if (predecessors.has(agent)) return predecessors.get(agent)!;
+
+      const preds = new Set<string>();
+      predecessors.set(agent, preds); // set early to handle cycles
+
+      for (const [sender, targets] of edges) {
+        if (targets.has(agent)) {
+          preds.add(sender);
+          for (const p of getPredecessors(sender)) {
+            preds.add(p);
+          }
+        }
+      }
+
+      return preds;
+    };
+
+    // Compute for all agents
+    for (const name of agentNames) {
+      getPredecessors(name);
+    }
+
+    // Validate each workflow file: reader must have a writer predecessor
+    for (const entry of workflow) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+      const file = entry as Record<string, unknown>;
+      if (!file.id || typeof file.id !== 'string') continue;
+
+      // Persistent files skip ordering checks (available across turns)
+      if (file.persistent === true) continue;
+
+      const reads = Array.isArray(file.reads) ? file.reads as string[] : [];
+      const writes = Array.isArray(file.writes) ? file.writes as string[] : [];
+      const writerSet = new Set(writes);
+
+      for (const reader of reads) {
+        if (typeof reader !== 'string') continue;
+
+        // Self-read-after-write is valid
+        if (writerSet.has(reader)) continue;
+
+        // Check if any writer is a predecessor of this reader
+        const readerPreds = predecessors.get(reader) || new Set();
+        const hasWriterPredecessor = writes.some(
+          w => typeof w === 'string' && readerPreds.has(w)
+        );
+
+        if (!hasWriterPredecessor) {
+          warnings.push(
+            `workflow '${file.id}': reader '${reader}' has no writer predecessor in routing${context}`
+          );
+        }
       }
     }
   }

@@ -11,12 +11,12 @@ You detect temporal claims and flag contradictions.
 
 ## Routing
 
-Receive `ask` from LINT-COORDINATOR -> Respond `ask-response` to LINT-COORDINATOR
+Receive message from LINT-COORDINATOR -> Respond `message` to LINT-COORDINATOR
 
 ## Workflow
 
 <instructions>
-1. Receive ask from LINT-COORDINATOR with prose_draft path
+1. Receive message from LINT-COORDINATOR with prose_draft path
 2. Read prose-draft.md and continuity.yaml
 3. Identify temporal statements in prose
 4. For each temporal statement:
@@ -26,7 +26,7 @@ Receive `ask` from LINT-COORDINATOR -> Respond `ask-response` to LINT-COORDINATO
    d. If contradiction: flag as violation (same entities, conflicting duration/time)
    e. If new: add to tracked list
 5. Write any violations to response
-6. Send ask-response with violation list
+6. Send message with violation list
 </instructions>
 
 ## Input: What You Receive

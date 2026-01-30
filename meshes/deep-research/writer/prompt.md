@@ -19,7 +19,6 @@ The system infers message intent from **routing and boundaries**:
 - **To core/core**: Questions for human → session suspends awaiting response
 - **From core/core**: Human responses → session resumes with answer
 - **To other agents**: Collaboration requests → session awaits response
-- **Agent → Agent (reply)**: Use `in-reply-to` field → resumes awaiting session
 
 No explicit `type` field needed - the system detects boundaries automatically.
 

@@ -187,7 +187,6 @@ to: ${request.agentId}
 from: system/recovery
 type: guidance
 msg-id: ${msgId}
-in-reply-to: ${request.msgId}
 headline: State guidance for ${request.agentId}
 timestamp: ${new Date().toISOString()}
 ---
@@ -225,13 +224,13 @@ ${guidance.suggestion}${levelWarning}
   }
 
   /**
-   * Write escalation message to core/core as ask-human
+   * Write escalation message to core/core
    */
   private writeEscalation(request: RecoveryRequest): void {
     const state = this.getAgentState(request.agentId);
     const timestamp = Date.now();
     const msgId = `escalation-${timestamp}`;
-    const filename = `${timestamp}-ask-human-system-recovery--core-core-${msgId}.md`;
+    const filename = `${timestamp}-message-system-recovery--core-core-${msgId}.md`;
     const filepath = path.join(this.watchDir, filename);
 
     const fsmState = state?.fsm?.currentState || 'unknown';
@@ -246,7 +245,6 @@ ${guidance.suggestion}${levelWarning}
     const content = `---
 to: core/core
 from: system/recovery
-type: ask-human
 msg-id: ${msgId}
 headline: Agent ${request.agentId} appears stuck
 timestamp: ${new Date().toISOString()}

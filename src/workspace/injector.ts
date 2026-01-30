@@ -52,7 +52,7 @@ export interface SubtaskInjectionContext {
 const PREAMBLE_SINGLE_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
 
 # Autonomous Operation
-You run automatically without a user watching. If you need user input, use \`ask-human\`.
+You run automatically without a user watching. If you need user input, send a message to \`core/core\`.
 
 # Use of Explore and Task
 - Freely use Task with custom context to parallel process a lightweight, JIT agent.
@@ -61,7 +61,7 @@ You run automatically without a user watching. If you need user input, use \`ask
 const PREAMBLE_MULTI_AGENT = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
 
 # Autonomous Operation
-You run automatically without a user watching. If you need user input, use \`ask-human\`.
+You run automatically without a user watching. If you need user input, send a message to \`core/core\`.
 
 # Use of Explore
 - Freely use Explore for parallelized workflows, exceptional at lightweight answers and lots of Bash.
@@ -534,7 +534,6 @@ Reference past sessions by number: "What did we discuss in session 3?"
       const currentTask = context.pendingTasks[0];
       parts.push('## Current Task\n');
       parts.push(`- **From**: \`${currentTask.from_agent}\``);
-      parts.push(`- **Type**: \`${currentTask.type}\``);
       if (currentTask.payload?.headline) {
         parts.push(`- **Headline**: ${currentTask.payload.headline}`);
       }
@@ -555,7 +554,7 @@ Reference past sessions by number: "What did we discuss in session 3?"
         const age = this.formatAge(ask.created_at || Date.now());
         parts.push(`- \`${ask.msg_id}\` → **${ask.to_agent}** (${age})`);
       }
-      parts.push('\n*Do NOT send task-complete until these are resolved.*\n');
+      parts.push('\n*Do NOT send completion message until these are resolved.*\n');
     }
 
     // Incoming asks (others waiting for YOUR response)

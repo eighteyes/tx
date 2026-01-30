@@ -56,29 +56,6 @@ What should I do next?
     assert.strictEqual(messages[0].from_agent, 'test-mesh/worker');
   });
 
-  test('Infers ask-response when in-reply-to is present', async () => {
-    // Write message with in-reply-to but no type
-    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-mesh-worker-r1.md`);
-    fs.writeFileSync(msgFile, `---
-to: test-mesh/worker
-from: core/core
-msg-id: r1
-in-reply-to: q1
-headline: Response to your question
-timestamp: ${new Date().toISOString()}
----
-
-Please proceed with option A.
-`);
-
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    // Worker should receive the message with inferred type
-    const messages = queue.poll('test-mesh/worker');
-    assert.strictEqual(messages.length, 1, 'Worker should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be inferred as ask-response');
-    assert.strictEqual(messages[0].from_agent, 'core/core');
-  });
 
   test('Infers ask-response when from is core/core', async () => {
     // Write message from core/core without type
@@ -147,29 +124,6 @@ All done!
     const messages = queue.poll('core/core');
     assert.strictEqual(messages.length, 1, 'Core should receive 1 message');
     assert.strictEqual(messages[0].type, 'task-complete', 'Explicit type should be preserved');
-  });
-
-  test('in-reply-to takes precedence over from core/core for inference', async () => {
-    // Both in-reply-to present AND from core/core
-    // in-reply-to should be checked first (rule 1)
-    const msgFile = path.join(env.msgsDir, `${Date.now()}-notype-core-core--test-mesh-worker-r3.md`);
-    fs.writeFileSync(msgFile, `---
-to: test-mesh/worker
-from: core/core
-msg-id: r3
-in-reply-to: q3
-headline: Answer
-timestamp: ${new Date().toISOString()}
----
-
-Yes.
-`);
-
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    const messages = queue.poll('test-mesh/worker');
-    assert.strictEqual(messages.length, 1);
-    assert.strictEqual(messages[0].type, 'ask-response', 'Type should be ask-response via in-reply-to rule');
   });
 
   test('Message with only to and from is still processed', async () => {

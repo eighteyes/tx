@@ -48,25 +48,6 @@ agents:
   });
 
   describe('inferMessageType() logic', () => {
-    it('should infer ask-response when in-reply-to is present', async () => {
-      // Message with in-reply-to should become ask-response
-      createTestMessage(env.msgsDir, `${Date.now()}-infer-reply-test.md`, {
-        to: 'test-mesh/worker',
-        from: 'test-mesh/coordinator',
-        'in-reply-to': 'original-ask-123',
-        msgId: 'reply-test-1',
-        body: 'This is a response to an earlier ask',
-      });
-
-      await sleep(400);
-
-      const messages = queue.poll('test-mesh/worker');
-      const msg = messages.find((m) => m.payload?.['msg-id'] === 'reply-test-1');
-
-      assert.ok(msg, 'Message should be queued');
-      assert.strictEqual(msg.type, 'ask-response', 'Should infer ask-response from in-reply-to');
-    });
-
     it('should infer ask-human when message to core/core from non-core agent', async () => {
       // Message to core/core without status:complete → ask-human
       createTestMessage(env.msgsDir, `${Date.now()}-infer-human-test.md`, {

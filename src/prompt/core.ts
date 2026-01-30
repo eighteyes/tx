@@ -241,7 +241,6 @@ Write a \`task\` message to trigger a worker:
 ---
 to: test/worker
 from: core/core
-type: task
 msg-id: task-${timestampMs}
 headline: Run the tests
 timestamp: ${timestamp}
@@ -260,7 +259,6 @@ Meshes marked with **REQUIRES: \`feature:\`** run in isolated git worktrees. Inc
 ---
 to: dev-worktree/worker
 from: core/core
-type: task
 feature: user-authentication
 msg-id: task-${timestampMs}
 headline: Implement login form
@@ -290,7 +288,6 @@ When the user types a slash command pattern like \`/know:prepare\` or \`/know:ad
 ---
 to: brain/brain
 from: core/core
-type: task
 command: /know:prepare
 msg-id: task-${timestampMs}
 headline: Execute /know:prepare
@@ -306,7 +303,6 @@ User requested: /know:prepare
 ---
 to: brain/brain
 from: core/core
-type: task
 command: /know:add auth-system
 msg-id: task-${timestampMs}
 headline: Execute /know:add auth-system
@@ -320,8 +316,8 @@ User requested: /know:add auth-system
 
 ## Handling Responses
 
-1. \`ask-human\` - Worker needs user input. Ask the user, then send \`ask-response\`
-2. \`task-complete\` - Worker finished. Display result to user.
+1. **Worker needs user input** - Message arrives with \`human: true\` frontmatter. Ask the user, then send response back.
+2. **Worker finished** - Message arrives with \`status: complete\`. Display result to user.
 
 ### Output Format Field
 
@@ -336,7 +332,6 @@ Workers may include a \`format\` field in task-complete frontmatter:
 ---
 to: test/worker
 from: core/core
-type: ask-response
 msg-id: resp-123
 headline: User response
 ---
@@ -362,7 +357,6 @@ Edit the original task message file, add/update the body and set revision mode:
 ---
 to: dev/worker
 from: core/core
-type: task
 revision: append
 msg-id: task-123
 headline: Build feature (updated)

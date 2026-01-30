@@ -41,7 +41,6 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-waiting_on: []
 entropy_pool: [10 values]
 ```
 
@@ -55,8 +54,15 @@ entropy_pool: [10 values]
    for i in {1..10}; do echo $((RANDOM % 100 + 1)); done
    ```
 5. Write context.yaml to workspace
-6. Update session.yaml (ALL fields)
-7. Route to prep-coord
+6. Bump `current_turn` in campaign state.yaml:
+   ```
+   Path: {game_path}/campaigns/{campaign_id}/state.yaml
+   Update: current_turn: {N}
+   Update: last_updated: {ISO timestamp}
+   Preserve ALL other fields.
+   ```
+7. Update session.yaml (ALL fields)
+8. Route to prep-coord
 
 ## Context.yaml (Normal Turn)
 
@@ -134,7 +140,6 @@ game_id: {preserved from read}
 campaign_id: {preserved from read}
 workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-{N}/
 game_path: {preserved from read}
-waiting_on: []
 entropy_pool: [values from bash]
 ```
 

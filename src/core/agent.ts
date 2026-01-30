@@ -110,6 +110,10 @@ export class CoreAgent extends EventEmitter {
   private async handleMessage(msg: Message): Promise<void> {
     console.log(`\n[core] ← ${msg.type} from ${msg.from_agent}`);
 
+    if (msg.type === 'ask-human' || msg.type === 'task-complete' || msg.type === 'ask') {
+      log.warn('deprecated-message-type', `Legacy type="${msg.type}" used in agent switch`, { type: msg.type, file: 'agent.ts', detail: 'Use boundary inference instead of explicit type field' });
+    }
+
     switch (msg.type) {
       case 'ask-human':
         await this.handleAskHuman(msg);

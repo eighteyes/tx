@@ -6,7 +6,7 @@ player:
   name: ""
   bonds: []                     # Relationships to NPCs
   secrets: []                   # Things even the player might not know yet
-  momentum: null                # building | releasing | spent
+  momentum: null                # rising | peak | falling | stable
 
   # Physical appearance for VISUAL blocks (image generation)
   # NARRATOR references this for consistent character rendering

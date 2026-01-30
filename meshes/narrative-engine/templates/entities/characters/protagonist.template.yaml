@@ -98,7 +98,7 @@ current_state:
   status: alive
   condition: healthy            # healthy | injured | critical
   location: null                # location-id
-  momentum: null                # building | releasing | spent
+  momentum: null                # rising | peak | falling | stable
 
   # Trait pressure levels (0-5, evolves at 5)
   trait_pressures: {}

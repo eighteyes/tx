@@ -554,10 +554,11 @@ ${body}
         return;
       }
 
-      // Detect ask messages - these trigger await state in dispatcher
-      // Worker writes ask → consumer detects → dispatcher enters await
-      // Also handles ask-human messages which require interrupt + steering
-      if (messageType === 'ask' || messageType === 'ask-human') {
+      // Detect messages that trigger await state in dispatcher
+      if (messageType === 'ask' || messageType === 'ask-human' || messageType === 'message') {
+        if (messageType === 'ask' || messageType === 'ask-human') {
+          log.warn('deprecated-message-type', `Legacy type="${messageType}" used; boundary inference handles this`, { type: messageType, file: filename, detail: 'Use human: true frontmatter instead of ask-human type' });
+        }
         const msgId = parsed.frontmatter['msg-id'];
 
         log.info('consumer', `${messageType} message detected`, {
@@ -580,8 +581,8 @@ ${body}
           });
         }
 
-        // Phase 3: Boundary detection for terminal-by-default
-        const crossesHumanBoundary = toAgent === 'core/core' && messageType === 'ask-human';
+        // Phase 3: Boundary detection — any message to core/core crosses human boundary
+        const crossesHumanBoundary = toAgent === 'core/core';
         const isTerminal = true;  // All asks are terminal by default (sender suspends)
 
         this.emit('ask-message', {
@@ -597,20 +598,21 @@ ${body}
         });
       }
 
-      // Detect ask-response messages - these resume awaiting workers
+      // Detect response messages - these resume awaiting workers
       if (messageType === 'ask-response') {
+        log.warn('consumer', `DEPRECATED ASK: type 'ask-response' is deprecated, use 'message' + routing`, {
+          from: parsed.frontmatter.from,
+          to: toAgent,
+        });
         const msgId = parsed.frontmatter['msg-id'];
-        const inReplyTo = parsed.frontmatter['in-reply-to'];
         const respondingAgent = parsed.frontmatter.from;
 
-        // Use in-reply-to as primary correlation, fall back to msg-id
-        const correlationId = inReplyTo || msgId;
+        const correlationId = msgId;
 
         log.info('consumer', `Ask-response message detected`, {
           from: respondingAgent,
           to: toAgent,
           msgId,
-          inReplyTo,
           correlationId,
           file: filename
         });
@@ -674,6 +676,7 @@ ${body}
       if (toAgent === 'core/core') {
         // Parity gate: check if task-complete has pending asks
         if (messageType === 'task-complete') {
+          log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate core path' });
           const fromAgent = parsed.frontmatter.from;
           const pending = this.queue.getPendingAsks(fromAgent);
 
@@ -765,6 +768,7 @@ ${body}
       } else {
         // Parity gate: check if task-complete TO another worker has pending asks
         if (messageType === 'task-complete') {
+          log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate worker path' });
           const fromAgent = parsed.frontmatter.from;
           const pending = this.queue.getPendingAsks(fromAgent);
 
@@ -878,18 +882,17 @@ ${body}
   /**
    * Infer message type when not explicitly provided (Phase 7: Terminal-by-default)
    * This enables simpler message authoring by inferring type from routing context
+   *
+   * DEPRECATED ASK: ask/ask-human/ask-response types are deprecated.
+   * Future: only task, task-complete, message. Routing determines semantics.
    */
   private inferMessageType(fm: Frontmatter, to: string, from: string): string {
-    // To core/core = ask-human (or task-complete if status=complete)
-    if (to === 'core/core' && !from.startsWith('core/')) {
-      return fm.status === 'complete' ? 'task-complete' : 'ask-human';
+    // To core/core with status=complete = task-complete (mesh completion signal)
+    if (to === 'core/core' && !from.startsWith('core/') && fm.status === 'complete') {
+      return 'task-complete';
     }
-    // From core/core = ask-response
-    if (from === 'core/core') return 'ask-response';
-    // Has in-reply-to = ask-response
-    if (fm['in-reply-to']) return 'ask-response';
-    // Default = ask
-    return 'ask';
+    // Everything else is a message. Human boundary is inferred from destination (core/core).
+    return 'message';
   }
 
   // ==========================================================================
@@ -1198,13 +1201,12 @@ ${allRoutingFormatted || '_None defined_'}`;
 
     const timestamp = Date.now();
     const msgId = `routing-escalation-${timestamp}`;
-    const filename = `${timestamp}-ask-human-system--core-core-${msgId}.md`;
+    const filename = `${timestamp}-message-system--core-core-${msgId}.md`;
     const filepath = path.join(this.watchDir, filename);
 
     const escalationContent = `---
 to: core/core
 from: system/routing-validator
-type: ask-human
 msg-id: ${msgId}
 headline: Routing violation needs human intervention
 timestamp: ${new Date().toISOString()}

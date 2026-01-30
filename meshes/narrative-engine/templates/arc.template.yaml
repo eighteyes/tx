@@ -33,7 +33,7 @@ answered:
 # Scene Momentum
 # Current scene's energy state
 scene:
-  momentum: building              # building | releasing | spent
+  momentum: rising                # rising | peak | falling | stable
   active_question: "q1"           # Which question this scene orbits
   tension_points: []              # Moments of escalation this scene
 
@@ -89,7 +89,7 @@ ending_conditions:
   triumph:
     description: "Transformational success on climactic action"
     requires:
-      - "outcome_type: transformational_success"
+      - "outcome_type: transformational"
       - "arc_pressure >= 80 (climactic moment)"
     tone: triumphant
 
@@ -112,7 +112,7 @@ ending_conditions:
     requires:
       - "arc_pressure between 20-40"
       - "No questions above pressure 60"
-      - "Scene momentum: spent"
+      - "Scene momentum: stable"
     tone: bittersweet
 
 # Epilogue Seeds (used when ending is taken)

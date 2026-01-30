@@ -60,7 +60,6 @@ These fields allow per-message overrides of agent configuration:
 | `model` | string | Agent default | Override agent model (`opus`, `sonnet`, `haiku`) |
 | `priority` | string | - | Message queue processing priority |
 | `session-id` | string | - | Resume specific session ID (for continuation meshes) |
-| `in-reply-to` | string | - | Original msg-id being replied to (correlation) |
 
 ### Field Details
 
@@ -196,21 +195,6 @@ session-id: sess_abc123def456
 **Requires**: Mesh `continuation: true` or `continuation: [agent]`
 
 **Source**: `consumer.ts:555`
-
-#### `in-reply-to` - Message Correlation
-
-Link a response to the original message:
-
-```yaml
-in-reply-to: ask-sources-001
-```
-
-**Use cases**:
-- Correlate `ask-response` to original `ask`
-- Track message chains
-- Parity gate matching
-
----
 
 ## Message Types
 

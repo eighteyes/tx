@@ -199,8 +199,8 @@ violations: []
 
 ## Routing
 
-- Receive `ask` from LINT-COORDINATOR
+- Receive message from LINT-COORDINATOR
 - Read files, scan dialogue
-- Send `ask-response` to LINT-COORDINATOR
+- Send `message` to LINT-COORDINATOR
 - NEVER route to other agents
-- NEVER send task-complete
+- NEVER send completion message

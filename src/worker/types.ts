@@ -187,13 +187,13 @@ export interface RevisionMessageEvent {
 export interface AskMessageEvent {
   id: number;
   filepath: string;
-  from: string;  // Agent that sent the ask (e.g., "narrative-engine/narrator")
-  to: string;    // Agent being asked (e.g., "narrative-engine/system")
-  type: string;  // 'ask' or 'ask-human'
+  from: string;  // Agent that sent the message (e.g., "narrative-engine/narrator")
+  to: string;    // Recipient agent (e.g., "narrative-engine/system")
+  type: string;  // 'message' (preferred) or 'ask'/'ask-human' (DEPRECATED)
   headline?: string;
   msgId?: string;
   // Phase 3: Boundary detection
-  crossesHumanBoundary?: boolean;  // true if to === 'core/core' and type === 'ask-human'
+  crossesHumanBoundary?: boolean;  // true if to === 'core/core'
   crossesCompletionBoundary?: boolean;  // true if from is a boundary_agent messaging core
   isTerminal?: boolean;  // true if sender should suspend awaiting response
 }

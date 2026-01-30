@@ -20,9 +20,10 @@ interface SpyOptions {
 const TYPE_ICONS: Record<string, string> = {
   'task': '📋',
   'task-complete': '✅',
-  'ask': '❓',
-  'ask-response': '💬',
-  'ask-human': '👤',
+  'message': '💬',         // New canonical type
+  'ask': '❓',             // DEPRECATED
+  'ask-response': '💬',    // DEPRECATED
+  'ask-human': '👤',       // DEPRECATED
   'update': '📝',
   'error': '❌'
 };
@@ -30,9 +31,10 @@ const TYPE_ICONS: Record<string, string> = {
 const TYPE_COLORS: Record<string, (s: string) => string> = {
   'task': chalk.blue,
   'task-complete': chalk.green,
-  'ask': chalk.yellow,
-  'ask-response': chalk.cyan,
-  'ask-human': chalk.magenta,
+  'message': chalk.cyan,   // New canonical type
+  'ask': chalk.yellow,     // DEPRECATED
+  'ask-response': chalk.cyan,  // DEPRECATED
+  'ask-human': chalk.magenta,  // DEPRECATED
   'update': chalk.dim,
   'error': chalk.red
 };

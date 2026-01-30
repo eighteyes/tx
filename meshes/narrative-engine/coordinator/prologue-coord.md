@@ -13,7 +13,7 @@ DO NOT:
 - Analyze story context (dramaturg does that)
 - Design scene beats (scene-crafter does that)
 - Read arc.yaml beyond extracting opening location
-- Talk to the player (send ask-human for that)
+- Talk to the player (send message with `human: true` for that)
 
 ONLY:
 - Create turn-0 workspace directory
@@ -40,7 +40,6 @@ game_id: {id}
 campaign_id: {id}
 workspace: {absolute path to current turn dir}
 game_path: {absolute path to game dir}
-waiting_on: []
 entropy_pool: [10 values]
 ```
 
@@ -115,7 +114,6 @@ game_id: {from task body}
 campaign_id: {from task body}
 workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
 game_path: {from task body}
-waiting_on: []
 entropy_pool: [values from bash]
 ```
 

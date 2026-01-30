@@ -88,7 +88,6 @@ export function createTestMessage(msgsDir: string, filename: string, content: {
   msgId?: string;
   headline?: string;
   command?: string;
-  'in-reply-to'?: string;
   body: string;
   rearmatter?: Record<string, unknown>;
 }): string {
@@ -105,7 +104,6 @@ export function createTestMessage(msgsDir: string, filename: string, content: {
   if (content.msgId) frontmatter.push(`msg-id: ${content.msgId}`);
   if (content.headline) frontmatter.push(`headline: ${content.headline}`);
   if (content.command) frontmatter.push(`command: ${content.command}`);
-  if (content['in-reply-to']) frontmatter.push(`in-reply-to: ${content['in-reply-to']}`);
   frontmatter.push(`timestamp: ${new Date().toISOString()}`);
   frontmatter.push('---');
 

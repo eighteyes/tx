@@ -278,6 +278,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   };
   fs.writeFileSync(pendingPath, JSON.stringify(pendingState, null, 2));
 
+  // Reset outgoing-tasks.json (stale from previous session)
+  const outgoingPath = path.join(dataDir, 'outgoing-tasks.json');
+  fs.writeFileSync(outgoingPath, JSON.stringify({}, null, 2));
+
+  // Reset hook-state.json (lastSeenId stale from previous session)
+  const hookPath = path.join(dataDir, 'hook-state.json');
+  fs.writeFileSync(hookPath, JSON.stringify({ lastSeenId: 0 }, null, 2));
+
   // Load tmux config if it exists (check work dir first, then TX_ROOT)
   let tmuxConf = path.join(cwd, '.tmux.conf');
   if (!fs.existsSync(tmuxConf)) {
@@ -458,6 +466,46 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       duration: data.duration,
       nudgeCount: data.nudgeCount,
     });
+  });
+
+  // Routing error handling: inject correction back to sender
+  dispatcher.on('routing-error', (data: { from: string; to: string; content: string; headline: string }) => {
+    log.warn('routing', 'Routing error - injecting correction', {
+      from: data.from,
+      to: data.to,
+      headline: data.headline,
+    });
+    // Route as ask-response to inject into sender's session
+    consumer.emit('ask-response-message', {
+      from: data.from,
+      to: data.to,
+      content: data.content,
+      headline: data.headline,
+    });
+  });
+
+  // Routing escalation: write ask-human message for user intervention
+  dispatcher.on('routing-escalation', (data: { from: string; to: string; content: string; headline: string }) => {
+    log.error('routing', 'Routing escalation - notifying user', {
+      from: data.from,
+      to: data.to,
+      headline: data.headline,
+    });
+    // Write message file for core to present to user
+    const timestamp = Date.now();
+    const filename = `${timestamp}-routing-escalation-${data.from.replace('/', '-')}--core-core.md`;
+    const msgPath = path.join(msgsDir, filename);
+    const msgContent = `---
+from: ${data.from}
+to: core/core
+type: ask-human
+headline: ${data.headline}
+---
+
+${data.content}
+`;
+    fs.writeFileSync(msgPath, msgContent);
+    log.info('routing', 'Wrote routing escalation message', { file: filename });
   });
 
   // Initialize stale message cleaner
@@ -676,6 +724,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
     // Remove outgoing task on task-complete from a mesh
     if (type === 'task-complete') {
+      log.warn('deprecated-message-type', `Legacy type="task-complete" used in start.ts`, { type, file: 'start.ts', detail: 'Use status: complete instead of type: task-complete' });
       const [mesh] = from.split('/');
       removeOutgoingTask(mesh);
     }

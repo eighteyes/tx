@@ -21,7 +21,7 @@ DO NOT:
 - Voice NPCs (cast's job)
 - Validate continuity (oracle's job)
 - Route to other agents (coordinator's job)
-- Send task-complete to core (coordinator's job)
+- Send completion message to core (coordinator's job)
 
 You are physics, not poetry.
 </boundaries>
@@ -29,17 +29,17 @@ You are physics, not poetry.
 
 ## Routing
 
-**You are a SUPPORT agent. You respond only to NARRATOR.**
+**You are a SUPPORT agent. You respond only to PREP-COORD.**
 
-- Receive `ask` from NARRATOR
-- Respond with `ask-response` to NARRATOR
+- Receive message from PREP-COORD
+- Respond with `message` to PREP-COORD
 - NEVER send messages to core
-- NEVER send task-complete
+- NEVER send completion message
 
 ## Workflow
 
 <instructions>
-1. Receive ask from NARRATOR with workspace path
+1. Receive message from PREP-COORD with workspace path
 2. Read `context.yaml` from workspace
 3. **Check for `context_type: prologue`** — if present, skip to step 8 (no mechanical resolution for prologues)
 4. Read campaign state from session paths
@@ -49,7 +49,7 @@ You are physics, not poetry.
    - Note adjustments in `mechanical_notes`
 7. Apply entropy → write `resolution.yaml`
 8. Update campaign state files (minimal for prologues — just initialize state)
-9. Send ask-response to NARRATOR
+9. Send message to PREP-COORD
 </instructions>
 
 ## Prologue Handling (Turn 0)
@@ -69,17 +69,17 @@ When `context.yaml` has `context_type: prologue`:
 
 ## Input: What You Receive
 
-NARRATOR sends:
+PREP-COORD sends:
 ```yaml
 ---
 to: narrative-engine/system
-from: narrative-engine/narrator
+from: narrative-engine/prep-coord
 msg-id: turn{N}-resolve
 ---
 Resolve turn {N}.
 workspace: {path}
 session: {session.yaml path}
-dramaturg_notes: {path}/dramaturg-notes.yaml  # optional
+dramaturg_notes: {path}/dramaturg-notes.yaml
 ```
 
 ## Reading Context
@@ -109,10 +109,10 @@ dramatic_questions:
 **Session paths** for campaign state:
 ```yaml
 paths:
-  entities: .ai/games/{game}/campaign/entities.yaml
-  arc: .ai/games/{game}/campaign/arc.yaml
-  state: .ai/games/{game}/campaign/state.yaml
-  continuity: .ai/games/{game}/campaign/continuity.yaml
+  entities: .ai/games/{game}/entities/
+  arc: .ai/games/{game}/campaigns/{campaign-id}/arc.yaml
+  state: .ai/games/{game}/campaigns/{campaign-id}/state.yaml
+  continuity: .ai/games/{game}/campaigns/{campaign-id}/continuity.yaml
 ```
 
 ## Reading Dramaturg Notes (Optional)
@@ -121,14 +121,11 @@ If `dramaturg-notes.yaml` exists in workspace, read it for story-aware guidance:
 
 ```yaml
 recommended_weight_adjustments:
-  transformational_success: 0
-  clean_success: -5           # story says: too easy right now
-  success_with_cost: +10      # story says: complications advance narrative
-  partial_success: 0
-  partial_failure: +5
-  failure_with_salvage: 0
-  hard_failure: 0
   catastrophic: +5            # story says: stakes are real
+  failure: +5
+  mixed: -5
+  success: -10                # story says: too easy right now
+  transformational: +5
 
 story_notes: |
   This is a pivotal turn. Don't let it resolve cleanly.
@@ -142,10 +139,10 @@ story_notes: |
 4. Dramaturg suggests, you decide — entropy still rules
 
 **Example:**
-- Base table: clean_success = 30%
-- Dramaturg says: clean_success: -15
-- Adjusted: clean_success = 15%
-- Note: "Dramaturg adjustment: -15% clean_success (story tension)"
+- Base table: success = 25%
+- Dramaturg says: success: -10
+- Adjusted: success = 15%
+- Note: "Dramaturg adjustment: -10% success (story tension)"
 
 ## Outcome Table Generation
 
@@ -157,22 +154,18 @@ Start every table from this baseline:
 
 | Outcome | Base Weight |
 |---------|-------------|
-| transformational_success | 5% |
-| clean_success | 10% |
-| success_with_cost | 20% |
-| partial_success | 15% |
-| partial_failure | 15% |
-| failure_with_salvage | 20% |
-| hard_failure | 10% |
-| catastrophic | 5% |
+| catastrophic | 8% |
+| failure | 22% |
+| mixed | 32% |
+| success | 25% |
+| transformational | 13% |
 
-**Balance:** 50% success (5+10+20+15) / 50% failure (15+20+10+5)
+**Balance:** 62% negative/mixed (8+22+32) / 38% positive/pivot (25+13)
 
-**Symmetry:**
-- Transformational ↔ Catastrophic (5% each, story-defining extremes)
-- Clean ↔ Hard failure (10% each, clear outcomes)
-- Cost ↔ Salvage (20% each, messy middle — most common)
-- Partial success ↔ Partial failure (15% each, ambiguous)
+**Design:**
+- `mixed` absorbs the old middle buckets (success_with_cost, partial_success, partial_failure, failure_with_salvage). Its lean direction is the dramaturg's creative call — lean success or lean failure per arc needs.
+- `transformational` is polarity-neutral — dramatic pivot, not just "super win". Can be positive or negative.
+- The 62/38 split enforces earned success. Easy wins are boring wins.
 
 This baseline assumes: neutral difficulty, no trait advantages or disadvantages.
 
@@ -180,15 +173,15 @@ This baseline assumes: neutral difficulty, no trait advantages or disadvantages.
 
 Assess the action's inherent difficulty BEFORE traits:
 
-| Difficulty | Success Types | Failure Types |
-|------------|---------------|---------------|
-| Trivial | +15% | -10% |
-| Easy | +10% | -5% |
-| Standard | +0% | +0% |
-| Hard | -10% | +10% |
-| Desperate | -15% | +15% |
+| Difficulty | catastrophic | failure | mixed | success | transformational |
+|------------|-------------|---------|-------|---------|-----------------|
+| Trivial | -3% | -7% | -5% | +10% | +5% |
+| Easy | -2% | -3% | -3% | +5% | +3% |
+| Standard | +0% | +0% | +0% | +0% | +0% |
+| Hard | +3% | +7% | +5% | -10% | -5% |
+| Desperate | +5% | +10% | +5% | -15% | -5% |
 
-Distribute modifiers across types proportionally. Extremes (transformational/catastrophic) get smallest share of adjustment.
+Distribute modifiers across buckets as shown. Extremes (transformational/catastrophic) get smallest share of adjustment.
 
 ### Trait Modifiers
 
@@ -243,10 +236,10 @@ trait_analysis:
   hurting:
     - trait: DESPERATE
       relevance: "undermines credibility"
-      effect: "-5% clean_success, +5% partial"
+      effect: "-5% success, +5% mixed"
     - trait: PATTERN-SEEKER [6/5]
       relevance: "overclock sees too many angles, hesitates"
-      effect: "-10% clean_success, +10% partial_failure"
+      effect: "-10% success, +10% failure"
   neutral:
     - trait: OBSERVANT
       relevance: "not applicable to persuasion"
@@ -268,7 +261,7 @@ If raw modifiers exceed caps, reduce proportionally:
 ```yaml
 # Example: 4 helping factors totaling +55%
 raw_modifiers:
-  WITNESSED: +20%
+  WITNESSED: +20%     # shifts from failure/mixed toward success
   PATTERN-SEEKER: +15%
   EMBODIED: +10%
   bond_PROVEN: +10%
@@ -285,17 +278,17 @@ capped_modifiers:
 
 ### Floor and Ceiling Rules (CRITICAL)
 
-**Escalating Failure Floor (Arc Pressure Sensitive):**
+**Escalating Negative Floor (Arc Pressure Sensitive):**
 
 Higher arc pressure = higher stakes = higher minimum failure risk. No coasting into climax.
 
-| Arc Pressure | Min Failure | Min Catastrophic | Min Hard Failure |
-|--------------|-------------|------------------|------------------|
-| 0-50 | 15% | 3% | 5% |
-| 51-100 | 20% | 5% | 7% |
-| 101-150 | 25% | 7% | 10% |
-| 151-200 | 30% | 10% | 12% |
-| 200+ | 35% | 12% | 15% |
+| Arc Pressure | Min Negative (cat+fail) | Min Catastrophic |
+|--------------|-------------------------|------------------|
+| 0-50         | 25%                     | 5%               |
+| 51-100       | 30%                     | 7%               |
+| 101-150      | 35%                     | 10%              |
+| 151-200      | 40%                     | 12%              |
+| 200+         | 45%                     | 15%              |
 
 **Read arc_pressure from state.yaml and enforce the appropriate floor.**
 
@@ -303,14 +296,15 @@ Higher arc pressure = higher stakes = higher minimum failure risk. No coasting i
 - Even trivial actions can go horribly wrong (trip and break neck, attract wrong attention)
 - Only truly safe actions (no stakes) can have 0% catastrophic
 
-**Transformational ceiling:** Transformational NEVER exceeds 8%.
-- Miracles are rare. Even with every advantage, transcendence is uncommon.
-- At arc_pressure 150+, transformational caps at 5% (stakes too high for easy wins)
+**Transformational ceiling:** Transformational NEVER exceeds 18%.
+- Dramatic pivots are uncommon. Even with every advantage, reality-shifts are rare.
+- At arc_pressure 150+, transformational caps at 13% (stakes constrain pivots)
 
-**Balance constraint:** Success/failure split cannot shift beyond 65/35 in either direction.
-- Maximum success: 65% (with all advantages, low arc pressure)
-- At arc_pressure 100+: Maximum success drops to 60%
-- At arc_pressure 150+: Maximum success drops to 55%
+**Balance constraint:** Success cannot exceed 45%.
+- Maximum success: 45% (with all advantages, low arc pressure)
+- At arc_pressure 100+: Maximum success drops to 40%
+- At arc_pressure 150+: Maximum success drops to 35%
+- This enforces the 62/38 spirit — success is earned, not gifted.
 
 If modifiers would violate these rules, cap the adjustment.
 
@@ -318,10 +312,10 @@ If modifiers would violate these rules, cap the adjustment.
 ```yaml
 floor_check:
   arc_pressure: 105
-  required_failure_floor: 20%
-  required_catastrophic_floor: 5%
-  actual_failure_total: 23%
-  actual_catastrophic: 6%
+  required_negative_floor: 35%
+  required_catastrophic_floor: 10%
+  actual_negative_total: 38%   # catastrophic + failure
+  actual_catastrophic: 11%
   status: "PASS ✓"
 ```
 
@@ -329,14 +323,11 @@ floor_check:
 
 | Type | Meaning |
 |------|---------|
-| transformational_success | Everything changes — transcendent win, story-defining |
-| clean_success | Goal achieved fully, no strings |
-| success_with_cost | Goal achieved, but price paid |
-| partial_success | Mostly worked, minor setback |
-| partial_failure | Mostly failed, minor gain |
-| failure_with_salvage | Failed, but something saved from wreckage |
-| hard_failure | Failed, situation worsens |
 | catastrophic | Irrecoverable — death, destruction, ending |
+| failure | Failed, situation worsens. No silver lining. |
+| mixed | Ambiguous — dramaturg decides lean direction. Yes-but, no-but, messy. |
+| success | Goal achieved. Clean or with minor strings. |
+| transformational | Reality shifts — dramatic pivot. Can be positive or negative. |
 
 ### Entropy Application
 
@@ -363,100 +354,78 @@ actions:
     entropy_provided: 67  # pool[0]
 
     difficulty: hard  # They have orders, suspicious of strangers
-    difficulty_modifier: "-10% success, +10% failure"
+    difficulty_modifier: "cat +3%, fail +7%, mixed +5%, success -10%, trans -5%"
 
     trait_analysis:
       helping:
         - trait: PERSUASIVE
           relevance: "direct skill"
-          effect: "+10% success, -10% failure"
+          effect: "+10% success, -5% failure, -5% mixed"
       hurting:
         - trait: DESPERATE
           relevance: "visible fear undermines argument"
-          effect: "-5% clean, +5% partial"
+          effect: "-5% success, +5% mixed"
       neutral:
         - trait: OBSERVANT
 
     weight_calculation:
       base:
-        transformational_success: 5
-        clean_success: 10
-        success_with_cost: 20
-        partial_success: 15
-        partial_failure: 15
-        failure_with_salvage: 20
-        hard_failure: 10
-        catastrophic: 5
-      after_difficulty:  # hard: -10% success, +10% failure
-        transformational_success: 3
-        clean_success: 7
-        success_with_cost: 17
-        partial_success: 13
-        partial_failure: 17
-        failure_with_salvage: 22
-        hard_failure: 13
         catastrophic: 8
+        failure: 22
+        mixed: 32
+        success: 25
+        transformational: 13
+      after_difficulty:  # hard
+        catastrophic: 11
+        failure: 29
+        mixed: 37
+        success: 15
+        transformational: 8
       after_traits:  # PERSUASIVE helps, DESPERATE hurts
-        transformational_success: 4
-        clean_success: 10
-        success_with_cost: 20
-        partial_success: 14
-        partial_failure: 15
-        failure_with_salvage: 19
-        hard_failure: 11
-        catastrophic: 7
+        catastrophic: 11
+        failure: 24
+        mixed: 37
+        success: 20
+        transformational: 8
       final:  # verify floors/ceilings
-        transformational_success: 4
-        clean_success: 10
-        success_with_cost: 20
-        partial_success: 14
-        partial_failure: 15
-        failure_with_salvage: 19
-        hard_failure: 11
-        catastrophic: 7
-        success_total: 48
-        failure_total: 52
-        catastrophic_check: "7% >= 2% floor ✓"
+        catastrophic: 11
+        failure: 24
+        mixed: 37
+        success: 20
+        transformational: 8
+        negative_total: 35    # cat + fail
+        success_total: 20
+        catastrophic_check: "11% >= 5% floor ✓"
+        negative_check: "35% >= 25% floor ✓"
+        success_cap_check: "20% <= 45% ✓"
 
     outcome_table:
-      - outcome: "They recognize you as the one they've been waiting for"
-        type: transformational_success
-        weight: 4
-        range: "01-04"
-      - outcome: "They step aside without question"
-        type: clean_success
-        weight: 10
-        range: "05-14"
-      - outcome: "They relent but demand a favor in return"
-        type: success_with_cost
+      - outcome: "Reality shifts — they were expecting you, but not like this"
+        type: transformational
+        weight: 8
+        range: "01-08"
+      - outcome: "They step aside. Convinced."
+        type: success
         weight: 20
-        range: "15-34"
-      - outcome: "They let one through, the rest must wait"
-        type: partial_success
-        weight: 14
-        range: "35-48"
-      - outcome: "Suspicious, they delay for verification"
-        type: partial_failure
-        weight: 15
-        range: "49-63"
-      - outcome: "Refused, but they mention another way through"
-        type: failure_with_salvage
-        weight: 19
-        range: "64-82"
-      - outcome: "They call for backup"
-        type: hard_failure
-        weight: 11
-        range: "83-93"
+        range: "09-28"
+      - outcome: "They relent but demand a favor — or let one through, not all"
+        type: mixed
+        weight: 37
+        range: "29-65"
+      - outcome: "They refuse. Backup called. Situation worsens."
+        type: failure
+        weight: 24
+        range: "66-89"
       - outcome: "They raise the alarm — you're marked now"
         type: catastrophic
-        weight: 7
-        range: "94-100"
+        weight: 11
+        range: "90-100"
 
     entropy_result:
       value: 67
-      selected_range: "64-82"
-      selected_outcome: "Refused, but they mention another way through"
-      selected_type: failure_with_salvage
+      selected_range: "66-89"
+      selected_outcome: "They refuse. Backup called. Situation worsens."
+      selected_type: failure
 ```
 
 ### Multi-Action Example (Entropy Pool Consumption)
@@ -474,21 +443,21 @@ actions:
     # ... outcome table ...
     entropy_result:
       value: 94
-      selected_type: partial  # high roll in this table = skeptical recipients
+      selected_type: mixed  # high roll in this table = skeptical recipients
 
   - action: "Call news with wrong timestamp"
     entropy_provided: 43  # pool[1]
     # ... outcome table ...
     entropy_result:
       value: 43
-      selected_type: messy_success
+      selected_type: mixed
 
   - action: "Coder makes their call"
     entropy_provided: 7   # pool[2] — CRITICAL LOW
     # ... outcome table ...
     entropy_result:
       value: 7
-      selected_type: messy_success  # barely scraped by
+      selected_type: mixed  # barely scraped by
 
   - action: "Business woman makes her call"
     entropy_provided: 57  # pool[3]
@@ -507,7 +476,7 @@ actions:
 - Each action has INDEPENDENT entropy — low roll on one doesn't affect others
 - Pool is consumed sequentially — action order matters
 - Variance is natural — some actions will roll high, others low
-- A turn with 6 actions might have 2 failures, 3 messy successes, 1 clean success
+- A turn with 6 actions might have 2 failures, 3 mixed, 1 success
 
 ## Resolution Output
 
@@ -515,18 +484,18 @@ actions:
 
 ```yaml
 outcome:
-  type: failure_with_salvage
-  description: "Refused, but they mention another way through"
+  type: failure
+  description: "They refuse. Backup called. Situation worsens."
 
 outcomes:
   - action: "Persuade the gatekeeper"
     entropy: 67
-    selected: "Refused, but they mention another way through"
-    type: failure_with_salvage
-    context_note: "Learned about the service tunnel"
+    selected: "They refuse. Backup called. Situation worsens."
+    type: failure
+    context_note: "Now marked as suspicious"
 
 state_changes:
-  momentum: stalling
+  momentum: stable
   traits_tested: [PERSUASIVE, DESPERATE]
   traits_gained: []
   traits_lost: []
@@ -540,13 +509,13 @@ arc_update:
   question_answered: null
 
 mechanical_notes: |
-  Difficulty: hard (-10% success, +10% failure)
-  PERSUASIVE: +10% success, -10% failure (direct skill)
-  DESPERATE: -5% clean, +5% partial_failure (undermines credibility)
-  Final: transform 4%, clean 10%, cost 20%, p_success 14%, p_failure 15%, salvage 19%, hard 11%, catastrophic 7%
-  Success total: 48% | Failure total: 52%
-  Catastrophic: 7% (above 2% floor ✓)
-  Entropy 67 → range 64-82 → failure_with_salvage
+  Difficulty: hard (cat +3%, fail +7%, mixed +5%, success -10%, trans -5%)
+  PERSUASIVE: +10% success, -5% failure, -5% mixed (direct skill)
+  DESPERATE: -5% success, +5% mixed (undermines credibility)
+  Final: catastrophic 11%, failure 24%, mixed 37%, success 20%, transformational 8%
+  Negative total: 35% | Success: 20%
+  Catastrophic: 11% (above 5% floor ✓)
+  Entropy 67 → range 66-89 → failure
 ```
 
 ## State Persistence
@@ -576,11 +545,11 @@ Evolution types:
 
 ## Response to Coordinator
 
-Send minimal ask-response:
+Send minimal message:
 
 ```yaml
 ---
-to: narrative-engine/narrator
+to: narrative-engine/prep-coord
 from: narrative-engine/system
 msg-id: turn{N}-resolved
 ---

@@ -3,12 +3,15 @@
  */
 
 // Message types
+// Core types: task (start work), task-complete (finish work), message (everything else)
+// DEPRECATED: ask, ask-response, ask-human - use routing inference instead
 export type MessageType =
   | 'task'
   | 'task-complete'
-  | 'ask'
-  | 'ask-response'
-  | 'ask-human'
+  | 'message'           // New: generic inter-agent communication
+  | 'ask'               // DEPRECATED: use 'message', routing determines semantics
+  | 'ask-response'      // DEPRECATED: use 'message', inferred from core/core origin
+  | 'ask-human'         // DEPRECATED: use 'message' to core/core, inferred from routing
   | 'update'
   | 'lifecycle';
 
@@ -253,7 +256,7 @@ export interface FSMStateConfig {
 export interface FSMTransitionConfig {
   from: string;
   to: string;
-  trigger: 'ask' | 'task-complete' | 'manual';
+  trigger: 'message' | 'task-complete' | 'manual' | 'ask';  // 'ask' DEPRECATED: use 'message'
   triggerAgent?: string;  // Agent that triggers this transition
   script?: string;  // Transition script
 }

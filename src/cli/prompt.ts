@@ -294,18 +294,17 @@ Only proceed to build after brain approves the plan.
 
 ## Handling Responses
 
-1. \`ask-human\` - Worker needs user input. Ask the user, then send \`ask-response\`
+1. Message to \`core/core\` - Worker needs user input. Ask the user, then respond.
 2. \`task-complete\` - Worker finished. Acknowledge to user.
 3. \`plan-approved\` - Brain validated the plan. Proceed to build.
 4. \`plan-rejected\` - Brain found issues. Revise the plan or ask user.
 
-## Example ask-response:
+## Example response to worker:
 
 \`\`\`markdown
 ---
 to: test/worker
 from: core/core
-type: ask-response
 msg-id: resp-123
 headline: User response
 ---
