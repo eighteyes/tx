@@ -1,8 +1,8 @@
 /**
- * Mesh Workflow Validation Tests
+ * Mesh Manifest Validation Tests
  *
- * Validates MeshValidator.validateWorkflow cross-references workflow file
- * manifest against routing to verify files are available when agents need them.
+ * Validates MeshValidator.validateManifest cross-references manifest file
+ * entries against routing to verify files are available when agents need them.
  */
 
 import { describe, it } from 'node:test';
@@ -19,8 +19,8 @@ const workspaceWith = (locations: Record<string, string>) => ({
   locations,
 });
 
-describe('validateWorkflow', () => {
-  it('valid workflow passes', () => {
+describe('validateManifest', () => {
+  it('valid manifest passes', () => {
     const errors: string[] = [];
     const warnings: string[] = [];
 
@@ -32,7 +32,7 @@ describe('validateWorkflow', () => {
       editor: { 'task-complete': { core: 'Done' } },
     };
 
-    MeshValidator.validateWorkflow(workflow, routing, agents('writer', 'editor'), errors, warnings, '',
+    MeshValidator.validateManifest(workflow, routing, agents('writer', 'editor'), errors, warnings, '',
       workspaceWith({ workspace: './turns/' }));
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
@@ -46,7 +46,7 @@ describe('validateWorkflow', () => {
       { id: 'f.md', reads: ['ghost'], writes: ['writer'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('writer'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('writer'), errors, warnings, '');
     assert.ok(errors.some(e => e.includes("unknown agent 'ghost'")), `Expected unknown agent error, got: ${errors}`);
   });
 
@@ -58,7 +58,7 @@ describe('validateWorkflow', () => {
       { id: 'f.md', reads: ['writer'], writes: ['ghost'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('writer'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('writer'), errors, warnings, '');
     assert.ok(errors.some(e => e.includes("unknown agent 'ghost'")), `Expected unknown agent error, got: ${errors}`);
   });
 
@@ -70,7 +70,7 @@ describe('validateWorkflow', () => {
       { id: 'orphan.md', reads: ['reader'], writes: [] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('reader'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('reader'), errors, warnings, '');
     assert.ok(errors.some(e => e.includes('has readers but no writers')), `Expected no-writers error, got: ${errors}`);
   });
 
@@ -82,11 +82,11 @@ describe('validateWorkflow', () => {
       { id: 'template.yaml', persistent: true, reads: ['reader'], writes: [] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('reader'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('reader'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
   });
 
-  it('duplicate workflow id → error', () => {
+  it('duplicate manifest id → error', () => {
     const errors: string[] = [];
     const warnings: string[] = [];
 
@@ -95,8 +95,8 @@ describe('validateWorkflow', () => {
       { id: 'dup.md', reads: [], writes: ['a'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('a'), errors, warnings, '');
-    assert.ok(errors.some(e => e.includes("duplicate workflow id 'dup.md'")), `Expected duplicate id error, got: ${errors}`);
+    MeshValidator.validateManifest(workflow, null, agents('a'), errors, warnings, '');
+    assert.ok(errors.some(e => e.includes("duplicate manifest id 'dup.md'")), `Expected duplicate id error, got: ${errors}`);
   });
 
   it('reader without writer predecessor in routing → warning', () => {
@@ -111,7 +111,7 @@ describe('validateWorkflow', () => {
       reader: { task: { core: 'Done' } },
     };
 
-    MeshValidator.validateWorkflow(workflow, routing, agents('writer', 'reader'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, routing, agents('writer', 'reader'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.ok(warnings.some(w => w.includes("reader 'reader' has no writer predecessor")), `Expected predecessor warning, got: ${warnings}`);
   });
@@ -127,7 +127,7 @@ describe('validateWorkflow', () => {
       narrator: { 'task-complete': { core: 'Done' } },
     };
 
-    MeshValidator.validateWorkflow(workflow, routing, agents('narrator'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, routing, agents('narrator'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
   });
@@ -145,7 +145,7 @@ describe('validateWorkflow', () => {
       reader: { task: { core: 'Done' } },
     };
 
-    MeshValidator.validateWorkflow(workflow, routing, agents('writer', 'reader'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, routing, agents('writer', 'reader'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
   });
@@ -158,7 +158,7 @@ describe('validateWorkflow', () => {
       { id: 'data.md', reads: ['reader'], writes: ['writer'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, undefined, agents('writer', 'reader'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, undefined, agents('writer', 'reader'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
   });
@@ -176,7 +176,7 @@ describe('validateWorkflow', () => {
       c: { 'task-complete': { core: 'Done' } },
     };
 
-    MeshValidator.validateWorkflow(workflow, routing, agents('a', 'b', 'c'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, routing, agents('a', 'b', 'c'), errors, warnings, '');
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
   });
@@ -189,7 +189,7 @@ describe('validateWorkflow', () => {
       { id: 'f.md', description: 42, reads: [], writes: ['a'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('a'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('a'), errors, warnings, '');
     assert.ok(errors.some(e => e.includes('description must be a string')), `Expected description error, got: ${errors}`);
   });
 
@@ -201,7 +201,7 @@ describe('validateWorkflow', () => {
       { id: 'f.md', persistent: 'yes', reads: [], writes: ['a'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('a'), errors, warnings, '');
+    MeshValidator.validateManifest(workflow, null, agents('a'), errors, warnings, '');
     assert.ok(errors.some(e => e.includes('persistent must be a boolean')), `Expected persistent error, got: ${errors}`);
   });
 
@@ -213,7 +213,7 @@ describe('validateWorkflow', () => {
       { id: 'f.md', location: 'narnia', reads: [], writes: ['a'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('a'), errors, warnings, '',
+    MeshValidator.validateManifest(workflow, null, agents('a'), errors, warnings, '',
       workspaceWith({ workspace: './turns/', game: './games/' }));
     assert.ok(warnings.some(w => w.includes("location 'narnia' not defined")), `Expected location warning, got: ${warnings}`);
   });
@@ -226,19 +226,19 @@ describe('validateWorkflow', () => {
       { id: 'f.md', location: 'game', reads: [], writes: ['a'] },
     ];
 
-    MeshValidator.validateWorkflow(workflow, null, agents('a'), errors, warnings, '',
+    MeshValidator.validateManifest(workflow, null, agents('a'), errors, warnings, '',
       workspaceWith({ workspace: './turns/', game: './games/' }));
     assert.equal(errors.length, 0, `Unexpected errors: ${errors.join(', ')}`);
     assert.equal(warnings.length, 0, `Unexpected warnings: ${warnings.join(', ')}`);
   });
 
-  it('integrates via validate() when workflow present', () => {
+  it('integrates via validate() when manifest present', () => {
     const result = MeshValidator.validate({
       mesh: 'test-mesh',
       agents: [
         { name: 'writer', model: 'sonnet', prompt: 'w.md' },
       ],
-      workflow: [
+      manifest: [
         { id: 'out.md', description: 'Output file', reads: ['writer'], writes: ['writer'] },
       ],
     });

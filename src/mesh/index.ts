@@ -58,6 +58,9 @@ export {
   type AggregationOptions,
 } from './aggregation.ts';
 
+// Mesh Validator types
+export type { ManifestEntry } from '../worker/mesh-validator.ts';
+
 // Mesh Config Loader (Phase 2 extraction)
 export {
   MeshConfigLoader,

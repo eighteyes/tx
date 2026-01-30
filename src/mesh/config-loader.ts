@@ -18,6 +18,7 @@ import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { log } from '../shared/logger.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
+import type { ManifestEntry } from '../worker/mesh-validator.ts';
 import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel } from '../shared/types.ts';
 import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
@@ -97,6 +98,7 @@ export interface MeshConfig {
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
   rearmatter?: RearmatterConfig;  // Transparency metadata config
+  manifest?: ManifestEntry[];  // File I/O manifest: declares files, readers/writers, locations
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
