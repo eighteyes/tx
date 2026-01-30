@@ -6,15 +6,20 @@
  *   tx mesh status <mesh>     Show mesh state snapshot
  *   tx mesh kill <mesh>       Kill all workers for a mesh (via tmux)
  *   tx mesh clear <mesh>      Clear SQLite state (suspended sessions, pending asks, FSM)
+ *   tx mesh validate <mesh>   Validate mesh configuration
+ *   tx mesh fsm-chain <mesh>  Show FSM state transition chain with validation
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
 import { SessionStore } from '../session/index.ts';
+import { validateMesh } from './validate-mesh.ts';
+import { MeshValidator } from '../worker/mesh-validator.ts';
 import { log } from '../shared/logger.ts';
 import { chalk } from '../shared/colors.ts';
 import { formatTimeAgo } from '../shared/time.ts';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import YAML from 'yaml';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -23,6 +28,7 @@ const execAsync = promisify(exec);
 interface MeshFlags {
   json?: boolean;
   force?: boolean;
+  strict?: boolean;
 }
 
 /**
@@ -36,6 +42,8 @@ function parseFlags(args: string[]): MeshFlags {
       flags.json = true;
     } else if (arg === '--force') {
       flags.force = true;
+    } else if (arg === '--strict') {
+      flags.strict = true;
     }
   }
 
@@ -539,6 +547,166 @@ async function killMeshWorkers(meshName: string, flags: MeshFlags): Promise<void
 }
 
 /**
+ * Show FSM state transition chain with validation
+ */
+async function fsmChain(meshName: string, flags: MeshFlags): Promise<void> {
+  const workDir = process.env.TX_CWD || process.cwd();
+
+  // Resolve config path
+  let configPath = path.join(workDir, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(workDir, 'meshes', meshName, 'config.yml');
+  }
+  if (!fs.existsSync(configPath)) {
+    console.error(chalk.red(`Config not found: meshes/${meshName}/config.yaml`));
+    return;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    console.error(chalk.red('Failed to parse config:'), (err as Error).message);
+    return;
+  }
+
+  const fsm = config.fsm as Record<string, unknown> | undefined;
+  if (!fsm || typeof fsm.states !== 'object' || !fsm.states) {
+    console.error(chalk.red(`Mesh '${meshName}' has no FSM configuration`));
+    return;
+  }
+
+  const statesObj = fsm.states as Record<string, unknown>;
+
+  // Helper: get agents for a state (normal + ensemble)
+  const getStateAgents = (state: Record<string, unknown>): string[] => {
+    const result: string[] = [];
+    if (Array.isArray(state.agents)) {
+      for (const a of state.agents) {
+        if (typeof a === 'string') result.push(a);
+      }
+    }
+    if (state.ensemble && typeof state.ensemble === 'object') {
+      const ens = state.ensemble as Record<string, unknown>;
+      if (Array.isArray(ens.agents)) {
+        for (const a of ens.agents) {
+          if (typeof a === 'string') result.push(a);
+        }
+      }
+      if (typeof ens.agent === 'string') {
+        const count = typeof ens.count === 'number' ? ens.count : '?';
+        result.push(`${ens.agent}×${count}`);
+      }
+    }
+    return result;
+  };
+
+  // Build chain output
+  const initial = fsm.initial as string;
+
+  if (flags.json) {
+    const states: Record<string, unknown>[] = [];
+    for (const [name, value] of Object.entries(statesObj)) {
+      if (!value || typeof value !== 'object') continue;
+      const state = value as Record<string, unknown>;
+      const agents = getStateAgents(state);
+      const targets: string[] = [];
+      if (state.exit && typeof state.exit === 'object') {
+        const exit = state.exit as Record<string, unknown>;
+        if (typeof exit.default === 'string') targets.push(exit.default);
+        if (Array.isArray(exit.when)) {
+          for (const c of exit.when) {
+            if (c && typeof c === 'object') {
+              const t = (c as Record<string, unknown>).target;
+              if (typeof t === 'string' && !targets.includes(t)) targets.push(t);
+            }
+          }
+        }
+      }
+      const isTerminal = (state as Record<string, unknown>).terminal === true;
+      const isEnsemble = state.ensemble !== undefined;
+      states.push({ name, agents, targets, initial: name === initial, terminal: isTerminal, ensemble: isEnsemble });
+    }
+
+    const result = MeshValidator.validate(config, path.basename(configPath));
+    console.log(JSON.stringify({ mesh: meshName, initial, states, errors: result.errors, warnings: result.warnings }, null, 2));
+    return;
+  }
+
+  // Formatted output
+  console.log(`\n${chalk.bold(chalk.cyan(`FSM Chain: ${meshName}`))}`);
+  console.log(chalk.dim(`Initial: ${initial}\n`));
+
+  for (const [name, value] of Object.entries(statesObj)) {
+    if (!value || typeof value !== 'object') continue;
+    const state = value as Record<string, unknown>;
+    const isTerminal = (state as Record<string, unknown>).terminal === true;
+    const isEnsemble = state.ensemble !== undefined;
+    const agents = getStateAgents(state);
+
+    // State label
+    const tags: string[] = [];
+    if (name === initial) tags.push(chalk.green('initial'));
+    if (isTerminal) tags.push(chalk.red('terminal'));
+    if (isEnsemble) tags.push(chalk.blue('ensemble'));
+    const tagStr = tags.length > 0 ? ` ${chalk.dim('(')}${tags.join(chalk.dim(', '))}${chalk.dim(')')}` : '';
+
+    // Agents
+    const agentStr = agents.length > 0 ? chalk.cyan(agents.join(', ')) : chalk.dim('none');
+
+    // Targets
+    const targets: string[] = [];
+    if (state.exit && typeof state.exit === 'object') {
+      const exit = state.exit as Record<string, unknown>;
+      if (Array.isArray(exit.when)) {
+        for (const c of exit.when) {
+          if (c && typeof c === 'object') {
+            const clause = c as Record<string, unknown>;
+            targets.push(`${clause.condition} → ${chalk.bold(clause.target as string)}`);
+          }
+        }
+      }
+      if (typeof exit.default === 'string') {
+        targets.push(`${chalk.dim('default')} → ${chalk.bold(exit.default)}`);
+      }
+    }
+
+    console.log(`  ${chalk.bold(name)}${tagStr}`);
+    console.log(`    agents: [${agentStr}]`);
+    if (targets.length > 0) {
+      for (const t of targets) {
+        console.log(`    ${chalk.dim('→')} ${t}`);
+      }
+    }
+    console.log();
+  }
+
+  // Run validation
+  const result = MeshValidator.validate(config, path.basename(configPath));
+  if (result.errors.length > 0) {
+    console.log(chalk.red(`✗ Errors (${result.errors.length})`));
+    for (const e of result.errors) {
+      console.log(`  ${chalk.red('•')} ${e}`);
+    }
+    console.log();
+  }
+  if (result.warnings.length > 0) {
+    console.log(chalk.yellow(`⚠ Warnings (${result.warnings.length})`));
+    for (const w of result.warnings) {
+      console.log(`  ${chalk.yellow('•')} ${w}`);
+    }
+    console.log();
+  }
+  if (result.errors.length === 0 && result.warnings.length === 0) {
+    console.log(chalk.green('✓ Valid — 0 errors, 0 warnings\n'));
+  } else if (result.errors.length === 0) {
+    console.log(chalk.green('✓ Valid') + chalk.dim(` (${result.warnings.length} warnings)\n`));
+  } else {
+    console.log(chalk.red(`✗ Invalid — ${result.errors.length} errors\n`));
+  }
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -550,10 +718,13 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('status')} <mesh>           Show mesh state snapshot
   ${chalk.cyan('kill')} <mesh>             Kill all workers for a mesh (via tmux)
   ${chalk.cyan('clear')} <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
+  ${chalk.cyan('validate')} <mesh>         Validate mesh configuration
+  ${chalk.cyan('fsm-chain')} <mesh>       Show FSM state transition chain with validation
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
   ${chalk.dim('--force')}                 Force clear even if workers are running
+  ${chalk.dim('--strict')}                Treat warnings as errors (validate only)
 
 ${chalk.bold('Examples:')}
   tx mesh list
@@ -605,6 +776,24 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await clearMeshState(meshName, flags);
+        break;
+
+      case 'validate':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name or path required'));
+          console.log(chalk.dim('Example: tx mesh validate narrative-engine'));
+          return;
+        }
+        await validateMesh(meshName, { strict: flags.strict });
+        break;
+
+      case 'fsm-chain':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh fsm-chain narrative-engine-fsm'));
+          return;
+        }
+        await fsmChain(meshName, flags);
         break;
 
       default:

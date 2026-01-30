@@ -14,7 +14,6 @@ import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
 import { server } from './server.ts';
-import { validateMesh } from './validate-mesh.ts';
 import { login } from './login.ts';
 import { logout } from './logout.ts';
 import { deploy } from './deploy.ts';
@@ -112,10 +111,9 @@ Commands:
   tx spy            Real-time activity stream
   tx tasks          View task queue
   tx session        View and search agent sessions
-  tx mesh           Manage mesh state
+  tx mesh           Manage mesh state (list, status, kill, clear, validate)
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
-  tx validate-mesh  Validate mesh configuration
   tx forensics      Analyze mesh execution sessions
   tx login          Authenticate with tx-server
   tx logout         Clear stored credentials
@@ -285,34 +283,6 @@ API Endpoints:
   PUT    /v1/meshes/:name          Update mesh (no-db compatible)
   POST   /v1/meshes/:name/validate Validate mesh (no-db compatible)`,
 
-  'validate-mesh': `tx validate-mesh - Validate mesh configuration
-
-Usage: tx validate-mesh <mesh-name|path> [options]
-
-Arguments:
-  mesh-name     Name of mesh in meshes/ directory
-  path          Direct path to config.yaml file
-
-Options:
-  --strict      Treat warnings as errors
-
-Examples:
-  tx validate-mesh mesh-builder
-  tx validate-mesh meshes/dev/config.yaml
-  tx validate-mesh my-mesh --strict
-
-Validates:
-  - Required fields (mesh, agents, entry_point)
-  - Agent configuration (name, model, prompt)
-  - Routing block structure and targets
-  - FSM states and transitions (if present)
-  - Config field types and values
-  - Unknown/deprecated fields
-
-Exit codes:
-  0 - Valid configuration
-  1 - Validation failed (errors or warnings in strict mode)`,
-
   login: `tx login - Authenticate with tx-server
 
 Usage: tx login [options]
@@ -434,10 +404,13 @@ Actions:
   status <mesh>           Show mesh state snapshot
   kill <mesh>             Kill all workers for a mesh (via tmux)
   clear <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
+  validate <mesh>         Validate mesh configuration
+  fsm-chain <mesh>        Show FSM state transition chain with validation
 
 Options:
   --json                  Output as JSON
   --force                 Force clear even if workers are running
+  --strict                Treat warnings as errors (validate only)
 
 Examples:
   tx mesh list
@@ -446,10 +419,15 @@ Examples:
   tx mesh kill narrative-engine
   tx mesh clear test-mesh
   tx mesh clear test-mesh --force
+  tx mesh validate narrative-engine
+  tx mesh validate my-mesh --strict
+  tx mesh fsm-chain narrative-engine-fsm
 
 Notes:
   - 'kill' stops active workers via tmux session termination
-  - 'clear' removes suspended sessions, pending asks, and FSM state from SQLite`,
+  - 'clear' removes suspended sessions, pending asks, and FSM state from SQLite
+  - 'validate' checks config.yaml for errors, warnings, and structural issues
+  - 'fsm-chain' shows state→agents→targets flow for FSM meshes`,
 
   forensics: `tx forensics - Analyze mesh execution sessions
 
@@ -650,10 +628,9 @@ async function main() {
       break;
 
     case 'validate-mesh':
-      if (wantsHelp || !args[0]) { showHelp('validate-mesh'); break; }
-      await validateMesh(args[0], {
-        strict: Boolean(flags.strict)
-      });
+      console.log('\n⚠ "tx validate-mesh" is deprecated. Use "tx mesh validate" instead.\n');
+      console.log(`  tx mesh validate ${args[0] || '<mesh>'} ${flags.strict ? '--strict' : ''}\n`);
+      process.exit(1);
       break;
 
     case 'login':
