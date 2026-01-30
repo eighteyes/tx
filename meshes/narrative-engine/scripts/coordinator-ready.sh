@@ -32,6 +32,34 @@ check_consultations() {
   done
 }
 
+# Validate campaign directory and key files exist
+check_campaign() {
+  local campaign_dir
+  campaign_dir=$(yq -r '.paths.campaign // ""' "$SESSION")
+
+  if [[ -z "$campaign_dir" || "$campaign_dir" == "null" ]]; then
+    echo "BLOCKED: paths.campaign not set in session.yaml"
+    exit 1
+  fi
+
+  # Resolve relative to TX_ROOT
+  local base="${TX_ROOT:-.}"
+  local full_path="${base}/${campaign_dir}"
+
+  if [[ ! -d "$full_path" ]]; then
+    echo "BLOCKED: campaign directory not found: ${full_path}"
+    exit 1
+  fi
+
+  local required_files=("continuity.yaml" "entities.yaml" "arc.yaml" "state.yaml")
+  for f in "${required_files[@]}"; do
+    if [[ ! -f "${full_path}/${f}" ]]; then
+      echo "BLOCKED: campaign file missing: ${f} in ${full_path}"
+      exit 1
+    fi
+  done
+}
+
 # Game creation - must have narrator response
 if [[ "$phase" == "game_creation" || "$phase" == "game_maker" ]]; then
   narrator_asked=$(yq -r '.consultations.narrator.asked // false' "$SESSION")
@@ -50,6 +78,7 @@ fi
 case "$phase" in
   awaiting_scribe|complete)
     check_consultations
+    check_campaign
     echo "READY: turn completion (phase: $phase)"
     exit 0
     ;;

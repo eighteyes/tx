@@ -95,7 +95,7 @@ agents:
     # Continuity validation + knowledge queries for entity data
 
   - name: scribe
-    model: haiku
+    model: sonnet
     prompt: scribe/prompt.md
     # Context compression, state management, game canon promotion
     # Only fires if oracle passes (or max iterations)
@@ -353,10 +353,10 @@ routing:
       narrator: "Fix violations"
 
 # ==========================================
-# WORKFLOW - File-centric I/O manifest (source of truth)
+# MANIFEST - File-centric I/O manifest (source of truth)
 # ==========================================
 
-workflow:
+manifest:
   # --- Session State ---
   - id: session.yaml
     description: Coordinator handoff state persisted across turns
@@ -458,7 +458,7 @@ workflow:
     location: game
     persistent: true
     reads: [system, narrator, oracle, scribe, calibrator]
-    writes: [system, scribe, calibrator]
+    writes: [scribe, calibrator]
 
   - id: story-corpus.txt
     description: Append-only full prose archive across all turns
@@ -472,7 +472,7 @@ workflow:
     location: game
     persistent: true
     reads: [lint-coordinator]
-    writes: [lint-forbidden-words]
+    writes: [scribe]
 
   # --- Campaign State ---
   - id: arc.yaml
@@ -480,35 +480,35 @@ workflow:
     location: campaign
     persistent: true
     reads: [dramaturg, system, prologue-coord, scribe, calibrator]
-    writes: [system, scribe, calibrator]
+    writes: [scribe, calibrator]
 
   - id: state.yaml
     description: Campaign mechanical state — active effects, conditions, resources
     location: campaign
     persistent: true
     reads: [dramaturg, system, scribe]
-    writes: [system, scribe]
+    writes: [scribe]
 
   - id: continuity.yaml
     description: Canonical facts, established details, and continuity anchors
     location: campaign
     persistent: true
     reads: [dramaturg, narrator, oracle, scribe, system]
-    writes: [system, scribe]
+    writes: [scribe]
 
   - id: history.md
     description: Narrative history log of completed turns
     location: campaign
     persistent: true
     reads: []
-    writes: [system]
+    writes: [scribe]
 
   - id: thread.md
     description: Active narrative threads and unresolved hooks
     location: campaign
     persistent: true
     reads: []
-    writes: [system]
+    writes: [scribe]
 
   - id: character-memory.yaml
     description: Per-character memory and relationship state
