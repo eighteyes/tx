@@ -87,13 +87,13 @@ export interface MeshConfigSchema {
   capabilities?: string[];
   frontmatter?: Record<string, unknown>;
   ensemble?: EnsembleConfig;
-  workflow?: WorkflowFileEntry[];
+  manifest?: ManifestEntry[];
 }
 
 /**
- * Workflow file entry - declares a file in the mesh workflow
+ * Manifest entry - declares a file in the mesh I/O manifest
  */
-export interface WorkflowFileEntry {
+export interface ManifestEntry {
   id: string;
   location?: string;
   persistent?: boolean;
@@ -187,8 +187,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   playbook_notes: { type: 'string' },
   // Debug mode: enables forensics postHook for mesh execution analysis
   debug: { type: 'boolean' },
-  // Workflow file manifest: declares files, their readers/writers, and locations
-  workflow: { type: 'array' },
+  // File manifest: declares files, their readers/writers, and locations
+  manifest: { type: 'array' },
 };
 
 /**
@@ -308,16 +308,17 @@ export class MeshValidator {
       this.validateTaskDistribution(cfg.task_distribution, cfg.agents, errors, warnings, context);
     }
 
-    // Validate workflow if present
-    if (cfg.workflow && Array.isArray(cfg.agents)) {
-      this.validateWorkflow(
-        cfg.workflow,
+    // Validate manifest if present
+    if (cfg.manifest && Array.isArray(cfg.agents)) {
+      this.validateManifest(
+        cfg.manifest,
         cfg.routing,
         cfg.agents,
         errors,
         warnings,
         context,
-        cfg.workspace
+        cfg.workspace,
+        cfg.fsm
       );
     }
 
@@ -983,22 +984,23 @@ export class MeshValidator {
   }
 
   /**
-   * Validate workflow file manifest against routing graph
+   * Validate file manifest against routing graph
    *
-   * Cross-references declared workflow files with routing to verify
+   * Cross-references declared manifest files with routing to verify
    * that readers have writers in their predecessor set.
    */
-  static validateWorkflow(
-    workflow: unknown,
+  static validateManifest(
+    manifest: unknown,
     routing: unknown,
     agents: unknown[],
     errors: string[],
     warnings: string[],
     context: string,
-    workspaceConfig?: unknown
+    workspaceConfig?: unknown,
+    fsm?: unknown
   ): void {
-    if (!Array.isArray(workflow)) {
-      errors.push(`workflow must be an array${context}`);
+    if (!Array.isArray(manifest)) {
+      errors.push(`manifest must be an array${context}`);
       return;
     }
 
@@ -1022,9 +1024,9 @@ export class MeshValidator {
     // Structural validation: check each entry
     const seenIds = new Set<string>();
 
-    for (let i = 0; i < workflow.length; i++) {
-      const entry = workflow[i];
-      const prefix = `workflow[${i}]`;
+    for (let i = 0; i < manifest.length; i++) {
+      const entry = manifest[i];
+      const prefix = `manifest[${i}]`;
 
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
         errors.push(`${prefix} must be an object${context}`);
@@ -1040,7 +1042,7 @@ export class MeshValidator {
       }
 
       if (seenIds.has(file.id)) {
-        errors.push(`${prefix}: duplicate workflow id '${file.id}'${context}`);
+        errors.push(`${prefix}: duplicate manifest id '${file.id}'${context}`);
       }
       seenIds.add(file.id);
 
@@ -1085,57 +1087,126 @@ export class MeshValidator {
       }
     }
 
-    // Ordering validation: only when routing is present
-    if (!routing || typeof routing !== 'object') return;
+    // Ordering validation: build execution graph from routing + FSM transitions
+    const hasFsm = fsm && typeof fsm === 'object' && !Array.isArray(fsm);
+    const hasRouting = routing && typeof routing === 'object';
+    if (!hasRouting && !hasFsm) return;
 
-    // Build execution graph from routing: extract directed edges (sender → target)
+    // Build execution graph: extract directed edges (sender → target)
     const edges = new Map<string, Set<string>>(); // agent → set of successors
-    const routingObj = routing as Record<string, unknown>;
 
-    for (const [sender, rules] of Object.entries(routingObj)) {
-      if (!rules || typeof rules !== 'object') continue;
-      const rulesObj = rules as Record<string, unknown>;
+    // Add routing edges
+    if (hasRouting) {
+      const routingObj = routing as Record<string, unknown>;
+      for (const [sender, rules] of Object.entries(routingObj)) {
+        if (!rules || typeof rules !== 'object') continue;
+        const rulesObj = rules as Record<string, unknown>;
 
-      for (const [, targets] of Object.entries(rulesObj)) {
-        if (!targets || typeof targets !== 'object') continue;
-        const targetsObj = targets as Record<string, unknown>;
+        for (const [, targets] of Object.entries(rulesObj)) {
+          if (!targets || typeof targets !== 'object') continue;
+          const targetsObj = targets as Record<string, unknown>;
 
-        for (const target of Object.keys(targetsObj)) {
-          if (target === 'core') continue; // core is not a mesh agent
-          if (!edges.has(sender)) edges.set(sender, new Set());
-          edges.get(sender)!.add(target);
-        }
-      }
-    }
-
-    // Compute predecessors via transitive closure of reverse edges
-    const predecessors = new Map<string, Set<string>>();
-
-    const getPredecessors = (agent: string): Set<string> => {
-      if (predecessors.has(agent)) return predecessors.get(agent)!;
-
-      const preds = new Set<string>();
-      predecessors.set(agent, preds); // set early to handle cycles
-
-      for (const [sender, targets] of edges) {
-        if (targets.has(agent)) {
-          preds.add(sender);
-          for (const p of getPredecessors(sender)) {
-            preds.add(p);
+          for (const target of Object.keys(targetsObj)) {
+            if (target === 'core') continue; // core is not a mesh agent
+            if (!edges.has(sender)) edges.set(sender, new Set());
+            edges.get(sender)!.add(target);
           }
         }
       }
-
-      return preds;
-    };
-
-    // Compute for all agents
-    for (const name of agentNames) {
-      getPredecessors(name);
     }
 
-    // Validate each workflow file: reader must have a writer predecessor
-    for (const entry of workflow) {
+    // Add FSM state transition edges: source state agents → target state agents
+    if (hasFsm) {
+      const fsmObj = fsm as Record<string, unknown>;
+      if (fsmObj.states && typeof fsmObj.states === 'object' && !Array.isArray(fsmObj.states)) {
+        const statesObj = fsmObj.states as Record<string, unknown>;
+
+        // Helper: get all agents for a state (normal + ensemble)
+        const getStateAgents = (stateName: string): string[] => {
+          const stateValue = statesObj[stateName];
+          if (!stateValue || typeof stateValue !== 'object') return [];
+          const state = stateValue as Record<string, unknown>;
+          const result: string[] = [];
+          if (Array.isArray(state.agents)) {
+            for (const a of state.agents) {
+              if (typeof a === 'string') result.push(a);
+            }
+          }
+          if (state.ensemble && typeof state.ensemble === 'object') {
+            const ens = state.ensemble as Record<string, unknown>;
+            if (Array.isArray(ens.agents)) {
+              for (const a of ens.agents) {
+                if (typeof a === 'string') result.push(a);
+              }
+            }
+            if (typeof ens.agent === 'string') result.push(ens.agent);
+          }
+          return result;
+        };
+
+        for (const [stateName, stateValue] of Object.entries(statesObj)) {
+          if (!stateValue || typeof stateValue !== 'object') continue;
+          const state = stateValue as Record<string, unknown>;
+          const sourceAgents = getStateAgents(stateName);
+          if (sourceAgents.length === 0) continue;
+
+          // Collect target state names from exit.default and exit.when[].target
+          const targetStates = new Set<string>();
+          if (state.exit && typeof state.exit === 'object') {
+            const exit = state.exit as Record<string, unknown>;
+            if (typeof exit.default === 'string') targetStates.add(exit.default);
+            if (Array.isArray(exit.when)) {
+              for (const clause of exit.when) {
+                if (clause && typeof clause === 'object') {
+                  const target = (clause as Record<string, unknown>).target;
+                  if (typeof target === 'string') targetStates.add(target);
+                }
+              }
+            }
+          }
+
+          // Add edges: each source agent → each target state agent
+          for (const targetStateName of targetStates) {
+            const targetAgents = getStateAgents(targetStateName);
+            for (const src of sourceAgents) {
+              for (const tgt of targetAgents) {
+                if (src === tgt) continue;
+                if (!edges.has(src)) edges.set(src, new Set());
+                edges.get(src)!.add(tgt);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Build reverse edge map for BFS predecessor computation
+    const reverseEdges = new Map<string, Set<string>>();
+    for (const [src, targets] of edges) {
+      for (const tgt of targets) {
+        if (!reverseEdges.has(tgt)) reverseEdges.set(tgt, new Set());
+        reverseEdges.get(tgt)!.add(src);
+      }
+    }
+
+    // BFS predecessors per agent (handles cycles correctly)
+    const predecessors = new Map<string, Set<string>>();
+    for (const name of agentNames) {
+      const preds = new Set<string>();
+      const queue = [...(reverseEdges.get(name) || [])];
+      while (queue.length > 0) {
+        const pred = queue.shift()!;
+        if (preds.has(pred)) continue;
+        preds.add(pred);
+        for (const grandpred of reverseEdges.get(pred) || []) {
+          if (!preds.has(grandpred)) queue.push(grandpred);
+        }
+      }
+      predecessors.set(name, preds);
+    }
+
+    // Validate each manifest file: reader must have a writer predecessor
+    for (const entry of manifest) {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
       const file = entry as Record<string, unknown>;
       if (!file.id || typeof file.id !== 'string') continue;
@@ -1161,7 +1232,7 @@ export class MeshValidator {
 
         if (!hasWriterPredecessor) {
           warnings.push(
-            `workflow '${file.id}': reader '${reader}' has no writer predecessor in routing${context}`
+            `manifest '${file.id}': reader '${reader}' has no writer predecessor in routing${context}`
           );
         }
       }
