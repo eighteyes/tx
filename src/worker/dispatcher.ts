@@ -3334,7 +3334,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         meshName,
         config.fsm!,
         this.queue.getDatabase(),
-        config._basePath || this.config.workDir
+        config._basePath || this.config.workDir,
+        this.config.workDir
       );
 
       // Wire FSM events using consolidated helper
@@ -3386,7 +3387,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           meshName,
           config.fsm,
           this.queue.getDatabase(),
-          config._basePath || this.config.workDir  // Use mesh directory for script resolution
+          config._basePath || this.config.workDir,
+          this.config.workDir
         );
 
         // Wire FSM events using consolidated helper

@@ -470,11 +470,13 @@ async function main() {
   const wantsHelp = Boolean(flags.h || flags.help);
 
   // Block AI agents from running commands that spawn mesh workers
+  // --force bypasses this guard (for supervised Claude Code sessions)
   const blockedCommands = ['start', 'run', 'msg'];
-  if (process.env.CLAUDECODE === '1' && blockedCommands.includes(command)) {
+  if (process.env.CLAUDECODE === '1' && blockedCommands.includes(command) && !flags.force) {
     console.error('\n🚫 AI USE NOT ALLOWED\n');
     console.error(`The "${command}" command cannot be run from Claude Code.`);
-    console.error('These commands spawn mesh workers that would create recursive AI calls.\n');
+    console.error('These commands spawn mesh workers that would create recursive AI calls.');
+    console.error('Use --force to override (supervised sessions only).\n');
     process.exit(1);
   }
 

@@ -134,27 +134,33 @@ export class MeshFSM extends EventEmitter {
   private msgsDir: string; // Directory for writing feedback messages
   private violationTracker: Map<string, FSMViolation> = new Map(); // Track violations per agent for self-heal
   private contextDescriptions: Record<string, string>; // Human-readable descriptions for context variables
+  private workDir: string; // Project/mesh root for resolving relative paths
 
   constructor(
     meshName: string,
     config: FSMConfig,
     db: Database.Database,
-    workDir: string
+    workDir: string,
+    projectRoot?: string
   ) {
     super();
     this.meshName = meshName;
     this.config = config;
+    this.workDir = projectRoot || workDir;
     this.persistence = new FSMPersistence(db);
     this.scriptExecutor = new ScriptExecutor({ workDir });
     this.conditionEvaluator = new ConditionEvaluator();
     this.expressionEvaluator = new SimpleExpressionEvaluator();
-    this.msgsDir = path.join(workDir, '.ai', 'tx', 'msgs');
+    this.msgsDir = path.join(this.workDir, '.ai', 'tx', 'msgs');
 
     // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
     this._initialState = config.initialState || config.initial || '';
 
     // Store context descriptions for injection into prompts
     this.contextDescriptions = config.context_descriptions || {};
+
+    // Bind the helper so gate resolution works at any call site
+    this.resolveGatePath = this.resolveGatePath.bind(this);
 
     // Build state lookup map - support both array and object formats
     this.stateMap = new Map();
@@ -180,6 +186,31 @@ export class MeshFSM extends EventEmitter {
         this.stateMap.set(name, normalizedState);
       }
     }
+  }
+
+  /**
+   * Resolve $variable references in gate paths using FSM context.
+   * Falls back to workDir for unresolved $workspace.
+   * Relative results resolve against workDir.
+   */
+  private resolveGatePath(gateName: string): string {
+    let resolved = gateName;
+    // Replace $variable references from FSM context
+    const context = this.stateData?.context || {};
+    for (const [key, value] of Object.entries(context)) {
+      if (typeof value === 'string' || typeof value === 'number') {
+        resolved = resolved.replace(new RegExp(`\\$${key}\\b`, 'g'), String(value));
+      }
+    }
+    // Fallback: if $workspace still present, use workDir
+    if (resolved.includes('$workspace')) {
+      resolved = resolved.replace(/\$workspace/g, this.workDir);
+    }
+    // Resolve relative paths against workDir
+    if (!path.isAbsolute(resolved)) {
+      resolved = path.join(this.workDir, resolved);
+    }
+    return resolved;
   }
 
   /**
@@ -873,12 +904,10 @@ export class MeshFSM extends EventEmitter {
               ...this.stateData.context,
             };
 
-            // Check if gate is a file path reference (starts with $workspace or is a path)
+            // Check if gate is a file path reference (starts with $variable or contains /)
             if (gateName.startsWith('$') || gateName.includes('/')) {
               // File existence check gate
-              const filePath = gateName.startsWith('$workspace')
-                ? gateName.replace('$workspace', this.scriptExecutor['config'].workDir)
-                : gateName;
+              const filePath = this.resolveGatePath(gateName);
 
               const fs = await import('node:fs');
               if (!fs.existsSync(filePath)) {
@@ -1195,9 +1224,7 @@ export class MeshFSM extends EventEmitter {
         // Check if gate is a file path reference (starts with $ or contains /)
         if (gateName.startsWith('$') || gateName.includes('/')) {
           gateType = 'file-exists';
-          const filePath = gateName.startsWith('$workspace')
-            ? gateName.replace('$workspace', this.scriptExecutor['config'].workDir)
-            : gateName;
+          const filePath = this.resolveGatePath(gateName);
 
           const fs = await import('node:fs');
           if (fs.existsSync(filePath)) {

@@ -28,6 +28,8 @@ import type { SemanticModel } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
+import { injectRoutingInstructions } from '../prompt/sections/routing.ts';
+import type { ManifestEntry } from './mesh-validator.ts';
 
 interface AgentConfig {
   name: string;
@@ -52,6 +54,8 @@ interface MeshConfig {
   toolRestriction?: ToolRestriction;
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit
   iteration?: IterationConfig;  // Iteration config for quality gates
+  routing?: Record<string, Record<string, Record<string, string>>>;  // agent → status → destination → reason
+  manifest?: ManifestEntry[];  // File I/O manifest
   lifecycle?: {
     pre?: string[];
     post?: string[];
@@ -197,20 +201,40 @@ export class HeadlessRunner extends EventEmitter {
       }
     }
 
-    // Build system prompt
+    // Build system prompt (mirrors dispatcher injection order)
     let systemPrompt = this.loadPrompt();
+    systemPrompt = this.promptInjector.injectPreamble(systemPrompt, {
+      agentCount: this.meshConfig.agents.length,
+      meshName: this.config.mesh,
+      agentName: this.config.agent,
+    });
     systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
-    // Add headless mode context
+    // Inject routing from mesh config
+    const agentRouting = this.meshConfig.routing?.[this.config.agent];
+    if (agentRouting && Object.keys(agentRouting).length > 0) {
+      systemPrompt = injectRoutingInstructions(systemPrompt, agentRouting, this.config.mesh);
+      log.info('headless-runner', 'Injected routing', { agentId, routes: Object.keys(agentRouting) });
+    }
+
+    // Inject file manifest contract
+    if (this.meshConfig.manifest) {
+      const reads: string[] = [];
+      const writes: string[] = [];
+      for (const entry of this.meshConfig.manifest) {
+        if (entry.reads.includes(this.config.agent)) reads.push(entry.id);
+        if (entry.writes.includes(this.config.agent)) writes.push(entry.id);
+      }
+      if (reads.length > 0 || writes.length > 0) {
+        systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
+      }
+    }
+
+    // Add headless mode context (informational — routing table is authoritative)
     systemPrompt += `\n\n## Headless Run Mode\n`;
     systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
     systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
     systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
-    systemPrompt += `\n### Headless Routing\n`;
-    systemPrompt += `In headless mode, there is NO core agent. Route messages to the user instead:\n`;
-    systemPrompt += `- **task-complete**: Write to \`user/repl\` (NOT core/core)\n`;
-    systemPrompt += `- **ask-human**: Write to \`user/repl\` for user input\n`;
-    systemPrompt += `- **ask**: Write to other agents in this mesh if needed\n`;
 
     const runnerConfig: SdkRunnerConfig = {
       id: agentId,
@@ -349,20 +373,39 @@ export class HeadlessRunner extends EventEmitter {
       this.hookContext.taskBody = taskBody;
     }
 
-    // Build system prompt
+    // Build system prompt (mirrors dispatcher injection order)
     let systemPrompt = this.loadPrompt();
+    systemPrompt = this.promptInjector.injectPreamble(systemPrompt, {
+      agentCount: this.meshConfig.agents.length,
+      meshName: this.config.mesh,
+      agentName: this.config.agent,
+    });
     systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
 
-    // Add headless mode context
+    // Inject routing from mesh config
+    const agentRouting = this.meshConfig.routing?.[this.config.agent];
+    if (agentRouting && Object.keys(agentRouting).length > 0) {
+      systemPrompt = injectRoutingInstructions(systemPrompt, agentRouting, this.config.mesh);
+    }
+
+    // Inject file manifest contract
+    if (this.meshConfig.manifest) {
+      const reads: string[] = [];
+      const writes: string[] = [];
+      for (const entry of this.meshConfig.manifest) {
+        if (entry.reads.includes(this.config.agent)) reads.push(entry.id);
+        if (entry.writes.includes(this.config.agent)) writes.push(entry.id);
+      }
+      if (reads.length > 0 || writes.length > 0) {
+        systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
+      }
+    }
+
+    // Add headless mode context (informational — routing table is authoritative)
     systemPrompt += `\n\n## Headless Run Mode\n`;
     systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
     systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
     systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
-    systemPrompt += `\n### Headless Routing\n`;
-    systemPrompt += `In headless mode, there is NO core agent. Route messages to the user instead:\n`;
-    systemPrompt += `- **task-complete**: Write to \`user/repl\` (NOT core/core)\n`;
-    systemPrompt += `- **ask-human**: Write to \`user/repl\` for user input\n`;
-    systemPrompt += `- **ask**: Write to other agents in this mesh if needed\n`;
 
     // Add quality iteration context if this is a retry
     if (this.currentIteration > 1) {

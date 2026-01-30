@@ -388,7 +388,8 @@ export class MeshManager extends EventEmitter {
         meshName,
         config.fsm!,
         this.database,
-        config._basePath || this.config.workDir
+        config._basePath || this.config.workDir,
+        this.config.workDir
       );
 
       // Wire FSM events for observability
