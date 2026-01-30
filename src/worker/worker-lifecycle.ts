@@ -270,6 +270,20 @@ export class WorkerLifecycleManager {
   }
 
   /**
+   * Get all active agent IDs belonging to a specific mesh
+   * Used by deferred mesh completion to check if workers are still running
+   */
+  getWorkersForMesh(meshName: string): string[] {
+    const result: string[] = [];
+    for (const [agentId, workers] of this.activeWorkers) {
+      if (agentId.startsWith(`${meshName}/`) && workers.length > 0) {
+        result.push(agentId);
+      }
+    }
+    return result;
+  }
+
+  /**
    * Iterate over all workers
    */
   *entries(): IterableIterator<[string, ActiveWorker[]]> {
