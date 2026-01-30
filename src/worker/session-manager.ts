@@ -355,6 +355,48 @@ export class SessionManager extends EventEmitter {
         reason: s.reason,
         suspendedFor: Date.now() - s.suspendedAt,
       });
+
+      // Re-buffer: find delivered ask-response messages from target agents
+      if (s.reason === 'await-response' && s.targetAgents?.length) {
+        const targetAgentIds = s.targetAgents.map(t => {
+          // targetAgents may be short names; qualify with mesh if needed
+          return t.includes('/') ? t : `${s.meshName}/${t}`;
+        });
+
+        const deliveredResponses = this.queue.getDeliveredResponses(targetAgentIds);
+        let rebuffered = 0;
+
+        for (const msg of deliveredResponses) {
+          // Only re-buffer if this response is addressed to the suspended agent
+          if (msg.to_agent === s.agentId) {
+            const content = (msg.payload as Record<string, unknown>).content as string || '';
+            const headline = (msg.payload as Record<string, unknown>).headline as string | undefined;
+
+            this.bufferResponse(s.agentId, {
+              from: msg.from_agent,
+              content,
+              headline,
+            });
+
+            // Remove from target set and decrement pending count
+            const suspended = this.suspendedSessions.get(s.agentId);
+            if (suspended) {
+              suspended.targetAgents.delete(msg.from_agent);
+              suspended.pendingResponseCount = suspended.targetAgents.size;
+            }
+            rebuffered++;
+          }
+        }
+
+        if (rebuffered > 0) {
+          const suspended = this.suspendedSessions.get(s.agentId);
+          log.info('session-manager', 'Re-buffered responses on crash recovery', {
+            agentId: s.agentId,
+            rebuffered,
+            remainingPending: suspended?.pendingResponseCount ?? 0,
+          });
+        }
+      }
     }
 
     if (dbSessions.length > 0) {

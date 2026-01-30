@@ -328,8 +328,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       log.info('start', `Marked ${staleCount} stale pending messages as failed`);
     }
   }
-  // Note: Sessions are preserved across restarts for crash recovery
-  // Previously: queue.clearAllSessions() - removed to support resume
+  // Clear all suspended sessions — stale sessions from previous games cause cross-contamination
+  queue.clearAllSessions();
 
   log.info('start', 'Processed pending messages from previous session');
 

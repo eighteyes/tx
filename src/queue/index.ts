@@ -897,6 +897,39 @@ export class MessageQueue {
   }
 
   // ============================================
+  // Crash Recovery: Response Re-buffering
+  // ============================================
+
+  /**
+   * Find delivered ask-response messages sent by specific agents
+   * Used during crash recovery to re-buffer responses for suspended sessions
+   */
+  getDeliveredResponses(fromAgents: string[]): Message[] {
+    if (fromAgents.length === 0) return [];
+
+    const placeholders = fromAgents.map(() => '?').join(',');
+    const rows = this.db.prepare(`
+      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      FROM messages
+      WHERE from_agent IN (${placeholders})
+        AND type = 'ask-response'
+        AND status = 'delivered'
+      ORDER BY created_at ASC
+    `).all(...fromAgents) as MessageRow[];
+
+    return rows.map(row => ({
+      id: row.id,
+      from_agent: row.from_agent,
+      to_agent: row.to_agent,
+      type: row.type,
+      status: row.status as 'delivered',
+      payload: JSON.parse(row.payload),
+      created_at: row.created_at,
+      delivered_at: row.delivered_at ?? undefined,
+    }));
+  }
+
+  // ============================================
   // Crash Recovery: Suspended Sessions
   // ============================================
 
