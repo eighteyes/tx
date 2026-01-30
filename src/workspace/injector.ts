@@ -24,6 +24,8 @@ export interface InjectionContext {
 
 export interface PreambleContext {
   agentCount: number;  // Number of agents in the mesh
+  meshName: string;    // Mesh this agent belongs to
+  agentName: string;   // Agent name within the mesh
 }
 
 /**
@@ -76,7 +78,8 @@ export class PromptInjector {
    */
   injectPreamble(basePrompt: string, context: PreambleContext): string {
     const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
-    return `${preamble}\n\n${basePrompt}`;
+    const identity = `\n\n# Your Address\nYour fully qualified agent address is \`${context.meshName}/${context.agentName}\`. Always use this as the \`from:\` field in every message you write.`;
+    return `${preamble}${identity}\n\n${basePrompt}`;
   }
 
   /**
@@ -125,7 +128,7 @@ export class PromptInjector {
     parts.push('## Writing to Workspace\n');
     parts.push('Use the Write tool with full paths to create files in your workspace:');
     parts.push('```');
-    parts.push(`Write: file_path="${workspace.dir}/filename.md"`);
+    parts.push(`Write: file_path="${join(workspace.dir, 'filename.md')}"`);
     parts.push('```\n');
 
     return parts.join('\n');
@@ -163,6 +166,28 @@ export class PromptInjector {
     }
 
     return parts.join('\n');
+  }
+
+  /**
+   * Inject file manifest contract into a system prompt
+   * Tells the agent exactly which files it reads and writes
+   */
+  injectFileManifest(basePrompt: string, reads: string[], writes: string[]): string {
+    if (reads.length === 0 && writes.length === 0) return basePrompt;
+
+    const parts: string[] = [];
+    parts.push('# File Contract\n');
+
+    if (writes.length > 0) {
+      parts.push(`**You write:** ${writes.map(f => `\`${f}\``).join(', ')}`);
+    }
+    if (reads.length > 0) {
+      parts.push(`**You read:** ${reads.map(f => `\`${f}\``).join(', ')}`);
+    }
+
+    parts.push('\nWrite ONLY the files listed above. Use exact filenames in your workspace directory.');
+
+    return `${basePrompt}\n\n${parts.join('\n')}`;
   }
 
   /**

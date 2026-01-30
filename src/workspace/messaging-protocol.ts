@@ -20,7 +20,7 @@ Example: \`1733901000-brain-brain--core-core-abc123.md\`
 ---
 # Required fields
 to: mesh/agent           # Recipient (e.g., brain/brain, core/core)
-from: mesh/agent         # Sender (your agent ID)
+from: mesh/agent         # Sender — use your full address from "Your Address" above
 msg-id: unique-id        # For correlation
 
 # Optional fields
