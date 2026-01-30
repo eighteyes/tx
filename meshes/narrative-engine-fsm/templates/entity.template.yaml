@@ -1,0 +1,146 @@
+# Entity Template - Universal Schema
+# Copy this template to create any entity type
+# Place in: .ai/games/{game-id}/entities/{type}s/{entity-id}.yaml
+#
+# Entity Types:
+# - character → entities/characters/
+# - location → entities/locations/
+# - item → entities/items/
+# - faction → entities/factions/
+# - world-rule → entities/world-rules/
+
+id: entity-id                     # kebab-case identifier
+type: character                   # character | location | item | faction | world-rule
+name: "Human Readable Name"
+
+# ============================================
+# TRAITS - Stable properties (rarely change)
+# ============================================
+# What this entity IS at its core.
+# Scribe should NEVER modify traits - they're established canon.
+
+traits:
+  # Common trait patterns by type:
+  #
+  # CHARACTER:
+  #   personality: [cautious, loyal, sardonic]
+  #   background: "Former soldier, now innkeeper"
+  #   skills: [combat, negotiation]
+  #   secrets: ["Knows where the treasure is buried"]
+  #
+  # LOCATION:
+  #   atmosphere: [dim, oppressive, ancient]
+  #   features: [hidden door, crumbling walls]
+  #   constraints: "Only accessible at low tide"
+  #
+  # ITEM:
+  #   properties: [silver, enchanted, fragile]
+  #   origin: "Forged by the old masters"
+  #   restrictions: "Only responds to royal blood"
+  #
+  # FACTION:
+  #   ideology: "Preserve the old ways at any cost"
+  #   resources: [spies, gold, political influence]
+  #   methods: [blackmail, assassination, bribery]
+  #
+  # WORLD-RULE:
+  #   domain: magic | physics | social
+  #   constraints: ["Spells require verbal component"]
+  #   exceptions: ["Ancient artifacts bypass verbal requirement"]
+
+# ============================================
+# LAYERS - Progressive disclosure (grows)
+# ============================================
+# Details revealed over time. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as entity evolves through episodes.
+# Layer placement is SEMANTIC (visibility), not chronological.
+
+layers:
+  first_glance: []
+    # Immediately visible on first encounter
+    # Physical appearance, obvious behavior, surface impression
+    # Examples:
+    # - "Tall, moves like someone used to being watched"
+    # - "The shop smells of copper and old paper"
+    # - "A blade with a notched edge, wrapped in oiled cloth"
+
+  familiar: []
+    # Noticed on repeat exposure or closer attention
+    # Habits, quirks, details that emerge with familiarity
+    # Examples:
+    # - "That nervous habit of touching her collar"
+    # - "The postcard pinned behind the counter — foreign script"
+    # - "The balance is wrong, weighted toward the pommel"
+
+  intimate: []
+    # Revealed through time, trust, or significant events
+    # Internal truths, hidden aspects, deep secrets made visible
+    # Examples:
+    # - "The photograph she keeps face-down"
+    # - "The locked drawer she never opens when anyone's looking"
+    # - "The inscription on the tang, worn almost smooth"
+
+# Layer evolution rules:
+# - Physical changes (scars, new clothing) → first_glance
+# - Behavioral patterns (habits, tells) → familiar
+# - Internal truths (secrets, fears made manifest) → intimate
+# - Scribe places new details in appropriate layer after episodes
+
+# ============================================
+# EPISODES - Dynamic event history (grows)
+# ============================================
+# What has HAPPENED to this entity during play.
+# Scribe APPENDS new episodes after each turn.
+
+episodes: []
+  # Episode format:
+  # - turn: 5
+  #   event: "Brief description of what happened"
+  #   state_change:
+  #     key: value
+  #
+  # Examples:
+  # - turn: 3
+  #   event: "Protagonist earned trust by keeping secret"
+  #   state_change:
+  #     trust_level: 2
+  #
+  # - turn: 7
+  #   event: "Blade cracked against iron gate"
+  #   state_change:
+  #     condition: damaged
+  #
+  # - turn: 12
+  #   event: "Location flooded during storm"
+  #   state_change:
+  #     access: blocked
+
+# ============================================
+# CURRENT_STATE - Computed from episodes
+# ============================================
+# The entity's present condition.
+# Scribe UPDATES this based on latest episodes.
+
+current_state: {}
+  # Common state fields by type:
+  #
+  # CHARACTER:
+  #   status: alive | dead | missing
+  #   condition: healthy | injured | critical
+  #   trust_level: 0-5 (toward protagonist)
+  #   location: location-id
+  #
+  # LOCATION:
+  #   access: open | restricted | blocked
+  #   condition: pristine | damaged | destroyed
+  #   occupants: [entity-id, entity-id]
+  #
+  # ITEM:
+  #   holder: entity-id | null
+  #   condition: pristine | worn | damaged | destroyed
+  #   bond_level: 0-5 (for bonded items)
+  #
+  # FACTION:
+  #   stance_toward_protagonist: hostile | neutral | friendly
+  #   power_level: rising | stable | declining
+  #   known_to_protagonist: true | false

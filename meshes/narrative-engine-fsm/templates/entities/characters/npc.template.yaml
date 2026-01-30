@@ -1,0 +1,112 @@
+# Character Entity Template
+# Copy to: .ai/games/{game-id}/entities/characters/{character-id}.yaml
+
+id: character-id
+type: character
+name: "Character Name"
+
+# ============================================
+# TRAITS - Who this character IS
+# ============================================
+traits:
+  # Personality - core behavioral patterns
+  personality: []
+    # Examples: [cautious, loyal, sardonic, impulsive, calculating]
+
+  # Background - established history
+  background: ""
+    # Example: "Former soldier who lost their unit in the Sundering"
+
+  # Skills - what they're capable of
+  skills: []
+    # Examples: [combat, negotiation, stealth, medicine, tracking]
+
+  # Secrets - things they hide (even from player initially)
+  secrets: []
+    # Examples:
+    # - "Witnessed the murder but won't speak"
+    # - "Is actually the missing heir"
+
+  # Physical appearance for VISUAL blocks
+  appearance:
+    age: ""                     # "early 30s", "teenage", "elderly"
+    ethnicity: ""               # "East Asian", "Black", "South Asian", etc.
+    build: ""                   # "slight", "athletic", "heavyset", "wiry"
+    hair: ""                    # "short black curls", "long gray braid"
+    distinguishing: []          # ["scar across left cheek", "always wears red"]
+
+  # Voice profile - how this character SPEAKS (for CAST agent)
+  voice:
+    cadence: ""                 # staccato | measured | flowing | explosive
+    register: ""                # formal | casual | street | archaic | technical
+    directness: ""              # blunt | diplomatic | evasive | cryptic
+    verbosity: ""               # terse | balanced | verbose | rambling
+    signature_phrases: []       # ["Well now, that's...", "Mind the step"]
+    vocabulary:
+      favored: []               # [hearth, proper, tending]
+      forbidden: []             # [never swears, avoids direct answers]
+    emotional_tells:
+      fear: ""                  # "Sentences trail off, busies hands"
+      anger: ""                 # "Gets quieter, more formal"
+      affection: ""             # "Offers food, uses endearments"
+
+# ============================================
+# LAYERS - Progressive disclosure
+# ============================================
+# Details revealed over time. NARRATOR draws from unrevealed pool.
+# Scribe ADDS new details as character evolves through episodes.
+layers:
+  first_glance: []
+    # Immediately visible on first encounter
+    # Examples:
+    # - "Tall, moves like someone used to being watched"
+    # - "Calloused hands that never quite rest"
+    # - "Eyes that track every exit"
+
+  familiar: []
+    # Noticed on repeat exposure or closer attention
+    # Examples:
+    # - "That nervous habit of touching her collar when lying"
+    # - "The way she always sits facing the door"
+    # - "Her voice drops half an octave when she's afraid"
+
+  intimate: []
+    # Revealed through time, trust, or significant events
+    # Examples:
+    # - "The photograph she keeps face-down by her bed"
+    # - "The name she whispers when she thinks no one hears"
+    # - "The scar she hides beneath her sleeve"
+
+# ============================================
+# EPISODES - What has happened to them
+# ============================================
+episodes: []
+  # - turn: 3
+  #   event: "Revealed they witnessed the murder"
+  #   state_change:
+  #     secret_revealed: "murder_witness"
+  # - turn: 7
+  #   event: "Protagonist helped protect their child"
+  #   state_change:
+  #     trust_level: 3
+
+# ============================================
+# CURRENT_STATE - Their present condition
+# ============================================
+current_state:
+  status: alive                 # alive | dead | missing | unknown
+  condition: healthy            # healthy | injured | critical
+  location: null                # location-id where they currently are
+  trust_level: 0                # 0-5, protagonist relationship
+  disposition: neutral          # hostile | suspicious | neutral | friendly | devoted
+
+# Bonds - relationships to other entities
+bonds: []
+  # - target: protagonist
+  #   type: suspicious_of
+  # - target: hidden-child
+  #   type: protecting
+
+# Wants/Fears - motivation drivers
+wants: ""                       # "Keep the child safe"
+fears: ""                       # "The investigators discovering the cellar"
