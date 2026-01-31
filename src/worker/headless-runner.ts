@@ -24,12 +24,14 @@ import {
   QualityExhaustedError,
   type HookContext,
 } from './hooks.ts';
-import type { SemanticModel } from '../shared/types.ts';
+import type { SemanticModel, FSMStateConfig } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 import { injectRoutingInstructions } from '../prompt/sections/routing.ts';
+import { FSMPersistence } from '../queue/index.ts';
 import type { ManifestEntry } from './mesh-validator.ts';
+import type { FSMInjectionContext } from '../workspace/injector.ts';
 
 interface AgentConfig {
   name: string;
@@ -56,6 +58,8 @@ interface MeshConfig {
   iteration?: IterationConfig;  // Iteration config for quality gates
   routing?: Record<string, Record<string, Record<string, string>>>;  // agent → status → destination → reason
   manifest?: ManifestEntry[];  // File I/O manifest
+  fsm?: any;  // FSM config (for context injection)
+  workspace?: { path?: string; locations?: Record<string, string> };
   lifecycle?: {
     pre?: string[];
     post?: string[];
@@ -230,6 +234,12 @@ export class HeadlessRunner extends EventEmitter {
       }
     }
 
+    // Inject FSM context if mesh has FSM config
+    systemPrompt = this.injectFSMContextIfAvailable(systemPrompt);
+
+    // Inject workspace context if configured
+    systemPrompt = this.injectWorkspaceContext(systemPrompt);
+
     // Add headless mode context (informational — routing table is authoritative)
     systemPrompt += `\n\n## Headless Run Mode\n`;
     systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
@@ -400,6 +410,12 @@ export class HeadlessRunner extends EventEmitter {
         systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
       }
     }
+
+    // Inject FSM context if mesh has FSM config
+    systemPrompt = this.injectFSMContextIfAvailable(systemPrompt);
+
+    // Inject workspace context if configured
+    systemPrompt = this.injectWorkspaceContext(systemPrompt);
 
     // Add headless mode context (informational — routing table is authoritative)
     systemPrompt += `\n\n## Headless Run Mode\n`;
@@ -760,6 +776,81 @@ ${feedback}
     }
 
     return fs.readFileSync(promptPath, 'utf-8');
+  }
+
+  /**
+   * Inject FSM context into prompt if mesh has FSM config and persisted state
+   */
+  private injectFSMContextIfAvailable(systemPrompt: string): string {
+    if (!this.meshConfig?.fsm) return systemPrompt;
+
+    try {
+      const persistence = new FSMPersistence(this.queue.getDb());
+      persistence.initialize();
+      const stateData = persistence.getState(this.config.mesh);
+      if (!stateData) return systemPrompt;
+
+      // Find current state config
+      const states = this.meshConfig.fsm.states;
+      let stateConfig: FSMStateConfig | undefined;
+      if (Array.isArray(states)) {
+        stateConfig = states.find((s: any) => s.name === stateData.currentState);
+      } else if (states && typeof states === 'object') {
+        const raw = (states as Record<string, any>)[stateData.currentState];
+        if (raw) stateConfig = { name: stateData.currentState, ...raw } as FSMStateConfig;
+      }
+
+      if (!stateConfig) return systemPrompt;
+
+      const fsmContext: FSMInjectionContext = {
+        meshName: this.config.mesh,
+        currentState: stateData.currentState,
+        stateConfig,
+        context: stateData.context || {},
+        contextDescriptions: this.meshConfig.fsm.context_descriptions,
+        gateRetries: stateData.gateRetries,
+      };
+
+      systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
+      log.info('headless-runner', 'Injected FSM context', {
+        mesh: this.config.mesh,
+        state: stateData.currentState,
+      });
+    } catch (err) {
+      log.warn('headless-runner', 'Failed to inject FSM context', {
+        error: (err as Error).message,
+      });
+    }
+    return systemPrompt;
+  }
+
+  /**
+   * Inject workspace context into prompt if mesh has workspace config
+   */
+  private injectWorkspaceContext(systemPrompt: string): string {
+    const wsConfig = this.meshConfig?.workspace;
+    if (!wsConfig?.path) return systemPrompt;
+
+    const wsDir = path.resolve(this.config.workDir, wsConfig.path);
+
+    // Create workspace dir if needed
+    if (!fs.existsSync(wsDir)) {
+      fs.mkdirSync(wsDir, { recursive: true });
+    }
+
+    // Build a simple workspace section (without the full WorkspaceManager)
+    const section = [
+      '\n# Task Workspace\n',
+      `You have a dedicated workspace for this task at: \`${wsDir}\`\n`,
+      'You can create any files you need in this workspace.\n',
+      '## Writing to Workspace\n',
+      `Use the Write tool with full paths to create files in your workspace:`,
+      '```',
+      `Write: file_path="${wsDir}/filename.md"`,
+      '```\n',
+    ].join('\n');
+
+    return systemPrompt + section;
   }
 
   /**

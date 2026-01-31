@@ -8,9 +8,12 @@
  *   tx mesh clear <mesh>      Clear SQLite state (suspended sessions, pending asks, FSM)
  *   tx mesh validate <mesh>   Validate mesh configuration
  *   tx mesh fsm-chain <mesh>  Show FSM state transition chain with validation
+ *   tx mesh fsm-reset <mesh>  Reset FSM to initial state (preserves sessions)
+ *   tx mesh fsm-goto <mesh> <state>  Force FSM to a specific state
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
+import { MeshFSM } from '../mesh/index.ts';
 import { SessionStore } from '../session/index.ts';
 import { validateMesh } from './validate-mesh.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
@@ -22,6 +25,7 @@ import { promisify } from 'node:util';
 import YAML from 'yaml';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { FSMConfig } from '../shared/types.ts';
 
 const execAsync = promisify(exec);
 
@@ -707,6 +711,132 @@ async function fsmChain(meshName: string, flags: MeshFlags): Promise<void> {
 }
 
 /**
+ * Load and normalize FSM config from a mesh's config.yaml
+ * Returns { fsmConfig, basePath } or null if not found
+ */
+function loadFSMConfig(meshName: string, workDir: string): { fsmConfig: FSMConfig; basePath: string } | null {
+  let configPath = path.join(workDir, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(workDir, 'meshes', meshName, 'config.yml');
+  }
+  if (!fs.existsSync(configPath)) {
+    console.error(chalk.red(`Config not found: meshes/${meshName}/config.yaml`));
+    return null;
+  }
+
+  const raw = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+  if (!raw?.fsm) {
+    console.error(chalk.red(`Mesh '${meshName}' has no FSM configuration`));
+    return null;
+  }
+
+  // Normalize object-style states to array-style
+  const fsm = raw.fsm;
+  if (!Array.isArray(fsm.states)) {
+    const states: Record<string, unknown>[] = [];
+    for (const [name, cfg] of Object.entries(fsm.states || {})) {
+      const normalized: Record<string, unknown> = { name, ...(cfg as Record<string, unknown>) };
+      if (Array.isArray(normalized.agents)) {
+        const agentList = normalized.agents as string[];
+        normalized.coordinator = agentList[0];
+        if (agentList.length > 1) normalized.participants = agentList.slice(1);
+        delete normalized.agents;
+      }
+      states.push(normalized);
+    }
+    fsm.states = states;
+    fsm.initialState = fsm.initial || fsm.initialState;
+  }
+
+  return {
+    fsmConfig: fsm as FSMConfig,
+    basePath: path.join(workDir, 'meshes', meshName),
+  };
+}
+
+/**
+ * Reset FSM to initial state (preserves suspended sessions and pending asks)
+ */
+async function fsmReset(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  if (!fs.existsSync(queuePath)) {
+    console.error(chalk.red('No queue database found.'));
+    return;
+  }
+
+  const loaded = loadFSMConfig(meshName, cwd);
+  if (!loaded) return;
+
+  const queue = new MessageQueue(queuePath);
+  try {
+    const fsm = new MeshFSM(meshName, loaded.fsmConfig, queue.getDb(), loaded.basePath, cwd);
+    await fsm.initialize();
+
+    const previousState = fsm.getCurrentState();
+    await fsm.reset('CLI reset via tx mesh fsm-reset');
+
+    if (flags.json) {
+      console.log(JSON.stringify({ meshName, previousState, newState: fsm.getCurrentState(), context: loaded.fsmConfig.context || {} }));
+    } else {
+      console.log(chalk.green(`FSM reset: ${meshName}`));
+      console.log(`  ${chalk.dim('Previous:')} ${previousState}`);
+      console.log(`  ${chalk.dim('Current:')}  ${fsm.getCurrentState()}`);
+      console.log(`  ${chalk.dim('Context:')}  reset to initial values`);
+    }
+
+    log.info('cli-mesh', 'FSM reset', { meshName, previousState, newState: fsm.getCurrentState() });
+  } finally {
+    queue.close();
+  }
+}
+
+/**
+ * Force FSM to a specific state (preserves context, clears gate retries for target)
+ */
+async function fsmGoto(meshName: string, targetState: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  if (!fs.existsSync(queuePath)) {
+    console.error(chalk.red('No queue database found.'));
+    return;
+  }
+
+  const loaded = loadFSMConfig(meshName, cwd);
+  if (!loaded) return;
+
+  const queue = new MessageQueue(queuePath);
+  try {
+    const fsm = new MeshFSM(meshName, loaded.fsmConfig, queue.getDb(), loaded.basePath, cwd);
+    await fsm.initialize();
+
+    const previousState = fsm.getCurrentState();
+    const success = await fsm.forceTransition(targetState, 'CLI force via tx mesh fsm-goto');
+
+    if (!success) {
+      console.error(chalk.red(`Invalid target state: '${targetState}'`));
+      const validStates = Array.from((loaded.fsmConfig.states as Array<{ name: string }>).map(s => s.name));
+      console.log(chalk.dim(`Valid states: ${validStates.join(', ')}`));
+      return;
+    }
+
+    if (flags.json) {
+      console.log(JSON.stringify({ meshName, previousState, newState: targetState }));
+    } else {
+      console.log(chalk.green(`FSM transition: ${meshName}`));
+      console.log(`  ${chalk.dim('From:')} ${previousState}`);
+      console.log(`  ${chalk.dim('To:')}   ${targetState}`);
+    }
+
+    log.info('cli-mesh', 'FSM forced transition', { meshName, previousState, newState: targetState });
+  } finally {
+    queue.close();
+  }
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -720,6 +850,8 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('clear')} <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
   ${chalk.cyan('validate')} <mesh>         Validate mesh configuration
   ${chalk.cyan('fsm-chain')} <mesh>       Show FSM state transition chain with validation
+  ${chalk.cyan('fsm-reset')} <mesh>       Reset FSM to initial state (preserves sessions)
+  ${chalk.cyan('fsm-goto')} <mesh> <state> Force FSM to a specific state
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -795,6 +927,26 @@ export async function mesh(args: string[]): Promise<void> {
         }
         await fsmChain(meshName, flags);
         break;
+
+      case 'fsm-reset':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh fsm-reset test-fsm-full'));
+          return;
+        }
+        await fsmReset(meshName, flags);
+        break;
+
+      case 'fsm-goto': {
+        const targetState = nonFlagArgs[2];
+        if (!meshName || !targetState) {
+          console.error(chalk.red('Error: Mesh name and target state required'));
+          console.log(chalk.dim('Example: tx mesh fsm-goto test-fsm-full linear_pipeline'));
+          return;
+        }
+        await fsmGoto(meshName, targetState, flags);
+        break;
+      }
 
       default:
         printUsage();
