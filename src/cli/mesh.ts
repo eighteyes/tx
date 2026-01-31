@@ -844,8 +844,7 @@ async function fsmGoto(meshName: string, targetState: string, flags: MeshFlags):
  */
 async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
-  const msgsDir = path.join(cwd, '.ai/tx/msgs');
+  const msgsDir = path.join(cwd, '.ai/tx/mesh-run-msgs');
   const meshesDir = path.join(cwd, 'meshes');
   const MAX_STEPS = 50;
 
@@ -886,8 +885,12 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
     console.log(chalk.dim(`Created workspace: ${wsPath}`));
   }
 
-  // Ensure msgs dir exists
-  if (!fs.existsSync(msgsDir)) {
+  // Use isolated msgs dir so tx start Consumer doesn't intercept agent messages
+  if (fs.existsSync(msgsDir)) {
+    for (const f of fs.readdirSync(msgsDir)) {
+      fs.unlinkSync(path.join(msgsDir, f));
+    }
+  } else {
     fs.mkdirSync(msgsDir, { recursive: true });
   }
 
@@ -897,6 +900,14 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
     fs.unlinkSync(runQueuePath);
   }
   const queue = new MessageQueue(runQueuePath);
+
+  // Cleanup: close queue + remove temp files
+  const cleanup = () => {
+    queue.close();
+    try { fs.unlinkSync(runQueuePath); } catch {}
+    try { fs.rmSync(msgsDir, { recursive: true, force: true }); } catch {}
+  };
+
   const persistence = new FSMPersistence(queue.getDb());
   persistence.initialize();
   persistence.deleteState(meshName);
@@ -1015,7 +1026,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
         }));
       }
 
-      queue.close();
+      cleanup();
       return;
     }
 
@@ -1044,7 +1055,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
           console.error(`  ${chalk.red('FSM error:')} ${err.message}`);
           const files = fs.existsSync(workspaceDir) ? fs.readdirSync(workspaceDir) : [];
           console.error(`  ${chalk.dim('Workspace:')} ${files.join(', ') || '(empty)'}`);
-          queue.close();
+          cleanup();
           return;
         }
       }
@@ -1056,7 +1067,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
 
   console.error(chalk.red(`Hit safety limit (${MAX_STEPS} steps)`));
   console.log(`  ${chalk.dim('Final state:')} ${fsm.getCurrentState()}`);
-  queue.close();
+  cleanup();
 }
 
 /**
