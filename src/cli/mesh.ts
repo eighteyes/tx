@@ -10,10 +10,12 @@
  *   tx mesh fsm-chain <mesh>  Show FSM state transition chain with validation
  *   tx mesh fsm-reset <mesh>  Reset FSM to initial state (preserves sessions)
  *   tx mesh fsm-goto <mesh> <state>  Force FSM to a specific state
+ *   tx mesh run <mesh> "<prompt>"   Run full FSM pipeline end-to-end
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
 import { MeshFSM } from '../mesh/index.ts';
+import { execSync } from 'node:child_process';
 import { SessionStore } from '../session/index.ts';
 import { validateMesh } from './validate-mesh.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
@@ -837,6 +839,203 @@ async function fsmGoto(meshName: string, targetState: string, flags: MeshFlags):
 }
 
 /**
+ * Run full FSM pipeline end-to-end
+ * Resets FSM, cleans workspace, runs each agent via tx run, processes transitions
+ */
+async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const msgsDir = path.join(cwd, '.ai/tx/msgs');
+  const MAX_STEPS = 50;
+
+  // Load full mesh config (need entry_point, workspace, agents)
+  let configPath = path.join(cwd, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(cwd, 'meshes', meshName, 'config.yml');
+  }
+  if (!fs.existsSync(configPath)) {
+    console.error(chalk.red(`Config not found: meshes/${meshName}/config.yaml`));
+    return;
+  }
+
+  const rawConfig = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+  if (!rawConfig?.fsm) {
+    console.error(chalk.red(`Mesh '${meshName}' has no FSM configuration`));
+    return;
+  }
+
+  const loaded = loadFSMConfig(meshName, cwd);
+  if (!loaded) return;
+
+  // Resolve workspace path
+  const wsPath = rawConfig.workspace?.locations?.workspace
+    || rawConfig.workspace?.path
+    || `.ai/${meshName}/workspace`;
+  const workspaceDir = path.resolve(cwd, wsPath);
+
+  // Clean workspace
+  if (fs.existsSync(workspaceDir)) {
+    for (const f of fs.readdirSync(workspaceDir)) {
+      const fp = path.join(workspaceDir, f);
+      if (fs.lstatSync(fp).isFile()) fs.unlinkSync(fp);
+    }
+    console.log(chalk.dim(`Cleaned workspace: ${wsPath}`));
+  } else {
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    console.log(chalk.dim(`Created workspace: ${wsPath}`));
+  }
+
+  // Ensure queue db exists
+  const queue = new MessageQueue(queuePath);
+
+  // Reset FSM
+  const persistence = new FSMPersistence(queue.getDb());
+  persistence.initialize();
+  persistence.deleteState(meshName);
+
+  const fsm = new MeshFSM(meshName, loaded.fsmConfig, queue.getDb(), loaded.basePath, cwd);
+  await fsm.initialize();
+
+  const entryAgent = rawConfig.entry_point || 'entry';
+
+  console.log(`\n${chalk.bold(chalk.cyan(`FSM Run: ${meshName}`))}`);
+  console.log(`  ${chalk.dim('Initial state:')} ${fsm.getCurrentState()}`);
+  console.log(`  ${chalk.dim('Entry agent:')}   ${entryAgent}`);
+  console.log(`  ${chalk.dim('Workspace:')}     ${wsPath}`);
+  console.log(`  ${chalk.dim('Prompt:')}        ${prompt}\n`);
+
+  // Helper: get agents for a state
+  const getStateAgents = (stateName: string): string[] => {
+    const states = loaded.fsmConfig.states as Array<{ name: string; coordinator?: string; participants?: string[]; ensemble?: { agents?: string[] } }>;
+    const state = states.find(s => s.name === stateName);
+    if (!state) return [];
+    if (state.coordinator) {
+      const agents = [state.coordinator];
+      if (state.participants) agents.push(...state.participants);
+      return agents;
+    }
+    if (state.ensemble?.agents) return state.ensemble.agents;
+    return [];
+  };
+
+  // Helper: check terminal
+  const isTerminal = (stateName: string): boolean => {
+    const states = loaded.fsmConfig.states as Array<{ name: string; terminal?: boolean }>;
+    const state = states.find(s => s.name === stateName);
+    return state?.terminal === true;
+  };
+
+  // Helper: run single agent via tx run
+  const runAgent = (agent: string, agentPrompt: string): string | null => {
+    const header = `  ${chalk.cyan(agent)}`;
+    try {
+      // Snapshot message filenames before run
+      const msgsBefore = new Set(fs.existsSync(msgsDir) ? fs.readdirSync(msgsDir) : []);
+
+      const escaped = agentPrompt.replace(/"/g, '\\"');
+      const result = execSync(
+        `npx tsx src/cli/index.ts run ${meshName} ${agent} "${escaped}" --force 2>&1`,
+        { cwd, timeout: 120000, encoding: 'utf-8' }
+      );
+
+      // Find NEW messages written by this agent (compare before/after)
+      const msgsAfter = fs.existsSync(msgsDir) ? fs.readdirSync(msgsDir) : [];
+      const newMsgs = msgsAfter
+        .filter(f => !msgsBefore.has(f) && f.includes(`${meshName}-${agent}--`))
+        .sort()
+        .reverse();
+
+      if (newMsgs.length > 0) {
+        const msgContent = fs.readFileSync(path.join(msgsDir, newMsgs[0]), 'utf-8');
+        const fmMatch = msgContent.match(/^---\n([\s\S]*?)\n---/);
+        if (fmMatch) {
+          const fm = YAML.parse(fmMatch[1]);
+          console.log(`${header} ${chalk.dim('→')} ${fm.to} ${chalk.dim(`(${fm.status || 'sent'})`)}`);
+          return fm.to;
+        }
+      }
+
+      // No message found — agent may have written files but no message
+      console.log(`${header} ${chalk.yellow('(no message written)')}`);
+      return null;
+    } catch (err: any) {
+      console.log(`${header} ${chalk.red('FAILED')} ${chalk.dim(err.message.split('\n')[0])}`);
+      return null;
+    }
+  };
+
+  let step = 0;
+  let currentPrompt = prompt;
+  const startTime = Date.now();
+
+  while (step < MAX_STEPS) {
+    step++;
+    const currentState = fsm.getCurrentState();
+
+    if (isTerminal(currentState)) {
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const files = fs.existsSync(workspaceDir) ? fs.readdirSync(workspaceDir) : [];
+      console.log(`\n${chalk.green('Terminal:')} ${currentState}`);
+      console.log(`  ${chalk.dim('Steps:')} ${step - 1}  ${chalk.dim('Elapsed:')} ${elapsed}s  ${chalk.dim('Files:')} ${files.length}`);
+      if (files.length > 0) {
+        console.log(`  ${chalk.dim('Workspace:')} ${files.join(', ')}`);
+      }
+
+      if (flags.json) {
+        console.log(JSON.stringify({
+          meshName,
+          finalState: currentState,
+          steps: step - 1,
+          elapsedSeconds: parseFloat(elapsed),
+          workspaceFiles: files,
+        }));
+      }
+
+      queue.close();
+      return;
+    }
+
+    const agents = getStateAgents(currentState);
+    if (agents.length === 0) {
+      console.error(chalk.red(`No agents for state: ${currentState}`));
+      break;
+    }
+
+    console.log(chalk.dim(`[${currentState}]`) + ` agents: ${agents.join(', ')}`);
+
+    for (const agent of agents) {
+      const target = runAgent(agent, currentPrompt);
+
+      if (target) {
+        try {
+          const result = await fsm.handleMessage(
+            `${meshName}/${agent}`,
+            target,
+            'task-complete'
+          );
+          if (!result) {
+            console.log(`  ${chalk.yellow('FSM rejected transition — retrying state')}`);
+          }
+        } catch (err: any) {
+          console.error(`  ${chalk.red('FSM error:')} ${err.message}`);
+          const files = fs.existsSync(workspaceDir) ? fs.readdirSync(workspaceDir) : [];
+          console.error(`  ${chalk.dim('Workspace:')} ${files.join(', ') || '(empty)'}`);
+          queue.close();
+          return;
+        }
+      }
+    }
+
+    // After first step, switch to generic continuation prompt
+    currentPrompt = 'Execute your task. Write your gate file and send your completion message.';
+  }
+
+  console.error(chalk.red(`Hit safety limit (${MAX_STEPS} steps)`));
+  console.log(`  ${chalk.dim('Final state:')} ${fsm.getCurrentState()}`);
+  queue.close();
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -852,6 +1051,7 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('fsm-chain')} <mesh>       Show FSM state transition chain with validation
   ${chalk.cyan('fsm-reset')} <mesh>       Reset FSM to initial state (preserves sessions)
   ${chalk.cyan('fsm-goto')} <mesh> <state> Force FSM to a specific state
+  ${chalk.cyan('run')} <mesh> "<prompt>"    Run full FSM pipeline end-to-end
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -945,6 +1145,18 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await fsmGoto(meshName, targetState, flags);
+        break;
+      }
+
+      case 'run': {
+        // Collect prompt from remaining non-flag args after mesh name
+        const promptParts = nonFlagArgs.slice(2);
+        if (!meshName || promptParts.length === 0) {
+          console.error(chalk.red('Error: Mesh name and prompt required'));
+          console.log(chalk.dim('Example: tx mesh run test-fsm-full "go"'));
+          return;
+        }
+        await meshRun(meshName, promptParts.join(' '), flags);
         break;
       }
 
