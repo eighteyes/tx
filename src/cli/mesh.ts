@@ -15,14 +15,14 @@
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
 import { MeshFSM } from '../mesh/index.ts';
-import { execSync } from 'node:child_process';
+import { HeadlessRunner } from '../worker/headless-runner.ts';
 import { SessionStore } from '../session/index.ts';
 import { validateMesh } from './validate-mesh.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
 import { log } from '../shared/logger.ts';
 import { chalk } from '../shared/colors.ts';
 import { formatTimeAgo } from '../shared/time.ts';
-import { exec } from 'node:child_process';
+import { exec } from 'node:child_process';  // Used by killMeshWorkers
 import { promisify } from 'node:util';
 import YAML from 'yaml';
 import fs from 'node:fs';
@@ -839,19 +839,20 @@ async function fsmGoto(meshName: string, targetState: string, flags: MeshFlags):
 }
 
 /**
- * Run full FSM pipeline end-to-end
- * Resets FSM, cleans workspace, runs each agent via tx run, processes transitions
+ * Run full FSM pipeline end-to-end (in-process)
+ * Resets FSM, cleans workspace, runs agents via HeadlessRunner, processes transitions
  */
 async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
   const queuePath = path.join(cwd, '.ai/tx/queue.db');
   const msgsDir = path.join(cwd, '.ai/tx/msgs');
+  const meshesDir = path.join(cwd, 'meshes');
   const MAX_STEPS = 50;
 
-  // Load full mesh config (need entry_point, workspace, agents)
-  let configPath = path.join(cwd, 'meshes', meshName, 'config.yaml');
+  // Load full mesh config
+  let configPath = path.join(meshesDir, meshName, 'config.yaml');
   if (!fs.existsSync(configPath)) {
-    configPath = path.join(cwd, 'meshes', meshName, 'config.yml');
+    configPath = path.join(meshesDir, meshName, 'config.yml');
   }
   if (!fs.existsSync(configPath)) {
     console.error(chalk.red(`Config not found: meshes/${meshName}/config.yaml`));
@@ -885,10 +886,17 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
     console.log(chalk.dim(`Created workspace: ${wsPath}`));
   }
 
-  // Ensure queue db exists
-  const queue = new MessageQueue(queuePath);
+  // Ensure msgs dir exists
+  if (!fs.existsSync(msgsDir)) {
+    fs.mkdirSync(msgsDir, { recursive: true });
+  }
 
-  // Reset FSM
+  // Use a fresh queue DB for mesh run to avoid schema conflicts with tx start
+  const runQueuePath = path.join(cwd, '.ai/tx/mesh-run.db');
+  if (fs.existsSync(runQueuePath)) {
+    fs.unlinkSync(runQueuePath);
+  }
+  const queue = new MessageQueue(runQueuePath);
   const persistence = new FSMPersistence(queue.getDb());
   persistence.initialize();
   persistence.deleteState(meshName);
@@ -904,7 +912,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
   console.log(`  ${chalk.dim('Workspace:')}     ${wsPath}`);
   console.log(`  ${chalk.dim('Prompt:')}        ${prompt}\n`);
 
-  // Helper: get agents for a state
+  // Helper: get agents for a state from normalized config
   const getStateAgents = (stateName: string): string[] => {
     const states = loaded.fsmConfig.states as Array<{ name: string; coordinator?: string; participants?: string[]; ensemble?: { agents?: string[] } }>;
     const state = states.find(s => s.name === stateName);
@@ -925,20 +933,37 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
     return state?.terminal === true;
   };
 
-  // Helper: run single agent via tx run
-  const runAgent = (agent: string, agentPrompt: string): string | null => {
+  // Helper: run single agent in-process via HeadlessRunner
+  const runAgent = async (agent: string, agentPrompt: string): Promise<string | null> => {
     const header = `  ${chalk.cyan(agent)}`;
+    const agentStart = Date.now();
+
     try {
-      // Snapshot message filenames before run
+      // Snapshot messages before
       const msgsBefore = new Set(fs.existsSync(msgsDir) ? fs.readdirSync(msgsDir) : []);
 
-      const escaped = agentPrompt.replace(/"/g, '\\"');
-      const result = execSync(
-        `npx tsx src/cli/index.ts run ${meshName} ${agent} "${escaped}" --force 2>&1`,
-        { cwd, timeout: 120000, encoding: 'utf-8' }
-      );
+      const runner = new HeadlessRunner({
+        mesh: meshName,
+        agent,
+        workDir: cwd,
+        msgsDir,
+        meshesDir,
+      }, queue);
 
-      // Find NEW messages written by this agent (compare before/after)
+      await runner.initialize();
+
+      // Run agent and wait for completion
+      await new Promise<void>((resolve, reject) => {
+        runner.on('complete', () => resolve());
+        runner.on('error', (data: { error: string }) => reject(new Error(data.error)));
+        runner.start(agentPrompt).catch(reject);
+      });
+
+      await runner.stop();
+
+      const elapsed = ((Date.now() - agentStart) / 1000).toFixed(1);
+
+      // Find NEW messages from this agent
       const msgsAfter = fs.existsSync(msgsDir) ? fs.readdirSync(msgsDir) : [];
       const newMsgs = msgsAfter
         .filter(f => !msgsBefore.has(f) && f.includes(`${meshName}-${agent}--`))
@@ -950,13 +975,12 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
         const fmMatch = msgContent.match(/^---\n([\s\S]*?)\n---/);
         if (fmMatch) {
           const fm = YAML.parse(fmMatch[1]);
-          console.log(`${header} ${chalk.dim('→')} ${fm.to} ${chalk.dim(`(${fm.status || 'sent'})`)}`);
+          console.log(`${header} ${chalk.dim('→')} ${fm.to} ${chalk.dim(`(${fm.status || 'sent'}) ${elapsed}s`)}`);
           return fm.to;
         }
       }
 
-      // No message found — agent may have written files but no message
-      console.log(`${header} ${chalk.yellow('(no message written)')}`);
+      console.log(`${header} ${chalk.yellow(`(no message) ${elapsed}s`)}`);
       return null;
     } catch (err: any) {
       console.log(`${header} ${chalk.red('FAILED')} ${chalk.dim(err.message.split('\n')[0])}`);
@@ -1004,7 +1028,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
     console.log(chalk.dim(`[${currentState}]`) + ` agents: ${agents.join(', ')}`);
 
     for (const agent of agents) {
-      const target = runAgent(agent, currentPrompt);
+      const target = await runAgent(agent, currentPrompt);
 
       if (target) {
         try {
