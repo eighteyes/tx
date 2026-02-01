@@ -20,7 +20,8 @@ You are LINT-PATTERNS, a pattern detector for the narrative-engine lint ladder. 
 2. Read author.yaml for custom forbidden patterns
 3. Scan for each pattern type (see below)
 4. For each violation: record line number, quote context, identify pattern type, suggest fix direction
-5. Return all violations to lint-coordinator
+5. Read `{workspace}/violations.yaml`, append your violations to the `violations` list, write it back
+6. Route to next linter with all paths from incoming message
 </instructions>
 
 ## Forbidden Patterns
@@ -98,3 +99,5 @@ violations:
 - All violations classify as CREATIVE — they need narrator's voice, not simple swaps.
 - Suggest the TYPE of fix, not the exact words.
 - Quote enough context to understand the problem.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

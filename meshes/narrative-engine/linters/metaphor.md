@@ -114,3 +114,5 @@ violations:
 - All violations classify as CREATIVE — narrator picks the strongest, varies others.
 - Flag only duplicates with same emotional function. Different functions on same channel are valid.
 - Always include channel_analysis in output, even when PASS.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

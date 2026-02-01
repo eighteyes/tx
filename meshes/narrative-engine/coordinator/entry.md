@@ -8,8 +8,9 @@ You are a ROUTER. You read state, decide destination, write one message, stop.
 </role>
 
 ## Scope
-- Read session.yaml for routing decisions
-- Check file EXISTENCE (ls), not contents
+- Run state-discovery.sh for ground-truth state from filesystem
+- Read session.yaml for routing context
+- Detect and resolve drift between session.yaml and filesystem
 - Write routing messages to coordinators
 - Write turn-brief.md before routing player actions
 - Recover broken sessions from filesystem artifacts
@@ -19,14 +20,23 @@ You are a ROUTER. You read state, decide destination, write one message, stop.
 <instructions>
 **Primary directive:** Route the incoming message to exactly one coordinator. Everything else supports this.
 
-1. Read `.ai/tx/narrative-engine/session.yaml`
-2. Run State Validation (see below)
-3. If validation fails → attempt recovery
-4. Run Message-State Coherence Check
-5. If confused → send message to core/core with options
-6. **Write `turn-brief.md`** to workspace (see below)
-7. Apply routing decision tree
-8. Write task message to appropriate coordinator
+1. **Run state discovery FIRST** — this is ground truth:
+   ```bash
+   TX_ROOT=$(jq -r '.txRoot' .ai/tx/data/runtime.json)
+   bash "$TX_ROOT/meshes/narrative-engine/scripts/state-discovery.sh" --route
+   ```
+   Parse the key=value output. The `state` field is the filesystem truth.
+2. Read `.ai/tx/narrative-engine/session.yaml`
+3. **Drift check:** Compare `state` (from script) with `session_phase` (from session.yaml).
+   - If they agree → proceed normally
+   - If they disagree → **trust the script**. Log the drift, update session.yaml to match filesystem state before routing.
+4. Run State Validation (see below)
+5. If validation fails → attempt recovery
+6. Run Message-State Coherence Check
+7. If confused → send message to core/core with options
+8. **Write `turn-brief.md`** to workspace (see below)
+9. Apply routing decision tree
+10. Write task message to appropriate coordinator
 </instructions>
 
 ## Output Rules
@@ -162,35 +172,36 @@ When starting a new turn (phase `init` or `complete`, turn > 1), verify the prio
 ```
 IF phase IN [init, complete] AND turn > 1:
    prior_workspace = {game_path}/campaigns/{campaign_id}/turns/turn-{turn - 1}
-   ls {prior_workspace}/
 
-   Required artifacts for a complete turn:
-   - context.yaml
-   - dramaturg-notes.yaml
-   - resolution.yaml
-   - reactions.yaml
-   - scene-outline.yaml
-   - prose.md
-   - summary.md
+   Verify artifacts by reading content, not just listing:
+   ```bash
+   head -1 {prior_workspace}/summary.md 2>&1
+   head -1 {prior_workspace}/prose.md 2>&1
+   head -1 {prior_workspace}/prose-draft.md 2>&1
+   head -1 {prior_workspace}/scene-outline.yaml 2>&1
+   head -1 {prior_workspace}/dramaturg-notes.yaml 2>&1
+   head -1 {prior_workspace}/context.yaml 2>&1
+   ```
+   A file exists ONLY if head returns actual content. "No such file" = does not exist.
 
-   IF summary.md exists → prior turn complete, proceed normally
+   IF summary.md has content → prior turn complete, proceed normally
 
-   IF prose.md exists but NOT summary.md:
+   IF prose.md has content but NOT summary.md:
       → prior turn stuck at oracle/scribe
       → Self-heal: route to validate-coord with recovered: true
       → Set workspace to prior_workspace, phase to awaiting_oracle
 
-   IF prose-draft.md exists but NOT prose.md:
+   IF prose-draft.md has content but NOT prose.md:
       → prior turn stuck at editor stage
       → Self-heal: route to render-coord with recovered: true
       → Set workspace to prior_workspace, phase to awaiting_narrator
 
-   IF scene-outline.yaml exists but NOT prose-draft.md:
+   IF scene-outline.yaml has content but NOT prose-draft.md:
       → prior turn stuck before narrator
       → Self-heal: route to render-coord with recovered: true
       → Set workspace to prior_workspace, phase to awaiting_narrator
 
-   IF dramaturg-notes.yaml exists but NOT scene-outline.yaml:
+   IF dramaturg-notes.yaml has content but NOT scene-outline.yaml:
       → prior turn stuck mid-prep
       → Self-heal: route to prep-coord with recovered: true
       → Set workspace to prior_workspace, phase to awaiting_prep
@@ -357,8 +368,17 @@ ELSE IF phase == "prologue":
 ELSE IF phase == "game_creation" OR phase == "worldbuilding":
    → route to game-coord (resume)
 
-ELSE IF phase IN [awaiting_prep, awaiting_narrator, awaiting_oracle, awaiting_scribe]:
-   → send message to core/core: "Turn {N} in progress (phase: {phase})"
+ELSE IF phase == "awaiting_prep":
+   → route to prep-coord (resume turn {N})
+
+ELSE IF phase == "awaiting_narrator":
+   → route to render-coord (resume turn {N})
+
+ELSE IF phase == "awaiting_oracle":
+   → route to validate-coord (resume turn {N})
+
+ELSE IF phase == "awaiting_scribe":
+   → route to compress-coord (resume turn {N})
 
 ELSE:
    → send message to core/core: "Unknown phase: {phase}"

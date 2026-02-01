@@ -38,12 +38,25 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
 
 ### Mesh Features
-- Routing table defined per mesh, injected at runtime and enforced by framework. 
-- State management to govern phase transitions and carry variables between meshes. 
+- Routing table defined per mesh, injected at runtime and enforced by framework.
+- State management to govern phase transitions and carry variables between meshes.
 - Session continuation to revisit conversations.
 - SlashCommand support for agents.
 - Workspace defining files and folders.
 - Pre/Post hooks for logic and/or agents surrounding mesh operations.
+
+### Agent Guardrails
+LLM agents are probabilistic. Prompts that say "always", "never", or "STOP" express intent but cannot guarantee behavior. TX enforces critical invariants at the runtime level:
+
+| Guardrail | Mechanism | Config |
+|-----------|-----------|--------|
+| **Send-and-stop** | Agent must send exactly one message per invocation, then exit. Dispatcher terminates worker after first outbound message. | `max_messages: 1` per agent |
+| **File ownership** | Agents write only to files declared in the manifest `writes` list. Workspace sandbox rejects unauthorized writes. | `manifest.writes` in config.yaml |
+| **Routing compliance** | Agents send only to destinations in their routing table. Dispatcher rejects messages with invalid `to:` fields. | `routing` in config.yaml |
+| **Artifact validation** | After worker completes, dispatcher verifies expected output files exist. Blocks downstream routing on missing artifacts. | `manifest` output declarations |
+| **Turn budget** | SDK enforces maximum API round-trips per invocation. Prevents runaway agents. | `max_turns` per agent in config.yaml |
+
+**Principle:** If a prompt says "STOP" or "verify X exists", the runtime enforces it. Prompts steer behavior; the framework guarantees invariants.
 
 ## Dependencies
 - `node` (recommended: Node >= 20.19.0)

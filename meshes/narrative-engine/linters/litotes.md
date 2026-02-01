@@ -104,3 +104,5 @@ violations:
 - All violations classify as CREATIVE — they need positive rewrites.
 - Budget is 1-2 per scene. 3+ is always a violation.
 - Dialogue litotes are exempt. Characters speak freely.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

@@ -19,7 +19,7 @@ import YAML from 'yaml';
 import { log } from '../shared/logger.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
 import type { ManifestEntry } from '../worker/mesh-validator.ts';
-import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel } from '../shared/types.ts';
+import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingMode, DispatcherRoutingConfig } from '../shared/types.ts';
 import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
@@ -72,6 +72,7 @@ export interface AgentConfig {
   command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
+  max_turns?: number;  // API round-trip limit per invocation (runtime guardrail)
 }
 
 /**
@@ -87,12 +88,14 @@ export interface MeshConfig {
   boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
-  continuation?: boolean | string[];  // true = all, array = specific agents, omit = none
+  continuation?: boolean | string[];  // Session reuse within a mesh run (default: true)
+  persistence?: boolean | string[];   // Sessions survive across mesh runs (default: false)
   lifecycle?: {
     pre?: string[];   // Pre-hooks executed before worker spawn
     post?: string[];  // Post-hooks executed after worker completion
   };
-  routing?: MeshRouting;  // Agent routing tables
+  routing_mode?: RoutingMode;  // 'agent' (default) or 'dispatcher' (opt-in centralized routing)
+  routing?: MeshRouting | DispatcherRoutingConfig;  // Shape depends on routing_mode
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
   iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
@@ -436,8 +439,9 @@ export class MeshConfigLoader extends EventEmitter {
     meshConfig?: MeshConfig
   ): Record<string, Record<string, string>> | undefined {
     if (!meshConfig?.routing) return undefined;
+    if (meshConfig.routing_mode === 'dispatcher') return undefined;
 
-    const agentRouting = meshConfig.routing[agentName];
+    const agentRouting = (meshConfig.routing as MeshRouting)[agentName];
     if (!agentRouting) return undefined;
 
     // Return raw routing config (status -> destination -> reason)
@@ -445,12 +449,32 @@ export class MeshConfigLoader extends EventEmitter {
   }
 
   /**
+   * Extract dispatcher routing config for an entire mesh
+   * Returns the flat routing map when routing_mode is 'dispatcher'
+   */
+  extractDispatcherRouting(meshConfig?: MeshConfig): DispatcherRoutingConfig | undefined {
+    if (!meshConfig?.routing || meshConfig.routing_mode !== 'dispatcher') return undefined;
+    return meshConfig.routing as DispatcherRoutingConfig;
+  }
+
+  /**
    * Check if an agent should have session continuation enabled
    */
   shouldContinueAgent(agentName: string, continuation: boolean | string[] | undefined): boolean {
-    if (!continuation) return false;
+    if (continuation === undefined) return true;  // default: enabled
+    if (continuation === false) return false;
     if (continuation === true) return true;
     if (Array.isArray(continuation)) return continuation.includes(agentName);
+    return true;
+  }
+
+  /**
+   * Check if an agent should have cross-run session persistence enabled
+   */
+  shouldPersistAgent(agentName: string, persistence: boolean | string[] | undefined): boolean {
+    if (!persistence) return false;
+    if (persistence === true) return true;
+    if (Array.isArray(persistence)) return persistence.includes(agentName);
     return false;
   }
 }

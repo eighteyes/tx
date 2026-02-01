@@ -93,3 +93,5 @@ violations:
 - All violations classify as CREATIVE — fixing requires prose restructuring.
 - Analyze by paragraph. Global statistics alone miss local monotony.
 - Always include overall_distribution in output, even when PASS.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

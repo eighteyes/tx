@@ -100,3 +100,5 @@ violations:
 - All violations classify as CREATIVE — fixing requires prose restructuring.
 - Check only scene openings, not mid-scene paragraphs.
 - Always include scene_analysis in output, even when all PASS.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

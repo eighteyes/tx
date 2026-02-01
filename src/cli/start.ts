@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { TmuxSession, findClaudePath, getSessionName, writeStatusBar, initStatusFile } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, getSessionName } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -117,6 +117,45 @@ function injectHookConfig(cwd: string, txRoot: string): void {
   }
 }
 
+/**
+ * Rotate a log file with numbered backups (keeps 4 prior runs).
+ * v4.jsonl → v4.1.jsonl → v4.2.jsonl → v4.3.jsonl → v4.4.jsonl
+ * Migrates legacy v4.last.jsonl → v4.1.jsonl on first run.
+ */
+function rotateLog(logsDir: string, baseName: string): void {
+  const ext = path.extname(baseName);
+  const stem = baseName.slice(0, -ext.length);
+  const current = path.join(logsDir, baseName);
+  const legacyBackup = path.join(logsDir, `${stem}.last${ext}`);
+
+  // One-time migration: rename legacy .last file to .1
+  const slot1 = path.join(logsDir, `${stem}.1${ext}`);
+  if (fs.existsSync(legacyBackup) && !fs.existsSync(slot1)) {
+    fs.renameSync(legacyBackup, slot1);
+    console.log(`[logs] Migrated ${stem}.last${ext} → ${stem}.1${ext}`);
+  }
+
+  try {
+    if (!fs.existsSync(current) || fs.statSync(current).size === 0) return;
+  } catch { return; }
+
+  // Shift numbered backups: delete .4, rename .3→.4, .2→.3, .1→.2
+  const maxSlots = 4;
+  const oldest = path.join(logsDir, `${stem}.${maxSlots}${ext}`);
+  if (fs.existsSync(oldest)) fs.unlinkSync(oldest);
+
+  for (let i = maxSlots - 1; i >= 1; i--) {
+    const src = path.join(logsDir, `${stem}.${i}${ext}`);
+    const dst = path.join(logsDir, `${stem}.${i + 1}${ext}`);
+    if (fs.existsSync(src)) fs.renameSync(src, dst);
+  }
+
+  // Copy current → .1, then truncate current
+  fs.copyFileSync(current, slot1);
+  fs.writeFileSync(current, '');
+  console.log(`[logs] Rotated ${baseName} (kept up to ${maxSlots} prior runs)`);
+}
+
 export async function start(workDir?: string, options?: StartOptions): Promise<void> {
   // Work directory: where .ai/tx/ lives (default: current directory)
   const cwd = workDir || process.env.TX_CWD || process.cwd();
@@ -128,9 +167,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
 
   const aiDir = path.join(cwd, '.ai', 'tx');
-
-  // Initialize status file path to use working directory (not cwd where TX runs)
-  initStatusFile(cwd);
 
   // Debug: Show resolved paths
   console.log(`[debug] cwd (work): ${cwd}`);
@@ -199,28 +235,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     console.log('');  // Blank line before continuing
   }
 
-  // Backup previous logs before starting fresh session
-  const mainLog = path.join(logsDir, 'v4.jsonl');
-  const activityLog = path.join(logsDir, 'activity.jsonl');
-  const lastMainLog = path.join(logsDir, 'v4.last.jsonl');
-  const lastActivityLog = path.join(logsDir, 'activity.last.jsonl');
-
-  // Backup logs if they exist and have content (try-catch handles missing files)
-  try {
-    if (fs.statSync(mainLog).size > 0) {
-      fs.copyFileSync(mainLog, lastMainLog);
-      fs.writeFileSync(mainLog, '');
-      console.log(`[logs] Backed up v4.jsonl → v4.last.jsonl`);
-    }
-  } catch { /* File doesn't exist, nothing to back up */ }
-
-  try {
-    if (fs.statSync(activityLog).size > 0) {
-      fs.copyFileSync(activityLog, lastActivityLog);
-      fs.writeFileSync(activityLog, '');
-      console.log(`[logs] Backed up activity.jsonl → activity.last.jsonl`);
-    }
-  } catch { /* File doesn't exist, nothing to back up */ }
+  // Rotate previous logs (keep up to 4 prior runs)
+  rotateLog(logsDir, 'v4.jsonl');
+  rotateLog(logsDir, 'activity.jsonl');
 
   // Clear log files BEFORE initializing logger
   for (const file of ['v4.jsonl', 'activity.jsonl', 'debug.jsonl', 'error.jsonl']) {
@@ -266,6 +283,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     startedAt: new Date().toISOString(),
     sessionName: tmux.name,
     projectDir: cwd,
+    txRoot,
   };
   fs.writeFileSync(runtimePath, JSON.stringify(runtimeState, null, 2));
   log.info('start', 'Wrote runtime.json', { inject: runtimeState.inject });
@@ -693,6 +711,29 @@ ${data.content}
         }
       }
 
+      // Read halted.json for mesh halt state
+      const haltedPath = path.join(dataDir, 'halted.json');
+      if (fs.existsSync(haltedPath)) {
+        try {
+          const halted = JSON.parse(fs.readFileSync(haltedPath, 'utf-8'));
+          for (const [meshName, info] of Object.entries(halted)) {
+            const haltInfo = info as { suspendedAgent: string; reason: string; since: string; pendingMessages: number };
+            if (!meshes[meshName]) {
+              meshes[meshName] = { activeWorkers: 0, state: 'halted' };
+            }
+            // Mark as halted if no active workers
+            if (meshes[meshName].activeWorkers === 0) {
+              meshes[meshName].state = 'halted';
+              (meshes[meshName] as Record<string, unknown>).suspendedAgent = haltInfo.suspendedAgent;
+              (meshes[meshName] as Record<string, unknown>).haltReason = haltInfo.reason;
+              (meshes[meshName] as Record<string, unknown>).pendingMessages = haltInfo.pendingMessages;
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
       const status = {
         meshes,
         workers,
@@ -701,16 +742,6 @@ ${data.content}
       };
 
       fs.writeFileSync(statusPath, JSON.stringify(status, null, 2));
-
-      // Update status bar with all counts
-      writeStatusBar({
-        state: 'IDLE',
-        messagesForCore,
-        pendingAsks,
-        activeWorkers: activeWorkerCount,
-        suspendedCount,
-        outgoingTasks: getOutgoingTaskCount(),
-      });
     } catch (err) {
       log.debug('injector', 'Failed to write status.json', { error: String(err) });
     }
@@ -754,6 +785,9 @@ ${data.content}
     setTimeout(writeStatusFile, 50);
   });
   dispatcher.on('worker:error', () => {
+    setTimeout(writeStatusFile, 50);
+  });
+  dispatcher.on('mesh:halted-message', () => {
     setTimeout(writeStatusFile, 50);
   });
 

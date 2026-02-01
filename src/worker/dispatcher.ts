@@ -30,14 +30,16 @@ import {
 } from '../quality/index.ts';
 import type { ParityReminderEvent, MeshCompleteEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
-import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent, MeshConfigLoader, type MeshConfig, type AgentConfig} from '../mesh/index.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent, type FSMDispatchEvent, MeshConfigLoader, type MeshConfig, type AgentConfig} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
 import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
-import { injectRoutingInstructions } from '../prompt/index.ts';
+import { injectRoutingInstructions, injectDispatcherRoutingInstructions } from '../prompt/index.ts';
+import { DispatchRouter } from './dispatch-router.ts';
+import YAML from 'yaml';
 
 /**
  * Load environment variables from .mcp.env file
@@ -308,6 +310,14 @@ export class WorkerDispatcher extends EventEmitter {
    */
   private shouldContinueAgent(agentName: string, continuation: boolean | string[] | undefined): boolean {
     return this.configLoader.shouldContinueAgent(agentName, continuation);
+  }
+
+  /**
+   * Check if an agent should have cross-run session persistence
+   * Delegates to MeshConfigLoader
+   */
+  private shouldPersistAgent(agentName: string, persistence: boolean | string[] | undefined): boolean {
+    return this.configLoader.shouldPersistAgent(agentName, persistence);
   }
 
   // ============================================================================
@@ -626,6 +636,46 @@ export class WorkerDispatcher extends EventEmitter {
       if (!event.escalated) {
         this.handleFSMFeedback(event);
       }
+    });
+
+    // Handle FSM dispatch - spawn next state's agents after core-bound transitions
+    fsm.on('fsm:dispatch', (event: FSMDispatchEvent) => {
+      log.info('mesh-fsm', 'Dispatching agents for new state', {
+        meshName: event.meshName,
+        fromState: event.fromState,
+        toState: event.toState,
+        agents: event.agents,
+        triggerAgent: event.triggerAgent,
+      });
+
+      for (const agent of event.agents) {
+        const agentId = `${meshName}/${agent}`;
+        const timestamp = Date.now();
+        const msgId = `fsm-dispatch-${timestamp}-${agent}`;
+        const filename = `${Math.floor(timestamp / 1000)}-fsm-dispatch--${meshName}-${agent}-${msgId}.md`;
+        const filepath = path.join(this.config.msgsDir, filename);
+
+        const msgContent = `---
+to: ${agentId}
+from: core/core
+type: task
+msg-id: ${msgId}
+headline: FSM dispatch — execute ${event.toState}
+timestamp: ${new Date(timestamp).toISOString()}
+---
+
+FSM transitioned from \`${event.fromState}\` to \`${event.toState}\`. Execute your task for this state.
+`;
+
+        fs.writeFileSync(filepath, msgContent);
+        log.info('dispatcher', 'Wrote FSM dispatch message', {
+          agentId,
+          filepath,
+          toState: event.toState,
+        });
+      }
+
+      this.emit('fsm:dispatch', event);
     });
   }
 
@@ -1010,12 +1060,52 @@ export class WorkerDispatcher extends EventEmitter {
     // When ask-human is pending, the entire mesh is halted - no new workers spawn.
     // Messages remain queued and will be processed after human responds.
     if (this.hasPendingAskHumanForMesh(meshName)) {
+      // Auto-resume: if the message is FROM core/core, treat it as a human response
+      // This handles the case where human responds to wrong agent or via core directly
+      const peeked = this.queue.peekOne(agentId);
+      if (peeked && peeked.from_agent === 'core/core') {
+        const suspendedInfo = this.getSuspendedSessionForMesh(meshName);
+        if (suspendedInfo) {
+          log.info('dispatcher', `Human response to halted mesh — auto-routing to suspended agent`, {
+            meshName,
+            targetAgent: agentId,
+            suspendedAgent: suspendedInfo.agentId,
+          });
+
+          // Consume the misdirected message
+          const message = this.queue.pollOne(agentId);
+          if (message) {
+            const payload = message.payload || {};
+            // Clear halted state — mesh is resuming
+            this.clearHaltedFile(meshName);
+            // Route as ask-response to the actual suspended agent
+            this.handleAskResponseMessage({
+              id: message.id || 0,
+              filepath: message.source_file || '',
+              from: 'core/core',
+              to: suspendedInfo.agentId,
+              content: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload),
+              headline: typeof payload.headline === 'string' ? payload.headline : '',
+              msgId: typeof payload.msg_id === 'string' ? payload.msg_id : undefined,
+            });
+            return;
+          }
+        }
+      }
+
       const suspendedInfo = this.getSuspendedSessionForMesh(meshName);
       log.debug('dispatcher', `Mesh halted, message queued`, {
         agentId,
         meshName,
         suspendedAgent: suspendedInfo?.agentId,
       });
+
+      // Write halted state for hook visibility
+      if (suspendedInfo) {
+        const pendingCount = this.queue.countPending(agentId);
+        this.writeHaltedFile(meshName, suspendedInfo.agentId.split('/')[1] || suspendedInfo.agentId, pendingCount);
+      }
+
       this.emit('mesh:halted-message', {
         agentId,
         meshName,
@@ -1159,9 +1249,7 @@ export class WorkerDispatcher extends EventEmitter {
     // interrupt mode: hot inject if worker active, else queue as append
     if (mode === 'interrupt') {
       if (!hasActiveWorker) {
-        log.info('dispatcher', `No active worker for interrupt - queueing as append`, { agentId });
-        // Re-emit as normal message for queue processing
-        this.emit('revision:fallback', { ...event, mode: 'append' });
+        log.warn('dispatcher', `Revision interrupt with no active worker - message may need manual queue`, { agentId });
         return;
       }
 
@@ -2043,21 +2131,30 @@ The system will resume your session when the human responds.`;
     // Clear sessions and buffers via SessionManager (handles both in-memory and SQLite)
     const { sessions: clearedSessions, buffers: clearedBuffers } = this.sessionManager.clearForMesh(meshName);
 
-    // Clear FSM state for this mesh
+    // Clear FSM state for this mesh (both in-memory instance AND persisted SQLite row)
     const fsm = this.meshFSMs.get(meshName);
     if (fsm) {
+      fsm.getPersistence().deleteState(meshName);
       this.meshFSMs.delete(meshName);
     }
 
     // Clear SQLite suspended sessions for this mesh (survives restart)
     const clearedDbSessions = this.queue.clearSuspendedSessionsForMesh(meshName);
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0) {
+    // Clear session continuations unless persistence is enabled
+    let clearedConversations = 0;
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (!meshConfig?.persistence) {
+      clearedConversations = this.queue.clearConversationsForMesh(meshName);
+    }
+
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
         clearedBuffers,
         clearedDbSessions,
+        clearedConversations,
         clearedFSM: !!fsm,
       });
     }
@@ -2068,6 +2165,91 @@ The system will resume your session when the human responds.`;
         this.routingErrorCounts.delete(key);
       }
     }
+
+    // Clear halted state file entry
+    this.clearHaltedFile(meshName);
+  }
+
+  /**
+   * Write halted mesh info to halted.json for hook/status consumption
+   */
+  private writeHaltedFile(meshName: string, suspendedAgent: string, pendingMessages: number): void {
+    try {
+      const haltedPath = path.join(this.config.workDir, '.ai', 'tx', 'data', 'halted.json');
+      let halted: Record<string, { suspendedAgent: string; reason: string; since: string; pendingMessages: number }> = {};
+
+      if (fs.existsSync(haltedPath)) {
+        halted = JSON.parse(fs.readFileSync(haltedPath, 'utf-8'));
+      }
+
+      halted[meshName] = {
+        suspendedAgent,
+        reason: 'ask-human',
+        since: new Date().toISOString(),
+        pendingMessages,
+      };
+
+      fs.writeFileSync(haltedPath, JSON.stringify(halted, null, 2));
+    } catch (err) {
+      log.debug('dispatcher', 'Failed to write halted.json', { error: String(err) });
+    }
+  }
+
+  /**
+   * Clear a mesh entry from halted.json
+   */
+  private clearHaltedFile(meshName: string): void {
+    try {
+      const haltedPath = path.join(this.config.workDir, '.ai', 'tx', 'data', 'halted.json');
+      if (!fs.existsSync(haltedPath)) return;
+
+      const halted = JSON.parse(fs.readFileSync(haltedPath, 'utf-8'));
+      if (halted[meshName]) {
+        delete halted[meshName];
+        fs.writeFileSync(haltedPath, JSON.stringify(halted, null, 2));
+      }
+    } catch (err) {
+      log.debug('dispatcher', 'Failed to clear halted.json', { error: String(err) });
+    }
+  }
+
+  /**
+   * Resolve manifest template variables from session.yaml
+   * Maps location placeholders like {game}, {campaign-id}, {N} to actual values
+   */
+  private resolveManifestVariables(
+    meshName: string,
+    wsLocations: Record<string, string>,
+  ): Record<string, string> {
+    const varMap: Record<string, string> = {};
+
+    // Find session location (typically static path like .ai/tx/narrative-engine/)
+    const sessionLocation = wsLocations['session'];
+    if (!sessionLocation) return varMap;
+
+    const sessionPath = path.join(this.config.workDir, sessionLocation, 'session.yaml');
+    if (!fs.existsSync(sessionPath)) return varMap;
+
+    try {
+      const session = YAML.parse(fs.readFileSync(sessionPath, 'utf-8'));
+      if (!session || typeof session !== 'object') return varMap;
+
+      // Map session fields to template variables
+      if (session.game_id) {
+        varMap['game'] = session.game_id;
+        varMap['game-id'] = session.game_id;
+      }
+      if (session.campaign_id) {
+        varMap['campaign-id'] = session.campaign_id;
+      }
+      if (session.turn !== undefined) {
+        varMap['N'] = String(session.turn);
+      }
+    } catch {
+      // Non-fatal — proceed with unresolved variables
+    }
+
+    return varMap;
   }
 
   /**
@@ -2458,13 +2640,44 @@ Please advise the agent or check mesh configuration.`;
 
       // Inject file manifest contract if present
       if (meshConfig?.manifest) {
-        const agentReads: string[] = [];
-        const agentWrites: string[] = [];
+        const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
+        const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
+
+        // Resolve workspace locations for path substitution
+        const wsLocations = (meshConfig as any).workspace?.locations || {};
+        const wsBase = (meshConfig as any).workspace?.path || '';
+
+        // Try reading session.yaml to resolve template variables
+        const varMap = this.resolveManifestVariables(meshName, wsLocations);
+
         for (const entry of meshConfig.manifest) {
-          if (entry.reads.includes(agent.name)) agentReads.push(entry.id);
-          if (entry.writes.includes(agent.name)) agentWrites.push(entry.id);
+          let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
+
+          // Substitute known variables
+          for (const [key, value] of Object.entries(varMap)) {
+            locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+          }
+
+          const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
+          const fileEntry: import('../workspace/index.ts').ManifestFileEntry = {
+            id: entry.id, path: resolvedPath, description: entry.description,
+          };
+
+          if (entry.reads.includes(agent.name)) {
+            // Inject file contents for reads if path is fully resolved and file exists
+            if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
+              try {
+                fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8');
+              } catch {
+                // Non-fatal — file listed but unreadable
+              }
+            }
+            agentReads.push(fileEntry);
+          }
+          if (entry.writes.includes(agent.name)) agentWrites.push(fileEntry);
         }
         if (agentReads.length > 0 || agentWrites.length > 0) {
+          const injectedCount = agentReads.filter(f => f.content).length;
           systemPrompt = this.promptInjector.injectFileManifest(
             systemPrompt, agentReads, agentWrites
           );
@@ -2472,6 +2685,7 @@ Please advise the agent or check mesh configuration.`;
             agentId,
             reads: agentReads.length,
             writes: agentWrites.length,
+            injectedContents: injectedCount,
           });
         }
       }
@@ -2554,16 +2768,36 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
-      // Extract routing config for this agent
-      const routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
-
-      // Inject routing instructions into system prompt (using extracted module)
-      if (routing && Object.keys(routing).length > 0) {
-        systemPrompt = injectRoutingInstructions(systemPrompt, routing, meshName);
-        log.info('dispatcher', `Injected routing instructions into system prompt`, {
+      // Extract and inject routing instructions
+      let routing: Record<string, Record<string, string>> | undefined;
+      if (meshConfig?.routing_mode === 'dispatcher' && meshConfig.routing) {
+        // Dispatcher mode: inject sentinel address, valid outcomes, available agents
+        const agentNames = meshConfig.agents.map(a => a.name);
+        const router = new DispatchRouter(
+          meshName,
+          meshConfig.routing as import('../shared/types.ts').DispatcherRoutingConfig,
+          agentNames
+        );
+        const ctx = router.getInjectionContext(agent.name);
+        systemPrompt = injectDispatcherRoutingInstructions(
+          systemPrompt, ctx.sentinel, ctx.validOutcomes, ctx.availableAgents, ctx.isTerminal
+        );
+        log.info('dispatcher', 'Injected dispatcher routing instructions', {
           agentId,
-          routes: Object.keys(routing),
+          sentinel: ctx.sentinel,
+          isTerminal: ctx.isTerminal,
+          validOutcomes: ctx.validOutcomes,
         });
+      } else {
+        // Agent mode: inject per-agent routing table (existing behavior)
+        routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
+        if (routing && Object.keys(routing).length > 0) {
+          systemPrompt = injectRoutingInstructions(systemPrompt, routing, meshName);
+          log.info('dispatcher', `Injected routing instructions into system prompt`, {
+            agentId,
+            routes: Object.keys(routing),
+          });
+        }
       }
 
       // Inject rearmatter config if present
@@ -2647,7 +2881,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         log.info('dispatcher', `Using explicit session-id from frontmatter for ${agentId}`, {
           sessionId: sessionId.slice(0, 8) + '...'
         });
-      } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)) {
+      } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
+              || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
         const existingSession = this.queue.getConversationId(agentId);
         if (existingSession) {
           sessionId = existingSession;
@@ -2668,6 +2903,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
         sessionId,  // Resume session if continuation enabled
         command: agent.command,  // Agent-level slash command
+        maxTurns: agent.max_turns,  // Runtime guardrail: API round-trip limit
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -2992,6 +3228,48 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
+        // Artifact validation: check manifest writes for this agent
+        const meshConfigForValidation = this.meshConfigs.get(meshName);
+        if (meshConfigForValidation?.manifest) {
+          const agentWrites = meshConfigForValidation.manifest
+            .filter(entry => entry.writes.includes(agent.name));
+
+          if (agentWrites.length > 0) {
+            const wsLocations = (meshConfigForValidation as any).workspace?.locations || {};
+            const wsBase = (meshConfigForValidation as any).workspace?.path || '';
+            const varMap = this.resolveManifestVariables(meshName, wsLocations);
+
+            const missing: string[] = [];
+            const checked: string[] = [];
+            for (const entry of agentWrites) {
+              let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
+              for (const [key, value] of Object.entries(varMap)) {
+                locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+              }
+              // Skip validation if path has unresolved template variables
+              if (locationTemplate.includes('{')) continue;
+
+              const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
+              checked.push(entry.id);
+              if (!fs.existsSync(resolvedPath)) {
+                missing.push(entry.id);
+              }
+            }
+            if (missing.length > 0) {
+              log.warn('dispatcher', `Artifact validation: agent did not write expected files`, {
+                agentId,
+                missing,
+                checked,
+              });
+              this.emit('worker:artifact-missing', {
+                agentId,
+                missing,
+                meshName,
+              });
+            }
+          }
+        }
+
         // Complete the FSM (after post-hooks pass or exhausted)
         // Defense-in-depth: catch ValidationError if worker tries to complete with pending asks
         try {
@@ -3081,7 +3359,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         // Save session ID for continuation (if enabled and session captured)
         const agentName = agentId.split('/')[1];
-        if (this.shouldContinueAgent(agentName, meshConfig?.continuation) && data.sessionId) {
+        if ((this.shouldContinueAgent(agentName, meshConfig?.continuation)
+          || this.shouldPersistAgent(agentName, meshConfig?.persistence)) && data.sessionId) {
           this.queue.setConversationId(agentId, data.sessionId);
           log.info('dispatcher', `Session saved for ${agentId}`, {
             sessionId: data.sessionId.slice(0, 8) + '...'

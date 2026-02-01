@@ -100,3 +100,5 @@ violations:
 - Tag and adverb violations classify as MECHANICAL. Coherence violations classify as CREATIVE.
 - Flag every bad tag — no exceptions for "common" ones like replied/responded.
 - Beats (action replacing tags) are preferred. Absence of a tag is valid.
+- Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
+- Forward all paths from incoming message to the next linter.

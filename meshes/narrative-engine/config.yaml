@@ -13,34 +13,42 @@ agents:
   - name: entry
     model: sonnet
     prompt: coordinator/entry.md
+    max_turns: 5
 
   - name: game-coord
     model: sonnet
     prompt: coordinator/game-coord.md
+    max_turns: 5
 
   - name: prologue-coord
     model: sonnet
     prompt: coordinator/prologue-coord.md
+    max_turns: 5
 
   - name: init-coord
     model: sonnet
     prompt: coordinator/init-coord.md
+    max_turns: 5
 
   - name: prep-coord
     model: sonnet
     prompt: coordinator/prep-coord.md
+    max_turns: 5
 
   - name: render-coord
     model: sonnet
     prompt: coordinator/render-coord.md
+    max_turns: 5
 
   - name: validate-coord
     model: sonnet
     prompt: coordinator/validate-coord.md
+    max_turns: 5
 
   - name: compress-coord
     model: sonnet
     prompt: coordinator/compress-coord.md
+    max_turns: 5
 
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)
@@ -48,29 +56,34 @@ agents:
   - name: dramaturg
     model: sonnet
     prompt: dramaturg/prompt.md
+    max_turns: 15
     # phase 1 - Story-aware outcome suggestions
     # Reads arc context, suggests weight adjustments
 
   - name: scene-crafter
     model: sonnet
     prompt: scene-crafter/prompt.md
+    max_turns: 15
     # phase 1 - Scene structure, beats, transitions, pacing
     # Identifies decision points for player agency
 
   - name: system
     model: sonnet
     prompt: system/prompt.md
+    max_turns: 15
     # phase 2 - Mechanics engine, outcome tables, trait tracking
     # Accepts dramaturg notes for story-aware weighting
 
   - name: cast
     model: sonnet
     prompt: cast/prompt.md
+    max_turns: 15
     # phase 2 - NPC voices, reactions, character consistency
 
   - name: narrator
     model: opus
     prompt: narrator/prompt.md
+    max_turns: 30
     # phase 2,3 - Prose rendering with staged build (1.5-2k words)
     # Orchestrates system, cast, lint/edit cycle
     # Receives fully-decided outline from scene-crafter
@@ -78,6 +91,7 @@ agents:
   - name: calibrator
     model: opus
     prompt: calibrator/prompt.md
+    max_turns: 30
     # Game creation - HITL worldbuilding extraction
     # 9-phase extraction loop via HITL messages to core
     # Creates author.yaml, setting.yaml, arc.yaml, entities
@@ -86,17 +100,20 @@ agents:
   - name: editor
     model: opus
     prompt: editor/prompt.md
+    max_turns: 25
     # Adversarial prose review against author.yaml
     # Works with narrator in phase 3
 
   - name: oracle
     model: sonnet
     prompt: oracle/prompt.md
+    max_turns: 15
     # Continuity validation + knowledge queries for entity data
 
   - name: scribe
     model: sonnet
     prompt: scribe/prompt.md
+    max_turns: 15
     # Context compression, state management, game canon promotion
     # Only fires if oracle passes (or max iterations)
 
@@ -106,6 +123,7 @@ agents:
   - name: lint-coordinator
     model: sonnet
     prompt: linters/lint-coordinator.md
+    max_turns: 5
     # Orchestrates parallel dispatch to all linters
     # Aggregates violations into violations.yaml
     # Forwards to editor for holistic review
@@ -113,60 +131,70 @@ agents:
   - name: lint-forbidden-words
     model: haiku
     prompt: linters/forbidden-words.md
+    max_turns: 3
     # Mechanical: "suddenly", "seemed", "very", etc.
     # Concordance overuse detection
 
   - name: lint-patterns
     model: sonnet
     prompt: linters/patterns.md
+    max_turns: 3
     # Creative: "She realized", "Fear washed over", etc.
     # Patterns that need narrator rewrite
 
   - name: lint-ai-tells
     model: haiku
     prompt: linters/ai-tells.md
+    max_turns: 3
     # Mechanical: "amidst", "whilst", "orbs", etc.
     # Simple word swaps
 
   - name: lint-cadence
     model: sonnet
     prompt: linters/cadence.md
+    max_turns: 3
     # Creative: Sentence length distribution
     # Rhythm analysis
 
   - name: lint-dialogue
     model: haiku
     prompt: linters/dialogue.md
+    max_turns: 3
     # Mechanical: Tags, adverbs
     # Coherence check
 
   - name: lint-litotes
     model: sonnet
     prompt: linters/litotes.md
+    max_turns: 3
     # Creative: "not X, but Y" patterns
     # Budget: 1-2 per scene
 
   - name: lint-metaphor
     model: sonnet
     prompt: linters/metaphor.md
+    max_turns: 3
     # Creative: Repeated sensory channels
     # One peak expression per channel per scene
 
   - name: lint-body-first
     model: sonnet
     prompt: linters/body-first.md
+    max_turns: 3
     # Creative: Scene opening physical grounding
     # Body before thought
 
   - name: lint-factoids
     model: haiku
     prompt: linters/lint-factoids.md
+    max_turns: 3
     # Creative: Real-world trivia repetition detection
     # Prevents same facts appearing twice in campaign
 
   - name: lint-temporal
     model: haiku
     prompt: linters/lint-temporal.md
+    max_turns: 3
     # Creative: Temporal continuity detection
     # Duration/time contradictions across turns
 
@@ -179,8 +207,10 @@ completion_agents:
   - game-coord
   - compress-coord
 
-# Session persistence (coordinators share state via session.yaml)
-# continuation: true
+# Session continuation: reuse Claude session IDs within a mesh run (default: true)
+continuation: true
+# Session persistence: keep sessions across mesh runs (default: false)
+# persistence: true
 
 # ==========================================
 # ROUTING - Phase coordinator architecture
@@ -191,7 +221,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-coord → prep-coord → render-coord → validate-coord → compress-coord
+  # Phase flow: entry → game-coord|init-coord → prep-coord → validate-coord → render-coord → compress-coord
   # Prep sequence: dramaturg → system → cast → scene-crafter (sequential)
 
   # Phase coordinators
@@ -225,18 +255,18 @@ routing:
       system: "Resolve outcomes"
       cast: "Generate character reactions"
       scene-crafter: "Design scene beats"
-      render-coord: "Prep complete"
+      validate-coord: "Scene outline ready for validation"
 
   render-coord:
     message:
       narrator: "Render prose"
-      validate-coord: "Prose ready for validation"
+      compress-coord: "Prose approved"
 
   validate-coord:
     message:
       oracle: "Validate continuity"
-      narrator: "Fix violations"
-      compress-coord: "Prose approved"
+      scene-crafter: "Fix outline violations"
+      render-coord: "Scene approved"
 
   compress-coord:
     message:
@@ -256,8 +286,7 @@ routing:
     message:
       oracle: "Knowledge query"
       lint-coordinator: "Lint prose"
-      render-coord: "Initial prose rendered"
-      validate-coord: "Fix complete"
+      render-coord: "Prose rendered"
       editor: "Revised prose ready"
 
   dramaturg:
@@ -276,6 +305,7 @@ routing:
     message:
       core: "Mid-turn player decisions"
       prep-coord: "Scene outline complete"
+      validate-coord: "Outline fix complete"
 
   oracle:
     message:
@@ -290,59 +320,52 @@ routing:
   # LINT LADDER ROUTING
   # ==========================================
 
+  # Lint chain: coordinator dispatches first linter, each passes to the next.
+  # Final linter returns to coordinator for aggregation → editor.
   lint-coordinator:
     message:
-      lint-forbidden-words: "Check forbidden words"
-      lint-patterns: "Check patterns"
-      lint-ai-tells: "Check AI tells"
-      lint-cadence: "Check cadence"
-      lint-dialogue: "Check dialogue"
-      lint-litotes: "Check litotes"
-      lint-metaphor: "Check metaphor"
-      lint-body-first: "Check body-first"
-      lint-factoids: "Check factoid reuse"
-      lint-temporal: "Check temporal continuity"
+      lint-forbidden-words: "Start lint chain"
       editor: "Violations aggregated"
 
   lint-forbidden-words:
     message:
-      lint-coordinator: "Check complete"
+      lint-patterns: "Next lint"
 
   lint-patterns:
     message:
-      lint-coordinator: "Check complete"
+      lint-ai-tells: "Next lint"
 
   lint-ai-tells:
     message:
-      lint-coordinator: "Check complete"
+      lint-cadence: "Next lint"
 
   lint-cadence:
     message:
-      lint-coordinator: "Check complete"
+      lint-dialogue: "Next lint"
 
   lint-dialogue:
     message:
-      lint-coordinator: "Check complete"
+      lint-litotes: "Next lint"
 
   lint-litotes:
     message:
-      lint-coordinator: "Check complete"
+      lint-metaphor: "Next lint"
 
   lint-metaphor:
     message:
-      lint-coordinator: "Check complete"
+      lint-body-first: "Next lint"
 
   lint-body-first:
     message:
-      lint-coordinator: "Check complete"
+      lint-factoids: "Next lint"
 
   lint-factoids:
     message:
-      lint-coordinator: "Check complete"
+      lint-temporal: "Next lint"
 
   lint-temporal:
     message:
-      lint-coordinator: "Check complete"
+      lint-coordinator: "Lint chain complete"
 
   # ==========================================
   # EDITOR
@@ -378,6 +401,12 @@ manifest:
     reads: [system, narrator]
     writes: [dramaturg]
 
+  - id: entropy-tables.yaml
+    description: JIT probability tables generated before entropy application
+    location: workspace
+    reads: []
+    writes: [system]
+
   - id: resolution.yaml
     description: Mechanical outcome tables and trait resolution
     location: workspace
@@ -393,7 +422,7 @@ manifest:
   - id: scene-outline.yaml
     description: Scene beats, pacing, and decision points
     location: workspace
-    reads: [narrator]
+    reads: [narrator, oracle]
     writes: [scene-crafter]
 
   - id: prose-draft.md
