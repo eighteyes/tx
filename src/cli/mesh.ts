@@ -3,14 +3,19 @@
  *
  * Commands:
  *   tx mesh list              List meshes with activity
- *   tx mesh status <mesh>     Show mesh state snapshot
- *   tx mesh kill <mesh>       Kill all workers for a mesh (via tmux)
+ *   tx mesh status <mesh>     Show mesh state snapshot (+ FSM pipeline for FSM meshes)
+ *   tx mesh status <mesh> --next   Machine-readable dispatch instructions
+ *   tx mesh status <mesh> --json   Full JSON with per-state gate status
+ *   tx mesh kill <mesh>       Kill all workers for a mesh (via SIGUSR2 to tx start)
  *   tx mesh clear <mesh>      Clear SQLite state (suspended sessions, pending asks, FSM)
+ *   tx mesh unstick <mesh>    Clear halt state only (preserves FSM state)
  *   tx mesh validate <mesh>   Validate mesh configuration
  *   tx mesh fsm-chain <mesh>  Show FSM state transition chain with validation
  *   tx mesh fsm-reset <mesh>  Reset FSM to initial state (preserves sessions)
  *   tx mesh fsm-goto <mesh> <state>  Force FSM to a specific state
  *   tx mesh run <mesh> "<prompt>"   Run full FSM pipeline end-to-end
+ *   tx mesh cost [mesh]           Per-agent cost/token/cache summary from prior runs
+ *   tx mesh flow <mesh>           Agent execution timeline with concurrency grouping
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -35,6 +40,7 @@ interface MeshFlags {
   json?: boolean;
   force?: boolean;
   strict?: boolean;
+  next?: boolean;
 }
 
 /**
@@ -50,6 +56,8 @@ function parseFlags(args: string[]): MeshFlags {
       flags.force = true;
     } else if (arg === '--strict') {
       flags.strict = true;
+    } else if (arg === '--next') {
+      flags.next = true;
     }
   }
 
@@ -484,71 +492,224 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
       asksCleared,
       fsmCleared: !!fsmState,
     });
+
+    // Signal running dispatcher to sync in-memory state
+    const pidFile = path.join(cwd, '.ai/tx/data/.pid');
+    const controlFile = path.join(cwd, '.ai/tx/data/control.json');
+    if (fs.existsSync(pidFile)) {
+      try {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        if (!isNaN(pid)) {
+          fs.writeFileSync(controlFile, JSON.stringify({ action: 'clear-mesh', mesh: meshName }));
+          process.kill(pid, 'SIGUSR2');
+          if (!flags.json) {
+            console.log(chalk.dim('  Signaled running dispatcher to sync in-memory state.'));
+          }
+        }
+      } catch {
+        // Process not running — DB clear is sufficient
+      }
+    }
   } finally {
     queue.close();
   }
 }
 
 /**
- * Kill all workers for a mesh by killing matching tmux sessions
- * Session naming pattern: tx-tx-{meshname}-{hash}
+ * Unstick a halted mesh — clears suspended sessions and pending asks
+ * without touching FSM state. Lighter than `clear`.
  */
-async function killMeshWorkers(meshName: string, flags: MeshFlags): Promise<void> {
-  try {
-    // List all tmux sessions
-    const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}"');
-    const sessions = stdout.trim().split('\n').filter(Boolean);
+async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const haltedPath = path.join(cwd, '.ai/tx/data/halted.json');
 
-    // Find sessions matching this mesh (pattern: tx-tx-{meshname}-{hash})
-    const pattern = `tx-tx-${meshName}-`;
-    const matchingSessions = sessions.filter(s => s.startsWith(pattern));
-
-    if (matchingSessions.length === 0) {
-      if (flags.json) {
-        console.log(JSON.stringify({ killed: 0, message: 'No active sessions found for mesh' }));
-      } else {
-        console.log(chalk.yellow(`No active sessions found for mesh: ${meshName}`));
-      }
-      return;
+  if (!fs.existsSync(queuePath)) {
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No queue database found' }));
+    } else {
+      console.log(chalk.yellow('No mesh state found (no queue database).'));
     }
+    return;
+  }
 
-    // Kill each matching session
-    let killed = 0;
-    const errors: string[] = [];
+  const queue = new MessageQueue(queuePath);
 
-    for (const session of matchingSessions) {
+  try {
+    // Get info before clearing
+    const allSuspended = queue.listSuspendedSessions();
+    const suspendedSessions = allSuspended.filter(s => s.meshName === meshName);
+
+    const allAsks = queue.getAllPendingAsks();
+    const pendingAsks = allAsks.filter(a =>
+      a.from_agent.startsWith(`${meshName}/`) || a.to_agent.startsWith(`${meshName}/`)
+    );
+
+    const pendingMessages = queue.queryMessages({ status: 'pending', limit: 100 })
+      .filter(m => m.to_agent.startsWith(`${meshName}/`));
+
+    // Clear suspended sessions
+    const suspendedCleared = queue.clearSuspendedSessionsForMesh(meshName);
+
+    // Clear pending asks
+    const asksCleared = queue.clearPendingAsksForMesh(meshName);
+
+    // Clear halted.json entry
+    if (fs.existsSync(haltedPath)) {
       try {
-        await execAsync(`tmux kill-session -t '${session}'`);
-        killed++;
-        log.info('cli-mesh', 'Killed tmux session', { session, meshName });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(`${session}: ${msg}`);
-        log.error('cli-mesh', 'Failed to kill session', { session, error: msg });
+        const halted = JSON.parse(fs.readFileSync(haltedPath, 'utf-8'));
+        if (halted[meshName]) {
+          delete halted[meshName];
+          fs.writeFileSync(haltedPath, JSON.stringify(halted, null, 2));
+        }
+      } catch {
+        // Ignore parse errors
       }
     }
 
     if (flags.json) {
       console.log(JSON.stringify({
-        killed,
-        total: matchingSessions.length,
-        sessions: matchingSessions,
-        errors: errors.length > 0 ? errors : undefined
-      }));
+        meshName,
+        cleared: {
+          suspendedSessions: suspendedCleared,
+          pendingAsks: asksCleared,
+        },
+        queuedMessages: pendingMessages.length,
+      }, null, 2));
+      return;
+    }
+
+    console.log(`\n${chalk.green(`Cleared mesh halt: ${meshName}`)}\n`);
+
+    if (suspendedSessions.length > 0) {
+      const details = suspendedSessions
+        .map(s => `${s.agentId.split('/')[1]}, ${s.reason}`)
+        .join('; ');
+      console.log(`  ${chalk.dim('Suspended sessions:')} ${suspendedCleared} (${details})`);
     } else {
-      console.log(chalk.green(`✓ Killed ${killed}/${matchingSessions.length} session(s) for ${meshName}`));
-      if (errors.length > 0) {
-        console.log(chalk.yellow('Some sessions failed to kill:'));
-        errors.forEach(e => console.log(chalk.dim(`  ${e}`)));
+      console.log(`  ${chalk.dim('Suspended sessions:')} 0`);
+    }
+
+    console.log(`  ${chalk.dim('Pending asks:')} ${asksCleared}`);
+    console.log(`  ${chalk.dim('Queued messages:')} ${pendingMessages.length} (now unblocked)`);
+
+    if (suspendedCleared === 0 && asksCleared === 0) {
+      console.log(chalk.dim('\n  No halt state to clear.'));
+    } else {
+      console.log(chalk.dim('\n  Mesh will resume processing on next message or restart.'));
+    }
+    console.log();
+
+    log.info('cli-mesh', 'Unstick mesh', {
+      meshName,
+      suspendedCleared,
+      asksCleared,
+      queuedMessages: pendingMessages.length,
+    });
+  } finally {
+    queue.close();
+  }
+}
+
+/**
+ * Kill all workers for a mesh via SIGUSR2 control signal to the running tx start process.
+ * Writes a control file and signals the server PID. Falls back to tmux kill if no PID file.
+ */
+async function killMeshWorkers(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const dataDir = path.join(cwd, '.ai/tx/data');
+  const pidFile = path.join(dataDir, '.pid');
+  const controlFile = path.join(dataDir, 'control.json');
+
+  // Check if tx start is running (PID file exists)
+  if (!fs.existsSync(pidFile)) {
+    // No running server — fall back to tmux kill for legacy sessions
+    try {
+      const { stdout } = await execAsync('tmux list-sessions -F "#{session_name}"');
+      const sessions = stdout.trim().split('\n').filter(Boolean);
+      const pattern = `tx-tx-${meshName}-`;
+      const matching = sessions.filter(s => s.startsWith(pattern));
+
+      if (matching.length === 0) {
+        if (flags.json) {
+          console.log(JSON.stringify({ killed: 0, message: 'tx start not running, no tmux sessions found' }));
+        } else {
+          console.log(chalk.yellow(`tx start not running and no tmux sessions found for: ${meshName}`));
+        }
+        return;
+      }
+
+      let killed = 0;
+      for (const session of matching) {
+        try {
+          await execAsync(`tmux kill-session -t '${session}'`);
+          killed++;
+        } catch { /* ignore */ }
+      }
+
+      if (flags.json) {
+        console.log(JSON.stringify({ killed, method: 'tmux-fallback' }));
+      } else {
+        console.log(chalk.green(`✓ Killed ${killed} tmux session(s) for ${meshName} (fallback)`));
+      }
+    } catch {
+      if (flags.json) {
+        console.log(JSON.stringify({ killed: 0, message: 'tx start not running, no tmux sessions' }));
+      } else {
+        console.log(chalk.yellow('tx start not running and no tmux sessions found'));
       }
     }
+    return;
+  }
+
+  // Read server PID
+  const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+  if (isNaN(pid)) {
+    console.error(chalk.red('Invalid PID in .pid file'));
+    return;
+  }
+
+  // Write control file
+  fs.writeFileSync(controlFile, JSON.stringify({ action: 'kill-mesh', mesh: meshName }));
+
+  // Send SIGUSR2
+  try {
+    process.kill(pid, 'SIGUSR2');
   } catch (err) {
-    // tmux list-sessions fails if no sessions exist
+    // Process doesn't exist — stale PID file
+    if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
     if (flags.json) {
-      console.log(JSON.stringify({ killed: 0, message: 'No tmux sessions running' }));
+      console.log(JSON.stringify({ killed: 0, message: 'tx start process not found (stale PID)' }));
     } else {
-      console.log(chalk.yellow('No tmux sessions running'));
+      console.log(chalk.yellow(`tx start process (PID ${pid}) not found — stale PID file`));
     }
+    return;
+  }
+
+  // Poll for ACK (control file deletion) with timeout
+  const timeout = 5000;
+  const interval = 100;
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    if (!fs.existsSync(controlFile)) {
+      // ACK received
+      if (flags.json) {
+        console.log(JSON.stringify({ killed: true, method: 'sigusr2', mesh: meshName }));
+      } else {
+        console.log(chalk.green(`✓ Killed workers for ${meshName}`));
+      }
+      return;
+    }
+    await new Promise(r => setTimeout(r, interval));
+  }
+
+  // Timeout — clean up control file
+  if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+  if (flags.json) {
+    console.log(JSON.stringify({ killed: false, message: 'Timeout waiting for ACK from tx start' }));
+  } else {
+    console.log(chalk.yellow(`Timeout waiting for response from tx start (PID ${pid})`));
   }
 }
 
@@ -754,6 +915,408 @@ function loadFSMConfig(meshName: string, workDir: string): { fsmConfig: FSMConfi
     fsmConfig: fsm as FSMConfig,
     basePath: path.join(workDir, 'meshes', meshName),
   };
+}
+
+/**
+ * Resolve $variable references in a gate path using context variables.
+ * Static utility — mirrors MeshFSM.resolveGatePath without needing an instance.
+ */
+function resolveGatePath(
+  gateName: string,
+  context: Record<string, unknown>,
+  workDir: string
+): string {
+  let resolved = gateName;
+  for (const [key, value] of Object.entries(context)) {
+    if (typeof value === 'string' || typeof value === 'number') {
+      resolved = resolved.replace(new RegExp(`\\$${key}\\b`, 'g'), String(value));
+    }
+  }
+  if (resolved.includes('$workspace')) {
+    resolved = resolved.replace(/\$workspace/g, workDir);
+  }
+  if (!path.isAbsolute(resolved)) {
+    resolved = path.join(workDir, resolved);
+  }
+  return resolved;
+}
+
+/**
+ * Build an ordered state chain from FSM config.
+ * Follows exit.default from initial state, appends branch targets, terminal last.
+ */
+function buildStateChain(
+  fsmConfig: FSMConfig
+): string[] {
+  const initial = fsmConfig.initialState || fsmConfig.initial || '';
+  const stateMap = new Map<string, Record<string, unknown>>();
+
+  // Build lookup from both array and object formats
+  if (Array.isArray(fsmConfig.states)) {
+    for (const s of fsmConfig.states) {
+      stateMap.set(s.name, s as unknown as Record<string, unknown>);
+    }
+  } else if (fsmConfig.states && typeof fsmConfig.states === 'object') {
+    for (const [name, cfg] of Object.entries(fsmConfig.states as Record<string, unknown>)) {
+      stateMap.set(name, { name, ...(cfg as Record<string, unknown>) });
+    }
+  }
+
+  const chain: string[] = [];
+  const visited = new Set<string>();
+  const branchTargets: string[] = [];
+
+  // Walk the exit.default chain from initial
+  let current: string | null = initial;
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    chain.push(current);
+
+    const stateObj = stateMap.get(current);
+    if (!stateObj) break;
+
+    // Collect branch targets from exit.when
+    const exit = stateObj.exit as Record<string, unknown> | undefined;
+    if (exit?.when && Array.isArray(exit.when)) {
+      for (const clause of exit.when) {
+        const target = (clause as Record<string, unknown>).target as string;
+        if (target && !visited.has(target) && !branchTargets.includes(target)) {
+          branchTargets.push(target);
+        }
+      }
+    }
+
+    // Follow exit.default
+    current = (exit?.default as string) || null;
+  }
+
+  // Append branch targets not already in chain
+  for (const target of branchTargets) {
+    if (!visited.has(target)) {
+      visited.add(target);
+      chain.push(target);
+    }
+  }
+
+  // Append any remaining states not yet visited
+  for (const name of stateMap.keys()) {
+    if (!visited.has(name)) {
+      chain.push(name);
+    }
+  }
+
+  return chain;
+}
+
+/**
+ * FSM pipeline status — infer actual state from gate file presence,
+ * compare against FSM persistence, output dispatch instructions.
+ *
+ * Derives everything from config.yaml FSM block + persistence + workspace files.
+ */
+async function fsmStatus(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  // Load FSM config (required)
+  const loaded = loadFSMConfig(meshName, cwd);
+  if (!loaded) return;
+
+  const { fsmConfig } = loaded;
+
+  // Load raw config for workspace resolution
+  let configPath = path.join(cwd, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(cwd, 'meshes', meshName, 'config.yml');
+  }
+  const rawConfig = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+
+  // Load FSM persistence (optional — may not have queue DB yet)
+  let fsmState: { currentState: string; context: Record<string, unknown>; lastTransitionAt: number } | null = null;
+  let queue: MessageQueue | null = null;
+
+  if (fs.existsSync(queuePath)) {
+    queue = new MessageQueue(queuePath);
+    const fsmPersistence = new FSMPersistence(queue.getDb());
+    fsmPersistence.initialize();
+    fsmState = fsmPersistence.getState(meshName);
+  }
+
+  // Resolve workspace path from context or config
+  const context: Record<string, unknown> = fsmState?.context || fsmConfig.context || {};
+  let workspaceDir = context.workspace as string | null;
+
+  if (!workspaceDir) {
+    workspaceDir = rawConfig.workspace?.locations?.workspace
+      || rawConfig.workspace?.path
+      || `.ai/${meshName}/workspace`;
+  }
+
+  if (workspaceDir && !path.isAbsolute(workspaceDir)) {
+    workspaceDir = path.join(cwd, workspaceDir);
+  }
+
+  // Build ordered state chain
+  const stateChain = buildStateChain(fsmConfig);
+
+  // Build state lookup from normalized config
+  const stateMap = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(fsmConfig.states)) {
+    for (const s of fsmConfig.states) {
+      stateMap.set(s.name, s as unknown as Record<string, unknown>);
+    }
+  } else if (fsmConfig.states && typeof fsmConfig.states === 'object') {
+    for (const [name, cfg] of Object.entries(fsmConfig.states as Record<string, unknown>)) {
+      stateMap.set(name, { name, ...(cfg as Record<string, unknown>) });
+    }
+  }
+
+  // Per-state: resolve gates, check file existence, collect agents
+  interface StateInfo {
+    name: string;
+    agents: string[];
+    gates: Array<{ raw: string; resolved: string; exists: boolean; isScript: boolean }>;
+    gatesPassed: boolean;
+    isTerminal: boolean;
+    isEnsemble: boolean;
+    ensembleProgress?: string;
+  }
+
+  const stateInfos: StateInfo[] = [];
+
+  for (const stateName of stateChain) {
+    const stateObj = stateMap.get(stateName);
+    if (!stateObj) continue;
+
+    // Collect agents
+    const agents: string[] = [];
+    if (Array.isArray(stateObj.agents)) {
+      agents.push(...(stateObj.agents as string[]));
+    } else {
+      if (stateObj.coordinator) agents.push(stateObj.coordinator as string);
+      if (Array.isArray(stateObj.participants)) agents.push(...(stateObj.participants as string[]));
+    }
+
+    const isTerminal = stateObj.terminal === true;
+    const ensemble = stateObj.ensemble as Record<string, unknown> | undefined;
+    const isEnsemble = !!ensemble;
+
+    // Collect ensemble agents
+    if (isEnsemble && ensemble) {
+      if (Array.isArray(ensemble.agents)) {
+        // Ensemble with named agents — replace the agents list
+        agents.length = 0;
+        agents.push(...(ensemble.agents as string[]));
+      } else if (typeof ensemble.agent === 'string') {
+        const count = typeof ensemble.count === 'number' ? ensemble.count : '?';
+        agents.length = 0;
+        agents.push(`${ensemble.agent}x${count}`);
+      }
+    }
+
+    // Resolve exit gates
+    const gates: StateInfo['gates'] = [];
+    const exit = stateObj.exit as Record<string, unknown> | undefined;
+    if (exit?.gates && typeof exit.gates === 'object') {
+      const gatesMap = exit.gates as Record<string, string[]>;
+      for (const agentGates of Object.values(gatesMap)) {
+        if (!Array.isArray(agentGates)) continue;
+        for (const gateName of agentGates) {
+          const isScript = !gateName.startsWith('$') && !gateName.includes('/');
+          const resolved = isScript
+            ? gateName
+            : resolveGatePath(gateName, context, cwd);
+          const exists = isScript
+            ? true // Script gates are assumed to have passed if we're past them
+            : fs.existsSync(resolved);
+          gates.push({ raw: gateName, resolved, exists, isScript });
+        }
+      }
+    }
+
+    // Ensemble progress: count per-agent completion files
+    let ensembleProgress: string | undefined;
+    if (isEnsemble && ensemble && Array.isArray(ensemble.agents)) {
+      const ensAgents = ensemble.agents as string[];
+      let done = 0;
+      for (const ea of ensAgents) {
+        // Check for typical ensemble output files: {agent}.yaml in workspace
+        if (workspaceDir && fs.existsSync(path.join(workspaceDir, `${ea}.yaml`))) {
+          done++;
+        }
+      }
+      ensembleProgress = `${done}/${ensAgents.length}`;
+    }
+
+    const gatesPassed = gates.length === 0
+      ? !isTerminal // No gates = passed (terminal is a special case)
+      : gates.every(g => g.exists);
+
+    stateInfos.push({
+      name: stateName,
+      agents,
+      gates,
+      gatesPassed,
+      isTerminal,
+      isEnsemble,
+      ensembleProgress,
+    });
+  }
+
+  // Infer file state: walk states in reverse, first with all gates satisfied
+  let inferredState = stateChain[0]; // fallback to initial
+  for (let i = stateInfos.length - 1; i >= 0; i--) {
+    const info = stateInfos[i];
+    if (info.isTerminal && info.gatesPassed) {
+      // If terminal state is "passed", check the state before it
+      // Terminal states have no gates — so check if the prior state's gates all passed
+      inferredState = info.name;
+      break;
+    }
+    if (info.gatesPassed && info.gates.length > 0) {
+      // This state's gates are all satisfied — the next state in chain is current
+      const nextIdx = stateChain.indexOf(info.name) + 1;
+      if (nextIdx < stateChain.length) {
+        inferredState = stateChain[nextIdx];
+      } else {
+        inferredState = info.name; // Last state
+      }
+      break;
+    }
+  }
+
+  // Drift detection
+  const persistedState = fsmState?.currentState || null;
+  const drift = persistedState !== null && persistedState !== inferredState;
+
+  // Get dispatch info for inferred state
+  const inferredInfo = stateInfos.find(s => s.name === inferredState);
+  const dispatchAgents = inferredInfo?.agents || [];
+  const dispatchParallel = inferredInfo?.isEnsemble || false;
+
+  // --- OUTPUT ---
+
+  if (flags.json) {
+    const result = {
+      meshName,
+      fsmState: persistedState,
+      inferredState,
+      drift,
+      workspace: workspaceDir,
+      states: stateInfos.map(s => ({
+        name: s.name,
+        agents: s.agents,
+        gates: s.gates.map(g => ({
+          path: g.raw,
+          resolved: g.resolved,
+          exists: g.exists,
+          isScript: g.isScript,
+        })),
+        gatesPassed: s.gatesPassed,
+        terminal: s.isTerminal,
+        ensemble: s.isEnsemble,
+        ensembleProgress: s.ensembleProgress || undefined,
+      })),
+      dispatch: {
+        agents: dispatchAgents,
+        parallel: dispatchParallel,
+      },
+    };
+    console.log(JSON.stringify(result, null, 2));
+    queue?.close();
+    return;
+  }
+
+  if (flags.next) {
+    console.log(`state=${persistedState || inferredState}`);
+    console.log(`inferred=${inferredState}`);
+    console.log(`drift=${drift ? 'yes' : 'no'}`);
+    console.log(`workspace=${workspaceDir || ''}`);
+    console.log(`spawn=${dispatchAgents.join(',')}`);
+    console.log(`parallel=${dispatchParallel}`);
+    console.log(`ensemble_progress=${inferredInfo?.ensembleProgress || ''}`);
+    queue?.close();
+    return;
+  }
+
+  // Default: human-readable pipeline table
+  console.log(`\n${chalk.bold(chalk.cyan(`Mesh: ${meshName}`))}`);
+  console.log(`${chalk.bold('FSM State:')} ${persistedState ? chalk.green(persistedState) : chalk.dim('none')} ${chalk.dim('(persisted)')}`);
+
+  const inferredMatch = !drift ? chalk.green('V') : chalk.red('DRIFT');
+  console.log(`${chalk.bold('File State:')} ${chalk.green(inferredState)} ${chalk.dim('(inferred)')} ${inferredMatch}`);
+  console.log();
+
+  // Column widths
+  const nameWidth = Math.max(18, ...stateInfos.map(s => s.name.length + 2));
+  const gateWidth = 32;
+
+  console.log(
+    chalk.dim('  ' + 'STATE'.padEnd(nameWidth) + 'GATE FILE'.padEnd(gateWidth) + 'AGENTS')
+  );
+  console.log(
+    chalk.dim('  ' + '\u2500'.repeat(nameWidth - 1).padEnd(nameWidth) +
+    '\u2500'.repeat(gateWidth - 1).padEnd(gateWidth) +
+    '\u2500'.repeat(20))
+  );
+
+  for (const info of stateInfos) {
+    let marker: string;
+    let nameStyle: (s: string) => string;
+
+    if (info.name === inferredState) {
+      marker = chalk.yellow('\u25BA'); // ► current
+      nameStyle = (s: string) => chalk.yellow(s);
+    } else if (info.gatesPassed && info.gates.length > 0) {
+      marker = chalk.green('\u25A0'); // ■ completed
+      nameStyle = (s: string) => chalk.dim(s);
+    } else if (info.isTerminal) {
+      marker = chalk.dim('\u25A1'); // □ pending
+      nameStyle = (s: string) => chalk.dim(s);
+    } else {
+      marker = '\u25A1'; // □ pending
+      nameStyle = (s: string) => s;
+    }
+
+    // Gate display
+    let gateDisplay: string;
+    if (info.isTerminal) {
+      gateDisplay = chalk.dim('(terminal)');
+    } else if (info.isEnsemble && info.ensembleProgress) {
+      gateDisplay = chalk.dim(`(ensemble ${info.ensembleProgress})`);
+    } else if (info.gates.length > 0) {
+      // Show the first file gate's raw path
+      const fileGates = info.gates.filter(g => !g.isScript);
+      gateDisplay = fileGates.length > 0 ? fileGates[0].raw : chalk.dim('\u2014');
+    } else {
+      gateDisplay = chalk.dim('\u2014');
+    }
+
+    // Agent display
+    const agentDisplay = info.agents.length > 0
+      ? info.agents.join(', ')
+      : chalk.dim('\u2014');
+
+    console.log(
+      `  ${marker} ${nameStyle(info.name.padEnd(nameWidth - 2))}${gateDisplay.padEnd(gateWidth)}${agentDisplay}`
+    );
+  }
+
+  console.log();
+  console.log(`${chalk.bold('Dispatch:')} ${dispatchAgents.length > 0 ? dispatchAgents.join(', ') : chalk.dim('none')}`);
+  if (dispatchParallel) {
+    console.log(`          ${chalk.cyan('(parallel)')}`);
+  }
+  console.log(`${chalk.bold('Message:')}  Execute task for state ${inferredState}`);
+
+  if (drift) {
+    console.log();
+    console.log(chalk.red(`DRIFT: persisted state '${persistedState}' != file-inferred state '${inferredState}'`));
+    console.log(chalk.red('  Files are truth. FSM persistence may be stale.'));
+  }
+
+  console.log();
+  queue?.close();
 }
 
 /**
@@ -1071,6 +1634,774 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
 }
 
 /**
+ * Per-agent cost/token/cache summary from historical log runs.
+ * Scans v4.1.jsonl through v4.4.jsonl (prior runs only, skips current v4.jsonl).
+ */
+interface AgentCostRecord {
+  agent: string;
+  model: string;
+  cost: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+  invocations: number;
+}
+
+interface RunCostRecord {
+  file: string;
+  runIndex: number;
+  cost: number;
+  agentCount: number;
+  durationMs: number;
+  timestamp: string;
+}
+
+async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const logsDir = path.join(cwd, '.ai/tx/logs');
+
+  // Collect log files: v4.jsonl (current session) + v4.1-4.jsonl (prior runs)
+  const logFiles: string[] = [];
+  const currentLog = path.join(logsDir, 'v4.jsonl');
+  if (fs.existsSync(currentLog)) logFiles.push(currentLog);
+  for (let i = 1; i <= 4; i++) {
+    const logPath = path.join(logsDir, `v4.${i}.jsonl`);
+    if (fs.existsSync(logPath)) logFiles.push(logPath);
+  }
+
+  if (logFiles.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No log files found', hint: 'Run a mesh first.' }));
+    } else {
+      console.log(chalk.yellow('No log files found.'));
+      console.log(chalk.dim('Run a mesh first.'));
+    }
+    return;
+  }
+
+  // Aggregate data
+  const agentMap = new Map<string, AgentCostRecord>();
+  const runs: RunCostRecord[] = [];
+
+  for (let idx = 0; idx < logFiles.length; idx++) {
+    const logPath = logFiles[idx];
+    const content = fs.readFileSync(logPath, 'utf-8');
+    const lines = content.split('\n').filter(Boolean);
+
+    let runCost = 0;
+    let runDuration = 0;
+    const runAgents = new Set<string>();
+    let runTimestamp = '';
+
+    for (const line of lines) {
+      let entry: Record<string, unknown>;
+      try {
+        entry = JSON.parse(line);
+      } catch { continue; }
+
+      if (entry.message !== 'SDK metrics') continue;
+      const data = entry.data as Record<string, unknown> | undefined;
+      if (!data?.workerId) continue;
+
+      const workerId = data.workerId as string;
+
+      // Filter by mesh if specified
+      if (meshName && !workerId.startsWith(`${meshName}/`)) continue;
+
+      const agent = workerId;
+      const cost = (data.totalCostUsd as number) || 0;
+      const inputTokens = (data.inputTokens as number) || 0;
+      const outputTokens = (data.outputTokens as number) || 0;
+      const cacheRead = (data.cacheReadTokens as number) || 0;
+      const cacheWrite = (data.cacheCreationTokens as number) || 0;
+      const durationMs = (data.durationMs as number) || 0;
+      const model = (data.model as string) || '';
+
+      // Per-agent aggregation
+      let rec = agentMap.get(agent);
+      if (!rec) {
+        rec = { agent, model, cost: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, invocations: 0 };
+        agentMap.set(agent, rec);
+      }
+      rec.cost += cost;
+      rec.inputTokens += inputTokens;
+      rec.outputTokens += outputTokens;
+      rec.cacheRead += cacheRead;
+      rec.cacheWrite += cacheWrite;
+      rec.invocations++;
+      if (model && !rec.model) rec.model = model;
+
+      // Per-run aggregation
+      runCost += cost;
+      runDuration += durationMs;
+      runAgents.add(agent);
+      if (!runTimestamp && entry.timestamp) runTimestamp = entry.timestamp as string;
+    }
+
+    if (runAgents.size > 0) {
+      runs.push({
+        file: path.basename(logPath),
+        runIndex: idx + 1,
+        cost: runCost,
+        agentCount: runAgents.size,
+        durationMs: runDuration,
+        timestamp: runTimestamp,
+      });
+    }
+  }
+
+  const agents = Array.from(agentMap.values()).sort((a, b) => b.cost - a.cost);
+  const totalCost = agents.reduce((s, a) => s + a.cost, 0);
+  const totalIn = agents.reduce((s, a) => s + a.inputTokens, 0);
+  const totalOut = agents.reduce((s, a) => s + a.outputTokens, 0);
+  const totalCacheR = agents.reduce((s, a) => s + a.cacheRead, 0);
+  const totalCacheW = agents.reduce((s, a) => s + a.cacheWrite, 0);
+
+  // Cache efficiency: % of input-side tokens served from cache
+  // Higher = more reuse = cheaper. Low on first invocation (expected).
+  const cacheHitPct = (rec: { inputTokens: number; cacheRead: number; cacheWrite: number }): number => {
+    const total = rec.inputTokens + rec.cacheRead + rec.cacheWrite;
+    return total > 0 ? (rec.cacheRead / total) * 100 : 0;
+  };
+
+  const fmtPct = (pct: number, pad = 0): string => {
+    const str = `${pct.toFixed(0)}%`;
+    const padded = pad > 0 ? str.padEnd(pad) : str;
+    if (pct >= 80) return chalk.green(padded);
+    if (pct >= 40) return chalk.yellow(padded);
+    return chalk.dim(padded);
+  };
+
+  // JSON output
+  if (flags.json) {
+    const agentsWithEff = agents.map(a => ({ ...a, cacheHitPct: Math.round(cacheHitPct(a) * 10) / 10 }));
+    const totalEff = Math.round(cacheHitPct({ inputTokens: totalIn, cacheRead: totalCacheR, cacheWrite: totalCacheW }) * 10) / 10;
+    console.log(JSON.stringify({
+      mesh: meshName || 'all',
+      priorRuns: runs.length,
+      agents: agentsWithEff,
+      runs,
+      totals: { cost: totalCost, inputTokens: totalIn, outputTokens: totalOut, cacheRead: totalCacheR, cacheWrite: totalCacheW, cacheHitPct: totalEff },
+    }, null, 2));
+    return;
+  }
+
+  // No data found
+  if (agents.length === 0) {
+    const scope = meshName ? `mesh '${meshName}'` : 'any mesh';
+    console.log(chalk.yellow(`No SDK metrics found for ${scope} in prior runs.`));
+    return;
+  }
+
+  // Human output — no mesh name: summary across all meshes
+  if (!meshName) {
+    const meshTotals = new Map<string, { cost: number; agents: Set<string>; runs: Set<string> }>();
+    for (const agent of agents) {
+      const mesh = agent.agent.split('/')[0];
+      let rec = meshTotals.get(mesh);
+      if (!rec) {
+        rec = { cost: 0, agents: new Set(), runs: new Set() };
+        meshTotals.set(mesh, rec);
+      }
+      rec.cost += agent.cost;
+      rec.agents.add(agent.agent);
+    }
+    // Attribute runs to meshes
+    for (let idx = 0; idx < logFiles.length; idx++) {
+      const content = fs.readFileSync(logFiles[idx], 'utf-8');
+      for (const line of content.split('\n').filter(Boolean)) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.message !== 'SDK metrics') continue;
+          const wid = entry.data?.workerId as string;
+          if (!wid) continue;
+          const mesh = wid.split('/')[0];
+          meshTotals.get(mesh)?.runs.add(path.basename(logFiles[idx]));
+        } catch { continue; }
+      }
+    }
+
+    console.log(`\n${chalk.bold(chalk.cyan('Cost Summary'))} ${chalk.dim(`(${runs.length} prior runs)`)}\n`);
+    const fmt = (n: number) => `$${n.toFixed(3)}`;
+    const meshes = Array.from(meshTotals.entries()).sort((a, b) => b[1].cost - a[1].cost);
+
+    console.log(
+      chalk.dim('  MESH'.padEnd(28) + 'COST'.padEnd(12) + 'AGENTS'.padEnd(10) + 'RUNS')
+    );
+    console.log(chalk.dim('  ' + '\u2500'.repeat(56)));
+
+    for (const [mesh, data] of meshes) {
+      console.log(
+        `  ${chalk.cyan(mesh.padEnd(26))}${fmt(data.cost).padEnd(12)}${String(data.agents.size).padEnd(10)}${data.runs.size}`
+      );
+    }
+    console.log(chalk.dim('  ' + '\u2500'.repeat(56)));
+    console.log(`  ${chalk.bold('TOTAL'.padEnd(26))}${chalk.bold(fmt(totalCost))}`);
+    console.log();
+    return;
+  }
+
+  // Human output — specific mesh detail
+  const fmt = (n: number) => `$${n.toFixed(3)}`;
+  const fmtNum = (n: number) => n.toLocaleString();
+
+  console.log(`\n${chalk.bold(chalk.cyan(`Cost: ${meshName}`))} ${chalk.dim(`(${runs.length} prior runs)`)}\n`);
+
+  // Agent table
+  const nameW = Math.max(16, ...agents.map(a => a.agent.split('/')[1]?.length || a.agent.length)) + 2;
+
+  console.log(chalk.dim(
+    '  ' + 'AGENT'.padEnd(nameW) + 'MODEL'.padEnd(10) + 'COST'.padEnd(12) +
+    'IN_TOK'.padEnd(10) + 'OUT_TOK'.padEnd(10) + 'CACHE_R'.padEnd(12) +
+    'CACHE_W'.padEnd(12) + 'CACHE%'.padEnd(8) + 'RUNS'
+  ));
+  console.log(chalk.dim('  ' + '\u2500'.repeat(nameW + 82)));
+
+  for (const a of agents) {
+    const shortName = a.agent.split('/')[1] || a.agent;
+    const pct = cacheHitPct(a);
+    console.log(
+      `  ${chalk.cyan(shortName.padEnd(nameW))}` +
+      `${(a.model || chalk.dim('-')).padEnd(10)}` +
+      `${fmt(a.cost).padEnd(12)}` +
+      `${fmtNum(a.inputTokens).padEnd(10)}` +
+      `${fmtNum(a.outputTokens).padEnd(10)}` +
+      `${fmtNum(a.cacheRead).padEnd(12)}` +
+      `${fmtNum(a.cacheWrite).padEnd(12)}` +
+      `${fmtPct(pct, 8)}` +
+      `${a.invocations}`
+    );
+  }
+
+  const totalPct = cacheHitPct({ inputTokens: totalIn, cacheRead: totalCacheR, cacheWrite: totalCacheW });
+  console.log(chalk.dim('  ' + '\u2500'.repeat(nameW + 82)));
+  console.log(
+    `  ${chalk.bold('TOTAL'.padEnd(nameW))}` +
+    `${''.padEnd(10)}` +
+    `${chalk.bold(fmt(totalCost).padEnd(12))}` +
+    `${fmtNum(totalIn).padEnd(10)}` +
+    `${fmtNum(totalOut).padEnd(10)}` +
+    `${fmtNum(totalCacheR).padEnd(12)}` +
+    `${fmtNum(totalCacheW).padEnd(12)}` +
+    `${fmtPct(totalPct)}`
+  );
+
+  // Per-run breakdown
+  if (runs.length > 0) {
+    console.log(`\n${chalk.dim('Per-Run:')}`);
+    for (const run of runs) {
+      const date = run.timestamp ? new Date(run.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '?';
+      const elapsed = (run.durationMs / 1000).toFixed(1);
+      console.log(`  ${chalk.dim(`Run ${run.runIndex}`)} (${date})  ${fmt(run.cost)}  ${run.agentCount} agents  ${elapsed}s`);
+    }
+  }
+
+  console.log();
+}
+
+/**
+ * Agent execution timeline with concurrency grouping.
+ * Derives sequential steps from SDK metrics timestamps and durations.
+ * Concurrent agents (overlapping intervals) share a step.
+ */
+interface FlowStep {
+  step: number;
+  agents: string[];
+  startTime: string;
+  endTime: string;
+  durationMs: number;
+  cost: number;
+}
+
+interface FlowRun {
+  runIndex: number;
+  timestamp: string;
+  steps: FlowStep[];
+  invocations: FlowInvocation[];
+  totalCost: number;
+  totalDurationMs: number;
+  stepCount: number;
+  meshInstance?: string;
+  isComplete?: boolean;
+}
+
+interface FlowInvocation {
+  agent: string;
+  startMs: number;
+  endMs: number;
+  cost: number;
+}
+
+/** Parse mesh-run boundaries from a log file, returning time windows per meshInstance */
+function parseMeshRunBoundaries(lines: string[], meshName: string): { meshInstance: string; startMs: number; endMs: number | null }[] {
+  const starts = new Map<string, number>();
+  const boundaries: { meshInstance: string; startMs: number; endMs: number | null }[] = [];
+
+  for (const line of lines) {
+    let entry: Record<string, unknown>;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (entry.message !== 'Mesh run started' && entry.message !== 'Mesh run completed') continue;
+
+    const data = entry.data as Record<string, unknown> | undefined;
+    if (!data?.meshInstance) continue;
+    if ((data.meshName as string) !== meshName) continue;
+
+    const ts = Date.parse(entry.timestamp as string);
+    const inst = data.meshInstance as string;
+
+    if (entry.message === 'Mesh run started') {
+      starts.set(inst, ts);
+    } else {
+      const startMs = starts.get(inst) || ts;
+      boundaries.push({ meshInstance: inst, startMs, endMs: ts });
+      starts.delete(inst);
+    }
+  }
+
+  // Incomplete runs (started but no end marker)
+  for (const [inst, startMs] of starts) {
+    boundaries.push({ meshInstance: inst, startMs, endMs: null });
+  }
+
+  return boundaries.sort((a, b) => a.startMs - b.startMs);
+}
+
+/** Collect SDK metrics invocations for a mesh from log lines */
+function collectInvocations(lines: string[], meshName: string): FlowInvocation[] {
+  const invocations: FlowInvocation[] = [];
+
+  for (const line of lines) {
+    let entry: Record<string, unknown>;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (entry.message !== 'SDK metrics') continue;
+
+    const data = entry.data as Record<string, unknown> | undefined;
+    if (!data?.workerId) continue;
+
+    const workerId = data.workerId as string;
+    if (!workerId.startsWith(`${meshName}/`)) continue;
+
+    const timestamp = entry.timestamp as string;
+    const durationMs = (data.durationMs as number) || 0;
+    const cost = (data.totalCostUsd as number) || 0;
+    const endMs = Date.parse(timestamp);
+    const startMs = endMs - durationMs;
+
+    invocations.push({ agent: workerId, startMs, endMs, cost });
+  }
+
+  return invocations.sort((a, b) => a.startMs - b.startMs);
+}
+
+/** Build FlowStep[] from invocations using greedy interval merge */
+function buildSteps(invocations: FlowInvocation[]): FlowStep[] {
+  if (invocations.length === 0) return [];
+
+  const steps: FlowStep[] = [];
+  let groupStart = invocations[0].startMs;
+  let groupEnd = invocations[0].endMs;
+  let groupAgents = [invocations[0].agent];
+  let groupCost = invocations[0].cost;
+
+  for (let i = 1; i < invocations.length; i++) {
+    const inv = invocations[i];
+    if (inv.startMs < groupEnd) {
+      groupAgents.push(inv.agent);
+      groupCost += inv.cost;
+      if (inv.endMs > groupEnd) groupEnd = inv.endMs;
+    } else {
+      steps.push({
+        step: steps.length + 1,
+        agents: groupAgents,
+        startTime: new Date(groupStart).toISOString(),
+        endTime: new Date(groupEnd).toISOString(),
+        durationMs: groupEnd - groupStart,
+        cost: groupCost,
+      });
+      groupStart = inv.startMs;
+      groupEnd = inv.endMs;
+      groupAgents = [inv.agent];
+      groupCost = inv.cost;
+    }
+  }
+  steps.push({
+    step: steps.length + 1,
+    agents: groupAgents,
+    startTime: new Date(groupStart).toISOString(),
+    endTime: new Date(groupEnd).toISOString(),
+    durationMs: groupEnd - groupStart,
+    cost: groupCost,
+  });
+
+  return steps;
+}
+
+async function meshFlow(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const logsDir = path.join(cwd, '.ai/tx/logs');
+
+  // Collect log files: v4.jsonl (current session) + v4.1-4.jsonl (prior runs)
+  const logFiles: string[] = [];
+  const currentLog = path.join(logsDir, 'v4.jsonl');
+  if (fs.existsSync(currentLog)) logFiles.push(currentLog);
+  for (let i = 1; i <= 4; i++) {
+    const logPath = path.join(logsDir, `v4.${i}.jsonl`);
+    if (fs.existsSync(logPath)) logFiles.push(logPath);
+  }
+
+  if (logFiles.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No log files found', hint: 'Run a mesh first.' }));
+    } else {
+      console.log(chalk.yellow('No log files found.'));
+      console.log(chalk.dim('Run a mesh first.'));
+    }
+    return;
+  }
+
+  const runs: FlowRun[] = [];
+  let globalRunIndex = 0;
+
+  for (const logFile of logFiles) {
+    const content = fs.readFileSync(logFile, 'utf-8');
+    const lines = content.split('\n').filter(Boolean);
+
+    const allInvocations = collectInvocations(lines, meshName);
+    if (allInvocations.length === 0) continue;
+
+    const boundaries = parseMeshRunBoundaries(lines, meshName);
+
+    if (boundaries.length > 0) {
+      // Split invocations into runs by mesh-run boundaries
+      for (const boundary of boundaries) {
+        // For incomplete runs, use last invocation end time as window end
+        const windowEnd = boundary.endMs ?? Math.max(...allInvocations.map(inv => inv.endMs));
+
+        const runInvocations = allInvocations.filter(inv =>
+          inv.startMs >= boundary.startMs && inv.startMs <= windowEnd
+        );
+        if (runInvocations.length === 0) continue;
+
+        const steps = buildSteps(runInvocations);
+        const totalCost = steps.reduce((s, st) => s + st.cost, 0);
+        const totalDurationMs = steps.reduce((s, st) => s + st.durationMs, 0);
+
+        globalRunIndex++;
+        runs.push({
+          runIndex: globalRunIndex,
+          timestamp: new Date(boundary.startMs).toISOString(),
+          steps,
+          invocations: runInvocations,
+          totalCost,
+          totalDurationMs,
+          stepCount: steps.length,
+          meshInstance: boundary.meshInstance,
+          isComplete: boundary.endMs !== null,
+        });
+      }
+    } else {
+      // Fallback: no mesh-run markers — treat entire file as one run
+      const steps = buildSteps(allInvocations);
+      const totalCost = steps.reduce((s, st) => s + st.cost, 0);
+      const totalDurationMs = steps.reduce((s, st) => s + st.durationMs, 0);
+
+      globalRunIndex++;
+      runs.push({
+        runIndex: globalRunIndex,
+        timestamp: new Date(allInvocations[0].startMs).toISOString(),
+        steps,
+        invocations: allInvocations,
+        totalCost,
+        totalDurationMs,
+        stepCount: steps.length,
+      });
+    }
+  }
+
+  if (runs.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ mesh: meshName, runs: [] }));
+    } else {
+      console.log(chalk.yellow(`No SDK metrics found for mesh '${meshName}' in prior runs.`));
+    }
+    return;
+  }
+
+  // JSON output
+  if (flags.json) {
+    console.log(JSON.stringify({ mesh: meshName, runs }, null, 2));
+    return;
+  }
+
+  // Human output — vertical flow with loop detection
+  const fmt = (n: number) => `$${n.toFixed(3)}`;
+  const fmtDur = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+
+  for (const run of runs) {
+    const dateStr = run.timestamp
+      ? new Date(run.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '?';
+
+    const instanceLabel = run.meshInstance ? ` ${chalk.dim(`[${run.meshInstance}]`)}` : '';
+    const statusLabel = run.isComplete === false ? chalk.yellow(' (in progress)') : '';
+    console.log(`\n${chalk.bold(chalk.cyan(`Flow: ${meshName}`))} ${chalk.dim(dateStr)}${instanceLabel}${statusLabel}\n`);
+
+    // Build flat agent sequence from raw invocations (accurate per-agent timing)
+    const rawInvs: { name: string; durationMs: number; cost: number; startMs: number; endMs: number }[] = [];
+    for (const inv of run.invocations) {
+      rawInvs.push({
+        name: inv.agent.split('/')[1] || inv.agent,
+        durationMs: inv.endMs - inv.startMs,
+        cost: inv.cost,
+        startMs: inv.startMs,
+        endMs: inv.endMs,
+      });
+    }
+
+    // Detect truly parallel invocations (significant overlap, not just timing noise)
+    // Two invocations are parallel if they overlap by >50% of the shorter one's duration
+    const sequence: { name: string; durationMs: number; cost: number; parallel?: string[] }[] = [];
+    const used = new Set<number>();
+
+    for (let si = 0; si < rawInvs.length; si++) {
+      if (used.has(si)) continue;
+      const a = rawInvs[si];
+
+      // Look ahead for genuinely parallel invocations
+      const group = [a];
+      let groupEnd = a.endMs;
+
+      for (let sj = si + 1; sj < rawInvs.length; sj++) {
+        if (used.has(sj)) continue;
+        const b = rawInvs[sj];
+        // Stop looking if b starts after current group ends
+        if (b.startMs >= groupEnd) break;
+
+        // Check overlap: how much of b runs while a's group is running?
+        const overlapStart = Math.max(a.startMs, b.startMs);
+        const overlapEnd = Math.min(groupEnd, b.endMs);
+        const overlapMs = Math.max(0, overlapEnd - overlapStart);
+        const shorterDur = Math.min(b.durationMs, groupEnd - a.startMs);
+
+        // Require >50% overlap relative to the shorter duration
+        if (shorterDur > 0 && overlapMs / shorterDur > 0.5) {
+          group.push(b);
+          used.add(sj);
+          if (b.endMs > groupEnd) groupEnd = b.endMs;
+        }
+      }
+
+      if (group.length === 1) {
+        sequence.push({ name: a.name, durationMs: a.durationMs, cost: a.cost });
+      } else {
+        const names = group.map(g => g.name);
+        const uniqueNames = [...new Set(names)];
+        const totalCost = group.reduce((s, g) => s + g.cost, 0);
+        const totalDur = groupEnd - group[0].startMs;
+        sequence.push({
+          name: uniqueNames.join(' + '),
+          durationMs: totalDur,
+          cost: totalCost,
+          parallel: uniqueNames.length > 1 ? uniqueNames : undefined,
+        });
+      }
+    }
+
+    // Detect loops: find repeated subsequences and collapse them
+    interface FlowLine {
+      type: 'agent' | 'loop' | 'parallel';
+      name?: string;
+      agents?: string[];
+      count?: number;
+      durationMs: number;
+      cost: number;
+    }
+    const flowLines: FlowLine[] = [];
+    let i = 0;
+
+    while (i < sequence.length) {
+      // Try loop detection: look for repeating patterns of length 2-4
+      let foundLoop = false;
+
+      for (let patLen = 2; patLen <= 4 && i + patLen * 2 <= sequence.length; patLen++) {
+        const pattern = sequence.slice(i, i + patLen).map(s => s.name);
+
+        // Count consecutive repetitions of this pattern
+        let reps = 1;
+        let j = i + patLen;
+        while (j + patLen <= sequence.length) {
+          const next = sequence.slice(j, j + patLen).map(s => s.name);
+          if (pattern.every((p, idx) => p === next[idx])) {
+            reps++;
+            j += patLen;
+          } else {
+            break;
+          }
+        }
+
+        if (reps >= 2) {
+          // Collapse the loop
+          const totalItems = reps * patLen;
+          let loopDur = 0, loopCost = 0;
+          for (let k = i; k < i + totalItems; k++) {
+            loopDur += sequence[k].durationMs;
+            loopCost += sequence[k].cost;
+          }
+          flowLines.push({
+            type: 'loop',
+            agents: pattern,
+            count: reps,
+            durationMs: loopDur,
+            cost: loopCost,
+          });
+          i += totalItems;
+          foundLoop = true;
+          break;
+        }
+      }
+
+      if (!foundLoop) {
+        const entry = sequence[i];
+        flowLines.push({
+          type: entry.parallel ? 'parallel' : 'agent',
+          name: entry.name,
+          agents: entry.parallel,
+          durationMs: entry.durationMs,
+          cost: entry.cost,
+        });
+        i++;
+      }
+    }
+
+    // Render vertical flow: icon  duration  cost  agent
+    const durCol = 10;
+    const costCol = 10;
+
+    console.log(chalk.dim(`    ${('DUR').padEnd(durCol)}${('COST').padEnd(costCol)}AGENT`));
+    console.log(chalk.dim(`    ${'\u2500'.repeat(durCol - 2).padEnd(durCol)}${'\u2500'.repeat(costCol - 2).padEnd(costCol)}${'\u2500'.repeat(30)}`));
+
+    for (const line of flowLines) {
+      const dur = fmtDur(line.durationMs).padEnd(durCol);
+      const cost = chalk.dim(fmt(line.cost).padEnd(costCol));
+
+      if (line.type === 'loop') {
+        const loopLabel = `${line.agents!.join(' \u21C4 ')} \u00D7${line.count}`;
+        console.log(`  ${chalk.yellow('\u21BB')} ${dur}${cost}${chalk.yellow(loopLabel)}`);
+      } else if (line.type === 'parallel') {
+        const label = line.agents!.join(' \u2016 ');
+        console.log(`  ${chalk.green('\u2551')} ${dur}${cost}${chalk.green(label)}`);
+      } else {
+        console.log(`  ${chalk.dim('\u2502')} ${dur}${cost}${chalk.cyan(line.name || '')}`);
+      }
+    }
+
+    console.log(chalk.dim(`    ${'\u2500'.repeat(durCol - 2).padEnd(durCol)}${'\u2500'.repeat(costCol - 2).padEnd(costCol)}`));
+    console.log(`    ${chalk.bold(fmtDur(run.totalDurationMs).padEnd(durCol))}${chalk.bold(fmt(run.totalCost).padEnd(costCol))}${chalk.dim(`${flowLines.length} lines, ${sequence.length} invocations`)}`);
+  }
+
+  console.log();
+}
+
+/**
+ * Show guardrail violations from activity logs
+ * Reads activity.jsonl (and rotated files) for guardrail: events.
+ */
+async function meshGuardrails(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const logsDir = path.join(cwd, '.ai/tx/logs');
+
+  // Collect activity log files (current + rotated)
+  const logFiles: string[] = [];
+  const currentLog = path.join(logsDir, 'activity.jsonl');
+  if (fs.existsSync(currentLog)) logFiles.push(currentLog);
+  for (let i = 1; i <= 10; i++) {
+    const rotated = path.join(logsDir, `activity.${i}.jsonl`);
+    if (fs.existsSync(rotated)) logFiles.push(rotated);
+  }
+
+  if (logFiles.length === 0) {
+    console.log(chalk.yellow('No activity logs found.'));
+    return;
+  }
+
+  interface GuardrailEvent {
+    timestamp: string;
+    event: string;
+    agentId: string;
+    content: string;
+  }
+
+  const events: GuardrailEvent[] = [];
+  for (const file of logFiles) {
+    const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (!entry.event?.startsWith('guardrail:')) continue;
+        if (meshName && !entry.agentId?.startsWith(`${meshName}/`)) continue;
+        events.push(entry);
+      } catch { /* skip malformed lines */ }
+    }
+  }
+
+  if (events.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ events: [] }));
+    } else {
+      console.log(chalk.dim('No guardrail violations found.'));
+    }
+    return;
+  }
+
+  // Sort by timestamp
+  events.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  if (flags.json) {
+    console.log(JSON.stringify({ events, total: events.length }, null, 2));
+    return;
+  }
+
+  // Summary by type
+  const byType = new Map<string, number>();
+  const byAgent = new Map<string, number>();
+  for (const e of events) {
+    const type = e.event.replace('guardrail:', '');
+    byType.set(type, (byType.get(type) || 0) + 1);
+    byAgent.set(e.agentId, (byAgent.get(e.agentId) || 0) + 1);
+  }
+
+  console.log(`\n${chalk.bold('Guardrail Violations')} ${chalk.dim(`(${events.length} total)`)}\n`);
+
+  // By type
+  console.log(chalk.bold('  By type:'));
+  for (const [type, count] of [...byType.entries()].sort((a, b) => b[1] - a[1])) {
+    const icon = type.includes('write') ? '✏️' : type.includes('read') ? '📖' : type.includes('edge') ? '🔄' : type.includes('artifact') ? '📦' : type.includes('preflight') ? '🚧' : '🛡️';
+    console.log(`    ${icon}  ${type.padEnd(20)} ${chalk.bold(String(count))}`);
+  }
+
+  // By agent
+  console.log(`\n${chalk.bold('  By agent:')}`);
+  for (const [agent, count] of [...byAgent.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`    ${chalk.cyan(agent.padEnd(35))} ${chalk.bold(String(count))}`);
+  }
+
+  // Recent violations (last 15)
+  const recent = events.slice(-15);
+  console.log(`\n${chalk.bold('  Recent violations:')}`);
+  for (const e of recent) {
+    const time = e.timestamp.slice(11, 19);
+    const type = e.event.replace('guardrail:', '');
+    const agent = e.agentId.split('/').pop() || e.agentId;
+    const isBlock = e.content.includes('BLOCKED') || e.content.includes('HALT') || e.content.includes('KILL');
+    const color = isBlock ? chalk.red : e.content.includes('WARNING') ? chalk.yellow : chalk.dim;
+    console.log(`    ${chalk.dim(time)} ${chalk.magenta(type.padEnd(14))} ${chalk.cyan(agent.padEnd(18))} ${color(e.content.slice(0, 80))}`);
+  }
+
+  console.log();
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -1082,16 +2413,21 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('status')} <mesh>           Show mesh state snapshot
   ${chalk.cyan('kill')} <mesh>             Kill all workers for a mesh (via tmux)
   ${chalk.cyan('clear')} <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
+  ${chalk.cyan('unstick')} <mesh>          Clear halt state only (preserves FSM state)
   ${chalk.cyan('validate')} <mesh>         Validate mesh configuration
   ${chalk.cyan('fsm-chain')} <mesh>       Show FSM state transition chain with validation
   ${chalk.cyan('fsm-reset')} <mesh>       Reset FSM to initial state (preserves sessions)
   ${chalk.cyan('fsm-goto')} <mesh> <state> Force FSM to a specific state
   ${chalk.cyan('run')} <mesh> "<prompt>"    Run full FSM pipeline end-to-end
+  ${chalk.cyan('cost')} [mesh]              Per-agent cost/token/cache from prior runs
+  ${chalk.cyan('flow')} <mesh>             Agent execution timeline with concurrency grouping
+  ${chalk.cyan('guardrails')} [mesh]       Show guardrail violations from activity logs
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
   ${chalk.dim('--force')}                 Force clear even if workers are running
   ${chalk.dim('--strict')}                Treat warnings as errors (validate only)
+  ${chalk.dim('--next')}                  Machine-readable dispatch output (status only)
 
 ${chalk.bold('Examples:')}
   tx mesh list
@@ -1101,6 +2437,10 @@ ${chalk.bold('Examples:')}
   tx mesh kill narrative-engine
   tx mesh clear test-mesh
   tx mesh clear test-mesh --force
+  tx mesh cost
+  tx mesh cost narrative-engine --json
+  tx mesh flow test-fsm-full
+  tx mesh flow test-fsm-full --json
 `);
 }
 
@@ -1118,14 +2458,33 @@ export async function mesh(args: string[]): Promise<void> {
         await listMeshes(flags);
         break;
 
-      case 'status':
+      case 'status': {
         if (!meshName) {
           console.error(chalk.red('Error: Mesh name required'));
           console.log(chalk.dim('Example: tx mesh status narrative-engine'));
           return;
         }
-        await showMeshStatus(meshName, flags);
+        const statusCwd = process.env.TX_CWD || process.cwd();
+        // Silent FSM check — avoid loadFSMConfig's console.error for non-FSM meshes
+        const hasFsm = (() => {
+          let cp = path.join(statusCwd, 'meshes', meshName, 'config.yaml');
+          if (!fs.existsSync(cp)) cp = path.join(statusCwd, 'meshes', meshName, 'config.yml');
+          if (!fs.existsSync(cp)) return false;
+          try { return !!YAML.parse(fs.readFileSync(cp, 'utf-8'))?.fsm; } catch { return false; }
+        })();
+
+        if (hasFsm && (flags.json || flags.next)) {
+          // JSON/next mode: FSM pipeline view only (single structured output)
+          await fsmStatus(meshName, flags);
+        } else {
+          // Default mode: show runtime status, then FSM pipeline if applicable
+          await showMeshStatus(meshName, flags);
+          if (hasFsm) {
+            await fsmStatus(meshName, flags);
+          }
+        }
         break;
+      }
 
       case 'kill':
         if (!meshName) {
@@ -1143,6 +2502,15 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await clearMeshState(meshName, flags);
+        break;
+
+      case 'unstick':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh unstick narrative-engine'));
+          return;
+        }
+        await unstickMesh(meshName, flags);
         break;
 
       case 'validate':
@@ -1194,6 +2562,23 @@ export async function mesh(args: string[]): Promise<void> {
         await meshRun(meshName, promptParts.join(' '), flags);
         break;
       }
+
+      case 'cost':
+        await meshCost(meshName, flags);
+        break;
+
+      case 'flow':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh flow test-fsm-full'));
+          return;
+        }
+        await meshFlow(meshName, flags);
+        break;
+
+      case 'guardrails':
+        await meshGuardrails(meshName, flags);
+        break;
 
       default:
         printUsage();

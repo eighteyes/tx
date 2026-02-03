@@ -39,6 +39,10 @@ import { SessionManager, type SuspendedSession, type BufferedResponse } from './
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { injectRoutingInstructions, injectDispatcherRoutingInstructions } from '../prompt/index.ts';
 import { DispatchRouter } from './dispatch-router.ts';
+import { WriteGate } from './write-gate.ts';
+import { ReadGate } from './read-gate.ts';
+import { GuardrailConfig } from './guardrail-config.ts';
+import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import YAML from 'yaml';
 
 /**
@@ -169,7 +173,8 @@ type ResumeReason =
   | 'parity-reminder'
   | 'quality-iteration'
   | 'incoming-ask-reminder'
-  | 'system-feedback';
+  | 'system-feedback'
+  | 'artifact-retry';
 
 /**
  * Options for unified session resume
@@ -252,6 +257,7 @@ export class WorkerDispatcher extends EventEmitter {
   // Extracted managers (Phase 1 refactoring)
   private workerLifecycle: WorkerLifecycleManager;
   private sessionManager: SessionManager;
+  private guardrails: GuardrailConfig;
 
   // Extracted modules (Phase 2 refactoring)
   private configLoader: MeshConfigLoader;
@@ -261,6 +267,20 @@ export class WorkerDispatcher extends EventEmitter {
 
   // Routing error tracking for correction injection (key: "sender→target", value: retry count)
   private routingErrorCounts: Map<string, number> = new Map();
+
+  // Edge iteration counters per turn (key: "mesh/from->mesh/to", value: message count)
+  // Reset when a new turn starts (entry_point receives a task)
+  private edgeCounters: Map<string, number> = new Map();
+
+  // Track completed agents per mesh session for preflight filtering
+  // Key: mesh instance name, Value: set of agent names that have completed
+  // Reset when entry_point receives a new task
+  private completedAgents: Map<string, Set<string>> = new Map();
+
+  // Cached manifest variable map per mesh — refreshed after each agent completes
+  // Avoids stale session.yaml reads during preflight/post-validation
+  // Key: mesh name, Value: resolved variable map (game-id, campaign-id, N, etc.)
+  private cachedManifestVars: Map<string, Record<string, string>> = new Map();
 
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
@@ -287,6 +307,9 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Initialize extracted modules (Phase 3)
     this.metricsAggregator = new MetricsAggregator(config.workDir);
+
+    // Guardrail config (unified thresholds)
+    this.guardrails = new GuardrailConfig(config.workDir);
 
     // Session awareness - use store from config if provided
     if (config.sessionStore) {
@@ -474,6 +497,107 @@ export class WorkerDispatcher extends EventEmitter {
    */
   private trackMessageSent(fromAgentId: string, toAgentId: string, messageType: string, filepath?: string): void {
     this.workerLifecycle.trackMessage(fromAgentId, toAgentId, messageType, filepath);
+
+    // Chaos contract: enforce max_messages limit
+    const [meshName, agentName] = fromAgentId.split('/');
+    const meshConfig = this.meshConfigs.get(meshName);
+    const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+    const maxMessages = agentConfig?.max_messages;
+
+    if (maxMessages != null) {
+      const workers = this.workerLifecycle.getForAgent(fromAgentId);
+      const mode = this.guardrails.getMode('max_messages', meshName, agentName);
+      for (const worker of workers) {
+        if (worker.messagesSent.length >= maxMessages) {
+          if (!mode.strict) {
+            if (mode.warning) {
+              log.warn('dispatcher', 'max_messages limit reached (warning mode)', {
+                agentId: fromAgentId,
+                maxMessages,
+                messagesSent: worker.messagesSent.length,
+              });
+              log.activity('guardrail:max-messages:warning', fromAgentId, `max_messages warning (${worker.messagesSent.length}/${maxMessages}, allowed)`);
+            }
+            // Non-strict: allow the worker to continue
+            continue;
+          }
+          log.warn('dispatcher', 'max_messages limit reached — killing worker', {
+            agentId: fromAgentId,
+            maxMessages,
+            messagesSent: worker.messagesSent.length,
+            destinations: worker.messagesSent.map(m => m.to),
+          });
+          log.activity('guardrail:max-messages', fromAgentId, `max_messages STRICT KILL (${maxMessages}) — killing worker`);
+          worker.runner.kill('max_messages limit reached');
+        }
+      }
+    }
+
+    // Edge iteration counting: increment counter for this routing edge
+    const edgeKey = `${fromAgentId}->${toAgentId}`;
+    const count = (this.edgeCounters.get(edgeKey) || 0) + 1;
+    this.edgeCounters.set(edgeKey, count);
+
+    // Check if this edge has hit the global iteration limit
+    const max = meshConfig?.routing_retry_max;
+    if (max && meshConfig?.routing_fallback && messageType === 'message' && count >= max) {
+      log.warn('dispatcher', 'Edge iteration limit reached', {
+        edge: edgeKey,
+        count,
+        max,
+        fallback: meshConfig.routing_fallback,
+      });
+
+      this.emit('edge:limit-reached', {
+        meshName,
+        from: fromAgentId,
+        to: toAgentId,
+        count,
+        max,
+        fallback: meshConfig.routing_fallback,
+      });
+    }
+  }
+
+  // ============================================================================
+  // Edge Iteration Limit Helpers
+  // ============================================================================
+
+  /**
+   * Reset edge counters for a mesh (called on new turn at entry point)
+   */
+  private resetEdgeCounters(meshName: string): void {
+    const prefix = `${meshName}/`;
+    for (const key of this.edgeCounters.keys()) {
+      if (key.startsWith(prefix)) {
+        this.edgeCounters.delete(key);
+      }
+    }
+    this.completedAgents.delete(meshName);
+    this.cachedManifestVars.delete(meshName);
+    log.debug('dispatcher', 'Edge counters, completed agents, and manifest vars reset for new turn', { meshName });
+  }
+
+  /**
+   * Check if a message should be redirected due to edge iteration limit.
+   * Uses mesh-level routing_retry_max and routing_fallback.
+   * Returns the fallback agentId if limit reached, null otherwise.
+   */
+  private getEdgeFallback(
+    fromAgentId: string,
+    toAgentId: string,
+    meshName: string,
+    meshConfig: MeshConfig,
+  ): string | null {
+    const max = meshConfig.routing_retry_max;
+    if (!max || !meshConfig.routing_fallback) return null;
+
+    const edgeKey = `${fromAgentId}->${toAgentId}`;
+    const count = this.edgeCounters.get(edgeKey) || 0;
+
+    if (count < max) return null;
+
+    return `${meshName}/${meshConfig.routing_fallback}`;
   }
 
   // ============================================================================
@@ -638,43 +762,16 @@ export class WorkerDispatcher extends EventEmitter {
       }
     });
 
-    // Handle FSM dispatch - spawn next state's agents after core-bound transitions
+    // FSM dispatch observability — the FSM now writes dispatch messages directly.
+    // This listener is for logging and re-emitting on the dispatcher for external consumers.
     fsm.on('fsm:dispatch', (event: FSMDispatchEvent) => {
-      log.info('mesh-fsm', 'Dispatching agents for new state', {
+      log.info('mesh-fsm', 'FSM dispatched agents for new state', {
         meshName: event.meshName,
         fromState: event.fromState,
         toState: event.toState,
         agents: event.agents,
         triggerAgent: event.triggerAgent,
       });
-
-      for (const agent of event.agents) {
-        const agentId = `${meshName}/${agent}`;
-        const timestamp = Date.now();
-        const msgId = `fsm-dispatch-${timestamp}-${agent}`;
-        const filename = `${Math.floor(timestamp / 1000)}-fsm-dispatch--${meshName}-${agent}-${msgId}.md`;
-        const filepath = path.join(this.config.msgsDir, filename);
-
-        const msgContent = `---
-to: ${agentId}
-from: core/core
-type: task
-msg-id: ${msgId}
-headline: FSM dispatch — execute ${event.toState}
-timestamp: ${new Date(timestamp).toISOString()}
----
-
-FSM transitioned from \`${event.fromState}\` to \`${event.toState}\`. Execute your task for this state.
-`;
-
-        fs.writeFileSync(filepath, msgContent);
-        log.info('dispatcher', 'Wrote FSM dispatch message', {
-          agentId,
-          filepath,
-          toState: event.toState,
-        });
-      }
-
       this.emit('fsm:dispatch', event);
     });
   }
@@ -1151,6 +1248,9 @@ FSM transitioned from \`${event.fromState}\` to \`${event.toState}\`. Execute yo
       const resumeMesh = pendingMsg?.payload?.['resume-mesh'] === true ||
                          pendingMsg?.payload?.['resume-mesh'] === 'true';
 
+      // Reset edge iteration counters for new turn
+      this.resetEdgeCounters(meshName);
+
       if (resumeMesh) {
         log.info('dispatcher', `Resuming mesh (resume-mesh flag set)`, {
           meshName,
@@ -1168,11 +1268,12 @@ FSM transitioned from \`${event.fromState}\` to \`${event.toState}\`. Execute yo
             agentId,
           });
           this.clearMeshState(meshName);
+        }
 
-          // Re-initialize FSM after clearing (clearMeshState deletes the FSM instance)
-          if (meshConfig.fsm) {
-            this.initializeSingleFSM(meshName, meshConfig);
-          }
+        // Always (re-)initialize FSM for entry point runs — previous completion
+        // may have deleted the FSM instance via clearMeshState
+        if (meshConfig.fsm) {
+          this.initializeSingleFSM(meshName, meshConfig);
         }
       }
     }
@@ -1217,6 +1318,116 @@ FSM transitioned from \`${event.fromState}\` to \`${event.toState}\`. Execute yo
         this.handleRoutingError(senderAgentId, agentId, meshName, 'agent-not-found');
       }
       return;
+    }
+
+    // Edge iteration limit: redirect to fallback if edge is exhausted
+    if (senderAgentId && senderAgentId !== 'core/core') {
+      const fallbackAgentId = this.getEdgeFallback(senderAgentId, agentId, meshName, meshConfig);
+      if (fallbackAgentId) {
+        const edgeMode = this.guardrails.getMode('edge_limit', meshName);
+        if (!edgeMode.strict) {
+          // Non-strict: log and allow the message through
+          if (edgeMode.warning) {
+            log.warn('dispatcher', 'Edge limit reached (warning mode, allowing)', {
+              originalTarget: agentId,
+              fallback: fallbackAgentId,
+              sender: senderAgentId,
+            });
+            log.activity('guardrail:edge-limit:warning', agentId, `Edge limit warning (${meshConfig.routing_retry_max}) on ${senderAgentId}→${agentId} (allowed)`);
+          }
+          // Fall through to normal dispatch
+        } else {
+          log.warn('dispatcher', 'Edge limit reached, redirecting to fallback', {
+            originalTarget: agentId,
+            fallback: fallbackAgentId,
+            sender: senderAgentId,
+          });
+          log.activity('guardrail:edge-limit', agentId, `Edge limit STRICT REDIRECT (${meshConfig.routing_retry_max}) ${senderAgentId}→${agentId} → ${fallbackAgentId}`);
+
+          // Consume the message from the original target's queue
+          const msg = this.queue.pollOne(agentId);
+          if (msg) {
+            // Re-insert to the fallback agent with a system note
+            const systemNote = `[System: Max iterations reached on ${senderAgentId}→${agentId}. Proceeding with current state.]`;
+            const body = msg.payload?.body ? `${systemNote}\n\n${msg.payload.body}` : systemNote;
+            this.queue.insert({
+              from_agent: msg.from_agent,
+              to_agent: fallbackAgentId,
+              type: msg.type,
+              payload: { ...msg.payload, body },
+            });
+          }
+          // Trigger dispatch for the fallback agent
+          this.handleWorkerMessage(fallbackAgentId);
+          return;
+        }
+      }
+    }
+
+    // Pre-dispatch artifact preflight: check target agent's manifest reads exist
+    if (meshConfig.manifest) {
+      const enforcement = meshConfig.manifest_enforcement;
+      const preValidation = enforcement?.pre_validation !== false; // default: true
+
+      if (preValidation) {
+        const cachedVars = meshName ? this.cachedManifestVars.get(meshName) : undefined;
+        const ctx = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+        const completedWriters = meshName ? Array.from(this.completedAgents.get(meshName) || []) : undefined;
+        const result = validateAgentArtifacts(agent.name, meshConfig.manifest, 'reads', ctx, { completedWriters });
+
+        if (result.missing.length > 0 || result.empty.length > 0) {
+          const problems = [...result.missing.map(f => `${f} (missing)`), ...result.empty.map(f => `${f} (empty)`)];
+          const writerAgents = [...new Set(problems.flatMap(p => {
+            const fileId = p.split(' (')[0];
+            return findWriters(fileId, meshConfig.manifest!);
+          }))];
+
+          const artifactMode = this.guardrails.getMode('artifact', meshName);
+          if (!artifactMode.strict) {
+            // Non-strict: allow dispatch, optionally warn
+            if (artifactMode.warning) {
+              log.warn('dispatcher', 'Pre-dispatch preflight failed (warning mode, allowing)', {
+                agentId,
+                problems,
+                writerAgents,
+              });
+              log.activity('guardrail:preflight:warning', agentId, `Preflight warning: ${problems.join(', ')} (missing inputs, allowed)`);
+            }
+            // Fall through to normal dispatch
+          } else {
+            log.error('dispatcher', 'Pre-dispatch preflight failed: missing required inputs', {
+              agentId,
+              problems,
+              writerAgents,
+              sender: senderAgentId,
+            });
+            log.activity('guardrail:preflight', agentId, `Preflight STRICT BLOCKED: ${problems.join(', ')} — writers: ${writerAgents.join(', ')}`);
+
+            this.emit('worker:preflight-failed', {
+              agentId,
+              missing: result.missing,
+              empty: result.empty,
+              writerAgents,
+            });
+
+            // Route error back to the sending coordinator
+            if (senderAgentId && senderAgentId !== 'core/core') {
+              const errorContent = `## Pre-Dispatch Preflight Failed\n\nCannot dispatch to **${agentId}**: missing required input files.\n\n**Missing:** ${problems.join(', ')}\n**Expected writers:** ${writerAgents.join(', ')}\n\nEnsure upstream agents write their required outputs before routing here.`;
+              this.queue.insert({
+                from_agent: agentId,
+                to_agent: senderAgentId,
+                type: 'message',
+                payload: { headline: 'preflight-failed', body: errorContent },
+              });
+              // Consume the failed message
+              this.queue.pollOne(agentId);
+              this.handleWorkerMessage(senderAgentId);
+              return;
+            }
+            // No sender to report to — proceed anyway (best effort)
+          }
+        }
+      }
     }
 
     log.info('dispatcher', `Spawning worker for message`, { agentId });
@@ -2051,6 +2262,7 @@ The system will resume your session when the human responds.`;
     });
 
     // Interrupt and resume with parity reminder
+    log.activity('guardrail:parity', agentId, `Parity reminder: ${pendingAsks.length} pending ask(s) blocking task-complete`);
     await this.resumeSession({
       reason: 'parity-reminder',
       agentId,
@@ -2120,6 +2332,37 @@ The system will resume your session when the human responds.`;
         error: (error as Error).message,
       });
     }
+  }
+
+  /**
+   * Kill all active workers for a mesh and clear associated state.
+   * Called via SIGUSR2 control signal from `tx mesh kill`.
+   * Aborts in-process SdkRunner workers, clears suspended sessions and pending asks.
+   * Returns count of workers killed.
+   */
+  killMeshWorkers(meshName: string): number {
+    const agentIds = this.workerLifecycle.getWorkersForMesh(meshName);
+    let totalKilled = 0;
+
+    for (const agentId of agentIds) {
+      totalKilled += this.workerLifecycle.killForAgent(agentId, `mesh kill: ${meshName}`);
+    }
+
+    // Clear suspended sessions and buffered responses
+    this.sessionManager.clearForMesh(meshName);
+
+    // Clear pending asks from SQLite
+    this.queue.clearPendingAsksForMesh(meshName);
+
+    log.info('dispatcher', 'killMeshWorkers complete', {
+      meshName,
+      agentIds,
+      totalKilled,
+    });
+
+    this.emit('mesh:killed', { meshName, killed: totalKilled, agents: agentIds });
+
+    return totalKilled;
   }
 
   /**
@@ -2221,40 +2464,14 @@ The system will resume your session when the human responds.`;
     meshName: string,
     wsLocations: Record<string, string>,
   ): Record<string, string> {
-    const varMap: Record<string, string> = {};
-
-    // Find session location (typically static path like .ai/tx/narrative-engine/)
-    const sessionLocation = wsLocations['session'];
-    if (!sessionLocation) return varMap;
-
-    const sessionPath = path.join(this.config.workDir, sessionLocation, 'session.yaml');
-    if (!fs.existsSync(sessionPath)) return varMap;
-
-    try {
-      const session = YAML.parse(fs.readFileSync(sessionPath, 'utf-8'));
-      if (!session || typeof session !== 'object') return varMap;
-
-      // Map session fields to template variables
-      if (session.game_id) {
-        varMap['game'] = session.game_id;
-        varMap['game-id'] = session.game_id;
-      }
-      if (session.campaign_id) {
-        varMap['campaign-id'] = session.campaign_id;
-      }
-      if (session.turn !== undefined) {
-        varMap['N'] = String(session.turn);
-      }
-    } catch {
-      // Non-fatal — proceed with unresolved variables
-    }
-
-    return varMap;
+    const meshConfig = this.meshConfigs.get(meshName);
+    const variablesConfig = (meshConfig as any)?.workspace?.variables;
+    return resolveManifestVariables(this.config.workDir, wsLocations, variablesConfig);
   }
 
   /**
    * Handle routing errors when a message targets a non-existent mesh or agent.
-   * Injects correction back to sender with valid options. After 3 failures, escalates to user.
+   * Injects correction back to sender with valid options. After max retries, escalates to user.
    */
   private handleRoutingError(
     senderAgentId: string,
@@ -2266,6 +2483,10 @@ The system will resume your session when the human responds.`;
     const retryCount = (this.routingErrorCounts.get(key) || 0) + 1;
     this.routingErrorCounts.set(key, retryCount);
 
+    const [senderMesh, senderAgent] = senderAgentId.split('/');
+    const maxRetries = this.guardrails.getRoutingMaxRetries(senderMesh, senderAgent);
+    const routingMode = this.guardrails.getMode('routing_error', senderMesh, senderAgent);
+
     const availableMeshes = Array.from(this.meshConfigs.keys()).join(', ');
 
     log.info('dispatcher', 'Handling routing error', {
@@ -2273,15 +2494,29 @@ The system will resume your session when the human responds.`;
       targetAgentId,
       errorType,
       retryCount,
+      maxRetries,
       availableMeshes,
+      mode: routingMode,
     });
 
-    if (retryCount >= 3) {
+    if (!routingMode.strict) {
+      // Non-strict: log and allow (don't escalate/kill)
+      if (routingMode.warning) {
+        log.warn('dispatcher', 'Routing error (warning mode)', { senderAgentId, targetAgentId, errorType, retryCount });
+        log.activity('guardrail:routing-error:warning', senderAgentId, `Routing warning: ${targetAgentId} (${errorType}) — attempt ${retryCount}/${maxRetries} (allowed)`);
+      }
+      return;
+    }
+
+    log.activity('guardrail:routing-error', senderAgentId, `Routing STRICT: ${targetAgentId} (${errorType}) — attempt ${retryCount}/${maxRetries}`);
+
+    if (retryCount >= maxRetries) {
       log.warn('dispatcher', 'Routing error max retries reached, escalating to user', {
         senderAgentId,
         targetAgentId,
         retryCount,
       });
+      log.activity('guardrail:routing-escalate', senderAgentId, `Routing ESCALATED to human: ${senderAgentId}→${targetAgentId} failed ${maxRetries} times`);
       this.escalateRoutingError(senderAgentId, targetAgentId, targetMeshName, availableMeshes);
       this.routingErrorCounts.delete(key);
       return;
@@ -2299,7 +2534,7 @@ Your message to **${targetAgentId}** could not be delivered.
 
 **Available meshes**: ${availableMeshes || 'none loaded'}
 
-**Attempt**: ${retryCount}/3
+**Attempt**: ${retryCount}/${maxRetries}
 
 Correct the target agent ID and resend your message.`;
 
@@ -2453,6 +2688,10 @@ Please advise the agent or check mesh configuration.`;
         this.metricsAggregator.initSession({
           meshInstance,
           meshName: meshConfig?.mesh || meshName,
+        });
+
+        log.info('mesh-run', 'Mesh run started', {
+          meshInstance, meshName: meshConfig?.mesh || meshName, entryAgent: agentId,
         });
       }
 
@@ -2638,17 +2877,19 @@ Please advise the agent or check mesh configuration.`;
         log.info('dispatcher', `Created workspace for task`, { agentId, taskId, dir: workspace.dir });
       }
 
+      // Manifest paths — hoisted for chaos gate access
+      const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
+
       // Inject file manifest contract if present
       if (meshConfig?.manifest) {
-        const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
-        const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
 
         // Resolve workspace locations for path substitution
         const wsLocations = (meshConfig as any).workspace?.locations || {};
         const wsBase = (meshConfig as any).workspace?.path || '';
 
-        // Try reading session.yaml to resolve template variables
-        const varMap = this.resolveManifestVariables(meshName, wsLocations);
+        // Use cached manifest variables if available, otherwise resolve from session.yaml
+        const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
 
         for (const entry of meshConfig.manifest) {
           let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
@@ -2689,6 +2930,59 @@ Please advise the agent or check mesh configuration.`;
           });
         }
       }
+
+      // Chaos contract: build gate hooks from manifest
+      // workerRef is a mutable reference — populated after SdkRunner construction
+      const workerRef: { current: SdkRunner | null } = { current: null };
+      const preToolUseHooks: unknown[] = [];
+
+      // Write gate
+      if (agentWrites.length > 0) {
+        const writePaths = agentWrites.map(e => e.path).filter(p => !p.includes('{'));
+        if (writePaths.length < agentWrites.length) {
+          log.warn('write-gate', 'Skipping unresolved manifest paths', {
+            agentId,
+            skipped: agentWrites.filter(w => w.path.includes('{')).map(w => w.id),
+          });
+        }
+        const writeGate = new WriteGate({
+          agentId,
+          allowedPaths: writePaths,
+          workDir: this.config.workDir,
+          killRunner: (reason) => workerRef.current?.kill(reason),
+          killThreshold: this.guardrails.getKillThreshold('write_gate', meshName!, agent.name),
+          mode: this.guardrails.getMode('write_gate', meshName!, agent.name),
+        });
+        preToolUseHooks.push(writeGate.createFileToolHook(), writeGate.createBashHook());
+        log.info('write-gate', 'Write gate enabled', {
+          agentId,
+          allowedPaths: writePaths.length,
+          killThreshold: this.guardrails.getKillThreshold('write_gate', meshName!, agent.name),
+        });
+      }
+
+      // Read gate
+      if (agentReads.length > 0) {
+        const readPaths = agentReads.map(e => e.path).filter(p => !p.includes('{'));
+        const readGate = new ReadGate({
+          agentId,
+          allowedPaths: readPaths,
+          workDir: this.config.workDir,
+          killRunner: (reason) => workerRef.current?.kill(reason),
+          killThreshold: this.guardrails.getKillThreshold('read_gate', meshName!, agent.name),
+          mode: this.guardrails.getMode('read_gate', meshName!, agent.name),
+        });
+        preToolUseHooks.push(readGate.createHook());
+        log.info('read-gate', 'Read gate enabled', {
+          agentId,
+          allowedPaths: readPaths.length,
+          killThreshold: this.guardrails.getKillThreshold('read_gate', meshName!, agent.name),
+        });
+      }
+
+      const chaosHooks = preToolUseHooks.length > 0
+        ? { PreToolUse: preToolUseHooks }
+        : undefined;
 
       // Create worker config - frontmatter model override takes priority
       const frontmatterModel = nextMsg?.payload?.model as string | undefined;
@@ -2903,10 +3197,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
         sessionId,  // Resume session if continuation enabled
         command: agent.command,  // Agent-level slash command
-        maxTurns: agent.max_turns,  // Runtime guardrail: API round-trip limit
+        maxTurns: this.guardrails.getMaxTurns(meshName!, agent.name) ?? agent.max_turns,  // Guardrail > mesh config > null
+        maxTurnsMode: this.guardrails.getMode('max_turns', meshName!, agent.name),
+        hooks: chaosHooks,  // Chaos contract hooks (write-gate)
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
+      workerRef.current = worker;  // Populate ref for write-gate kill callback
       this.emit('worker:spawn', { agentId, model: agent.model });
 
       // Parity gate: emit session-start for consumer to clear stale pending asks
@@ -3228,44 +3525,86 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
-        // Artifact validation: check manifest writes for this agent
+        // Artifact validation: check manifest writes, retry up to max_retry, then kill mesh
         const meshConfigForValidation = this.meshConfigs.get(meshName);
         if (meshConfigForValidation?.manifest) {
-          const agentWrites = meshConfigForValidation.manifest
-            .filter(entry => entry.writes.includes(agent.name));
+          const enforcement = meshConfigForValidation.manifest_enforcement;
+          const postValidation = enforcement?.post_validation !== false; // default: true
+          const maxRetry = enforcement?.max_retry ?? 2;
 
-          if (agentWrites.length > 0) {
-            const wsLocations = (meshConfigForValidation as any).workspace?.locations || {};
-            const wsBase = (meshConfigForValidation as any).workspace?.path || '';
-            const varMap = this.resolveManifestVariables(meshName, wsLocations);
+          if (postValidation) {
+            // Refresh variable cache from session.yaml (agent just completed, session should be current)
+            const wsLocs = (meshConfigForValidation as any)?.workspace?.locations || {};
+            const freshVars = this.resolveManifestVariables(meshName, wsLocs);
+            this.cachedManifestVars.set(meshName, freshVars);
+            const ctx = buildPathContext(this.config.workDir, meshConfigForValidation as any, freshVars);
+            const validation = validateAgentArtifacts(agent.name, meshConfigForValidation.manifest, 'writes', ctx);
 
-            const missing: string[] = [];
-            const checked: string[] = [];
-            for (const entry of agentWrites) {
-              let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
-              for (const [key, value] of Object.entries(varMap)) {
-                locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+            if (validation.missing.length > 0) {
+              const artifactMode = this.guardrails.getMode('artifact', meshName);
+              if (!artifactMode.strict) {
+                // Non-strict: allow completion, optionally log
+                if (artifactMode.warning) {
+                  log.warn('dispatcher', 'Artifact post-validation failed (warning mode, allowing)', {
+                    agentId,
+                    missing: validation.missing,
+                    meshName,
+                  });
+                  log.activity('guardrail:artifact-post:warning', agentId, `Artifact warning: ${validation.missing.join(', ')} missing (completing anyway)`);
+                }
+                // Fall through to normal completion
+              } else {
+                const retryCount = (workerHookContext.artifactRetryCount || 0) + 1;
+                workerHookContext.artifactRetryCount = retryCount;
+
+                this.emit('worker:artifact-missing', {
+                  agentId,
+                  missing: validation.missing,
+                  meshName,
+                  retry: retryCount,
+                });
+
+                if (retryCount >= maxRetry) {
+                  log.error('dispatcher', `Artifact validation failed after ${retryCount} attempts, killing mesh`, {
+                    agentId,
+                    missing: validation.missing,
+                    meshName,
+                    maxRetry,
+                  });
+                  log.activity('guardrail:artifact-halt', agentId, `Artifact STRICT HALT: ${validation.missing.join(', ')} missing after ${retryCount} retries — killing mesh`);
+                  this.emit('mesh:artifact-halt', { agentId, missing: validation.missing, meshName, retryCount });
+
+                  this.cleanupWorker(agentId, currentWorkerId);
+                  this.clearMeshState(meshName);
+                  return;
+                }
+
+                log.warn('dispatcher', `Artifact validation: missing files, resuming for retry`, {
+                  agentId,
+                  missing: validation.missing,
+                  checked: validation.checked,
+                  retry: retryCount,
+                  maxRetry,
+                });
+                log.activity('guardrail:artifact-retry', agentId, `Artifact STRICT RETRY (${retryCount}/${maxRetry}): ${validation.missing.join(', ')} missing — resuming session`);
+
+                if (data.sessionId) {
+                  const feedback = `Artifact validation failed. You were expected to write: ${validation.missing.join(', ')}. These files do not exist. Write them now.`;
+                  const resumeResult = await this.resumeSession({
+                    reason: 'artifact-retry',
+                    agentId,
+                    sessionId: data.sessionId,
+                    prompt: feedback,
+                    runner: worker,
+                    metadata: { retry: retryCount, missing: validation.missing },
+                  });
+
+                  if (resumeResult.success) {
+                    return; // 'complete' handler fires again after resume
+                  }
+                  log.warn('dispatcher', `Artifact retry resume failed, completing anyway`, { agentId });
+                }
               }
-              // Skip validation if path has unresolved template variables
-              if (locationTemplate.includes('{')) continue;
-
-              const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
-              checked.push(entry.id);
-              if (!fs.existsSync(resolvedPath)) {
-                missing.push(entry.id);
-              }
-            }
-            if (missing.length > 0) {
-              log.warn('dispatcher', `Artifact validation: agent did not write expected files`, {
-                agentId,
-                missing,
-                checked,
-              });
-              this.emit('worker:artifact-missing', {
-                agentId,
-                missing,
-                meshName,
-              });
             }
           }
         }
@@ -3422,6 +3761,18 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             agentId,
             meshName,
           });
+        }
+
+        // Track completed agent for preflight filtering
+        if (meshName) {
+          if (!this.completedAgents.has(meshName)) {
+            this.completedAgents.set(meshName, new Set());
+          }
+          this.completedAgents.get(meshName)!.add(agent.name);
+
+          // Refresh cached manifest variables from session.yaml (now up-to-date)
+          const wsLocations = (meshConfig as any)?.workspace?.locations || {};
+          this.cachedManifestVars.set(meshName, this.resolveManifestVariables(meshName, wsLocations));
         }
 
         this.emit('worker:complete', {
@@ -3583,6 +3934,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         if (config) {
           this.meshConfigs.set(meshName, config);
 
+          // Register mesh-local guardrails if present
+          if (config.guardrails) {
+            this.guardrails.registerMesh(meshName, config.guardrails);
+          }
+
           // Initialize FSM if needed
           if (config.fsm) {
             this.initializeSingleFSM(meshName, config);
@@ -3649,6 +4005,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
     // Load all configs using the extracted module
     this.meshConfigs = this.configLoader.loadAll();
+
+    // Register mesh-local guardrails from loaded configs
+    for (const [meshName, config] of this.meshConfigs) {
+      if (config.guardrails) {
+        this.guardrails.registerMesh(meshName, config.guardrails);
+      }
+    }
 
     // Initialize FSMs for meshes that have fsm config
     this.initializeFSMs();
@@ -3894,6 +4257,17 @@ ${output}
     }
 
     if (!activeInMesh) {
+      // FSM meshes: don't mark complete until FSM reaches terminal state
+      const fsm = this.meshFSMs.get(session.meshName);
+      if (fsm && !fsm.isInTerminalState()) {
+        log.debug('dispatcher', 'FSM mesh has no active workers but is not in terminal state — skipping session complete', {
+          meshInstance,
+          meshName: session.meshName,
+          currentState: fsm.getCurrentState(),
+        });
+        return;
+      }
+
       // Mark session complete (sets timestamps and duration)
       this.metricsAggregator.markSessionComplete(meshInstance);
 
@@ -4004,6 +4378,15 @@ ${output}
     // Re-fetch session to get updated timestamps
     const finalSession = this.metricsAggregator.getSession(sessionKey);
     if (!finalSession) return;
+
+    // Log mesh-run boundary for flow splitting
+    log.info('mesh-run', 'Mesh run completed', {
+      meshInstance: sessionKey,
+      meshName,
+      completionAgent,
+      durationMs: finalSession.totalDurationMs,
+      workerCount: finalSession.workerCount,
+    });
 
     // Log session summary
     log.sessionComplete(finalSession);
