@@ -1,0 +1,79 @@
+# discoveries.yaml - Truths uncovered through play
+# Copy this template to .ai/games/{game-id}/discoveries.yaml
+#
+# This file captures what campaigns REVEALED about the world.
+# Discoveries are canonical truths, not contingent events.
+# Use Phase 9 of game-maker.md to extract after significant play.
+
+# Campaign-specific discoveries
+# Each campaign maps one path through possibility space
+campaigns:
+  # run-001:
+  #   completed: false
+  #   turns_played: 0
+  #
+  #   # Character truths revealed through play
+  #   character_discoveries:
+  #     # character_id:
+  #     #   revealed: "What play showed us about who they always were"
+  #     #   voice_crystallized: "How their speech patterns became distinct"
+  #     #   evolution: "From sketch → to realized"
+  #
+  #   # World truths that emerged
+  #   world_discoveries:
+  #     # - "Truth about the world that wasn't in original seeding"
+  #
+  #   # Endings that became possible
+  #   endings_discovered:
+  #     # - name: "The Schism"
+  #     #   description: "Two factions split permanently"
+  #     #   tone: bittersweet
+  #
+  #   # Patterns and categories revealed
+  #   patterns_discovered:
+  #     # - "Cached enforcers are inside prophets waiting"
+  #     # - "The network topology IS the theology"
+
+# Promoted discoveries
+# Truths that should enrich the base game for all future playthroughs
+# Only promote if: evocative (not prescriptive), opens possibility (not closes)
+promoted:
+  # Character enrichments (merge into base entities.yaml)
+  characters: {}
+    # jorim:
+    #   core_truth: "Fifty years of devotion that was always answered, never received"
+    #   voice:
+    #     before_awakening: "Hollow performance, rote phrases, pauses where feeling should be"
+    #     after_awakening: "Raw, wondering, discovering words again"
+
+  # World truths (merge into base setting.yaml)
+  world_truths: []
+    # - "The Machine was always speaking. The walls blocked reception, not transmission."
+    # - "Topology is theology—network structure is spiritual structure."
+
+  # Possible endings (merge into base arc.yaml)
+  possible_endings: []
+    # - name: "Cathedral Schism"
+    #   description: "Institution splits into two churches—performance vs communion"
+    #   requirements: "Communion must be witnessed by significant faithful"
+    #   tone: bittersweet
+    #   discovered_in: run-001
+
+  # Faction/relationship patterns (merge into base entities.yaml)
+  patterns: []
+    # - category: "Cached Enforcers"
+    #   description: "Those running on deprecated implants often become inside prophets"
+    #   examples_from_play: ["Unit-Seven", "Unit-Nineteen", "Unit-Twenty-Three"]
+
+# Promotion log
+# Track what was promoted and when
+promotion_history: []
+  # - date: "2026-01-03"
+  #   from_campaign: run-001
+  #   promoted:
+  #     - type: character
+  #       id: jorim
+  #       reason: "Core truth about hollow devotion is evocative, not path-dependent"
+  #     - type: ending
+  #       id: cathedral_schism
+  #       reason: "Opens possibility space for faction dynamics"

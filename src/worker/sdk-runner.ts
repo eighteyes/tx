@@ -15,6 +15,7 @@ import {
   handleUsagePolicyError,
   type UsagePolicyViolationError,
 } from './usage-policy-error.ts';
+import type { GuardrailMode } from './guardrail-config.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -61,6 +62,8 @@ export interface SdkRunnerConfig {
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
   sessionId?: string;  // Resume existing session (for interrupt/revision flow)
   command?: string;  // Agent-level slash command (fallback if message has no command)
+  hooks?: Record<string, unknown[]>;  // SDK PreToolUse/PostToolUse hooks (chaos contracts)
+  maxTurnsMode?: GuardrailMode;  // { strict, warning } for max_turns enforcement
 }
 
 export class SdkRunner extends EventEmitter {
@@ -74,6 +77,8 @@ export class SdkRunner extends EventEmitter {
   private toolCallsCount: number = 0;  // Track tool calls for analytics
   private startedAt: number = 0;
   private currentUserPrompt: string = '';  // Track for error context capture
+  private turnCount: number = 0;  // Track turns for warning mode
+  private maxTurnsWarningEmitted: boolean = false;  // Prevent duplicate warnings
   private filesChanged: FileChangeSummary = {
     created: [],
     modified: [],
@@ -85,6 +90,46 @@ export class SdkRunner extends EventEmitter {
     super();
     this.config = config;
     this.queue = queue;
+  }
+
+  /**
+   * Compute effective maxTurns for SDK.
+   * Warning mode: return undefined (no SDK limit), track turns manually.
+   * Strict mode: return configured value.
+   */
+  private getEffectiveMaxTurns(): number | undefined {
+    const mode = this.config.maxTurnsMode;
+    if (mode && !mode.strict && this.config.maxTurns) {
+      // Warning mode: disable SDK enforcement, track manually
+      return undefined;
+    }
+    return this.config.maxTurns;
+  }
+
+  /**
+   * Check if max_turns warning threshold has been reached (warning mode only).
+   * Emits 'max-turns-warning' event when threshold hit.
+   */
+  private checkMaxTurnsWarning(): void {
+    const mode = this.config.maxTurnsMode;
+    if (!mode || mode.strict || !mode.warning || !this.config.maxTurns) return;
+    if (this.maxTurnsWarningEmitted) return;
+
+    this.turnCount++;
+    if (this.turnCount >= this.config.maxTurns) {
+      this.maxTurnsWarningEmitted = true;
+      log.warn('sdk-runner', 'max_turns threshold reached (warning mode)', {
+        workerId: this.config.id,
+        turnCount: this.turnCount,
+        maxTurns: this.getEffectiveMaxTurns(),
+      });
+      log.activity('guardrail:max-turns', this.config.id, `max_turns WARNING: ${this.turnCount}/${this.config.maxTurns} turns reached`);
+      this.emit('max-turns-warning', {
+        id: this.config.id,
+        turnCount: this.turnCount,
+        maxTurns: this.getEffectiveMaxTurns(),
+      });
+    }
   }
 
   /**
@@ -165,6 +210,61 @@ export class SdkRunner extends EventEmitter {
   private addGitCommit(commitHash: string): void {
     if (!this.filesChanged.gitCommits?.includes(commitHash)) {
       this.filesChanged.gitCommits?.push(commitHash);
+    }
+  }
+
+  /**
+   * Summarize tool input for session transcript (truncated for readability)
+   */
+  private summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
+    const MAX_VALUE_LEN = 500;
+    const truncate = (v: string) => v.length > MAX_VALUE_LEN
+      ? v.slice(0, MAX_VALUE_LEN) + '... (truncated)'
+      : v;
+
+    switch (toolName) {
+      case 'Bash':
+        return `command: ${truncate(String(input.command || ''))}`;
+      case 'Read':
+        return `file: ${input.file_path || input.path || ''}`;
+      case 'Write':
+        return `file: ${input.file_path || ''}\ncontent: ${truncate(String(input.content || '').slice(0, 200))}...`;
+      case 'Edit':
+        return `file: ${input.file_path || ''}\nold: ${truncate(String(input.old_string || ''))}\nnew: ${truncate(String(input.new_string || ''))}`;
+      case 'Glob':
+        return `pattern: ${input.pattern || ''}${input.path ? `\npath: ${input.path}` : ''}`;
+      case 'Grep':
+        return `pattern: ${input.pattern || ''}${input.path ? `\npath: ${input.path}` : ''}`;
+      default: {
+        const entries = Object.entries(input);
+        if (entries.length === 0) return '(no input)';
+        return entries
+          .map(([k, v]) => `${k}: ${truncate(typeof v === 'string' ? v : JSON.stringify(v))}`)
+          .join('\n');
+      }
+    }
+  }
+
+  /**
+   * Brief one-line target for tool call display in tx spy.
+   * Returns null if no meaningful target can be extracted.
+   */
+  private briefToolTarget(toolName: string, input: Record<string, unknown>): string | null {
+    switch (toolName) {
+      case 'Bash': {
+        const cmd = String(input.command || '');
+        return cmd.length > 80 ? cmd.slice(0, 77) + '...' : cmd;
+      }
+      case 'Read':
+      case 'Write':
+      case 'Edit':
+        return (input.file_path || input.path) as string || null;
+      case 'Glob':
+        return (input.pattern as string) || null;
+      case 'Grep':
+        return (input.pattern as string) || null;
+      default:
+        return null;
     }
   }
 
@@ -263,9 +363,11 @@ export class SdkRunner extends EventEmitter {
     log.info('sdk-runner', `Starting worker`, { workerId, model: this.config.model });
     this.running = true;
     this.abortController = new AbortController();
-    // Reset metrics and file tracking for this run
+    // Reset metrics, file tracking, and turn counter for this run
     this.queryMetrics = [];
     this.resetFilesChanged();
+    this.turnCount = 0;
+    this.maxTurnsWarningEmitted = false;
     this.startedAt = Date.now();
     this.emit('start', { id: workerId });
 
@@ -321,11 +423,12 @@ export class SdkRunner extends EventEmitter {
               permissionMode: 'bypassPermissions',
               allowDangerouslySkipPermissions: true,
               abortController: this.abortController,
-              maxTurns: this.config.maxTurns,
+              maxTurns: this.getEffectiveMaxTurns(),
               settingSources: ['project'],  // Load project slash commands
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
+              hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
             }
           });
         } catch (error) {
@@ -346,10 +449,11 @@ export class SdkRunner extends EventEmitter {
                 permissionMode: 'bypassPermissions',
                 allowDangerouslySkipPermissions: true,
                 abortController: this.abortController,
-                maxTurns: this.config.maxTurns,
+                maxTurns: this.getEffectiveMaxTurns(),
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
                 tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
                 resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
+                hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
               }
             });
           } else {
@@ -363,6 +467,7 @@ export class SdkRunner extends EventEmitter {
         for await (const msg of this.currentQuery) {
           switch (msg.type) {
             case 'assistant':
+              this.checkMaxTurnsWarning();
               const content = msg.message.content;
               let textContent = '';
               let toolUses: {type: 'tool_use'; name: string}[] = [];
@@ -385,20 +490,27 @@ export class SdkRunner extends EventEmitter {
               }
 
               if (toolUses.length > 0) {
+                const toolSummaries = toolUses.map((t: any) => {
+                  const target = this.briefToolTarget(t.name, (t as any).input || {});
+                  return target ? `${t.name}(${target})` : t.name;
+                });
                 const toolNames = toolUses.map((t: any) => t.name).join(', ');
                 log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
-                log.activity('tools', workerId, toolNames);
-                sessionOutput.push(`[Tools: ${toolNames}]`);
+                log.activity('tools', workerId, toolSummaries.join(', '));
+
+                // Capture tool calls with inputs for session transcript
+                for (const toolUse of toolUses) {
+                  const input = (toolUse as any).input || {};
+                  const inputSummary = this.summarizeToolInput(toolUse.name, input);
+                  sessionOutput.push(`[Tool Call: ${toolUse.name}]\n${inputSummary}`);
+                  this.trackFileOperation(toolUse.name, input);
+                }
+
                 // Emit output for stuck detection - tool calls are activity
                 this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
 
                 // Track tool calls count for analytics
                 this.toolCallsCount += toolUses.length;
-
-                // Track file operations for each tool use
-                for (const toolUse of toolUses) {
-                  this.trackFileOperation(toolUse.name, (toolUse as any).input || {});
-                }
               }
               break;
 
@@ -436,6 +548,19 @@ export class SdkRunner extends EventEmitter {
                 cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
                 cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
               });
+              break;
+
+            case 'user':
+              // Capture tool results for session transcript
+              if (msg.tool_use_result !== undefined && msg.tool_use_result !== null) {
+                const resultStr = typeof msg.tool_use_result === 'string'
+                  ? msg.tool_use_result
+                  : JSON.stringify(msg.tool_use_result, null, 2);
+                const truncated = resultStr.length > 2000
+                  ? resultStr.slice(0, 2000) + '\n... (truncated)'
+                  : resultStr;
+                sessionOutput.push(`[Tool Result]\n${truncated}`);
+              }
               break;
 
             case 'system':
@@ -705,10 +830,11 @@ export class SdkRunner extends EventEmitter {
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
           abortController: this.abortController,
-          maxTurns: this.config.maxTurns,
+          maxTurns: this.getEffectiveMaxTurns(),
           mcpServers: this.config.mcpServers,
           tools: toolsConfig,
           resume: sessionId,  // Resume the existing session
+          hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
         }
       });
 
@@ -718,6 +844,7 @@ export class SdkRunner extends EventEmitter {
       for await (const msg of q) {
         switch (msg.type) {
           case 'assistant':
+            this.checkMaxTurnsWarning();
             const textContent = msg.message.content
               .filter((block: any) => block.type === 'text')
               .map((block: any) => block.text)
@@ -731,21 +858,41 @@ export class SdkRunner extends EventEmitter {
 
             const toolUses = msg.message.content.filter((block: any) => block.type === 'tool_use');
             if (toolUses.length > 0) {
+              const toolSummaries = toolUses.map((t: any) => {
+                const target = this.briefToolTarget(t.name, (t as any).input || {});
+                return target ? `${t.name}(${target})` : t.name;
+              });
               const toolNames = toolUses.map((t: any) => t.name).join(', ');
               log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
-              log.activity('tools', workerId, toolNames);
-              sessionOutput.push(`[Tools: ${toolNames}]`);
+              log.activity('tools', workerId, toolSummaries.join(', '));
+
+              // Capture tool calls with inputs for session transcript
+              for (const toolUse of toolUses) {
+                const tu = toolUse as { name: string; input?: Record<string, unknown> };
+                const input = tu.input || {};
+                const inputSummary = this.summarizeToolInput(tu.name, input);
+                sessionOutput.push(`[Tool Call: ${tu.name}]\n${inputSummary}`);
+                this.trackFileOperation(tu.name, input);
+              }
+
               // Emit output for stuck detection - tool calls are activity
               this.emit('output', { id: workerId, data: `[Tools: ${toolNames}]` });
 
               // Track tool calls count for analytics (resume flow)
               this.toolCallsCount += toolUses.length;
+            }
+            break;
 
-              // Track file operations for each tool use (resume flow)
-              for (const toolUse of toolUses) {
-                const tu = toolUse as { name: string; input?: Record<string, unknown> };
-                this.trackFileOperation(tu.name, tu.input || {});
-              }
+          case 'user':
+            // Capture tool results for session transcript (resume flow)
+            if (msg.tool_use_result !== undefined && msg.tool_use_result !== null) {
+              const resultStr = typeof msg.tool_use_result === 'string'
+                ? msg.tool_use_result
+                : JSON.stringify(msg.tool_use_result, null, 2);
+              const truncated = resultStr.length > 2000
+                ? resultStr.slice(0, 2000) + '\n... (truncated)'
+                : resultStr;
+              sessionOutput.push(`[Tool Result]\n${truncated}`);
             }
             break;
 

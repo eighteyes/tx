@@ -193,6 +193,19 @@ Cut these trailing phrases entirely:
 
 **Fix:** Cut after the comma, or make the participle phrase concrete.
 
+## Fourth-Wall Breaks
+
+**Any reference to game mechanics, turns, or system internals in prose is a hard violation.**
+
+| Pattern | Detection | Fix |
+|---------|-----------|-----|
+| Turn references | "Turn 12", "back on turn", "in a previous turn" | Replace with narrative time: "days ago", "last week", "that night" |
+| Mechanic leaks | "trait", "pressure", "entropy", "resolution" (as game terms) | Rewrite as character experience |
+| System language | "outcome", "consequence roll", "weight" (mechanical sense) | Cut or replace with narrative equivalent |
+| Meta-awareness | "the story", "this scene", "the narrative" | Cut entirely |
+
+**These are MECHANICAL violations — simple pattern match + replacement.**
+
 ## Structural Patterns
 
 ### Lists of Three

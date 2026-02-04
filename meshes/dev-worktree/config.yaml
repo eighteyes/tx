@@ -6,9 +6,7 @@ intents:
     - "build feature"
     - "implement in isolation"
     - "isolated development"
-  commands:
-    build: "/know:build"
-    implement: "/know:build"
+  # commands: /know:build owned by dev-review mesh
 
 agents:
   - name: worker

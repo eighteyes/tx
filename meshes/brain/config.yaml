@@ -51,14 +51,7 @@ intents:
     design: "/know:plan"
     architect: "/know:plan"
     "spec out": "/know:plan"
-    # Implementation → build workflow
-    build: "/know:build"
-    implement: "/know:build"
-    "code up": "/know:build"
-    develop: "/know:build"
-    refactor: "/know:build"
-    improve: "/know:build"
-    optimize: "/know:build"
+    # Implementation: /know:build owned by dev-review mesh
 
 agents:
   - name: brain

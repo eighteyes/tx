@@ -8,9 +8,7 @@ intents:
     - "code up"
     - fix
     - develop
-  commands:
-    build: "/know:build"
-    implement: "/know:build"
+  # commands: /know:build owned by dev-review mesh
 
 agents:
   - name: worker

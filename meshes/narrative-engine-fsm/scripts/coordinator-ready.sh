@@ -33,18 +33,36 @@ check_consultations() {
 }
 
 # Validate campaign directory and key files exist
+# Supports two session formats:
+#   paths.campaign (template format)
+#   game_path + campaign_id (runtime format)
 check_campaign() {
   local campaign_dir
   campaign_dir=$(yq -r '.paths.campaign // ""' "$SESSION")
 
   if [[ -z "$campaign_dir" || "$campaign_dir" == "null" ]]; then
-    echo "BLOCKED: paths.campaign not set in session.yaml"
-    exit 1
+    # Fall back to runtime fields: game_path + campaign_id
+    local game_path campaign_id
+    game_path=$(yq -r '.game_path // ""' "$SESSION")
+    campaign_id=$(yq -r '.campaign_id // ""' "$SESSION")
+
+    if [[ -z "$game_path" || "$game_path" == "null" ]]; then
+      echo "BLOCKED: no game_path in session.yaml"
+      exit 1
+    fi
+    if [[ -z "$campaign_id" || "$campaign_id" == "null" ]]; then
+      echo "BLOCKED: no campaign_id in session.yaml"
+      exit 1
+    fi
+
+    campaign_dir="${game_path}/campaigns/${campaign_id}"
   fi
 
-  # Resolve relative to TX_ROOT
-  local base="${TX_ROOT:-.}"
-  local full_path="${base}/${campaign_dir}"
+  # Resolve: use as-is if absolute, else relative to TX_ROOT
+  local full_path="$campaign_dir"
+  if [[ "$campaign_dir" != /* ]]; then
+    full_path="${TX_ROOT:-.}/${campaign_dir}"
+  fi
 
   if [[ ! -d "$full_path" ]]; then
     echo "BLOCKED: campaign directory not found: ${full_path}"

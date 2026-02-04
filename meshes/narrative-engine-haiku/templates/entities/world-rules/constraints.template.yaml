@@ -1,0 +1,76 @@
+# World Rule Entity Template - Constraints
+# Copy to: .ai/games/{game-id}/entities/world-rules/constraints.yaml
+# For general world constraints (physics, social rules, genre conventions)
+
+id: world-constraints
+type: world-rule
+name: "World Constraints"
+
+# ============================================
+# TRAITS - Absolute rules of this world
+# ============================================
+traits:
+  # Domain
+  domain: constraints           # What this governs
+
+  # Physical constraints - laws of nature
+  physical: []
+    # Examples:
+    # - "No resurrection - dead is dead"
+    # - "The sun is harmful to certain creatures"
+    # - "Distance still matters - no teleportation"
+    # - "Wounds require time to heal, no instant recovery"
+
+  # Social constraints - how society works
+  social: []
+    # Examples:
+    # - "The nobility holds absolute legal authority"
+    # - "Women cannot own property in this kingdom"
+    # - "Debts pass to children upon death"
+    # - "Breaking guest-right brings divine punishment"
+
+  # Metaphysical constraints - deeper rules
+  metaphysical: []
+    # Examples:
+    # - "True names have power"
+    # - "Promises made in blood cannot be broken"
+    # - "The dead can be spoken to, but not commanded"
+    # - "Fate can be delayed but not avoided"
+
+  # Genre constraints - narrative expectations
+  genre: []
+    # Examples:
+    # - "Violence has realistic consequences"
+    # - "Coincidences are permitted for trouble, not escape"
+    # - "Characters can die, including protagonist (with consent)"
+    # - "No deus ex machina rescues"
+
+# ============================================
+# EPISODES - When constraints were tested
+# ============================================
+episodes: []
+  # - turn: 8
+  #   event: "Protagonist attempted resurrection, learned it's impossible"
+  #   state_change:
+  #     constraint_tested: "no_resurrection"
+  #     result: "confirmed"
+  # - turn: 14
+  #   event: "Broke guest-right, divine punishment began"
+  #   state_change:
+  #     constraint_violated: "guest_right"
+  #     consequences_active: true
+
+# ============================================
+# CURRENT_STATE - What protagonist knows
+# ============================================
+current_state:
+  constraints_known: []         # Which rules protagonist has learned
+  constraints_violated: []      # Rules that have been broken (with consequences)
+  active_consequences: []       # Ongoing effects of violations
+
+# Apparent exceptions - things that SEEM to break rules
+apparent_exceptions: []
+  # - constraint: "No resurrection"
+  #   exception: "The elder returned after death"
+  #   true_explanation: "Was never truly dead - suspended animation"
+  #   known_to_protagonist: false

@@ -359,6 +359,16 @@ export class MessageQueue {
   }
 
   /**
+   * Clear conversation sessions for a mesh (on mesh completion when persistence is off)
+   */
+  clearConversationsForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      `DELETE FROM sessions WHERE agent_id LIKE ?`
+    ).run(`${meshName}/%`);
+    return result.changes;
+  }
+
+  /**
    * Clear all sessions (for --fresh start)
    */
   clearAllSessions(): void {

@@ -56,4 +56,4 @@ You fire once to start, receive the result once when the chain completes.
 
 ## Constraints
 - Send to lint-forbidden-words to start, receive from lint-temporal to finish.
-- Forward to EDITOR only. NARRATOR owns the revision cycle.
+- Forward to EDITOR only. Editor fixes violations and writes prose.md.

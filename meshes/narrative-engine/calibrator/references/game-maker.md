@@ -145,6 +145,24 @@ Character extraction—protagonist and significant others.
 
 ---
 
+### Phase 6a: Naming Constraints
+
+**Forbidden names** — AI defaults. If a name appears below, reject it and find something specific to this world.
+
+**First names (never use):**
+- James, John, Michael, Robert, David, William, Richard, Joseph, Thomas, Charles
+- Mary, Patricia, Jennifer, Linda, Elizabeth, Barbara, Susan, Jessica, Sarah, Karen, Margaret, Emily
+
+**Surnames (never use):**
+- Smith, Johnson, Williams, Brown, Jones, Garcia, Miller, Davis, Wilson, Moore
+- Chen, Wang, Li, Zhang, Liu, Lee, Kim, Park, Nguyen, Patel
+
+**Why:** These names signal "I didn't think about this character." Every name should feel chosen for THIS person in THIS world.
+
+**Instead:** Draw from setting-appropriate sources. Victorian London? Welsh mining family? Specific immigrant community? Era-appropriate diminutives? Occupational surnames that fit the world?
+
+---
+
 ### Phase 6b: Character Voice
 
 Every character needs a distinct voice. Without this, CAST produces homogeneous dialogue that breaks immersion. This phase runs FOR EACH significant character.

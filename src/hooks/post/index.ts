@@ -16,6 +16,7 @@ import { qualityDeterministicHook } from './quality-deterministic.ts';
 import { commitAutoHook } from './commit-auto.ts';
 import { brainUpdateHook } from './brain-update.ts';
 import { forensicsAnalyzeHook } from './forensics-analyze.ts';
+import { suggestManifestHook } from './suggest-manifest.ts';
 
 export { worktreeCleanupHook } from './worktree-cleanup.ts';
 export { qualityEvaluateHook } from './quality-evaluate.ts';
@@ -28,6 +29,7 @@ export { qualityDeterministicHook } from './quality-deterministic.ts';
 export { commitAutoHook } from './commit-auto.ts';
 export { brainUpdateHook } from './brain-update.ts';
 export { forensicsAnalyzeHook } from './forensics-analyze.ts';
+export { suggestManifestHook } from './suggest-manifest.ts';
 
 /**
  * All post-hook definitions
@@ -43,6 +45,7 @@ export const postHooks = [
   worktreeCleanupHook,
   commitAutoHook,
   forensicsAnalyzeHook,
+  suggestManifestHook,
   brainUpdateHook,
 ];
 

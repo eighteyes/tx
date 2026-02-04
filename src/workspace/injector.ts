@@ -22,6 +22,13 @@ export interface InjectionContext {
   taskId: string;
 }
 
+export interface ManifestFileEntry {
+  id: string;
+  path: string;
+  description?: string;
+  content?: string;  // File contents when available (reads only)
+}
+
 export interface PreambleContext {
   agentCount: number;  // Number of agents in the mesh
   meshName: string;    // Mesh this agent belongs to
@@ -170,22 +177,54 @@ export class PromptInjector {
 
   /**
    * Inject file manifest contract into a system prompt
-   * Tells the agent exactly which files it reads and writes
+   * Tells the agent exactly which files it reads and writes, with resolved paths
    */
-  injectFileManifest(basePrompt: string, reads: string[], writes: string[]): string {
+  injectFileManifest(
+    basePrompt: string,
+    reads: ManifestFileEntry[],
+    writes: ManifestFileEntry[],
+  ): string {
     if (reads.length === 0 && writes.length === 0) return basePrompt;
 
     const parts: string[] = [];
     parts.push('# File Contract\n');
 
     if (writes.length > 0) {
-      parts.push(`**You write:** ${writes.map(f => `\`${f}\``).join(', ')}`);
+      parts.push('**You write:**');
+      parts.push('```');
+      for (const f of writes) {
+        parts.push(`${f.path}  # ${f.description || f.id}`);
+      }
+      parts.push('```');
     }
     if (reads.length > 0) {
-      parts.push(`**You read:** ${reads.map(f => `\`${f}\``).join(', ')}`);
+      // Separate reads with/without content
+      const withContent = reads.filter(f => f.content);
+      const withoutContent = reads.filter(f => !f.content);
+
+      if (withoutContent.length > 0) {
+        parts.push('**You read:**');
+        parts.push('```');
+        for (const f of withoutContent) {
+          parts.push(`${f.path}  # ${f.description || f.id}`);
+        }
+        parts.push('```');
+      }
+
+      if (withContent.length > 0) {
+        parts.push('\n**Included files:**\n');
+        for (const f of withContent) {
+          const ext = f.id.split('.').pop() || '';
+          parts.push(`### ${f.id}`);
+          parts.push(`\`${f.path}\``);
+          parts.push(`\`\`\`${ext}`);
+          parts.push(f.content!);
+          parts.push('```\n');
+        }
+      }
     }
 
-    parts.push('\nWrite ONLY the files listed above. Use exact filenames in your workspace directory.');
+    parts.push('Write ONLY the files listed above. Use exact filenames at the paths shown.');
 
     return `${basePrompt}\n\n${parts.join('\n')}`;
   }

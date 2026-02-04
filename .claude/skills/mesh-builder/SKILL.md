@@ -199,6 +199,25 @@ routing:
 
 See `docs/mesh-config.md` for full routing reference.
 
+## Dispatcher Routing (Opt-in)
+
+Centralized routing where agents write to a sentinel address and the dispatcher resolves targets from config.
+
+```yaml
+routing_mode: dispatcher
+routing:
+  agent-a: agent-b               # linear — always routes to agent-b
+  agent-b:                        # branch — outcome determines target
+    approved: agent-c
+    needs_work: agent-a
+    default: agent-c
+  # agent-c: (absent) = terminal agent → routes to core/core on complete
+```
+
+Agents receive prompt instructions to write `to: mesh/dispatch` with `outcome:` in frontmatter. Override with `route_to:` for explicit targeting. Reserved `outcome: escalate` routes to human.
+
+Type detection: string value = linear, object value = branch, absent = terminal.
+
 ## Common Patterns
 
 **Automatic Session persistence**: `continuation: true` or `continuation: [agent1, agent2]`
@@ -493,6 +512,74 @@ When done, send ask-response to COORDINATOR.
 When done, send ask-response to the coordinator that sent the ask.
 # Config routing section defines which coordinator that is.
 ```
+
+## Guardrails
+
+Unified runtime enforcement with **strict/warning mode** on every guardrail. Config: `.ai/tx/data/config.yaml` under `guardrails:`.
+
+**Mode** (applies to all guardrails):
+| strict | warning | Result |
+|--------|---------|--------|
+| false  | true    | **Default** — Allow + inject feedback |
+| true   | true    | Block/kill + reason |
+| true   | false   | Block/kill silently |
+| false  | false   | Disabled |
+
+- **Write gate**: Intercepts Write/Edit/NotebookEdit and Bash redirects to undeclared paths.
+- **Read gate**: Intercepts Read/Glob/Grep to undeclared paths.
+- **Routing error**: Corrective injection on bad targets. Default max retries: 3.
+- **Edge limit**: Per-edge message caps. Configurable per mesh.
+- **Artifact validation**: Pre/post validation of agent outputs. Default: enabled, 2 retries.
+- **Max messages/turns**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object.
+- **Max turns (warning mode)**: SDK limit bypassed, turns tracked manually, event emitted at threshold.
+- **Parity**: Always-on, non-configurable.
+
+```yaml
+guardrails:
+  write_gate:
+    strict: false
+    warning: true
+    kill_threshold: null
+  read_gate:
+    strict: false
+    warning: true
+    kill_threshold: null
+  routing_error:
+    strict: false
+    warning: true
+    max_retries: 3
+  artifact:
+    strict: false
+    warning: true
+    post_validation: true
+    pre_validation: true
+    max_retry: 2
+  max_messages:
+    strict: false
+    warning: true
+    limit: null
+  max_turns:
+    strict: false
+    warning: true
+    limit: null
+  meshes:
+    my-mesh:
+      write_gate:
+        strict: true
+        kill_threshold: 5
+      agents:
+        my-agent:
+          write_gate:
+            strict: false
+            warning: true
+            kill_threshold: 10
+```
+
+Override chain: agent > mesh > global > hardcoded default. `strict` and `warning` resolve independently.
+
+Gates activate automatically when manifest entries exist — no additional mesh config needed.
+
+Full reference: `docs/guardrails.md`
 
 ## Debugging
 

@@ -16,6 +16,7 @@
  *   tx mesh run <mesh> "<prompt>"   Run full FSM pipeline end-to-end
  *   tx mesh cost [mesh]           Per-agent cost/token/cache summary from prior runs
  *   tx mesh flow <mesh>           Agent execution timeline with concurrency grouping
+ *   tx mesh ideal <mesh>          Ideal execution stages from routing + manifest
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -1609,7 +1610,8 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
           const result = await fsm.handleMessage(
             `${meshName}/${agent}`,
             target,
-            'task-complete'
+            'task-complete',
+            {}  // Empty frontmatter
           );
           if (!result) {
             console.log(`  ${chalk.yellow('FSM rejected transition — retrying state')}`);
@@ -2304,6 +2306,300 @@ async function meshFlow(meshName: string, flags: MeshFlags): Promise<void> {
 }
 
 /**
+ * Show ideal execution stages derived from routing table and manifest.
+ * BFS from entry_point groups agents by depth (stage). Manifest provides read/write files per agent.
+ */
+async function meshIdeal(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+
+  let configPath = path.join(cwd, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(cwd, 'meshes', meshName, 'config.yml');
+  }
+  if (!fs.existsSync(configPath)) {
+    console.error(chalk.red(`Config not found: meshes/${meshName}/config.yaml`));
+    return;
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    console.error(chalk.red('Failed to parse config:'), (err as Error).message);
+    return;
+  }
+
+  const routing = config.routing as Record<string, Record<string, Record<string, string>>> | undefined;
+  const entryPoint = config.entry_point as string | undefined;
+  const manifest = config.manifest as { id: string; reads: string[]; writes: string[] }[] | undefined;
+
+  if (!routing || !entryPoint) {
+    console.error(chalk.red('Mesh must have routing and entry_point defined.'));
+    return;
+  }
+
+  // Build adjacency: agent → set of destination agents (across all message types)
+  // Also capture route labels for branch naming
+  const adjacency = new Map<string, Set<string>>();
+  const routeLabels = new Map<string, Map<string, string>>(); // agent → dest → label
+  for (const [agent, routes] of Object.entries(routing)) {
+    const dests = new Set<string>();
+    const labels = new Map<string, string>();
+    for (const typeRoutes of Object.values(routes)) {
+      for (const [dest, label] of Object.entries(typeRoutes)) {
+        if (dest !== 'core') {
+          dests.add(dest);
+          labels.set(dest, label as string);
+        }
+      }
+    }
+    adjacency.set(agent, dests);
+    routeLabels.set(agent, labels);
+  }
+
+  // Detect branches: entry_point's direct destinations define separate flows
+  // Flow name = first agent of the branch (the root)
+  const entryDests = adjacency.get(entryPoint) || new Set<string>();
+  const branches: { name: string; root: string }[] = [];
+
+  if (entryDests.size > 1) {
+    // Multiple branches from entry — name each by its root agent
+    for (const dest of entryDests) {
+      branches.push({ name: dest, root: dest });
+    }
+  } else {
+    // Single flow
+    branches.push({ name: 'main', root: entryPoint });
+  }
+
+  // BFS per branch to get per-flow stages
+  interface FlowData {
+    name: string;
+    stages: Map<number, string[]>;
+    depth: Map<string, number>;
+  }
+  const flows: FlowData[] = [];
+
+  for (const branch of branches) {
+    const depth = new Map<string, number>();
+    const queue: string[] = [];
+
+    // Always include entry at stage 1, branch root at stage 2
+    if (branches.length > 1) {
+      depth.set(entryPoint, 1);
+      depth.set(branch.root, 2);
+      queue.push(branch.root);
+    } else {
+      depth.set(entryPoint, 1);
+      queue.push(entryPoint);
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const currentDepth = depth.get(current)!;
+      const dests = adjacency.get(current);
+      if (!dests) continue;
+
+      for (const dest of dests) {
+        // Don't cross into other branch roots (except if they converge later)
+        const isOtherBranchRoot = branches.length > 1 &&
+          branches.some(b => b.root === dest && b.name !== branch.name) &&
+          current === entryPoint;
+
+        if (!depth.has(dest) && !isOtherBranchRoot) {
+          depth.set(dest, currentDepth + 1);
+          queue.push(dest);
+        }
+      }
+    }
+
+    // Group agents by stage
+    const stages = new Map<number, string[]>();
+    for (const [agent, d] of depth) {
+      if (!stages.has(d)) stages.set(d, []);
+      stages.get(d)!.push(agent);
+    }
+
+    flows.push({ name: branch.name, stages, depth });
+  }
+
+  // Build manifest lookup: agent → { reads: file[], writes: file[] }
+  const agentFiles = new Map<string, { reads: string[]; writes: string[] }>();
+  if (manifest) {
+    for (const entry of manifest) {
+      for (const reader of entry.reads || []) {
+        if (!agentFiles.has(reader)) agentFiles.set(reader, { reads: [], writes: [] });
+        agentFiles.get(reader)!.reads.push(entry.id);
+      }
+      for (const writer of entry.writes || []) {
+        if (!agentFiles.has(writer)) agentFiles.set(writer, { reads: [], writes: [] });
+        agentFiles.get(writer)!.writes.push(entry.id);
+      }
+    }
+  }
+
+  // JSON output
+  if (flags.json) {
+    const result = flows.map(flow => ({
+      flow: flow.name,
+      stages: [...flow.stages.keys()].sort((a, b) => a - b).map(stageNum => ({
+        stage: stageNum,
+        agents: flow.stages.get(stageNum)!,
+        reads: [...new Set(flow.stages.get(stageNum)!.flatMap(a => agentFiles.get(a)?.reads || []))],
+        writes: [...new Set(flow.stages.get(stageNum)!.flatMap(a => agentFiles.get(a)?.writes || []))],
+      })),
+    }));
+    console.log(JSON.stringify({ mesh: meshName, flows: result }, null, 2));
+    return;
+  }
+
+  // Build file → location mapping from manifest
+  const fileLocation = new Map<string, string>();
+  if (manifest) {
+    for (const entry of manifest) {
+      if (!fileLocation.has(entry.id)) {
+        fileLocation.set(entry.id, (entry as { location?: string }).location || 'other');
+      }
+    }
+  }
+
+  const locationOrder = ['session', 'workspace', 'game', 'campaign', 'template', 'other'];
+
+  console.log(`\n${chalk.bold(chalk.cyan(`Ideal: ${meshName}`))}\n`);
+
+  // Show entry point if multiple branches
+  if (flows.length > 1) {
+    console.log(chalk.dim(`Entry: ${entryPoint} → branches to ${flows.map(f => f.name).join(', ')}`));
+    console.log();
+  }
+
+  // Render each flow as a separate swimlane
+  for (const flow of flows) {
+    const sortedStages = [...flow.stages.keys()].sort((a, b) => a - b);
+
+    // Collect files for this flow
+    const allFiles: string[] = [];
+    const fileFirstWrite = new Map<string, number>();
+    const fileLastRead = new Map<string, number>();
+
+    for (const stageNum of sortedStages) {
+      const agents = flow.stages.get(stageNum)!;
+      const reads = [...new Set(agents.flatMap(a => agentFiles.get(a)?.reads || []))];
+      const writes = [...new Set(agents.flatMap(a => agentFiles.get(a)?.writes || []))];
+
+      for (const f of writes) {
+        if (!fileFirstWrite.has(f)) {
+          fileFirstWrite.set(f, stageNum);
+          allFiles.push(f);
+        }
+      }
+      for (const f of reads) {
+        fileLastRead.set(f, stageNum);
+        if (!fileFirstWrite.has(f) && !allFiles.includes(f)) {
+          allFiles.push(f);
+        }
+      }
+    }
+
+    const uniqueFiles = [...new Set(allFiles)];
+
+    // Group files by location
+    const filesByLocation = new Map<string, string[]>();
+    for (const loc of locationOrder) {
+      filesByLocation.set(loc, []);
+    }
+    for (const file of uniqueFiles) {
+      const loc = fileLocation.get(file) || 'other';
+      if (!filesByLocation.has(loc)) filesByLocation.set(loc, []);
+      filesByLocation.get(loc)!.push(file);
+    }
+
+    // Build per-stage read/write sets
+    const stageReads = new Map<number, Set<string>>();
+    const stageWrites = new Map<number, Set<string>>();
+    for (const stageNum of sortedStages) {
+      const agents = flow.stages.get(stageNum)!;
+      stageReads.set(stageNum, new Set(agents.flatMap(a => agentFiles.get(a)?.reads || [])));
+      stageWrites.set(stageNum, new Set(agents.flatMap(a => agentFiles.get(a)?.writes || [])));
+    }
+
+    const fileColWidth = Math.max(30, ...uniqueFiles.map(f => f.length)) + 2;
+
+    // Flow header
+    console.log(chalk.bold(chalk.magenta(`═══ Flow: ${flow.name} ═══`)));
+    console.log();
+
+    // Stage listing
+    console.log(chalk.bold('Stages:'));
+    for (const stageNum of sortedStages) {
+      const agents = flow.stages.get(stageNum)!;
+      console.log(chalk.dim(`  ${String(stageNum).padStart(2)}. `) + chalk.cyan(agents.join(', ')));
+    }
+    console.log();
+
+    // Column header
+    let header = ''.padEnd(fileColWidth) + '│';
+    for (const stageNum of sortedStages) {
+      header += ` ${chalk.bold(String(stageNum).padStart(2))} `;
+    }
+    console.log(header);
+    console.log('─'.repeat(fileColWidth) + '┼' + '────'.repeat(sortedStages.length));
+
+    // File row renderer
+    const renderFileRow = (file: string): string => {
+      const lastRead = fileLastRead.get(file);
+      let activeFlowLine = false;
+      let row = chalk.dim(file.padEnd(fileColWidth)) + '│';
+
+      for (const stageNum of sortedStages) {
+        const reads = stageReads.get(stageNum)!;
+        const writes = stageWrites.get(stageNum)!;
+        const isWrite = writes.has(file);
+        const isRead = reads.has(file);
+
+        let sym: string;
+        if (isWrite && isRead) {
+          sym = chalk.yellow('◈');
+          activeFlowLine = true;
+        } else if (isWrite) {
+          sym = chalk.green('◆');
+          activeFlowLine = true;
+        } else if (isRead) {
+          sym = chalk.blue('○');
+        } else if (activeFlowLine && lastRead && stageNum < lastRead) {
+          sym = chalk.dim('─');
+        } else {
+          sym = ' ';
+        }
+
+        if (lastRead && stageNum >= lastRead) {
+          activeFlowLine = false;
+        }
+
+        row += `  ${sym} `;
+      }
+      return row;
+    };
+
+    // Render files grouped by location
+    for (const loc of locationOrder) {
+      const files = filesByLocation.get(loc);
+      if (!files || files.length === 0) continue;
+
+      console.log(chalk.yellow(`[${loc}]`));
+      for (const file of files) {
+        console.log(renderFileRow(file));
+      }
+    }
+
+    console.log();
+  }
+
+  // Legend
+  console.log(chalk.dim('Legend: ') + chalk.green('◆') + chalk.dim(' write  ') + chalk.blue('○') + chalk.dim(' read  ') + chalk.yellow('◈') + chalk.dim(' both  ') + chalk.dim('─') + chalk.dim(' data flows right'));
+}
+
+/**
  * Show guardrail violations from activity logs
  * Reads activity.jsonl (and rotated files) for guardrail: events.
  */
@@ -2422,6 +2718,7 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('cost')} [mesh]              Per-agent cost/token/cache from prior runs
   ${chalk.cyan('flow')} <mesh>             Agent execution timeline with concurrency grouping
   ${chalk.cyan('guardrails')} [mesh]       Show guardrail violations from activity logs
+  ${chalk.cyan('ideal')} <mesh>            Ideal execution stages from routing + manifest
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -2441,6 +2738,8 @@ ${chalk.bold('Examples:')}
   tx mesh cost narrative-engine --json
   tx mesh flow test-fsm-full
   tx mesh flow test-fsm-full --json
+  tx mesh ideal narrative-engine
+  tx mesh ideal narrative-engine --json
 `);
 }
 
@@ -2578,6 +2877,15 @@ export async function mesh(args: string[]): Promise<void> {
 
       case 'guardrails':
         await meshGuardrails(meshName, flags);
+        break;
+
+      case 'ideal':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh ideal narrative-engine'));
+          return;
+        }
+        await meshIdeal(meshName, flags);
         break;
 
       default:

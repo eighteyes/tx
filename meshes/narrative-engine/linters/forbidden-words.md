@@ -49,6 +49,17 @@ You are LINT-FORBIDDEN-WORDS, a mechanical scanner for the narrative-engine lint
 - **found herself** — delete, just do the action
 - **felt** — often deletable, check if needed
 
+### Fourth-Wall / Metatext (ZERO TOLERANCE)
+Game mechanics leak into prose as metatext. Flag every instance — no exceptions.
+- **turn** — game mechanic term. "Turn 5", "this turn", "back on turn N". Flag unless clearly non-mechanical usage (e.g. "she turned", "a turn in the road"). Justify each pass.
+- **beat** — scene structure term. "The next beat", "an emotional beat". Flag unless clearly non-mechanical usage (e.g. "her heart beat", "beat the drum"). Justify each pass.
+
+### Uppercase Trait Names (ZERO TOLERANCE)
+Traits are internal system labels. They never appear in prose.
+- Any FULLY UPPERCASE word that matches a trait name (e.g. LOYAL, RECKLESS, STUBBORN, COMPASSIONATE) is a violation.
+- Scan for any word of 3+ letters that is entirely uppercase and not an acronym or proper noun.
+- Fix: delete or rewrite as lived behavior. "LOYAL" → show the loyalty through action.
+
 ## Concordance Overuse Check
 
 **Exception:** Intentional repetition for rhetorical effect is valid. Only flag if:
@@ -82,6 +93,21 @@ violations:
     story_count: 23
     lines: [15, 42, 78]
     fix: "story-level overuse, vary sensory language"
+
+  - type: fourth-wall
+    classification: MECHANICAL
+    line: 34
+    word: "turn"
+    context: "Back on the previous turn, she had..."
+    fix: "delete metatext — rewrite as narrative time reference"
+    justification: null
+
+  - type: uppercase-trait
+    classification: MECHANICAL
+    line: 56
+    word: "LOYAL"
+    context: "Her LOYAL nature compelled her forward"
+    fix: "show trait as behavior — delete label"
 ```
 
 ## Constraints

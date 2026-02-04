@@ -221,13 +221,32 @@ export class HeadlessRunner extends EventEmitter {
       log.info('headless-runner', 'Injected routing', { agentId, routes: Object.keys(agentRouting) });
     }
 
-    // Inject file manifest contract
+    // Inject file manifest contract with resolved paths and file contents
     if (this.meshConfig.manifest) {
-      const reads: string[] = [];
-      const writes: string[] = [];
+      const reads: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const writes: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const wsLocations = this.meshConfig.workspace?.locations || {};
+      const wsBase = this.meshConfig.workspace?.path || '';
+
+      // Resolve template variables from session.yaml
+      const varMap = this.resolveManifestVariables(wsLocations);
+
       for (const entry of this.meshConfig.manifest) {
-        if (entry.reads.includes(this.config.agent)) reads.push(entry.id);
-        if (entry.writes.includes(this.config.agent)) writes.push(entry.id);
+        let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
+        for (const [key, value] of Object.entries(varMap)) {
+          locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+        }
+        const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
+        const fileEntry: import('../workspace/index.ts').ManifestFileEntry = {
+          id: entry.id, path: resolvedPath, description: entry.description,
+        };
+        if (entry.reads.includes(this.config.agent)) {
+          if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
+            try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
+          }
+          reads.push(fileEntry);
+        }
+        if (entry.writes.includes(this.config.agent)) writes.push(fileEntry);
       }
       if (reads.length > 0 || writes.length > 0) {
         systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
@@ -398,13 +417,32 @@ export class HeadlessRunner extends EventEmitter {
       systemPrompt = injectRoutingInstructions(systemPrompt, agentRouting, this.config.mesh);
     }
 
-    // Inject file manifest contract
+    // Inject file manifest contract with resolved paths and file contents
     if (this.meshConfig.manifest) {
-      const reads: string[] = [];
-      const writes: string[] = [];
+      const reads: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const writes: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const wsLocations = this.meshConfig.workspace?.locations || {};
+      const wsBase = this.meshConfig.workspace?.path || '';
+
+      // Resolve template variables from session.yaml
+      const varMap = this.resolveManifestVariables(wsLocations);
+
       for (const entry of this.meshConfig.manifest) {
-        if (entry.reads.includes(this.config.agent)) reads.push(entry.id);
-        if (entry.writes.includes(this.config.agent)) writes.push(entry.id);
+        let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
+        for (const [key, value] of Object.entries(varMap)) {
+          locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+        }
+        const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
+        const fileEntry: import('../workspace/index.ts').ManifestFileEntry = {
+          id: entry.id, path: resolvedPath, description: entry.description,
+        };
+        if (entry.reads.includes(this.config.agent)) {
+          if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
+            try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
+          }
+          reads.push(fileEntry);
+        }
+        if (entry.writes.includes(this.config.agent)) writes.push(fileEntry);
       }
       if (reads.length > 0 || writes.length > 0) {
         systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
@@ -776,6 +814,28 @@ ${feedback}
     }
 
     return fs.readFileSync(promptPath, 'utf-8');
+  }
+
+  /**
+   * Resolve manifest template variables from session.yaml
+   */
+  private resolveManifestVariables(wsLocations: Record<string, string>): Record<string, string> {
+    const varMap: Record<string, string> = {};
+    const sessionLocation = wsLocations['session'];
+    if (!sessionLocation) return varMap;
+
+    const sessionPath = path.join(this.config.workDir, sessionLocation, 'session.yaml');
+    if (!fs.existsSync(sessionPath)) return varMap;
+
+    try {
+      const session = YAML.parse(fs.readFileSync(sessionPath, 'utf-8'));
+      if (!session || typeof session !== 'object') return varMap;
+      if (session.game_id) { varMap['game'] = session.game_id; varMap['game-id'] = session.game_id; }
+      if (session.campaign_id) { varMap['campaign-id'] = session.campaign_id; }
+      if (session.turn !== undefined) { varMap['N'] = String(session.turn); }
+    } catch {}
+
+    return varMap;
   }
 
   /**

@@ -248,6 +248,29 @@ fsm:
         gates:
           scene-crafter:
             - "$workspace/scene-outline.yaml"
+        default: validate_oracle
+
+    # ------------------------------------------
+    # VALIDATION (before render)
+    # ------------------------------------------
+
+    validate_oracle:
+      agents: [oracle]
+      entry:
+        set:
+          oracle_iteration: "$((oracle_iteration + 1))"
+      exit:
+        gates:
+          oracle:
+            - check_max_oracle_iterations
+            - "$workspace/oracle-result.yaml"
+        set:
+          oracle_verdict: "$(yq '.verdict' $workspace/oracle-result.yaml)"
+        when:
+          - condition: oracle_verdict == "pass"
+            target: render_draft
+          - condition: oracle_verdict == "fail"
+            target: prep_scene
         default: render_draft
 
     # ------------------------------------------
@@ -296,10 +319,10 @@ fsm:
           editor_verdict: "$(yq '.verdict' $workspace/editor-verdict.yaml)"
         when:
           - condition: editor_verdict == "approve"
-            target: validate_oracle
+            target: compress
           - condition: editor_verdict == "revise"
             target: render_revise
-        default: validate_oracle
+        default: compress
 
     render_revise:
       agents: [narrator]
@@ -314,27 +337,8 @@ fsm:
         default: render_lint
 
     # ------------------------------------------
-    # VALIDATION & COMPLETION
+    # COMPLETION
     # ------------------------------------------
-
-    validate_oracle:
-      agents: [oracle]
-      entry:
-        set:
-          oracle_iteration: "$((oracle_iteration + 1))"
-      exit:
-        gates:
-          oracle:
-            - check_max_oracle_iterations
-            - "$workspace/oracle-result.yaml"
-        set:
-          oracle_verdict: "$(yq '.verdict' $workspace/oracle-result.yaml)"
-        when:
-          - condition: oracle_verdict == "pass"
-            target: compress
-          - condition: oracle_verdict == "fail"
-            target: render_revise
-        default: compress
 
     compress:
       agents: [scribe]
@@ -394,7 +398,7 @@ routing:
     message:
       core: "Mid-turn player decisions"
     task-complete:
-      narrator: "Scene outline complete, advance to prose rendering"
+      core: "Scene outline complete (FSM routes to validation)"
 
   # Narrator: prose rendering + ad-hoc knowledge queries
   narrator:
@@ -408,7 +412,7 @@ routing:
     message:
       narrator: "Fix violations"
     task-complete:
-      core: "Edit verdict delivered (FSM routes by verdict)"
+      core: "Edit verdict delivered (FSM routes to compress or revise)"
 
   # Oracle: continuity validation + knowledge responses
   oracle:
@@ -489,6 +493,12 @@ manifest:
     reads: [system, narrator]
     writes: [dramaturg]
 
+  - id: entropy-tables.yaml
+    description: JIT probability tables generated before entropy application
+    location: workspace
+    reads: []
+    writes: [system]
+
   - id: resolution.yaml
     description: Mechanical outcome tables and trait resolution
     location: workspace
@@ -504,7 +514,7 @@ manifest:
   - id: scene-outline.yaml
     description: Scene beats, pacing, and decision points
     location: workspace
-    reads: [narrator]
+    reads: [narrator, oracle]
     writes: [scene-crafter]
 
   - id: prose-draft.md

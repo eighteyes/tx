@@ -21,6 +21,7 @@ export {
   type FSMGateEvent,
   type FSMScriptEvent,
   type FSMFeedbackEvent,
+  type FSMDispatchEvent,
 } from './fsm.ts';
 
 export type {
@@ -71,6 +72,7 @@ export {
   type MeshRoutingDestination,
   type IterationConfig,
   type RearmatterConfig,
+  type ManifestEnforcementConfig,
   type MeshConfigLoaderOptions,
   type MeshConfigLoaderEvents,
 } from './config-loader.ts';

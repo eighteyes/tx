@@ -2,10 +2,11 @@
 /**
  * TX Context Hook
  *
- * Claude Code UserPromptSubmit hook that injects TX system state
- * and pending messages before each Claude response.
+ * Dual-mode script:
+ *   --status   Output tmux status bar string (called by tmux every 5s)
+ *   (default)  Claude Code UserPromptSubmit hook — injects TX state as context
  *
- * Hook output is printed to stdout and injected as context.
+ * Single source of truth for reading TX system state files.
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -15,114 +16,203 @@ import { join } from 'path';
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const dataDir = join(projectDir, '.ai', 'tx', 'data');
 
-// 1. Check runtime config - if file doesn't exist or inject is false, exit silently
-const runtimePath = join(dataDir, 'runtime.json');
-if (!existsSync(runtimePath)) {
-  process.exit(0);
-}
+// ─── Shared data readers ───────────────────────────────────────────────
 
-let runtime: { inject: boolean; startedAt?: string; sessionName?: string };
-try {
-  runtime = JSON.parse(readFileSync(runtimePath, 'utf-8'));
-} catch {
-  process.exit(0);  // Invalid JSON, exit silently
-}
-
-if (!runtime.inject) {
-  process.exit(0);  // --no-inject flag was set
-}
-
-// 2. Read status file (optional - may not exist yet)
-const statusPath = join(dataDir, 'status.json');
-let status: {
-  meshes: Record<string, { activeWorkers: number; state: string }>;
-  workers: string[];
-  pendingAsks: number;
-  timestamp?: string;
-};
-try {
-  status = existsSync(statusPath)
-    ? JSON.parse(readFileSync(statusPath, 'utf-8'))
-    : { meshes: {}, workers: [], pendingAsks: 0 };
-} catch {
-  status = { meshes: {}, workers: [], pendingAsks: 0 };
-}
-
-// 3. Read pending messages
-const pendingPath = join(dataDir, 'pending-for-core.json');
-let pending: {
-  messages: Array<{
-    id: number;
-    from: string;
-    type: string;
-    file: string;
-    timestamp?: string;
-  }>;
-  lastWritten: number;
-};
-try {
-  pending = existsSync(pendingPath)
-    ? JSON.parse(readFileSync(pendingPath, 'utf-8'))
-    : { messages: [], lastWritten: 0 };
-} catch {
-  pending = { messages: [], lastWritten: 0 };
-}
-
-// 4. Get last seen ID from hook state
-const hookStatePath = join(dataDir, 'hook-state.json');
-let hookState: { lastSeenId: number; updatedAt?: string };
-try {
-  hookState = existsSync(hookStatePath)
-    ? JSON.parse(readFileSync(hookStatePath, 'utf-8'))
-    : { lastSeenId: 0 };
-} catch {
-  hookState = { lastSeenId: 0 };
-}
-
-// 5. Filter to only new messages (id > lastSeenId)
-const newMessages = pending.messages.filter(m => m.id > hookState.lastSeenId);
-
-// If no new messages and no active meshes, exit silently
-if (newMessages.length === 0 && Object.keys(status.meshes).length === 0) {
-  process.exit(0);
-}
-
-// 6. Update hook state with max seen ID
-if (newMessages.length > 0) {
-  const maxId = Math.max(...newMessages.map(m => m.id));
-  hookState.lastSeenId = maxId;
-  hookState.updatedAt = new Date().toISOString();
+function readRuntime(): { inject: boolean; startedAt?: string; sessionName?: string } | null {
+  const runtimePath = join(dataDir, 'runtime.json');
+  if (!existsSync(runtimePath)) return null;
   try {
-    writeFileSync(hookStatePath, JSON.stringify(hookState, null, 2));
+    return JSON.parse(readFileSync(runtimePath, 'utf-8'));
   } catch {
-    // Non-fatal - continue even if we can't persist state
+    return null;
   }
 }
 
-// 7. Format status line
-const meshSummary = Object.entries(status.meshes)
-  .map(([name, data]) => `${name}(${data.activeWorkers})`)
-  .join(', ') || 'none';
+function readStatus(): {
+  meshes: Record<string, { activeWorkers: number; state: string; suspendedAgent?: string; haltReason?: string; pendingMessages?: number }>;
+  workers: string[];
+  pendingAsks: number;
+  timestamp?: string;
+} {
+  const statusPath = join(dataDir, 'status.json');
+  try {
+    return existsSync(statusPath)
+      ? JSON.parse(readFileSync(statusPath, 'utf-8'))
+      : { meshes: {}, workers: [], pendingAsks: 0 };
+  } catch {
+    return { meshes: {}, workers: [], pendingAsks: 0 };
+  }
+}
 
-// 8. Build and output XML context
-const messagesXml = newMessages.length > 0
-  ? newMessages.map(m =>
-      `    <message from="${escapeXml(m.from)}" type="${escapeXml(m.type)}" file="${escapeXml(m.file)}" />`
-    ).join('\n')
-  : '';
+function readPending(): {
+  messages: Array<{ id: number; from: string; type: string; file: string; timestamp?: string }>;
+  lastWritten: number;
+} {
+  const pendingPath = join(dataDir, 'pending-for-core.json');
+  try {
+    return existsSync(pendingPath)
+      ? JSON.parse(readFileSync(pendingPath, 'utf-8'))
+      : { messages: [], lastWritten: 0 };
+  } catch {
+    return { messages: [], lastWritten: 0 };
+  }
+}
 
-const output = `<tx-context>
+function readHookState(): { lastSeenId: number; updatedAt?: string } {
+  const hookStatePath = join(dataDir, 'hook-state.json');
+  try {
+    return existsSync(hookStatePath)
+      ? JSON.parse(readFileSync(hookStatePath, 'utf-8'))
+      : { lastSeenId: 0 };
+  } catch {
+    return { lastSeenId: 0 };
+  }
+}
+
+function readOutgoingTasks(): number {
+  const outgoingPath = join(dataDir, 'outgoing-tasks.json');
+  try {
+    if (!existsSync(outgoingPath)) return 0;
+    const data = JSON.parse(readFileSync(outgoingPath, 'utf-8'));
+    return Object.values(data).reduce((sum: number, tasks) => sum + (tasks as unknown[]).length, 0);
+  } catch {
+    return 0;
+  }
+}
+
+function getUnreadCount(
+  pending: ReturnType<typeof readPending>,
+  hookState: ReturnType<typeof readHookState>,
+): number {
+  return pending.messages.filter(m => m.id > hookState.lastSeenId).length;
+}
+
+// ─── Status bar mode (--status) ────────────────────────────────────────
+
+function outputStatusBar(): void {
+  const status = readStatus();
+  const pending = readPending();
+  const hookState = readHookState();
+  const messagesForCore = getUnreadCount(pending, hookState);
+  const outgoingTasks = readOutgoingTasks();
+
+  // Count active and suspended workers from status.json
+  let activeWorkers = 0;
+  let suspendedCount = 0;
+  activeWorkers = status.workers?.length || 0;
+  suspendedCount = status.pendingAsks || 0;
+
+  const parts: string[] = [];
+
+  // State: IDLE unless workers are active
+  if (activeWorkers > 0) {
+    parts.push('BUSY');
+  } else if (suspendedCount > 0) {
+    parts.push('AWAIT');
+  } else {
+    parts.push('IDLE');
+  }
+
+  // Messages for core (unread)
+  if (messagesForCore > 0) {
+    parts.push(`${messagesForCore}📨`);
+  }
+
+  // Outgoing tasks from core awaiting completion
+  if (outgoingTasks > 0) {
+    parts.push(`${outgoingTasks}📤`);
+  }
+
+  // Pending ask-human messages
+  if (status.pendingAsks > 0) {
+    parts.push(`${status.pendingAsks}❓`);
+  }
+
+  // Active workers
+  if (activeWorkers > 0) {
+    parts.push(`${activeWorkers}🔧`);
+  }
+
+  // Suspended/awaiting
+  if (suspendedCount > 0) {
+    parts.push(`${suspendedCount}💤`);
+  }
+
+  console.log(parts.join(' │ '));
+}
+
+// ─── Hook context mode (default) ──────────────────────────────────────
+
+function outputHookContext(): void {
+  // 1. Check runtime config
+  const runtime = readRuntime();
+  if (!runtime || !runtime.inject) {
+    process.exit(0);
+  }
+
+  // 2. Read state files
+  const status = readStatus();
+  const pending = readPending();
+  const hookState = readHookState();
+
+  // 3. Filter to new messages
+  const newMessages = pending.messages.filter(m => m.id > hookState.lastSeenId);
+
+  // If no new messages and no active meshes, exit silently
+  if (newMessages.length === 0 && Object.keys(status.meshes).length === 0) {
+    process.exit(0);
+  }
+
+  // 4. Update hook state with max seen ID (only if this is the TX core session)
+  const isCoreSession = process.env.TX_CORE_SESSION === '1';
+  if (isCoreSession && newMessages.length > 0) {
+    const maxId = Math.max(...newMessages.map(m => m.id));
+    const updatedState = { lastSeenId: maxId, updatedAt: new Date().toISOString() };
+    try {
+      writeFileSync(join(dataDir, 'hook-state.json'), JSON.stringify(updatedState, null, 2));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // 5. Format status line
+  const meshSummary = Object.entries(status.meshes)
+    .map(([name, data]) => {
+      const meshData = data as Record<string, unknown>;
+      if (meshData.state === 'halted' && meshData.suspendedAgent) {
+        return `${name}(halted:${meshData.suspendedAgent})`;
+      }
+      return `${name}(${data.activeWorkers})`;
+    })
+    .join(', ') || 'none';
+
+  // 6. Build and output XML context
+  const messagesXml = newMessages.length > 0
+    ? newMessages.map(m =>
+        `    <message from="${escapeXml(m.from)}" type="${escapeXml(m.type)}" file="${escapeXml(m.file)}" />`
+      ).join('\n')
+    : '';
+
+  const output = `<tx-context>
   <status meshes="${escapeXml(meshSummary)}" pending-asks="${status.pendingAsks}" />
   <messages count="${newMessages.length}">
 ${messagesXml}
   </messages>
 </tx-context>`;
 
-console.log(output);
+  console.log(output);
+}
 
-/**
- * Escape XML special characters
- */
+// ─── Entrypoint ────────────────────────────────────────────────────────
+
+if (process.argv.includes('--status')) {
+  outputStatusBar();
+} else {
+  outputHookContext();
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────
+
 function escapeXml(str: string): string {
   return str
     .replace(/&/g, '&amp;')

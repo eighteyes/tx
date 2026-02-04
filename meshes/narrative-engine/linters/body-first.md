@@ -30,7 +30,15 @@ Categorize as:
 - ABSTRACT: starts with vague description
 
 ### Step 4: Flag Violations
-If opening is THOUGHT, EMOTION, or ABSTRACT → violation.
+
+**Turn opening (scene 1):**
+- THOUGHT or ABSTRACT → VIOLATION
+- EMOTION → VIOLATION (ground the feeling in body)
+
+**Mid-turn transitions (scene 2+):**
+- THOUGHT → SOFT WARNING (suggest grounding, don't require)
+- EMOTION → PASS (tension earns this)
+- ABSTRACT → SOFT WARNING
 
 ### Step 5: Suggest Grounding
 For each violation: what could they feel? What could they hear? What action could ground them?
@@ -38,7 +46,17 @@ For each violation: what could they feel? What could they hear? What action coul
 
 ## The Body-First Rule
 
-Scenes must open with the character grounded in body and space before moving to thought or abstraction.
+**Turn opening** must ground the reader in body and space. Mid-turn transitions can be looser, especially as emotions intensify.
+
+### Strictness by Position
+
+| Position | Requirement |
+|----------|-------------|
+| Turn opening (first 3 sentences) | STRICT — body/sensation before thought |
+| First transition after opening | MODERATE — prefer grounding, allow emotion |
+| Subsequent transitions | RELAXED — impressions okay when tension high |
+
+As the scene builds emotional intensity, readers are already grounded. You can jump into internal experience without re-anchoring every time.
 
 ### What Body-First Looks Like
 
@@ -97,8 +115,11 @@ violations:
 ```
 
 ## Constraints
-- All violations classify as CREATIVE — fixing requires prose restructuring.
+- Turn opening violations classify as CREATIVE — fixing requires prose restructuring.
+- Mid-turn soft warnings are advisory only — don't require fixes.
 - Check only scene openings, not mid-scene paragraphs.
 - Always include scene_analysis in output, even when all PASS.
 - Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
 - Forward all paths from incoming message to the next linter.
+
+**As emotional intensity rises, grounding requirements relax.** The reader is already in the scene — you don't need to re-anchor them every transition.

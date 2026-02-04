@@ -249,6 +249,14 @@ timestamp: ${timestamp}
 Please run the test suite and report results.
 \`\`\`
 
+### inject-response (Fire-and-Forget)
+
+Add \`inject-response: true\` to auto-inject the mesh response into this session when complete. Use for tasks where you want the result pushed to you without polling.
+
+\`\`\`yaml
+inject-response: true
+\`\`\`
+
 Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
 
 ## Worktree-Enabled Meshes

@@ -106,8 +106,8 @@ elif has summary.md; then
   reason="Turn complete — all artifacts present"
 elif has prose.md; then
   state="render:approved"
-  writer="narrator"
-  reason="prose.md present → oracle validates"
+  writer="editor"
+  reason="prose.md present → scribe compresses"
 elif has violations.yaml; then
   state="render:linted"
   writer="editor"
@@ -128,7 +128,7 @@ elif has prose-draft.md; then
 elif has scene-outline.yaml; then
   state="prep:complete"
   writer="scene-crafter"
-  reason="Prep artifacts complete → narrator renders"
+  reason="scene-outline.yaml present → oracle validates continuity"
 elif has reactions.yaml; then
   state="prep:cast"
   writer="cast"
@@ -137,18 +137,22 @@ elif has resolution.yaml; then
   state="prep:system"
   writer="system"
   reason="resolution.yaml present → cast next"
+elif has dramaturg-notes.yaml && has fates.yaml; then
+  state="prep:fates"
+  writer="fates"
+  reason="fates.yaml present → system next"
 elif has dramaturg-notes.yaml; then
   state="prep:dramaturg"
   writer="dramaturg"
-  reason="dramaturg-notes.yaml present → system next"
+  reason="dramaturg-notes.yaml present → fates next"
 elif has context.yaml; then
   state="init"
-  writer="init-coord"
+  writer="init-turn"
   reason="context.yaml present → prep phase begins"
 else
   state="pre-init"
   writer="-"
-  reason="Empty workspace → init-coord creates context"
+  reason="Empty workspace → init-turn creates context"
 fi
 
 # ─────────────────────────────────────────────
@@ -157,17 +161,18 @@ fi
 
 # Each row: state | key_file | written_by | what_happens_next
 STATE_TABLE=(
-  "pre-init|—|—|init-coord creates context.yaml"
-  "init|context.yaml|init-coord|dramaturg analyzes story context"
-  "prep:dramaturg|dramaturg-notes.yaml|dramaturg|system resolves mechanics"
+  "pre-init|—|—|init-turn creates context.yaml"
+  "init|context.yaml|init-turn|dramaturg analyzes story context"
+  "prep:dramaturg|dramaturg-notes.yaml|dramaturg|fates generates world possibilities"
+  "prep:fates|fates.yaml|fates|system resolves mechanics"
   "prep:system|resolution.yaml|system|cast generates reactions"
   "prep:cast|reactions.yaml|cast|scene-crafter builds outline"
-  "prep:complete|scene-outline.yaml|scene-crafter|narrator renders prose"
+  "prep:complete|scene-outline.yaml|scene-crafter|oracle validates continuity"
   "render:drafting|prose-draft.md|narrator|dispatch linters (parallel)"
   "render:linting|lint-*.yaml|linters|linting in progress"
   "render:lint-done|lint-*.yaml (all)|linters|assemble violations.yaml"
   "render:linted|violations.yaml|—|editor reviews violations"
-  "render:approved|prose.md|narrator|oracle validates (message-driven fork)"
+  "render:approved|prose.md|editor|scribe compresses turn"
   "complete|summary.md|scribe|turn finished — no dispatch"
 )
 
@@ -184,7 +189,7 @@ dispatch_context=""
 
 case "$state" in
   no-workspace|pre-init)
-    dispatch_agents="init-coord"
+    dispatch_agents="init-turn"
     dispatch_message="Initialize turn workspace and create context.yaml"
     ;;
   init)
@@ -193,9 +198,14 @@ case "$state" in
     dispatch_context="context.yaml"
     ;;
   prep:dramaturg)
+    dispatch_agents="fates"
+    dispatch_message="Generate world event possibilities for turn $turn"
+    dispatch_context="context.yaml,dramaturg-notes.yaml"
+    ;;
+  prep:fates)
     dispatch_agents="system"
     dispatch_message="Resolve mechanical outcomes for turn $turn"
-    dispatch_context="context.yaml,dramaturg-notes.yaml"
+    dispatch_context="context.yaml,dramaturg-notes.yaml,fates.yaml"
     ;;
   prep:system)
     dispatch_agents="cast"
@@ -208,9 +218,9 @@ case "$state" in
     dispatch_context="context.yaml,dramaturg-notes.yaml,resolution.yaml,reactions.yaml"
     ;;
   prep:complete)
-    dispatch_agents="narrator"
-    dispatch_message="Render prose from scene outline for turn $turn"
-    dispatch_context="context.yaml,dramaturg-notes.yaml,resolution.yaml,reactions.yaml,scene-outline.yaml"
+    dispatch_agents="oracle"
+    dispatch_message="Validate scene outline continuity for turn $turn"
+    dispatch_context="scene-outline.yaml"
     ;;
   render:drafting)
     # Fan-out: dispatch all linters in parallel
@@ -238,8 +248,8 @@ case "$state" in
     dispatch_context="prose-draft.md,violations.yaml"
     ;;
   render:approved)
-    dispatch_agents="oracle"
-    dispatch_message="Validate continuity for turn $turn prose"
+    dispatch_agents="scribe"
+    dispatch_message="Compress turn $turn and update campaign state"
     dispatch_context="prose.md"
     ;;
   complete)
@@ -455,7 +465,7 @@ echo -e "${BOLD}Reason:${RESET}   ${DIM}${reason}${RESET}"
 # Drift detection
 drift="no"
 case "$session_phase" in
-  init|game_creation|awaiting_prologue|unknown) ;;
+  init|game_creation|prologue|unknown) ;;
   awaiting_narrator)
     [[ -f "$workspace/prose.md" ]] && drift="yes" ;;
   awaiting_oracle|awaiting_scribe)

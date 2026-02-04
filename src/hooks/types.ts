@@ -53,6 +53,9 @@ export interface HookContext {
   // Agent config reference (for resume scenarios)
   agentConfig?: unknown;
 
+  // Artifact validation retry count
+  artifactRetryCount?: number;
+
   // Deterministic gate configuration
   deterministicCommands?: string[];
 

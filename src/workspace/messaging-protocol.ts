@@ -26,8 +26,11 @@ msg-id: unique-id        # For correlation
 # Optional fields
 headline: Brief summary  # Human-readable
 status: complete | error | blocked  # Outcome status (for routing)
+outcome: value           # Dispatcher routing hint (dispatcher-mode meshes)
+route_to: agent-name     # Override dispatcher routing to specific agent
 command: /slash:command   # Triggers slash command on recipient
 feature: feature-name    # For worktree-enabled meshes
+inject-response: true    # Auto-inject mesh response into core session on completion
 
 ---
 

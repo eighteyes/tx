@@ -25,7 +25,7 @@ You are a COORDINATOR. You set up workspace, you do not create story content.
 3. Create workspace: `.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-{N}/`
 4. Generate entropy pool (bash):
    ```bash
-   for i in {1..10}; do echo $((RANDOM % 100 + 1)); done
+   for i in {1..20}; do echo $((RANDOM % 100 + 1)); done
    ```
 5. Write context.yaml to workspace
 6. Bump `current_turn` in campaign state.yaml:

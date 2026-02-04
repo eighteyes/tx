@@ -92,6 +92,19 @@ export interface FSMScriptEvent {
 }
 
 /**
+ * FSM dispatch event: emitted when the FSM transitions on a core-bound message
+ * and needs the dispatcher to spawn agents for the next state
+ */
+export interface FSMDispatchEvent {
+  meshName: string;
+  fromState: string;
+  toState: string;
+  agents: string[];          // Agents that need to be spawned
+  triggerAgent: string;      // Agent that triggered the transition
+  timestamp: number;
+}
+
+/**
  * FSM violation data for self-heal tracking
  */
 export interface FSMViolation {
@@ -167,6 +180,13 @@ export class MeshFSM extends EventEmitter {
     if (Array.isArray(config.states)) {
       // Array format: [{ name: 'state1', ... }, { name: 'state2', ... }]
       for (const state of config.states) {
+        // Normalize agents shorthand to coordinator/participants
+        const agents = (state as any).agents as string[] | undefined;
+        if (agents) {
+          state.coordinator = agents[0] || state.coordinator;
+          state.participants = agents.slice(1) || state.participants;
+          delete (state as any).agents;
+        }
         this.stateMap.set(state.name, state);
       }
     } else if (config.states && typeof config.states === 'object') {
@@ -270,6 +290,14 @@ export class MeshFSM extends EventEmitter {
    */
   getCurrentStateConfig(): FSMStateConfig | undefined {
     return this.stateMap.get(this.getCurrentState());
+  }
+
+  /**
+   * Check if FSM is currently in a terminal state
+   */
+  isInTerminalState(): boolean {
+    const config = this.getCurrentStateConfig();
+    return !!(config as any)?.terminal;
   }
 
   /**
@@ -1046,9 +1074,49 @@ export class MeshFSM extends EventEmitter {
       // Execute transition to next state
       const transitioned = await this.executeTransition(currentState, nextState, from, messageType);
 
-      // Clear violations on successful transition
+      // Clear violations and dispatch next state's agents
+      log.warn('mesh-fsm', 'DISPATCH-TRACE: post-executeTransition', {
+        meshName: this.meshName,
+        transitioned,
+        currentState,
+        nextState,
+      });
       if (transitioned) {
         this.clearViolations(from);
+
+        // Dispatch next state's agents by writing message files directly.
+        // This is self-contained — previous event-based dispatch (fsm:dispatch)
+        // depended on the dispatcher wiring listeners, which proved unreliable.
+        const toStateConfig = this.stateMap.get(nextState);
+        // Check if state is terminal by seeing if it has no exit config
+        const isTerminal = toStateConfig ? !toStateConfig.exit : false;
+        log.warn('mesh-fsm', 'DISPATCH-TRACE: stateMap lookup', {
+          meshName: this.meshName,
+          nextState,
+          found: !!toStateConfig,
+          terminal: isTerminal,
+          coordinator: toStateConfig?.coordinator,
+        });
+        if (toStateConfig && !isTerminal) {
+          const agents: string[] = [];
+          if (toStateConfig.coordinator) agents.push(toStateConfig.coordinator);
+          if (toStateConfig.participants) agents.push(...toStateConfig.participants);
+          if (toStateConfig.ensemble?.agents) agents.push(...toStateConfig.ensemble.agents);
+
+          if (agents.length > 0) {
+            this.writeDispatchMessages(currentState, nextState, agents, from);
+
+            // Emit for observability (non-critical)
+            this.emit('fsm:dispatch', {
+              meshName: this.meshName,
+              fromState: currentState,
+              toState: nextState,
+              agents,
+              triggerAgent: from,
+              timestamp: Date.now(),
+            } as FSMDispatchEvent);
+          }
+        }
       }
 
       return transitioned;
@@ -1564,6 +1632,56 @@ Please investigate and provide guidance to the agent.
       filepath,
       violationType: violation.violationType,
     });
+  }
+
+  /**
+   * Write dispatch message files to trigger next state's agents.
+   * Called after a core-bound transition to spawn the next state's workers.
+   * Writes directly to msgsDir instead of relying on event listeners.
+   */
+  private writeDispatchMessages(
+    fromState: string,
+    toState: string,
+    agents: string[],
+    triggerAgent: string
+  ): void {
+    for (const agent of agents) {
+      const agentId = `${this.meshName}/${agent}`;
+      const timestamp = Date.now();
+      const msgId = `fsm-dispatch-${timestamp}-${agent}`;
+      const filename = `${Math.floor(timestamp / 1000)}-fsm-dispatch--${this.meshName}-${agent}-${msgId}.md`;
+      const filepath = path.join(this.msgsDir, filename);
+
+      const msgContent = `---
+to: ${agentId}
+from: core/core
+type: task
+msg-id: ${msgId}
+headline: FSM dispatch — execute ${toState}
+timestamp: ${new Date(timestamp).toISOString()}
+---
+
+FSM transitioned from \`${fromState}\` to \`${toState}\`. Execute your task for this state.
+`;
+
+      try {
+        fs.writeFileSync(filepath, msgContent);
+        log.info('mesh-fsm', 'Wrote dispatch message', {
+          meshName: this.meshName,
+          agentId,
+          fromState,
+          toState,
+          filepath: filename,
+        });
+      } catch (error) {
+        log.error('mesh-fsm', 'Failed to write dispatch message', {
+          meshName: this.meshName,
+          agentId,
+          filepath,
+          error: (error as Error).message,
+        });
+      }
+    }
   }
 
   /**

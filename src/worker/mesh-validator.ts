@@ -141,11 +141,13 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   entry_point: { type: 'string' },
   completion_agent: { type: 'string' },  // DEPRECATED: Use completion_agents
   completion_agents: { type: 'array' },  // Agents that can complete the mesh (first-wins)
+  boundary_agents: { type: 'array' },   // Phase 5: Agents at mesh boundary (can message core/core)
   type: { type: 'string', enum: ['persistent', 'ephemeral'] },
   auto_despawn: { type: 'boolean' },
   keepalive: { type: 'boolean' },
   grace_period_ms: { type: 'number', minimum: 0, maximum: 60000 },
   topology: { type: 'string', enum: ['static', 'dynamic'] },
+  routing_mode: { type: 'string', enum: ['agent', 'dispatcher'] },
   routing: { type: 'object' },
   rearmatter: { type: 'object' },
   workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
@@ -189,6 +191,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   debug: { type: 'boolean' },
   // File manifest: declares files, their readers/writers, and locations
   manifest: { type: 'array' },
+  // Guardrails: per-mesh overrides for gate thresholds, limits, routing retries
+  guardrails: { type: 'object' },
 };
 
 /**
@@ -202,6 +206,8 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   workspace: { type: 'object' },
   mcpServers: { type: 'object' },
   description: { type: 'string' },  // Optional agent documentation
+  max_turns: { type: 'number' },  // API round-trip limit per invocation
+  max_messages: { type: 'number' },  // Outbound message limit per invocation (chaos contract)
 };
 
 /**
@@ -275,7 +281,11 @@ export class MeshValidator {
 
     // Validate routing if present
     if (cfg.routing && Array.isArray(cfg.agents)) {
-      this.validateRouting(cfg.routing, cfg.agents, warnings, context);
+      if (cfg.routing_mode === 'dispatcher') {
+        this.validateDispatcherRouting(cfg.routing, cfg.agents, errors, warnings, context);
+      } else {
+        this.validateRouting(cfg.routing, cfg.agents, warnings, context);
+      }
     }
 
     // Validate rearmatter if present
@@ -293,13 +303,13 @@ export class MeshValidator {
       errors.push(`FSM requires 'routing' configuration${context}`);
     }
 
-    // Validate multi-agent mesh routing
-    if (Array.isArray(cfg.agents) && cfg.agents.length > 1) {
+    // Validate multi-agent mesh routing (skip for dispatcher mode — handled by validateDispatcherRouting)
+    if (Array.isArray(cfg.agents) && cfg.agents.length > 1 && cfg.routing_mode !== 'dispatcher') {
       this.validateMultiAgentRouting(cfg, errors, warnings, context);
     }
 
-    // Validate FSM state agent routing
-    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents)) {
+    // Validate FSM state agent routing (skip for dispatcher mode — routing shape differs)
+    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher') {
       this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
     }
 
@@ -565,6 +575,67 @@ export class MeshValidator {
             warnings.push(`routing.${agent}.${transition}.${target} description should be a string${context}`);
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Validate dispatcher-mode routing configuration
+   *
+   * Dispatcher routing uses flat agent → target mapping:
+   * - String value = linear (auto-route to named agent)
+   * - Object value = branch (outcome keys → target agents, optional 'default')
+   * - Absent agent = terminal (dispatcher routes to core/core on completion)
+   */
+  private static validateDispatcherRouting(
+    routing: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof routing !== 'object' || routing === null) {
+      errors.push(`routing should be an object${context}`);
+      return;
+    }
+
+    const agentNames = new Set(
+      agents
+        .filter((a): a is Record<string, unknown> => a !== null && typeof a === 'object')
+        .map(a => a.name as string)
+    );
+
+    const routingObj = routing as Record<string, unknown>;
+
+    for (const [agent, value] of Object.entries(routingObj)) {
+      if (!agentNames.has(agent)) {
+        warnings.push(`routing references unknown agent '${agent}'${context}`);
+      }
+
+      if (typeof value === 'string') {
+        // Linear: value is the target agent name
+        if (value !== 'core' && !agentNames.has(value)) {
+          warnings.push(`routing.${agent}: target '${value}' not found in agents${context}`);
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        // Branch: keys are outcome names, values are target agents
+        const outcomes = value as Record<string, unknown>;
+        for (const [outcome, target] of Object.entries(outcomes)) {
+          if (typeof target !== 'string') {
+            errors.push(`routing.${agent}.${outcome} must be a string (target agent name)${context}`);
+          } else if (target !== 'core' && !agentNames.has(target)) {
+            warnings.push(`routing.${agent}.${outcome}: target '${target}' not found in agents${context}`);
+          }
+        }
+      } else {
+        errors.push(`routing.${agent} must be a string (linear target) or object (outcome map)${context}`);
+      }
+    }
+
+    // Warn about agents with no routing entry (they become terminal)
+    for (const agentName of agentNames) {
+      if (!routingObj[agentName]) {
+        warnings.push(`Agent '${agentName}' has no dispatcher routing entry (will be treated as terminal)${context}`);
       }
     }
   }

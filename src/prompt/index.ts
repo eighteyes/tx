@@ -11,7 +11,7 @@ export { buildCorePrompt, buildMeshList } from './core.js';
 export type { CorePromptConfig } from './core.js';
 
 // Routing section (extracted from dispatcher)
-export { buildRoutingSection, injectRoutingInstructions } from './sections/routing.js';
+export { buildRoutingSection, injectRoutingInstructions, buildDispatcherRoutingSection, injectDispatcherRoutingInstructions } from './sections/routing.js';
 
 // Convenience functions
 import { PromptBuilder } from './builder.js';

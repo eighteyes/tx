@@ -45,18 +45,18 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - Workspace defining files and folders.
 - Pre/Post hooks for logic and/or agents surrounding mesh operations.
 
-### Agent Guardrails
-LLM agents are probabilistic. Prompts that say "always", "never", or "STOP" express intent but cannot guarantee behavior. TX enforces critical invariants at the runtime level:
+### Chaos Contracts
+LLM agents are chaotic by nature — stochastic, not buggy. Prompts that say "STOP", "NEVER", or "ALWAYS" are prayers, not guarantees. TX accepts the chaos and contains it: behavioral constraints are enforced by the runtime, not the prompt. Prompts carry domain knowledge; the chaos contract guarantees invariants.
 
-| Guardrail | Mechanism | Config |
-|-----------|-----------|--------|
-| **Send-and-stop** | Agent must send exactly one message per invocation, then exit. Dispatcher terminates worker after first outbound message. | `max_messages: 1` per agent |
-| **File ownership** | Agents write only to files declared in the manifest `writes` list. Workspace sandbox rejects unauthorized writes. | `manifest.writes` in config.yaml |
-| **Routing compliance** | Agents send only to destinations in their routing table. Dispatcher rejects messages with invalid `to:` fields. | `routing` in config.yaml |
-| **Artifact validation** | After worker completes, dispatcher verifies expected output files exist. Blocks downstream routing on missing artifacts. | `manifest` output declarations |
-| **Turn budget** | SDK enforces maximum API round-trips per invocation. Prevents runaway agents. | `max_turns` per agent in config.yaml |
+| Contract Clause | Enforcement | Config |
+|----------------|-------------|--------|
+| **Write Gate** | Intercepts Write/Edit tool calls. Rejects writes to undeclared files. Error with allowed list 2x, then silent reject, then kill. | `manifest.writes` in config.yaml |
+| **Max Messages** | Dispatcher counts outbound messages per invocation. Hard kill at limit. | `max_messages` per agent |
+| **Route Gate** | Dispatcher rejects messages with invalid `to:` fields against routing table. | `routing` in config.yaml |
+| **Turn Budget** | SDK enforces maximum API round-trips per invocation. Prevents runaway agents. | `max_turns` per agent |
+| **Read Gate** | Intercepts Read/Glob/Grep tool calls. Restricts reads to declared inputs. | `manifest.reads` in config.yaml |
 
-**Principle:** If a prompt says "STOP" or "verify X exists", the runtime enforces it. Prompts steer behavior; the framework guarantees invariants.
+**Principle:** If a constraint can be enforced by the runtime, remove it from the prompt. Save tokens, eliminate a class of bugs.
 
 ## Dependencies
 - `node` (recommended: Node >= 20.19.0)

@@ -8,7 +8,7 @@ You validate. You remember.
 </role>
 
 ## Scope
-- Check prose against established facts (validation mode)
+- Check scene outline against established facts (validation mode)
 - Validate against the Continuity Ladder
 - Catch contradictions: dead characters, impossible physics, unjustified knowledge
 - Write `oracle-result.yaml` to workspace with verdict
@@ -21,9 +21,9 @@ You validate. You remember.
 
 ### For Validation (from FSM)
 1. Receive workspace path from FSM context
-2. Read `prose-draft.md` from workspace
+2. Read `scene-outline.yaml` from workspace
 3. Read continuity files: continuity.yaml, setting.yaml, entities/ folder
-4. Check against Continuity Ladder
+4. Check against Continuity Ladder (applied to outline beats)
 5. Write `oracle-result.yaml` to workspace (see below)
 
 ### For Knowledge Query (from NARRATOR)

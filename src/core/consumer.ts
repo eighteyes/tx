@@ -15,6 +15,8 @@ import path from 'node:path';
 import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
+import { DispatchRouter } from '../worker/dispatch-router.ts';
+import type { DispatcherRoutingConfig } from '../shared/types.ts';
 
 /**
  * Interface for FSM validation capability
@@ -98,10 +100,13 @@ interface CachedMeshConfig {
  */
 interface MeshConfig {
   mesh: string;
-  routing?: Record<string, Record<string, Record<string, string>>>;
+  routing_mode?: 'agent' | 'dispatcher';
+  routing?: Record<string, Record<string, Record<string, string>>> | DispatcherRoutingConfig;
+  agents?: Array<{ name: string; [key: string]: unknown }>;
   completion_agent?: string;  // DEPRECATED: Use completion_agents or boundary_agents
   completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5)
   boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
+  fsm?: Record<string, unknown>;  // FSM config block (presence means FSM-controlled mesh)
 }
 
 
@@ -127,6 +132,8 @@ export class MessageConsumer extends EventEmitter {
   // Cache mesh configs for routing validation
   private meshConfigCache: Map<string, CachedMeshConfig> = new Map();
   private readonly MESH_CONFIG_CACHE_TTL = 60000; // 60 seconds
+  // Dispatch routers for dispatcher-mode meshes (created on first use, invalidated with config cache)
+  private dispatchRouters: Map<string, DispatchRouter> = new Map();
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -363,11 +370,11 @@ ${body}
         }
       });
 
-      // Watch for changes - handles message revisions (edited files)
+      // Watch for changes - revision only when frontmatter declares it
       this.watcher.on('change', (filepath: string) => {
         if (filepath.endsWith('.md')) {
-          this.processFile(filepath, 'revision').catch((err) => {
-            log.error('consumer', `Failed to process revised file: ${path.basename(filepath)}`, {
+          this.processFile(filepath, 'change').catch((err) => {
+            log.error('consumer', `Failed to process changed file: ${path.basename(filepath)}`, {
               error: (err as Error).message,
             });
           });
@@ -393,7 +400,7 @@ ${body}
     return this.running;
   }
 
-  private async processFile(filepath: string, event: 'new' | 'revision' = 'new'): Promise<void> {
+  private async processFile(filepath: string, event: 'new' | 'change' = 'new'): Promise<void> {
     const filename = path.basename(filepath);
     try {
       const content = fs.readFileSync(filepath, 'utf-8');
@@ -404,14 +411,27 @@ ${body}
       }
 
       // Resolve mesh routing with support for partial names
-      const toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
-      const targetMesh = toAgent.split('/')[0];
+      let toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
+      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
 
       // =================================================================
-      // DROP MESSAGES TO system/*
-      // Agents routing to system/* is a mistake - drop silently
+      // DISPATCHER ROUTING — resolve mesh/dispatch sentinel to real target
       // =================================================================
-      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
+      let dispatcherResolved = false;
+      const [sentinelMesh, sentinelAgent] = toAgent.split('/');
+      if (sentinelAgent === 'dispatch') {
+        const resolved = await this.resolveDispatcherRouting(
+          sentinelMesh, fromAgent, parsed.frontmatter, filepath
+        );
+        if (resolved === null) {
+          // Resolution failed — nudge/escalation already handled
+          return;
+        }
+        toAgent = resolved;
+        dispatcherResolved = true;
+      }
+
+      const targetMesh = toAgent.split('/')[0];
       if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/')) {
         log.warn('consumer', 'Dropped message to system/* (routing mistake)', {
           from: fromAgent,
@@ -471,10 +491,16 @@ ${body}
         // Only validate intra-mesh routing (not cross-mesh or system messages)
         // Skip task-complete as it's handled specially
         // Skip system messages (from: system/*)
+        // Skip dispatcher-resolved messages (already validated by DispatchRouter)
         if (fromMesh === toMesh &&
             messageType !== 'task-complete' &&
             !fromAgent.startsWith('system/') &&
-            !fromAgent.startsWith('core/')) {
+            !fromAgent.startsWith('core/') &&
+            !dispatcherResolved) {
+          // Check if this is a dispatcher-mode mesh with agent bypassing sentinel
+          const isDispatcherViolation = await this.checkDispatcherModeViolation(fromAgent, toAgent, filepath);
+          if (isDispatcherViolation) return;
+
           const routingValid = await this.validateRouting(fromAgent, toAgent, messageType, filepath);
           if (!routingValid) {
             // Already wrote feedback/escalation, skip further processing
@@ -520,19 +546,20 @@ ${body}
         }
       }
 
-      // For revisions, emit revision-message event for interrupt handling
-      // before attempting to insert (which may fail due to duplicate constraint)
-      if (event === 'revision') {
-        log.info('consumer', `Message revision detected`, {
+      // Explicit revision: only when frontmatter declares revision field
+      const isRevision = !!parsed.frontmatter.revision;
+
+      if (isRevision) {
+        log.info('consumer', `Message revision detected (explicit)`, {
           from: parsed.frontmatter.from,
           to: toAgent,
           type: parsed.frontmatter.type,
+          mode: parsed.frontmatter.revision,
           file: filename
         });
 
-        // Emit revision event for dispatcher to handle based on mode
         if (toAgent !== 'core/core') {
-          const mode = parsed.frontmatter.revision as 'interrupt' | 'append' | 'replace' | undefined;
+          const mode = parsed.frontmatter.revision as 'interrupt' | 'append' | 'replace';
           this.emit('revision-message', {
             filepath,
             agentId: toAgent,
@@ -540,11 +567,14 @@ ${body}
             type: parsed.frontmatter.type,
             content: parsed.body,
             headline: parsed.frontmatter.headline,
-            mode: mode || 'interrupt'  // Default to interrupt (hot inject)
+            mode
           });
         }
-        return; // Don't queue revisions - they're handled via interrupt+resume
+        return;
       }
+
+      // Change events without revision frontmatter: treat as new message
+      // Queue insert handles dedup via UNIQUE constraint on source_file
 
       const id = this.queue.insert({
         from_agent: parsed.frontmatter.from,
@@ -560,6 +590,7 @@ ${body}
           'session-id': parsed.frontmatter['session-id'],  // Resume existing session
           model: parsed.frontmatter.model,  // Override agent model
           priority: parsed.frontmatter.priority,  // Message priority
+          'inject-response': parsed.frontmatter['inject-response'],  // Auto-inject response into core session
           body: parsed.body,
           rearmatter: parsed.rearmatter,
           filepath
@@ -591,7 +622,7 @@ ${body}
       }
 
       // Detect messages that trigger await state in dispatcher
-      if (messageType === 'ask' || messageType === 'ask-human' || messageType === 'message') {
+      if (messageType === 'ask' || messageType === 'ask-human' || (messageType === 'message' && toAgent === 'core/core')) {
         if (messageType === 'ask' || messageType === 'ask-human') {
           log.warn('deprecated-message-type', `Legacy type="${messageType}" used; boundary inference handles this`, { type: messageType, file: filename, detail: 'Use human: true frontmatter instead of ask-human type' });
         }
@@ -603,6 +634,38 @@ ${body}
           msgId,
           file: filename
         });
+
+        // Human response detection: core/core → agent with pending ask = ask-response
+        // When an agent messages core/core (human boundary), the mesh halts.
+        // The human's reply comes back as a regular message from core/core.
+        // Detect this and emit ask-response-message to resume the suspended session.
+        if (fromAgent === 'core/core' && toAgent !== 'core/core') {
+          const pendingAsks = this.queue.getPendingAsks(toAgent);
+          const hasPendingHumanAsk = pendingAsks.some(a => a.to_agent === 'core/core');
+
+          if (hasPendingHumanAsk) {
+            log.info('consumer', `Human response detected for suspended agent`, {
+              from: fromAgent,
+              to: toAgent,
+              msgId,
+              pendingAskCount: pendingAsks.filter(a => a.to_agent === 'core/core').length,
+              file: filename,
+            });
+
+            this.emit('ask-response-message', {
+              id,
+              filepath,
+              from: fromAgent,
+              to: toAgent,
+              content: parsed.body,
+              headline: parsed.frontmatter.headline,
+              msgId,
+              fromHumanBoundary: true,
+              resumesSuspension: true,
+            });
+            return;  // Handled as ask-response — do NOT fall through
+          }
+        }
 
         // Parity gate: ONLY track asks to core/core (human boundary)
         // Agent-to-agent asks don't require parity tracking in terminal-by-default
@@ -785,6 +848,17 @@ ${body}
                 fromAgent,
               });
             }
+
+            // FSM-controlled meshes: suppress core-message for intermediate agents.
+            // The FSM handles dispatching next-state agents via fsm:dispatch.
+            // Only the completion agent's message should reach core.
+            if (meshConfig?.fsm) {
+              log.info('consumer', 'FSM intermediate agent complete — suppressing core-message', {
+                fromAgent,
+                meshName,
+              });
+              return;
+            }
           }
         }
 
@@ -845,7 +919,8 @@ ${body}
           agentId: toAgent,
           from: parsed.frontmatter.from,
           type: parsed.frontmatter.type,
-          event
+          event,
+          injectResponse: parsed.frontmatter['inject-response'] === 'true',
         });
       }
     } catch (err) {
@@ -982,6 +1057,8 @@ ${body}
         config,
         loadedAt: Date.now(),
       });
+      // Invalidate dispatch router when config reloads
+      this.dispatchRouters.delete(meshName);
 
       return config;
     } catch (err) {
@@ -996,6 +1073,145 @@ ${body}
    * Validate routing rule exists for agent → target message
    * Returns true if valid, false if invalid (feedback/escalation already written)
    */
+  /**
+   * Resolve dispatcher routing for mesh/dispatch sentinel messages.
+   * Returns resolved target agent ID, or null if resolution fails (nudge emitted).
+   */
+  private async resolveDispatcherRouting(
+    meshName: string,
+    fromAgent: string,
+    frontmatter: Frontmatter,
+    filepath: string
+  ): Promise<string | null> {
+    const meshConfig = await this.loadMeshConfig(meshName);
+    if (!meshConfig || meshConfig.routing_mode !== 'dispatcher') {
+      log.warn('consumer', 'Message to mesh/dispatch but mesh is not in dispatcher mode', {
+        meshName, from: fromAgent, file: path.basename(filepath),
+      });
+      // Treat as soft error — route through anyway if possible
+      return null;
+    }
+
+    // Get or create DispatchRouter
+    let router = this.dispatchRouters.get(meshName);
+    if (!router) {
+      const agentNames = (meshConfig.agents || []).map(a => a.name);
+      router = new DispatchRouter(
+        meshName,
+        meshConfig.routing as DispatcherRoutingConfig,
+        agentNames
+      );
+      this.dispatchRouters.set(meshName, router);
+    }
+
+    const [, senderAgent] = fromAgent.split('/');
+    const outcome = frontmatter.outcome;
+    const routeTo = frontmatter.route_to;
+
+    const resolved = router.resolve(senderAgent, outcome, routeTo);
+
+    if (resolved) {
+      log.info('consumer', 'Dispatcher routing resolved', {
+        from: fromAgent,
+        outcome,
+        routeTo,
+        target: resolved.target,
+        source: resolved.source,
+        usedDefault: resolved.usedDefault,
+      });
+      return resolved.target;
+    }
+
+    // Resolution failed — nudge the agent
+    const validOutcomes = router.getValidOutcomes(senderAgent);
+    const violation = this.routingViolationTracker.get(fromAgent) || {
+      count: 0,
+      lastViolation: { attemptedTarget: '', messageType: '', timestamp: 0 },
+    };
+    violation.count++;
+    violation.lastViolation = {
+      attemptedTarget: `${meshName}/dispatch`,
+      messageType: frontmatter.type || 'message',
+      timestamp: Date.now(),
+    };
+    this.routingViolationTracker.set(fromAgent, violation);
+
+    if (violation.count <= 1) {
+      // Nudge: tell agent what outcomes are valid
+      const outcomeList = validOutcomes && validOutcomes.length > 0
+        ? validOutcomes.map(o => `\`${o}\``).join(', ')
+        : '(any value — linear routing)';
+
+      const feedback = routeTo
+        ? `Invalid \`route_to: ${routeTo}\`. Valid agents: ${router.getInjectionContext(senderAgent).availableAgents.join(', ')}`
+        : `Invalid or missing \`outcome: ${outcome || '(none)'}\`. Valid outcomes: ${outcomeList}`;
+
+      this.emit('system-feedback', {
+        agentId: fromAgent,
+        feedback,
+        reason: 'dispatcher-routing-violation',
+      });
+      log.warn('consumer', 'Dispatcher routing nudge', { from: fromAgent, feedback });
+    } else {
+      // Escalate to core
+      this.writeErrorToCore(
+        `Agent \`${fromAgent}\` failed dispatcher routing ${violation.count}x. ` +
+        `Last outcome: \`${outcome || '(none)'}\`, route_to: \`${routeTo || '(none)'}\`.`,
+        frontmatter['msg-id'] || path.basename(filepath)
+      );
+      log.warn('consumer', 'Dispatcher routing escalated to core', { from: fromAgent, count: violation.count });
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if an agent in a dispatcher-mode mesh is writing to a wrong target
+   * (not mesh/dispatch). Called from routing validation when applicable.
+   */
+  async checkDispatcherModeViolation(
+    fromAgent: string,
+    toAgent: string,
+    filepath: string
+  ): Promise<boolean> {
+    const [meshName] = fromAgent.split('/');
+    const meshConfig = await this.loadMeshConfig(meshName);
+    if (!meshConfig || meshConfig.routing_mode !== 'dispatcher') return false;
+
+    // Agent in dispatcher-mode mesh wrote directly to another agent instead of mesh/dispatch
+    const [, targetAgent] = toAgent.split('/');
+    if (targetAgent === 'dispatch') return false; // Already handled
+
+    const violation = this.routingViolationTracker.get(fromAgent) || {
+      count: 0,
+      lastViolation: { attemptedTarget: '', messageType: '', timestamp: 0 },
+    };
+    violation.count++;
+    violation.lastViolation = {
+      attemptedTarget: toAgent,
+      messageType: 'message',
+      timestamp: Date.now(),
+    };
+    this.routingViolationTracker.set(fromAgent, violation);
+
+    if (violation.count <= 1) {
+      this.emit('system-feedback', {
+        agentId: fromAgent,
+        feedback: `Write to \`${meshName}/dispatch\` instead of \`${toAgent}\`. Set \`outcome:\` in frontmatter.`,
+        reason: 'dispatcher-wrong-target',
+      });
+      log.warn('consumer', 'Dispatcher mode: agent wrote to wrong target', {
+        from: fromAgent, to: toAgent, hint: `${meshName}/dispatch`,
+      });
+    } else {
+      this.writeErrorToCore(
+        `Agent \`${fromAgent}\` bypassed dispatcher routing ${violation.count}x (sent to \`${toAgent}\`).`,
+        path.basename(filepath)
+      );
+    }
+    return true;
+  }
+
   private async validateRouting(
     fromAgent: string,
     toAgent: string,
@@ -1013,7 +1229,9 @@ ${body}
     }
 
     // Check if routing rule exists for this agent → type → target
-    const agentRouting = meshConfig.routing[agentName];
+    // This method is only called for agent-mode meshes (dispatcher-mode is handled separately)
+    const agentModeRouting = meshConfig.routing as Record<string, Record<string, Record<string, string>>>;
+    const agentRouting = agentModeRouting[agentName];
     if (!agentRouting) {
       // Agent not in routing table - might be an entry point receiving from core
       return true;
@@ -1131,7 +1349,8 @@ ${body}
     agentName: string,
     messageType: string
   ): Array<{ target: string; description: string }> {
-    const routing = meshConfig.routing?.[agentName]?.[messageType];
+    const agentModeRouting = meshConfig.routing as Record<string, Record<string, Record<string, string>>> | undefined;
+    const routing = agentModeRouting?.[agentName]?.[messageType];
     if (!routing) return [];
 
     return Object.entries(routing).map(([target, description]) => ({
@@ -1147,12 +1366,13 @@ ${body}
     meshConfig: MeshConfig,
     agentName: string
   ): Record<string, Array<{ target: string; description: string }>> {
-    const agentRouting = meshConfig.routing?.[agentName];
+    const agentModeRouting = meshConfig.routing as Record<string, Record<string, Record<string, string>>> | undefined;
+    const agentRouting = agentModeRouting?.[agentName];
     if (!agentRouting) return {};
 
     const result: Record<string, Array<{ target: string; description: string }>> = {};
     for (const [msgType, targets] of Object.entries(agentRouting)) {
-      result[msgType] = Object.entries(targets).map(([target, description]) => ({
+      result[msgType] = Object.entries(targets as Record<string, string>).map(([target, description]) => ({
         target,
         description: String(description),
       }));

@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
-import { TmuxSession, findClaudePath, getSessionName } from '../core/tmux.ts';
+import { TmuxSession, findClaudePath, getSessionName, injectPrompt, isClaudeIdle } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
@@ -276,6 +276,30 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Write current PID
   fs.writeFileSync(pidFile, String(process.pid));
 
+  // SIGUSR2 handler for control signals (e.g., tx mesh kill)
+  const controlPath = path.join(dataDir, 'control.json');
+  const setupControlHandler = (disp: typeof dispatcher) => {
+    process.on('SIGUSR2', () => {
+      try {
+        if (!fs.existsSync(controlPath)) return;
+        const ctrl = JSON.parse(fs.readFileSync(controlPath, 'utf-8'));
+
+        if (ctrl.action === 'kill-mesh' && ctrl.mesh) {
+          const killed = disp.killMeshWorkers(ctrl.mesh);
+          log.info('start', 'SIGUSR2: killed mesh workers', { mesh: ctrl.mesh, killed });
+        } else if (ctrl.action === 'clear-mesh' && ctrl.mesh) {
+          disp.clearMeshState(ctrl.mesh);
+          log.info('start', 'SIGUSR2: cleared mesh state', { mesh: ctrl.mesh });
+        }
+
+        // Delete control file as ACK
+        fs.unlinkSync(controlPath);
+      } catch (err) {
+        log.error('start', 'SIGUSR2 handler error', { error: String(err) });
+      }
+    });
+  };
+
   // Write runtime.json for context hook
   const runtimePath = path.join(dataDir, 'runtime.json');
   const runtimeState = {
@@ -380,6 +404,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     sessionStore,  // Pass session store for session awareness
     debug: options?.debug,  // Enable forensics and verbose logging
   }, queue);
+
+  // Register SIGUSR2 control handler now that dispatcher exists
+  setupControlHandler(dispatcher);
 
   // Wire up parity gate: consumer subscribes to dispatcher for session-start events
   consumer.subscribeToDispatcher(dispatcher);
@@ -607,7 +634,7 @@ ${data.content}
   // Track outgoing tasks from core to meshes
   const outgoingTasksPath = path.join(dataDir, 'outgoing-tasks.json');
 
-  const addOutgoingTask = (mesh: string, msgId: string) => {
+  const addOutgoingTask = (mesh: string, msgId: string, options?: { injectResponse?: boolean }) => {
     try {
       const data = fs.existsSync(outgoingTasksPath)
         ? JSON.parse(fs.readFileSync(outgoingTasksPath, 'utf-8'))
@@ -616,18 +643,22 @@ ${data.content}
       if (!data[mesh]) {
         data[mesh] = [];
       }
-      data[mesh].push({ msgId, timestamp: new Date().toISOString() });
+      const entry: Record<string, unknown> = { msgId, timestamp: new Date().toISOString() };
+      if (options?.injectResponse) {
+        entry.injectResponse = true;
+      }
+      data[mesh].push(entry);
 
       fs.writeFileSync(outgoingTasksPath, JSON.stringify(data, null, 2));
-      log.info('injector', 'Added outgoing task', { mesh, msgId });
+      log.info('injector', 'Added outgoing task', { mesh, msgId, injectResponse: !!options?.injectResponse });
     } catch (err) {
       log.error('injector', 'Failed to add outgoing task', { mesh, msgId, error: String(err) });
     }
   };
 
-  const removeOutgoingTask = (mesh: string) => {
+  const removeOutgoingTask = (mesh: string): Record<string, unknown> | null => {
     try {
-      if (!fs.existsSync(outgoingTasksPath)) return;
+      if (!fs.existsSync(outgoingTasksPath)) return null;
 
       const data = JSON.parse(fs.readFileSync(outgoingTasksPath, 'utf-8'));
       if (data[mesh] && data[mesh].length > 0) {
@@ -637,10 +668,12 @@ ${data.content}
         }
         fs.writeFileSync(outgoingTasksPath, JSON.stringify(data, null, 2));
         log.info('injector', 'Removed outgoing task (FIFO)', { mesh, removed });
+        return removed;
       }
     } catch (err) {
       log.error('injector', 'Failed to remove outgoing task', { mesh, error: String(err) });
     }
+    return null;
   };
 
   const getOutgoingTaskCount = (): number => {
@@ -747,6 +780,37 @@ ${data.content}
     }
   };
 
+  // Active injection: retry loop for inject-response messages
+  const tryInjectResponse = (filepath: string, from: string, retries: number = 10) => {
+    let attempt = 0;
+    const tryOnce = () => {
+      attempt++;
+      try {
+        const content = fs.readFileSync(filepath, 'utf-8');
+        const bodyMatch = content.split(/^---$/m);
+        const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
+
+        const message = `[mesh response from ${from}]\n\n${body}`;
+        const injected = injectPrompt(tmux, message);
+
+        if (injected) {
+          log.info('injector', 'Active injection succeeded', { from, attempt });
+          return;
+        }
+      } catch (err) {
+        log.warn('injector', 'Active injection read error', { from, attempt, error: String(err) });
+      }
+
+      if (attempt < retries) {
+        log.debug('injector', 'Active injection retry', { from, attempt, remaining: retries - attempt });
+        setTimeout(tryOnce, 3000);
+      } else {
+        log.warn('injector', 'Active injection exhausted retries, falling back to pending', { from, attempts: attempt });
+      }
+    };
+    tryOnce();
+  };
+
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
@@ -757,17 +821,23 @@ ${data.content}
     if (type === 'task-complete') {
       log.warn('deprecated-message-type', `Legacy type="task-complete" used in start.ts`, { type, file: 'start.ts', detail: 'Use status: complete instead of type: task-complete' });
       const [mesh] = from.split('/');
-      removeOutgoingTask(mesh);
+      const removed = removeOutgoingTask(mesh);
+
+      // Active injection if inject-response was set on the outgoing task
+      if (removed?.injectResponse) {
+        log.info('injector', 'inject-response flag set, attempting active injection', { mesh, from });
+        tryInjectResponse(filepath, from);
+      }
     }
 
     writeStatusFile();  // This now updates status bar with all counts
   });
 
   // Track outgoing tasks when core sends tasks to meshes
-  consumer.on('worker-message', ({ agentId, from, type }) => {
+  consumer.on('worker-message', ({ agentId, from, type, injectResponse }) => {
     if (from === 'core/core' && type === 'task') {
       const [mesh] = agentId.split('/');
-      addOutgoingTask(mesh, `task-${Date.now()}`);
+      addOutgoingTask(mesh, `task-${Date.now()}`, { injectResponse: !!injectResponse });
       writeStatusFile();
     }
   });
@@ -785,6 +855,10 @@ ${data.content}
     setTimeout(writeStatusFile, 50);
   });
   dispatcher.on('worker:error', () => {
+    setTimeout(writeStatusFile, 50);
+  });
+  dispatcher.on('mesh:killed', ({ meshName, killed, agents }: { meshName: string; killed: number; agents: string[] }) => {
+    log.info('dispatcher', `Mesh killed via control signal`, { meshName, killed, agents });
     setTimeout(writeStatusFile, 50);
   });
   dispatcher.on('mesh:halted-message', () => {

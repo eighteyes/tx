@@ -55,6 +55,7 @@ Logs are written to `.ai/tx/logs/v4.jsonl` with the last run at `v4.last.jsonj`
 3. `core-message` → Injector injects to Claude (backoff retry if busy)
 4. `worker-message` → Dispatcher spawns worker immediately
 5. Workers write response messages back to msgs dir
+6. `inject-response: true` on outgoing task → active injection into tmux on mesh completion (retry loop, fallback to pending)
 
 ### Terminal-by-Default Messaging
 
@@ -82,3 +83,21 @@ The `type` field is **optional** for backward compatibility. The system infers m
 | `worker:complete` | `{id, messagesProcessed, output}` | Worker finished |
 | `worker:error` | `{id, error}` | Worker error |
 | `mesh:loaded` | `{mesh, agents}` | Mesh config loaded |
+
+## Guardrails
+
+Unified runtime enforcement with **strict/warning mode** on every guardrail. Config: `.ai/tx/data/config.yaml` under `guardrails:`.
+
+**Mode** (applies to all guardrails, default: `strict: false, warning: true`):
+| strict | warning | Result |
+|--------|---------|--------|
+| false  | true    | **Default** — Allow + inject feedback |
+| true   | true    | Block/kill + reason |
+| true   | false   | Block/kill silently |
+| false  | false   | Disabled |
+
+Override chain: agent > mesh > global > hardcoded default. `strict` and `warning` resolve independently.
+
+`max_messages`/`max_turns` accept bare number (backward compatible) or `{strict, warning, limit}` object.
+
+Full reference: `docs/guardrails.md`

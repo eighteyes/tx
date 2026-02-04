@@ -1,0 +1,689 @@
+# narrative-engine-haiku/config.yaml
+# All-haiku variant for architecture testing (cheap token usage)
+# Prose quality will be garbage — tests routing, artifacts, state management
+
+mesh: narrative-engine-haiku
+description: "Statless RPG with coordinator pattern. Traits are semantically weighted, damage is trait accumulation, outcomes emerge from JIT probability tables + external entropy."
+
+agents:
+  # ==========================================
+  # PHASE COORDINATORS (sonnet - precise routing)
+  # ==========================================
+
+  - name: entry
+    model: haiku
+    prompt: coordinator/entry.md
+
+
+  - name: game-coord
+    model: haiku
+    prompt: coordinator/game-coord.md
+
+
+  - name: prologue-coord
+    model: haiku
+    prompt: coordinator/prologue-coord.md
+
+
+  - name: init-coord
+    model: haiku
+    prompt: coordinator/init-coord.md
+
+
+  - name: prep-coord
+    model: haiku
+    prompt: coordinator/prep-coord.md
+
+
+  - name: render-coord
+    model: haiku
+    prompt: coordinator/render-coord.md
+
+
+  - name: validate-coord
+    model: haiku
+    prompt: coordinator/validate-coord.md
+
+
+  - name: compress-coord
+    model: haiku
+    prompt: coordinator/compress-coord.md
+
+
+  # ==========================================
+  # CREATIVE AGENTS (sonnet/opus)
+  # ==========================================
+  - name: dramaturg
+    model: haiku
+    prompt: dramaturg/prompt.md
+
+    # phase 1 - Story-aware outcome suggestions
+    # Reads arc context, suggests weight adjustments
+
+  - name: fates
+    model: haiku
+    prompt: fates/prompt.md
+
+    # phase 1 - World agency, entropic world events
+    # Generates world possibilities, entropy selects
+
+  - name: scene-crafter
+    model: haiku
+    prompt: scene-crafter/prompt.md
+
+    # phase 1 - Scene structure, beats, transitions, pacing
+    # Identifies decision points for player agency
+
+  - name: system
+    model: haiku
+    prompt: system/prompt.md
+
+    # phase 2 - Mechanics engine, outcome tables, trait tracking
+    # Accepts dramaturg notes for story-aware weighting
+
+  - name: cast
+    model: haiku
+    prompt: cast/prompt.md
+
+    # phase 2 - NPC voices, reactions, character consistency
+
+  - name: narrator
+    model: haiku
+    prompt: narrator/prompt.md
+
+    # phase 2,3 - Prose rendering with staged build (1.5-2k words)
+    # Orchestrates system, cast, lint/edit cycle
+    # Receives fully-decided outline from scene-crafter
+
+  - name: calibrator
+    model: haiku
+    prompt: calibrator/prompt.md
+
+    # Game creation - HITL worldbuilding extraction
+    # 9-phase extraction loop via HITL messages to core
+    # Creates author.yaml, setting.yaml, arc.yaml, entities
+    # Hands off to prologue-coord when complete
+
+  - name: editor
+    model: haiku
+    prompt: editor/prompt.md
+
+    # Adversarial prose review against author.yaml
+    # Works with narrator in phase 3
+
+  - name: visual
+    model: haiku
+    prompt: visual/prompt.md
+
+    # Multi-beat emotional visualization
+    # Reads prose.md, generates style variants per beat
+
+  - name: oracle
+    model: haiku
+    prompt: oracle/prompt.md
+
+    # Continuity validation + knowledge queries for entity data
+
+  - name: scribe
+    model: haiku
+    prompt: scribe/prompt.md
+
+    # Context compression, state management, game canon promotion
+    # Only fires if oracle passes (or max iterations)
+
+  # ==========================================
+  # LINT LADDER - Parallel mechanical linters
+  # ==========================================
+  - name: lint-coordinator
+    model: haiku
+    prompt: linters/lint-coordinator.md
+
+    # Orchestrates parallel dispatch to all linters
+    # Aggregates violations into violations.yaml
+    # Forwards to editor for holistic review
+
+  - name: lint-forbidden-words
+    model: haiku
+    prompt: linters/forbidden-words.md
+
+    # Mechanical: "suddenly", "seemed", "very", etc.
+    # Concordance overuse detection
+
+  - name: lint-patterns
+    model: haiku
+    prompt: linters/patterns.md
+
+    # Creative: "She realized", "Fear washed over", etc.
+    # Patterns that need narrator rewrite
+
+  - name: lint-ai-tells
+    model: haiku
+    prompt: linters/ai-tells.md
+
+    # Mechanical: "amidst", "whilst", "orbs", etc.
+    # Simple word swaps
+
+  - name: lint-cadence
+    model: haiku
+    prompt: linters/cadence.md
+
+    # Creative: Sentence length distribution
+    # Rhythm analysis
+
+  - name: lint-dialogue
+    model: haiku
+    prompt: linters/dialogue.md
+
+    # Mechanical: Tags, adverbs
+    # Coherence check
+
+  - name: lint-litotes
+    model: haiku
+    prompt: linters/litotes.md
+
+    # Creative: "not X, but Y" patterns
+    # Budget: 1-2 per scene
+
+  - name: lint-metaphor
+    model: haiku
+    prompt: linters/metaphor.md
+
+    # Creative: Repeated sensory channels
+    # One peak expression per channel per scene
+
+  - name: lint-body-first
+    model: haiku
+    prompt: linters/body-first.md
+
+    # Creative: Scene opening physical grounding
+    # Body before thought
+
+  - name: lint-factoids
+    model: haiku
+    prompt: linters/lint-factoids.md
+
+    # Creative: Real-world trivia repetition detection
+    # Prevents same facts appearing twice in campaign
+
+  - name: lint-temporal
+    model: haiku
+    prompt: linters/lint-temporal.md
+
+    # Creative: Temporal continuity detection
+    # Duration/time contradictions across turns
+
+entry_point: entry
+
+# Two completion agents for different workflows (first-wins):
+# - game-coord: New Game workflow ends after calibration
+# - compress-coord: Write Turn workflow ends after compression
+completion_agents:
+  - game-coord
+  - compress-coord
+
+# Session continuation: reuse Claude session IDs within a mesh run (default: true)
+continuation: true
+# Session persistence: keep sessions across mesh runs (default: false)
+# persistence: true
+
+# ==========================================
+# ROUTING - Phase coordinator architecture
+# ==========================================
+
+routing_fallback: entry
+routing_retry_max: 3
+
+routing:
+  # All agent communication uses 'message' type.
+  # Messages to core/core are implicitly HITL (session pauses).
+  # The system infers routing from destination.
+  #
+  # Phase flow: entry → game-coord|init-coord → prep-coord → validate-coord → render-coord → compress-coord
+  # Prep sequence: dramaturg → system → cast → scene-crafter (sequential)
+
+  # Phase coordinators
+  entry:
+    message:
+      game-coord: "Route new game or edit game request"
+      init-coord: "Route player action"
+      prologue-coord: "Recovery: resume prologue"
+      prep-coord: "Recovery: resume prep phase"
+      render-coord: "Recovery: resume render phase"
+      validate-coord: "Recovery: resume validation"
+      compress-coord: "Recovery: resume compression"
+      core: "Turn in progress OR message-state confusion"
+
+  game-coord:
+    message:
+      calibrator: "HITL game creation"
+      core: "New game calibration complete"
+
+  prologue-coord:
+    message:
+      prep-coord: "Prologue workspace ready"
+
+  init-coord:
+    message:
+      prep-coord: "Turn workspace ready"
+
+  prep-coord:
+    message:
+      dramaturg: "Analyze story context"
+      fates: "Generate world possibilities"
+      system: "Resolve outcomes"
+      cast: "Generate character reactions"
+      scene-crafter: "Design scene beats"
+      validate-coord: "Scene outline ready for validation"
+
+  render-coord:
+    message:
+      narrator: "Render prose"
+      visual: "Generate visual beats"
+      compress-coord: "Prose approved"
+
+  validate-coord:
+    message:
+      oracle: "Validate continuity"
+      scene-crafter: "Fix outline violations"
+      render-coord: "Scene approved"
+
+  compress-coord:
+    message:
+      scribe: "Compress turn state"
+      core: "Turn complete | Ready check failed"
+
+  # ==========================================
+  # CREATIVE AGENT ROUTING
+  # ==========================================
+
+  calibrator:
+    message:
+      core: "HITL extraction / worldbuilder tuning | Session complete"
+      prologue-coord: "Game creation complete"
+
+  narrator:
+    message:
+      oracle: "Knowledge query"
+      lint-coordinator: "Lint prose"
+
+  dramaturg:
+    message:
+      prep-coord: "Story analysis complete"
+
+  fates:
+    message:
+      prep-coord: "World possibilities written"
+
+  system:
+    message:
+      prep-coord: "Mechanical resolution complete"
+
+  cast:
+    message:
+      prep-coord: "Character reactions ready"
+
+  scene-crafter:
+    message:
+      core: "Mid-turn player decisions"
+      prep-coord: "Scene outline complete"
+      validate-coord: "Outline fix complete"
+
+  oracle:
+    message:
+      validate-coord: "Continuity validation complete"
+      narrator: "Knowledge query response"
+
+  scribe:
+    message:
+      compress-coord: "Turn compression complete"
+
+  # ==========================================
+  # LINT LADDER ROUTING
+  # ==========================================
+
+  # Lint chain: coordinator dispatches first linter, each passes to the next.
+  # Final linter returns to coordinator for aggregation → editor.
+  lint-coordinator:
+    message:
+      lint-forbidden-words: "Start lint chain"
+      editor: "Violations aggregated"
+
+  lint-forbidden-words:
+    message:
+      lint-patterns: "Next lint"
+
+  lint-patterns:
+    message:
+      lint-ai-tells: "Next lint"
+
+  lint-ai-tells:
+    message:
+      lint-cadence: "Next lint"
+
+  lint-cadence:
+    message:
+      lint-dialogue: "Next lint"
+
+  lint-dialogue:
+    message:
+      lint-litotes: "Next lint"
+
+  lint-litotes:
+    message:
+      lint-metaphor: "Next lint"
+
+  lint-metaphor:
+    message:
+      lint-body-first: "Next lint"
+
+  lint-body-first:
+    message:
+      lint-factoids: "Next lint"
+
+  lint-factoids:
+    message:
+      lint-temporal: "Next lint"
+
+  lint-temporal:
+    message:
+      lint-coordinator: "Lint chain complete"
+
+  # ==========================================
+  # EDITOR
+  # ==========================================
+
+  editor:
+    message:
+      render-coord: "Prose finalized"
+
+  visual:
+    message:
+      render-coord: "Visual beats complete"
+
+# ==========================================
+# MANIFEST ENFORCEMENT
+# ==========================================
+
+manifest_enforcement:
+  post_validation: true
+  pre_validation: true
+  max_retry: 2
+
+# ==========================================
+# MANIFEST - File-centric I/O manifest (source of truth)
+# ==========================================
+
+manifest:
+  # --- Session State ---
+  - id: session.yaml
+    description: Coordinator handoff state persisted across turns
+    location: session
+    persistent: true
+    reads: [entry, game-coord, prologue-coord, init-coord, prep-coord, render-coord, validate-coord, compress-coord, calibrator]
+    writes: [entry, game-coord, prologue-coord, init-coord, prep-coord, render-coord, validate-coord, compress-coord, calibrator]
+
+  # --- Turn Workspace (per-turn artifacts) ---
+  - id: context.yaml
+    description: Turn context seeded by coordinator, consumed by creative agents
+    location: workspace
+    reads: [dramaturg, system, cast, scene-crafter, narrator, scribe, fates]
+    writes: [prologue-coord, init-coord]
+
+  - id: turn-brief.md
+    description: Turn initialization brief with player action and narrative state
+    location: workspace
+    reads: [prep-coord, dramaturg, system, cast, scene-crafter, fates]
+    writes: [entry, init-coord]
+
+  - id: dramaturg-notes.yaml
+    description: Story analysis and weight adjustment suggestions
+    location: workspace
+    reads: [system, scene-crafter, narrator, scribe]
+    writes: [dramaturg]
+
+  - id: fates.yaml
+    description: World possibility table and entropic world event selection
+    location: workspace
+    reads: [system, cast, scene-crafter, narrator, scribe]
+    writes: [fates]
+
+  - id: entropy-tables.yaml
+    description: JIT probability tables generated before entropy application
+    location: workspace
+    reads: [system]
+    writes: [system]
+
+  - id: resolution.yaml
+    description: Mechanical outcome tables and trait resolution
+    location: workspace
+    reads: [system, cast, scene-crafter, narrator, scribe]
+    writes: [system]
+
+  - id: reactions.yaml
+    description: NPC reactions and character voice responses
+    location: workspace
+    reads: [scene-crafter, narrator, scribe, oracle]
+    writes: [cast]
+
+  - id: scene-outline.yaml
+    description: Scene beats, pacing, and decision points
+    location: workspace
+    reads: [validate-coord, narrator, oracle, visual, scribe]
+    writes: [scene-crafter]
+
+  - id: prose-draft.md
+    description: Working prose draft iterated through lint/edit cycle
+    location: workspace
+    reads: [narrator, lint-coordinator, editor]
+    writes: [narrator, editor]
+
+  - id: prose.md
+    description: Final approved prose output for the turn
+    location: workspace
+    reads: [compress-coord, scribe, visual, narrator]
+    writes: [editor]
+
+  - id: visual.yaml
+    description: Multi-beat emotional visualization briefs with style variants
+    location: workspace
+    reads: [scribe]
+    writes: [visual]
+
+  - id: concordance.txt
+    description: Per-turn word frequency extract for overuse detection
+    location: workspace
+    reads: [lint-coordinator]
+    writes: [narrator]
+
+  - id: dialogue-pairs.txt
+    description: Extracted dialogue tag/line pairs for lint analysis
+    location: workspace
+    reads: [lint-coordinator]
+    writes: [narrator]
+
+  - id: violations.yaml
+    description: Aggregated lint violations for editor review
+    location: workspace
+    reads: [editor]
+    writes: [lint-coordinator]
+
+  - id: summary.md
+    description: Compressed turn summary for context window management
+    location: workspace
+    reads: [dramaturg]
+    writes: [scribe]
+
+  - id: calibration-state.yaml
+    description: HITL calibration extraction progress tracker
+    location: workspace
+    reads: [calibrator]
+    writes: [calibrator]
+
+  # --- Game Root ---
+  - id: author.yaml
+    description: Author voice profile and stylistic constraints
+    location: game
+    persistent: true
+    reads: [narrator, scene-crafter, lint-coordinator, editor, visual, calibrator]
+    writes: [calibrator]
+
+  - id: setting.yaml
+    description: World setting, geography, tone, and genre parameters
+    location: game
+    persistent: true
+    reads: [oracle, fates, calibrator]
+    writes: [calibrator]
+
+  - id: entities.yaml
+    description: Master entity index with traits, relationships, status
+    location: game
+    persistent: true
+    reads: [dramaturg, validate-coord, system, narrator, oracle, scribe, fates, calibrator]
+    writes: [scribe, calibrator]
+
+  - id: entities/characters/
+    description: Individual character entity files (traits, bonds, state)
+    location: game
+    persistent: true
+    reads: [init-coord, system, cast, narrator, oracle, scribe, fates, calibrator]
+    writes: [scribe, calibrator]
+
+  - id: story-corpus.txt
+    description: Append-only full prose archive across all turns
+    location: game
+    persistent: true
+    reads: []
+    writes: [scribe]
+
+  - id: story-concordance.txt
+    description: Cumulative word frequency data for cross-turn overuse detection
+    location: game
+    persistent: true
+    reads: [lint-coordinator]
+    writes: [scribe]
+
+  # --- Campaign State ---
+  - id: arc.yaml
+    description: Story arc structure, act progression, and tension curves
+    location: campaign
+    persistent: true
+    reads: [dramaturg, scene-crafter, system, prologue-coord, scribe, fates, calibrator]
+    writes: [scribe, calibrator]
+
+  - id: turns/
+    description: Turn workspace directories (init-coord creates new turn dirs)
+    location: campaign
+    reads: [init-coord, entry]
+    writes: [init-coord, entry]
+
+  - id: state.yaml
+    description: Campaign mechanical state — active effects, conditions, resources
+    location: campaign
+    persistent: true
+    reads: [init-coord, dramaturg, system, scribe, fates]
+    writes: [init-coord, scribe]
+
+  - id: continuity.yaml
+    description: Canonical facts, established details, and continuity anchors
+    location: campaign
+    persistent: true
+    reads: [dramaturg, narrator, oracle, scribe, system, fates]
+    writes: [scribe]
+
+  - id: history.md
+    description: Narrative history log of completed turns
+    location: campaign
+    persistent: true
+    reads: []
+    writes: [scribe]
+
+  - id: thread.md
+    description: Active narrative threads and unresolved hooks
+    location: campaign
+    persistent: true
+    reads: []
+    writes: [scribe]
+
+  - id: character-memory.yaml
+    description: Per-character memory and relationship state
+    location: campaign
+    persistent: true
+    reads: []
+    writes: [scribe]
+
+  # --- Templates (read-only reference) ---
+  - id: arc.template.yaml
+    description: Arc structure template for new campaign creation
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: entities.template.yaml
+    description: Entity index template for new game creation
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: author.template.yaml
+    description: Author voice profile template
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: setting.template.yaml
+    description: World setting template
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: session.template.yaml
+    description: Session state template for coordinator init
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: continuity.template.yaml
+    description: Continuity tracking template
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  - id: entities/characters/protagonist.template.yaml
+    description: Protagonist character sheet template
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+# ==========================================
+# WORKSPACE
+# ==========================================
+
+workspace:
+  path: ".ai/games/"
+  create_on_init: false
+  variables:
+    source: ".ai/tx/narrative-engine-haiku/session.yaml"
+    mapping:
+      game-id: game_id
+      campaign-id: campaign_id
+      N: turn
+  locations:
+    session: ".ai/tx/narrative-engine-haiku/"
+    workspace: "{game}/campaigns/{campaign-id}/turns/turn-{N}/"
+    game: ".ai/games/{game-id}/"
+    campaign: "{game}/campaigns/{campaign-id}/"
+    entities: "{game}/entities/"
+    template: "meshes/narrative-engine/templates/"
+
+# Turn workspace template (resolved after game exists)
+turn_workspace:
+  path: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/"
+  create_on_init: false
+  cleanup_on_complete: false

@@ -51,6 +51,15 @@ export interface IterationConfig {
 }
 
 /**
+ * Manifest enforcement config for artifact validation
+ */
+export interface ManifestEnforcementConfig {
+  post_validation?: boolean;  // Check writes exist after agent completes (default: true)
+  pre_validation?: boolean;   // Check reads exist before dispatching (default: true)
+  max_retry?: number;         // Resume agent N times before failing out (default: 2)
+}
+
+/**
  * Rearmatter (transparency metadata) configuration
  */
 export interface RearmatterConfig {
@@ -65,6 +74,19 @@ export interface RearmatterConfig {
 /**
  * Agent configuration within a mesh
  */
+export interface MeshGuardrailOverrides {
+  write_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
+  read_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
+  identity_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
+  routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number };
+  max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
+  max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
+}
+
+export interface MeshGuardrailConfig extends MeshGuardrailOverrides {
+  agents?: Record<string, MeshGuardrailOverrides>;
+}
+
 export interface AgentConfig {
   name: string;
   model: SemanticModel;
@@ -73,6 +95,7 @@ export interface AgentConfig {
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   max_turns?: number;  // API round-trip limit per invocation (runtime guardrail)
+  max_messages?: number;  // Outbound message limit per worker invocation (chaos contract)
 }
 
 /**
@@ -96,12 +119,16 @@ export interface MeshConfig {
   };
   routing_mode?: RoutingMode;  // 'agent' (default) or 'dispatcher' (opt-in centralized routing)
   routing?: MeshRouting | DispatcherRoutingConfig;  // Shape depends on routing_mode
+  routing_fallback?: string;  // Global fallback agent when edge iteration limits hit
+  routing_retry_max?: number; // Max messages on any routing edge per turn before fallback
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
   iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
   rearmatter?: RearmatterConfig;  // Transparency metadata config
   manifest?: ManifestEntry[];  // File I/O manifest: declares files, readers/writers, locations
+  manifest_enforcement?: ManifestEnforcementConfig;  // Artifact validation settings
+  guardrails?: MeshGuardrailConfig;  // Per-mesh guardrail overrides (mesh-local wins over global)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -418,10 +445,17 @@ export class MeshConfigLoader extends EventEmitter {
 
     // Convert object-style to array-style
     const statesObj = fsmConfig.states as unknown as Record<string, Omit<FSMStateConfig, 'name'>>;
-    const statesArray: FSMStateConfig[] = Object.entries(statesObj).map(([name, config]) => ({
-      name,
-      ...config,
-    }));
+    const statesArray: FSMStateConfig[] = Object.entries(statesObj).map(([name, stateConf]) => {
+      const agents = (stateConf as any).agents as string[] | undefined;
+      const normalized: FSMStateConfig = {
+        name,
+        ...stateConf,
+        coordinator: agents?.[0] || (stateConf as any).coordinator,
+        participants: agents?.slice(1) || (stateConf as any).participants,
+      };
+      if (agents) delete (normalized as any).agents;
+      return normalized;
+    });
 
     return {
       ...fsmConfig,

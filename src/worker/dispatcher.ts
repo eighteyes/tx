@@ -41,6 +41,7 @@ import { injectRoutingInstructions, injectDispatcherRoutingInstructions } from '
 import { DispatchRouter } from './dispatch-router.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
+import { IdentityGate } from './identity-gate.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import YAML from 'yaml';
@@ -159,6 +160,9 @@ interface AskResponseMessageEvent {
   content: string;
   headline?: string;
   msgId?: string;
+  // Phase 3: Boundary detection
+  fromHumanBoundary?: boolean;  // true if from === 'core/core' (human response)
+  resumesSuspension?: boolean;  // true if this should resume a suspended session
 }
 
 // TrackedMessage and ActiveWorker types are now imported from './worker-lifecycle.ts'
@@ -899,7 +903,7 @@ export class WorkerDispatcher extends EventEmitter {
     const toResume: Array<{ agentId: string; suspended: SuspendedSession }> = [];
 
     for (const meshConfig of this.meshConfigs.values()) {
-      const meshName = meshConfig.name;
+      const meshName = meshConfig.mesh;
       const sessions = this.sessionManager.getAllForMesh(meshName);
 
       for (const { agentId, suspended } of sessions) {
@@ -959,14 +963,14 @@ export class WorkerDispatcher extends EventEmitter {
 
       // Subscribe to ask message events for await state handling
       this.boundAskMessageHandler = (event: AskMessageEvent) => {
-        log.warn('DEPRECATE: ask-message consumer event fired', { from: event.from, agentId: event.agentId });
+        log.warn('dispatcher', 'DEPRECATE: ask-message consumer event fired', { from: event.from, to: event.to });
         this.handleAskMessage(event);
       };
       consumer.on('ask-message', this.boundAskMessageHandler);
 
       // Subscribe to ask-response events for resuming awaiting workers
       this.boundAskResponseHandler = (event: AskResponseMessageEvent) => {
-        log.warn('DEPRECATE: ask-response-message consumer event fired', { from: event.from, agentId: event.agentId });
+        log.warn('dispatcher', 'DEPRECATE: ask-response-message consumer event fired', { from: event.from, to: event.to });
         this.handleAskResponseMessage(event);
       };
       consumer.on('ask-response-message', this.boundAskResponseHandler);
@@ -2980,6 +2984,20 @@ Please advise the agent or check mesh configuration.`;
         });
       }
 
+      // Identity gate - always enabled to catch agents forgetting their identity
+      const identityGate = new IdentityGate({
+        agentId,
+        workDir: this.config.workDir,
+        killRunner: (reason) => workerRef.current?.kill(reason),
+        killThreshold: this.guardrails.getKillThreshold('identity_gate', meshName!, agent.name),
+        mode: this.guardrails.getMode('identity_gate', meshName!, agent.name),
+      });
+      preToolUseHooks.push(identityGate.createHook());
+      log.debug('identity-gate', 'Identity gate enabled', {
+        agentId,
+        killThreshold: this.guardrails.getKillThreshold('identity_gate', meshName!, agent.name),
+      });
+
       const chaosHooks = preToolUseHooks.length > 0
         ? { PreToolUse: preToolUseHooks }
         : undefined;
@@ -4438,7 +4456,8 @@ ${output}
     }
 
     // Check if worker has an active API query (mid-turn correction possible)
-    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
+    // SdkRunner stores currentQuery as a private property, check if it exists
+    const hasActiveQuery = (activeWorker.runner as any).currentQuery !== null;
 
     if (hasActiveQuery) {
       log.info('dispatcher', 'Injecting system feedback directly into agent session', {
@@ -4550,7 +4569,8 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     }
 
     // Check if worker has an active API query (mid-turn correction possible)
-    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
+    // SdkRunner stores currentQuery as a private property, check if it exists
+    const hasActiveQuery = (activeWorker.runner as any).currentQuery !== null;
 
     if (hasActiveQuery) {
       // Worker is mid-turn — interrupt and inject feedback in real time

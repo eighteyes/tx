@@ -50,6 +50,7 @@ TX messages are markdown files with YAML frontmatter and optional rearmatter:
 | `command` | string | - | Slash command to trigger on recipient (e.g., `/know:build`) |
 | `feature` | string | - | Feature name for worktree-enabled meshes |
 | `headless` | string | `false` | Set to `true` for headless mode messages (bypasses dispatcher) |
+| `inject-response` | string | `false` | Auto-inject mesh response into core session on completion |
 
 ### Runtime Override Fields
 
@@ -147,6 +148,23 @@ For headless REPL mode (`tx run`). Prevents dispatcher from processing:
 ```yaml
 headless: true
 ```
+
+#### `inject-response` - Active Response Injection
+
+Auto-inject the mesh response into the core tmux session when the mesh completes:
+
+```yaml
+inject-response: true
+```
+
+**Behavior**:
+- Flag is stored on the outgoing task in `outgoing-tasks.json`
+- On mesh completion (`task-complete` to `core/core`), system attempts active injection via `injectPrompt`
+- Retries up to 10 times at 3s intervals (30s max)
+- Falls back to passive `pending-for-core.json` if injection fails
+- Use for fire-and-forget tasks where you want results pushed to core automatically
+
+**Source**: `start.ts`, `consumer.ts`
 
 #### `model` - Runtime Model Override
 

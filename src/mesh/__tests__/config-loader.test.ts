@@ -259,9 +259,12 @@ describe('MeshConfigLoader', () => {
       assert.strictEqual(loader.shouldContinueAgent('any-agent', true), true);
     });
 
-    it('should return false when continuation is false/undefined', () => {
+    it('should return true when continuation is undefined (default: enabled)', () => {
+      assert.strictEqual(loader.shouldContinueAgent('any-agent', undefined), true);
+    });
+
+    it('should return false when continuation is false', () => {
       assert.strictEqual(loader.shouldContinueAgent('any-agent', false), false);
-      assert.strictEqual(loader.shouldContinueAgent('any-agent', undefined), false);
     });
 
     it('should return true when agent is in continuation array', () => {
@@ -270,6 +273,25 @@ describe('MeshConfigLoader', () => {
 
     it('should return false when agent is not in continuation array', () => {
       assert.strictEqual(loader.shouldContinueAgent('tester', ['worker', 'reviewer']), false);
+    });
+  });
+
+  describe('shouldPersistAgent()', () => {
+    it('should return true when persistence is true', () => {
+      assert.strictEqual(loader.shouldPersistAgent('any-agent', true), true);
+    });
+
+    it('should return false when persistence is false/undefined (default: disabled)', () => {
+      assert.strictEqual(loader.shouldPersistAgent('any-agent', false), false);
+      assert.strictEqual(loader.shouldPersistAgent('any-agent', undefined), false);
+    });
+
+    it('should return true when agent is in persistence array', () => {
+      assert.strictEqual(loader.shouldPersistAgent('worker', ['worker', 'reviewer']), true);
+    });
+
+    it('should return false when agent is not in persistence array', () => {
+      assert.strictEqual(loader.shouldPersistAgent('tester', ['worker', 'reviewer']), false);
     });
   });
 

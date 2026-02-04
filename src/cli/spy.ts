@@ -395,6 +395,23 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
     }
 
     console.log(`${icon} ${agent} ${chalk.dim(time)} ${chalk.blue(`[${eventName}]`)} ${contentColor(entry.content)}\n`);
+  } else if (entry.event.startsWith('guardrail:')) {
+    const eventName = entry.event.replace('guardrail:', '');
+    let icon = '🛡️';
+    let contentColor = chalk.yellow;
+
+    if (entry.content.includes('HALT')) {
+      icon = '🛑';
+      contentColor = chalk.red;
+    } else if (entry.content.includes('BLOCKED')) {
+      icon = '🚫';
+      contentColor = chalk.red;
+    } else if (entry.content.includes('RETRY')) {
+      icon = '🔄';
+      contentColor = chalk.yellow;
+    }
+
+    console.log(`${icon} ${agent} ${chalk.dim(time)} ${chalk.magenta(`[${eventName}]`)} ${contentColor(entry.content)}\n`);
   } else {
     console.log(`📍 ${agent} ${chalk.dim(time)} [${entry.event}] ${entry.content}\n`);
   }

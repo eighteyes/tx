@@ -1,0 +1,80 @@
+# dev-review mesh
+# Development with review cycle: developer → reviewer → tester
+# Only tester can complete to core
+
+mesh: dev-review
+description: "Development mesh with sonnet developer, opus reviewer, haiku tester. Review-gated quality."
+
+intents:
+  patterns:
+    - build
+    - implement
+    - code up
+    - fix
+    - develop
+  commands:
+    build: "/know:build"
+    implement: "/know:build"
+
+agents:
+  - name: developer
+    model: sonnet
+    prompt: developer/prompt.md
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+
+  - name: tester
+    model: haiku
+    prompt: tester/prompt.md
+
+entry_point: developer
+
+workspace:
+  path: ".ai/output/{task-id}/"
+
+routing:
+  developer:
+    complete:
+      reviewer: "Implementation ready for review"
+    blocked:
+      core: "Need clarification from human"
+    ask-response:
+      reviewer: "Response to reviewer feedback"
+      tester: "Response to tester feedback"
+
+  reviewer:
+    complete:
+      tester: "Review approved, ready for testing"
+    blocked:
+      developer: "Changes requested"
+    ask:
+      developer: "Question about implementation"
+    ask-response:
+      developer: "Response to developer question"
+      tester: "Response to tester question"
+
+  tester:
+    complete:
+      core: "All tests pass, mesh complete"
+    blocked:
+      developer: "Tests failing, needs fixes"
+    ask:
+      developer: "Question about testability"
+      reviewer: "Question about review criteria"
+    ask-response:
+      developer: "Response to developer question"
+      reviewer: "Response to reviewer question"
+
+playbook_notes: |
+  Three-agent review-gated development mesh.
+
+  Flow: developer (sonnet) → reviewer (opus) → tester (haiku)
+  Loops: reviewer → developer (changes requested), tester → developer (test failures)
+  Terminal: only tester completes to core.
+
+  Developer builds generic, reusable solutions. Reviewer enforces DRY, SOLID,
+  system patterns, documentation. Tester runs whatever can be tested in isolation.
+
+  All agents can communicate with all others for questions and responses.
