@@ -26,9 +26,13 @@ export class ReadGate {
   private config: ReadGateConfig;
   private strikes = 0;
   private allowedAbsolute: Set<string>;
+  private msgsDir: string;
+  private logsDir: string;
 
   constructor(config: ReadGateConfig) {
     this.config = config;
+    this.msgsDir = path.join(config.workDir, '.ai', 'tx', 'msgs');
+    this.logsDir = path.join(config.workDir, '.ai', 'tx', 'logs');
     this.allowedAbsolute = new Set(
       config.allowedPaths.map(p => path.resolve(config.workDir, p).replace(/\/+$/, ''))
     );
@@ -48,7 +52,7 @@ export class ReadGate {
         if (!rawPath) return { decision: 'approve' } as HookJSONOutput;
 
         const resolved = path.resolve(this.config.workDir, rawPath);
-        if (this.isAllowed(resolved)) {
+        if (this.isExempt(resolved) || this.isAllowed(resolved)) {
           return { decision: 'approve' } as HookJSONOutput;
         }
 
@@ -71,8 +75,15 @@ export class ReadGate {
     }
   }
 
-  private isAllowed(resolvedPath: string): boolean {
+  private isExempt(resolvedPath: string): boolean {
     if (resolvedPath === '/dev/null') return true;
+    return resolvedPath.startsWith(this.msgsDir + path.sep) ||
+           resolvedPath.startsWith(this.logsDir + path.sep) ||
+           resolvedPath === this.msgsDir ||
+           resolvedPath === this.logsDir;
+  }
+
+  private isAllowed(resolvedPath: string): boolean {
     if (this.allowedAbsolute.has(resolvedPath)) return true;
     for (const allowed of this.allowedAbsolute) {
       // Target is inside allowed directory
