@@ -193,6 +193,15 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   manifest: { type: 'array' },
   // Guardrails: per-mesh overrides for gate thresholds, limits, routing retries
   guardrails: { type: 'object' },
+  // Session persistence across mesh runs
+  persistence: { type: 'boolean' },  // Also accepts array, validated specially
+  // Parallel execution blocks with fork/join semantics
+  parallelism: { type: 'array' },  // ParallelBlock[]: { agents, entry, exit, timeout?, on_partial? }
+  // Routing fallback and retry limits
+  routing_fallback: { type: 'string' },
+  routing_retry_max: { type: 'number' },
+  // Manifest enforcement settings
+  manifest_enforcement: { type: 'object' },
 };
 
 /**
@@ -208,6 +217,11 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   description: { type: 'string' },  // Optional agent documentation
   max_turns: { type: 'number' },  // API round-trip limit per invocation
   max_messages: { type: 'number' },  // Outbound message limit per invocation (chaos contract)
+  // File preload: dump files into agent context (globs supported)
+  load: { type: 'array' },  // string[]: file paths or glob patterns
+  // Session forking: checkpoint and fork_from for context sharing
+  checkpoint: { type: 'boolean' },  // Save session state on completion for forking
+  fork_from: { type: 'string' },  // Fork from another agent's checkpoint
 };
 
 /**

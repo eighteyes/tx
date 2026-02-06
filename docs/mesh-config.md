@@ -49,10 +49,15 @@ agents:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Agent identifier (used in routing) |
-| `model` | `opus\|sonnet\|haiku` | Yes | LLM model selection |
+| `model` | `opus\|sonnet\|haiku` | Yes* | LLM model (*defaults to `haiku` if `load` set, else `sonnet`) |
 | `prompt` | string | Yes | Path to prompt.md relative to mesh directory |
 | `workspace` | WorkspaceConfig | No | Per-agent workspace override |
 | `mcpServers` | Record<string, McpServerConfig> | No | MCP server configurations |
+| `load` | string[] | No | Files to preload into context (globs supported) |
+| `checkpoint` | boolean | No | Save session state on completion for forking |
+| `fork_from` | string | No | Fork from another agent's checkpoint |
+| `max_turns` | number | No | API round-trip limit per invocation |
+| `max_messages` | number | No | Outbound message limit per invocation |
 
 ### `entry_point`
 - **Type**: `string`
@@ -549,6 +554,56 @@ turn_workspace:
     board: string
 ```
 
+### `persistence`
+- **Type**: `boolean | string[]`
+- **Default**: `false`
+- **Behavior**: Sessions persist across mesh runs. When `true`, all agents persist. Array specifies which agents.
+
+```yaml
+persistence: true                    # All agents persist
+persistence: [coordinator, worker]   # Only these agents persist
+```
+
+### `continuation`
+- **Type**: `boolean | string[]`
+- **Default**: `true`
+- **Behavior**: Sessions reuse within a mesh run. When `true`, all agents reuse sessions within run.
+
+```yaml
+continuation: true                   # All agents continue within run
+continuation: [worker]               # Only worker continues
+```
+
+### `routing_fallback`
+- **Type**: `string`
+- **Required**: No
+- **Behavior**: Global fallback agent when edge iteration limits are hit.
+
+```yaml
+routing_fallback: coordinator
+```
+
+### `routing_retry_max`
+- **Type**: `number`
+- **Required**: No
+- **Behavior**: Max messages on any routing edge per turn before fallback.
+
+```yaml
+routing_retry_max: 5
+```
+
+### `manifest_enforcement`
+- **Type**: `object`
+- **Required**: No
+- **Behavior**: Artifact validation settings for manifest-declared files.
+
+```yaml
+manifest_enforcement:
+  post_validation: true   # Check writes exist after agent completes
+  pre_validation: true    # Check reads exist before dispatching
+  max_retry: 2            # Resume agent N times before failing
+```
+
 ---
 
 ## Iteration Control
@@ -575,6 +630,184 @@ iteration:
   maxIterations: 5
   onFail: loop
 ```
+
+---
+
+## File Preload
+
+### `load` (Agent Field)
+- **Type**: `string[]`
+- **Required**: No
+- **Behavior**: Files matching patterns are read and injected into the agent's system prompt before execution.
+
+**Features**:
+- Glob patterns supported (`*.md`, `src/**/*.ts`)
+- Files over 200KB are skipped with warning
+- `node_modules/` and `.git/` auto-excluded
+- Model defaults to `haiku` when `load` is set (cheap preloaders)
+
+```yaml
+agents:
+  - name: preloader
+    model: haiku        # Defaults to haiku when load is set
+    prompt: prompt.md
+    load:
+      - "package.json"  # Exact file
+      - "*.md"          # Glob pattern
+      - "src/**/*.ts"   # Recursive glob
+```
+
+**Use cases**:
+- Virtual "setup" agents that preload project context
+- Checkpoint entry points that establish shared context
+- Cheap haiku agents that read files before expensive opus agents work
+
+---
+
+## Session Forking
+
+Share conversation context between agents via checkpoints.
+
+### `checkpoint` (Agent Field)
+- **Type**: `boolean`
+- **Default**: `false`
+- **Behavior**: When `true`, saves the agent's sessionId on completion. Other agents can fork from this checkpoint.
+
+### `fork_from` (Agent Field)
+- **Type**: `string`
+- **Required**: No
+- **Values**: Name of another agent in the mesh
+- **Behavior**: Loads the specified agent's checkpoint sessionId as the starting session. The forked agent continues from the checkpoint's conversation history.
+
+```yaml
+agents:
+  - name: setup
+    model: haiku
+    prompt: setup.md
+    load: ["package.json"]
+    checkpoint: true      # Save session for forking
+
+  - name: worker-a
+    model: sonnet
+    prompt: worker.md
+    fork_from: setup      # Fork from setup's checkpoint
+
+  - name: worker-b
+    model: opus
+    prompt: worker.md
+    fork_from: setup      # Same checkpoint, different agent
+```
+
+**Behavior**:
+- Works across models (haiku checkpoint → opus fork)
+- Forked agents see full conversation history from checkpoint
+- Checkpoints are scoped to mesh name (concurrent runs may share checkpoints)
+
+**Use cases**:
+- Skip redundant prework (preload once, fork many)
+- Share established context across parallel workers
+- Model escalation with preserved context
+
+---
+
+## Parallel Execution
+
+Fork from entry, run agents concurrently, join at exit.
+
+### `parallelism`
+- **Type**: `array` of `ParallelBlock`
+- **Required**: No
+- **Behavior**: Defines parallel execution blocks with fork/join semantics.
+
+#### ParallelBlock Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `agents` | string[] | Yes | Agents to run in parallel |
+| `entry` | string | Yes | Fork point (auto-gets `checkpoint: true`) |
+| `exit` | string | Yes | Sync gate (waits for all parallel agents) |
+| `timeout` | number | No | Max wait time in milliseconds |
+| `on_partial` | `continue\|abort` | No | Behavior on partial failure (default: `continue`) |
+
+```yaml
+agents:
+  - name: preload
+    model: haiku
+    prompt: preload.md
+    load: ["package.json"]
+    # checkpoint: true auto-added
+
+  - name: analyst
+    model: sonnet
+    prompt: analyst.md
+    # fork_from: preload auto-added
+
+  - name: reviewer
+    model: sonnet
+    prompt: reviewer.md
+
+  - name: critic
+    model: sonnet
+    prompt: critic.md
+
+  - name: synthesizer
+    model: sonnet
+    prompt: synthesizer.md
+
+parallelism:
+  - agents: [analyst, reviewer, critic]
+    entry: preload        # Fork point (gets checkpoint: true)
+    exit: synthesizer     # Sync gate (waits for all)
+    timeout: 300000       # Optional: 5 min timeout
+    on_partial: continue  # continue | abort on partial failure
+```
+
+**Flow**:
+```
+preload (entry)
+    │ checkpoint
+    ├─────┼─────┐
+    ▼     ▼     ▼
+analyst reviewer critic  (parallel, forked from preload)
+    │     │     │
+    └─────┼─────┘
+          ▼
+    synthesizer (exit, gated until all complete)
+```
+
+**Auto-wiring**:
+- Entry agent gets `checkpoint: true` automatically
+- Parallel agents get `fork_from: entry` automatically
+- Exit agent is gated until ALL parallel agents complete
+
+**Routing requirement**: Parallel agents must route to exit agent:
+```yaml
+routing:
+  preload:
+    complete:
+      analyst: "Ready for analysis"
+  analyst:
+    complete:
+      synthesizer: "Analysis done"
+  reviewer:
+    complete:
+      synthesizer: "Review done"
+  critic:
+    complete:
+      synthesizer: "Critique done"
+  synthesizer:
+    complete:
+      core: "Synthesis complete"
+```
+
+**vs FSM Ensemble**:
+
+| Feature | `parallelism:` | FSM `ensemble:` |
+|---------|---------------|-----------------|
+| Fork context | Yes (checkpoint) | No |
+| Result aggregation | No (just sync) | Yes (concat/vote/etc) |
+| Gating | Exit gated | FSM state transition |
+| Use case | Parallel work, shared context | Same task, multiple perspectives |
 
 ---
 

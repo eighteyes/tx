@@ -75,4 +75,5 @@ export {
   type ManifestEnforcementConfig,
   type MeshConfigLoaderOptions,
   type MeshConfigLoaderEvents,
+  type ParallelBlock,
 } from './config-loader.ts';

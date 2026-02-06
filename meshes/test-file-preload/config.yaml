@@ -1,0 +1,27 @@
+# Test mesh for agent-file-preload feature
+# Verifies: load array, glob patterns, model defaulting to haiku
+
+mesh: test-file-preload
+description: "Test mesh for file preload feature - loads files into agent context"
+
+agents:
+  - name: preloader
+    model: haiku  # Explicit for validator (load agents typically use haiku)
+    prompt: prompt.md
+    load:
+      - "package.json"
+      - "*.md"
+
+  - name: analyzer
+    model: sonnet
+    prompt: prompt.md
+
+entry_point: preloader
+
+routing:
+  preloader:
+    complete:
+      analyzer: "Files preloaded, ready for analysis"
+  analyzer:
+    complete:
+      core: "Analysis complete"

@@ -236,7 +236,7 @@ lifecycle:
 
 **FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm.
 
-**Parallel execution**: `ensemble: { type: parallel }` for FSM states - See `docs/mesh-fsm-config.md` "Ensemble States" section
+**Parallel execution**: `parallelism:` block for fork/join semantics (see Parallel Execution section below), or `ensemble: { type: parallel }` for FSM states
 
 **CRITICAL - FSM Entry Routing**: Entry agents in FSM ensemble meshes MUST fan out to ALL ensemble workers. FSM observes these messages to track state, but explicit routing triggers the workers.
 ```yaml
@@ -265,6 +265,149 @@ lifecycle:
 ```
 
 Available hooks: `worktree:create`, `commit:auto`, `brain-update`, `quality:*`. See `docs/mesh-config.md`.
+
+## File Preload
+
+Dump files into agent context before execution. Useful for preloading context without manual reads.
+
+```yaml
+agents:
+  - name: preloader
+    model: haiku        # Model defaults to haiku when load is set
+    prompt: prompt.md
+    load:
+      - "package.json"  # Exact file
+      - "*.md"          # Glob pattern
+      - "src/**/*.ts"   # Recursive glob
+```
+
+**Behavior:**
+- Files matched by glob patterns are read and injected into system prompt
+- Files over 200KB are skipped with warning
+- `node_modules/` and `.git/` are auto-excluded
+- Model defaults to `haiku` when `load` is set (cheap preloaders)
+
+**Use cases:**
+- Virtual "setup" agents that preload project context
+- Checkpoint entry points that establish shared context
+- Cheap haiku agents that read files before expensive opus agents work
+
+## Session Forking
+
+Share conversation context between agents via checkpoints.
+
+```yaml
+agents:
+  - name: setup
+    model: haiku
+    prompt: setup.md
+    load: ["package.json"]
+    checkpoint: true      # Save session for forking
+
+  - name: worker-a
+    model: sonnet
+    prompt: worker.md
+    fork_from: setup      # Fork from setup's checkpoint
+
+  - name: worker-b
+    model: opus
+    prompt: worker.md
+    fork_from: setup      # Same checkpoint, different agent
+```
+
+**Behavior:**
+- `checkpoint: true` saves the agent's sessionId on completion
+- `fork_from: agent-name` loads that checkpoint as the starting session
+- Forked agents continue from the checkpoint's conversation history
+- Works across models (haiku checkpoint → opus fork)
+
+**Use cases:**
+- Skip redundant prework (preload once, fork many)
+- Share established context across parallel workers
+- Model escalation with preserved context
+
+## Parallel Execution
+
+Fork from entry, run agents concurrently, join at exit.
+
+```yaml
+agents:
+  - name: preload
+    model: haiku
+    prompt: preload.md
+    load: ["package.json"]
+    # checkpoint: true auto-added
+
+  - name: analyst
+    model: sonnet
+    prompt: analyst.md
+    # fork_from: preload auto-added
+
+  - name: reviewer
+    model: sonnet
+    prompt: reviewer.md
+
+  - name: critic
+    model: sonnet
+    prompt: critic.md
+
+  - name: synthesizer
+    model: sonnet
+    prompt: synthesizer.md
+
+parallelism:
+  - agents: [analyst, reviewer, critic]
+    entry: preload        # Fork point (gets checkpoint: true)
+    exit: synthesizer     # Sync gate (waits for all)
+    timeout: 300000       # Optional: 5 min timeout
+    on_partial: continue  # continue | abort on partial failure
+```
+
+**Flow:**
+```
+preload (entry)
+    │ checkpoint
+    ├─────┼─────┐
+    ▼     ▼     ▼
+analyst reviewer critic  (parallel, forked from preload)
+    │     │     │
+    └─────┼─────┘
+          ▼
+    synthesizer (exit, gated until all complete)
+```
+
+**Auto-wiring:**
+- Entry agent gets `checkpoint: true` automatically
+- Parallel agents get `fork_from: entry` automatically
+- Exit agent is gated until ALL parallel agents complete
+
+**Routing:** Parallel agents must route to exit agent:
+```yaml
+routing:
+  preload:
+    complete:
+      analyst: "Ready for analysis"
+  analyst:
+    complete:
+      synthesizer: "Analysis done"
+  reviewer:
+    complete:
+      synthesizer: "Review done"
+  critic:
+    complete:
+      synthesizer: "Critique done"
+  synthesizer:
+    complete:
+      core: "Synthesis complete"
+```
+
+**vs FSM Ensemble:**
+| Feature | `parallelism:` | FSM `ensemble:` |
+|---------|---------------|-----------------|
+| Fork context | Yes (checkpoint) | No |
+| Result aggregation | No (just sync) | Yes (concat/vote/etc) |
+| Gating | Exit gated | FSM state transition |
+| Use case | Parallel work, shared context | Same task, multiple perspectives |
 
 ## FSM (State Tracking)
 
@@ -411,12 +554,17 @@ For ensemble `aggregation` field:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Agent identifier |
-| `model` | string | yes | `opus` / `sonnet` / `haiku` |
+| `model` | string | yes* | `opus` / `sonnet` / `haiku` (*defaults to `haiku` if `load` set, else `sonnet`) |
 | `prompt` | string | one of prompt/command | Path to prompt file |
 | `command` | string | one of prompt/command | Slash command (e.g., `/know:build`) |
 | `workspace` | object | no | Per-agent workspace config |
 | `mcpServers` | object | no | MCP server configurations |
 | `description` | string | no | Agent documentation |
+| `load` | array | no | Files to preload into context (globs supported) |
+| `checkpoint` | boolean | no | Save session state on completion for forking |
+| `fork_from` | string | no | Fork from another agent's checkpoint |
+| `max_turns` | number | no | API round-trip limit per invocation |
+| `max_messages` | number | no | Outbound message limit per invocation |
 
 ## Additional Config Fields
 
@@ -428,6 +576,11 @@ For ensemble `aggregation` field:
 | `idle_timeout_minutes` | number/false | Idle timeout (false=disabled) |
 | `clear-before` | boolean | Clear state before run |
 | `turn_workspace` | object | Turn-based game workspace |
+| `parallelism` | array | Parallel execution blocks (see Parallel Execution) |
+| `persistence` | boolean/array | Session persistence across mesh runs |
+| `routing_fallback` | string | Global fallback agent for routing errors |
+| `routing_retry_max` | number | Max messages per routing edge before fallback |
+| `manifest_enforcement` | object | Artifact validation settings |
 
 ## Route Validation
 

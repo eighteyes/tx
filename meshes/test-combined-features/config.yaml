@@ -1,0 +1,64 @@
+# Test mesh combining all new features
+# Tests: file preload + session forking + parallel execution
+
+mesh: test-combined-features
+description: "Combined test for preload, forking, and parallelism"
+
+agents:
+  # Entry: preloads files, creates checkpoint
+  - name: initializer
+    model: haiku  # Explicit for validator (load agents use haiku)
+    prompt: initializer.md
+    load:
+      - "package.json"
+      - "README.md"
+    checkpoint: true
+
+  # Parallel workers: fork from initializer
+  - name: code-analyzer
+    model: sonnet
+    prompt: code-analyzer.md
+    fork_from: initializer
+
+  - name: doc-analyzer
+    model: sonnet
+    prompt: doc-analyzer.md
+    fork_from: initializer
+
+  - name: structure-analyzer
+    model: haiku
+    prompt: structure-analyzer.md
+    fork_from: initializer
+    load:
+      - "src/**/*.ts"  # Additional preload for this agent
+
+  # Synthesis: waits for all parallel agents
+  - name: reporter
+    model: sonnet
+    prompt: reporter.md
+
+entry_point: initializer
+
+parallelism:
+  - agents: [code-analyzer, doc-analyzer, structure-analyzer]
+    entry: initializer
+    exit: reporter
+    timeout: 300000  # 5 minutes
+    on_partial: continue
+
+routing:
+  initializer:
+    complete:
+      code-analyzer: "Init complete, starting parallel analysis"
+  code-analyzer:
+    complete:
+      reporter: "Code analysis done"
+  doc-analyzer:
+    complete:
+      reporter: "Doc analysis done"
+  structure-analyzer:
+    complete:
+      reporter: "Structure analysis done"
+  reporter:
+    complete:
+      core: "All analysis complete, report ready"

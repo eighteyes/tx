@@ -30,7 +30,7 @@ import {
 } from '../quality/index.ts';
 import type { ParityReminderEvent, MeshCompleteEvent } from '../core/consumer.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
-import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent, type FSMDispatchEvent, MeshConfigLoader, type MeshConfig, type AgentConfig} from '../mesh/index.ts';
+import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent, type FSMFeedbackEvent, type FSMDispatchEvent, MeshConfigLoader, type MeshConfig, type AgentConfig, type ParallelBlock} from '../mesh/index.ts';
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
@@ -285,6 +285,24 @@ export class WorkerDispatcher extends EventEmitter {
   // Avoids stale session.yaml reads during preflight/post-validation
   // Key: mesh name, Value: resolved variable map (game-id, campaign-id, N, etc.)
   private cachedManifestVars: Map<string, Record<string, string>> = new Map();
+
+  // Session checkpoints for forking — saves sessionId when agent completes with checkpoint: true
+  // Key: `${meshName}/${agentName}`, Value: sessionId
+  // Used by fork_from to resume from a previous agent's checkpoint
+  // Note: Uses meshName (not meshInstance) so checkpoints persist within sequential mesh runs.
+  // For concurrent mesh runs, consider adding run IDs in the future.
+  private checkpoints: Map<string, string> = new Map();
+
+  // Parallel block tracking — manages fork/join execution for parallelism config
+  // Key: `${meshName}:${blockIndex}`, Value: { agents to run, completed agents, exit agent }
+  private parallelBlocks: Map<string, {
+    agents: Set<string>;      // Agents in this block
+    completed: Set<string>;   // Agents that have completed
+    exitAgent: string;        // Exit agent to ungate when all complete
+    entryAgent: string;       // Entry agent (fork point)
+    timeout?: number;         // Optional timeout
+    onPartial: 'continue' | 'abort';  // Behavior on partial failure
+  }> = new Map();
 
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
@@ -2647,6 +2665,16 @@ Please advise the agent or check mesh configuration.`;
     const agentId = `${meshName}/${agent.name}`;
     const { ensembleId, ensembleIndex, ensembleTotal, skipPostHooks, fsm: ensembleFsm, fsmStateConfig, task: ensembleTask } = options;
 
+    // Parallel gate: defer exit agent until all parallel agents complete
+    if (this.isParallelGated(meshName, agent.name)) {
+      log.info('dispatcher', 'Agent gated by incomplete parallel block - deferring spawn', {
+        agentId,
+        meshName,
+      });
+      // Task stays in queue, will be processed when parallel block completes
+      return;
+    }
+
     try {
       // For ensemble workers, use provided task; otherwise peek from queue
       const nextMsg = ensembleTask || this.queue.peekOne(agentId);
@@ -2884,6 +2912,61 @@ Please advise the agent or check mesh configuration.`;
       // Manifest paths — hoisted for chaos gate access
       const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
       const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
+
+      // Handle agent preload (load field) - inject file contents before agent starts
+      if (agent.load && agent.load.length > 0) {
+        const preloadedFiles: Array<{ path: string; content: string }> = [];
+        const glob = await import('fast-glob');
+
+        for (const pattern of agent.load) {
+          const resolvedPattern = path.isAbsolute(pattern)
+            ? pattern
+            : path.join(this.config.workDir, pattern);
+
+          try {
+            const matches = await glob.default(resolvedPattern, {
+              cwd: this.config.workDir,
+              absolute: true,
+              onlyFiles: true,
+              ignore: ['**/node_modules/**', '**/.git/**'],
+            });
+
+            for (const filePath of matches) {
+              if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                // Skip files > 200KB
+                if (stats.size > 200 * 1024) {
+                  log.warn('dispatcher', `Skipping large file in preload: ${filePath} (${stats.size} bytes)`);
+                  continue;
+                }
+                const content = fs.readFileSync(filePath, 'utf-8');
+                const relativePath = path.relative(this.config.workDir, filePath);
+                preloadedFiles.push({ path: relativePath, content });
+              }
+            }
+          } catch (err) {
+            log.warn('dispatcher', `Failed to resolve preload pattern: ${pattern}`, { error: String(err) });
+          }
+        }
+
+        if (preloadedFiles.length > 0) {
+          // Build preload section
+          const preloadSection = ['# Preloaded Files\n'];
+          for (const { path: filePath, content } of preloadedFiles) {
+            const ext = filePath.split('.').pop() || '';
+            preloadSection.push(`## ${filePath}`);
+            preloadSection.push(`\`\`\`${ext}`);
+            preloadSection.push(content);
+            preloadSection.push('```\n');
+          }
+          systemPrompt = `${systemPrompt}\n\n${preloadSection.join('\n')}`;
+          log.info('dispatcher', `Preloaded files for agent`, {
+            agentId,
+            count: preloadedFiles.length,
+            patterns: agent.load,
+          });
+        }
+      }
 
       // Inject file manifest contract if present
       if (meshConfig?.manifest) {
@@ -3193,6 +3276,23 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         log.info('dispatcher', `Using explicit session-id from frontmatter for ${agentId}`, {
           sessionId: sessionId.slice(0, 8) + '...'
         });
+      } else if (agent.fork_from) {
+        // Session forking: load checkpoint from parent agent
+        const checkpointKey = `${meshName}/${agent.fork_from}`;
+        const checkpointSession = this.checkpoints.get(checkpointKey);
+        if (checkpointSession) {
+          sessionId = checkpointSession;
+          log.info('dispatcher', `Forking session from ${agent.fork_from} for ${agentId}`, {
+            checkpointKey,
+            sessionId: sessionId.slice(0, 8) + '...'
+          });
+        } else {
+          log.warn('dispatcher', `fork_from specified but no checkpoint found for ${agent.fork_from}`, {
+            agentId,
+            checkpointKey,
+            availableCheckpoints: Array.from(this.checkpoints.keys()),
+          });
+        }
       } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
               || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
         const existingSession = this.queue.getConversationId(agentId);
@@ -3724,6 +3824,16 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           });
         }
 
+        // Save checkpoint for session forking (if agent has checkpoint: true)
+        if (agent.checkpoint && data.sessionId && meshName) {
+          const checkpointKey = `${meshName}/${agentName}`;
+          this.checkpoints.set(checkpointKey, data.sessionId);
+          log.info('dispatcher', `Checkpoint saved for ${agentId}`, {
+            checkpointKey,
+            sessionId: data.sessionId.slice(0, 8) + '...'
+          });
+        }
+
         // Emit quality pass if we had preflight and made it here without errors
         if (workerHookContext.qualityPreflight) {
           this.emit('quality:pass', {
@@ -3791,6 +3901,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           // Refresh cached manifest variables from session.yaml (now up-to-date)
           const wsLocations = (meshConfig as any)?.workspace?.locations || {};
           this.cachedManifestVars.set(meshName, this.resolveManifestVariables(meshName, wsLocations));
+
+          // Parallel block handling: spawn parallel agents when entry completes
+          if (meshConfig?.parallelism) {
+            this.handleParallelBlockCompletion(meshName, agent.name, meshConfig);
+          }
         }
 
         this.emit('worker:complete', {
@@ -4250,6 +4365,131 @@ ${output}
       })),
       sessionId,
     };
+  }
+
+  /**
+   * Handle parallel block completion - spawn parallel agents when entry completes,
+   * track parallel agent completions, and ungate exit when all parallel agents done.
+   */
+  private handleParallelBlockCompletion(meshName: string, completedAgentName: string, meshConfig: MeshConfig): void {
+    if (!meshConfig.parallelism) return;
+
+    for (let i = 0; i < meshConfig.parallelism.length; i++) {
+      const block = meshConfig.parallelism[i];
+      const blockKey = `${meshName}:${i}`;
+
+      // Case 1: Entry agent completed - spawn parallel agents
+      if (completedAgentName === block.entry) {
+        log.info('dispatcher', 'Parallel block entry completed - spawning parallel agents', {
+          meshName,
+          entryAgent: block.entry,
+          parallelAgents: block.agents,
+        });
+
+        // Initialize block tracking state
+        this.parallelBlocks.set(blockKey, {
+          agents: new Set(block.agents),
+          completed: new Set(),
+          exitAgent: block.exit,
+          entryAgent: block.entry,
+          timeout: block.timeout,
+          onPartial: block.on_partial || 'continue',
+        });
+
+        // Spawn all parallel agents concurrently
+        for (const agentName of block.agents) {
+          const agentConfig = meshConfig.agents.find(a => a.name === agentName);
+          if (agentConfig) {
+            // Write task message to trigger the parallel agent
+            this.writeParallelAgentTask(meshName, agentName, block.entry);
+          }
+        }
+
+        this.emit('parallel:spawn', {
+          meshName,
+          blockKey,
+          agents: block.agents,
+          entry: block.entry,
+          exit: block.exit,
+        });
+      }
+
+      // Case 2: Parallel agent completed - track completion
+      const blockState = this.parallelBlocks.get(blockKey);
+      if (blockState && blockState.agents.has(completedAgentName)) {
+        blockState.completed.add(completedAgentName);
+
+        log.info('dispatcher', 'Parallel agent completed', {
+          meshName,
+          agent: completedAgentName,
+          completed: blockState.completed.size,
+          total: blockState.agents.size,
+        });
+
+        // Check if all parallel agents are done
+        if (blockState.completed.size === blockState.agents.size) {
+          const exitAgentId = `${meshName}/${blockState.exitAgent}`;
+
+          log.info('dispatcher', 'All parallel agents completed - exit agent ungated', {
+            meshName,
+            exitAgent: blockState.exitAgent,
+            completedAgents: Array.from(blockState.completed),
+          });
+
+          this.emit('parallel:complete', {
+            meshName,
+            blockKey,
+            exitAgent: blockState.exitAgent,
+            completedAgents: Array.from(blockState.completed),
+          });
+
+          // Clean up block state BEFORE triggering exit agent
+          this.parallelBlocks.delete(blockKey);
+
+          // Trigger exit agent - process any queued messages
+          this.processNextQueuedMessage(exitAgentId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Write a task message to trigger a parallel agent
+   */
+  private writeParallelAgentTask(meshName: string, agentName: string, entryAgent: string): void {
+    const taskId = `parallel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const filename = `${taskId}.md`;
+    const filepath = path.join(this.config.msgsDir, filename);
+
+    const content = `---
+to: ${meshName}/${agentName}
+from: system
+type: task
+---
+
+Forked from parallel entry: ${entryAgent}
+`;
+
+    fs.writeFileSync(filepath, content, 'utf-8');
+    log.info('dispatcher', 'Wrote parallel agent task', {
+      meshName,
+      agentName,
+      taskId,
+      filepath,
+    });
+  }
+
+  /**
+   * Check if an agent is gated by an incomplete parallel block
+   */
+  isParallelGated(meshName: string, agentName: string): boolean {
+    for (const [blockKey, state] of this.parallelBlocks.entries()) {
+      if (blockKey.startsWith(`${meshName}:`) && state.exitAgent === agentName) {
+        // Exit agent is gated until all parallel agents complete
+        return state.completed.size < state.agents.size;
+      }
+    }
+    return false;
   }
 
   /**

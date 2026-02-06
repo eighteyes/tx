@@ -87,15 +87,29 @@ export interface MeshGuardrailConfig extends MeshGuardrailOverrides {
   agents?: Record<string, MeshGuardrailOverrides>;
 }
 
+/**
+ * Parallel execution block configuration
+ */
+export interface ParallelBlock {
+  agents: string[];       // Agents to run in parallel
+  entry: string;          // Fork point (must have checkpoint: true)
+  exit: string;           // Sync gate (waits for all parallel agents)
+  timeout?: number;       // Optional: max wait time in ms
+  on_partial?: 'continue' | 'abort';  // Behavior when some agents fail (default: continue)
+}
+
 export interface AgentConfig {
   name: string;
-  model: SemanticModel;
+  model: SemanticModel;  // Required (config loader defaults to haiku when load is set)
   prompt?: string;  // Path to prompt file (required unless command is set)
   command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   max_turns?: number;  // API round-trip limit per invocation (runtime guardrail)
   max_messages?: number;  // Outbound message limit per worker invocation (chaos contract)
+  load?: string[];  // Files to preload into context (globs supported, validated against manifest reads)
+  checkpoint?: boolean;  // Save session state on completion for forking
+  fork_from?: string;  // Fork from another agent's checkpoint
 }
 
 /**
@@ -129,6 +143,7 @@ export interface MeshConfig {
   manifest?: ManifestEntry[];  // File I/O manifest: declares files, readers/writers, locations
   manifest_enforcement?: ManifestEnforcementConfig;  // Artifact validation settings
   guardrails?: MeshGuardrailConfig;  // Per-mesh guardrail overrides (mesh-local wins over global)
+  parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -350,6 +365,61 @@ export class MeshConfigLoader extends EventEmitter {
       // Transform FSM config if needed (object-style states → array-style)
       if (config.fsm) {
         config.fsm = this.normalizeFSMConfig(config.fsm);
+      }
+
+      // Normalize agent configs: default model to haiku when load is specified
+      for (const agent of config.agents) {
+        if (!agent.model && agent.load && agent.load.length > 0) {
+          (agent as any).model = 'haiku';
+        } else if (!agent.model) {
+          (agent as any).model = 'sonnet';  // Default model when not specified
+        }
+      }
+
+      // Normalize parallel blocks: validate and auto-wire fork_from/checkpoint
+      if (config.parallelism && config.parallelism.length > 0) {
+        const agentNames = new Set(config.agents.map(a => a.name));
+
+        for (const block of config.parallelism) {
+          // Validate agents exist
+          for (const agentName of block.agents) {
+            if (!agentNames.has(agentName)) {
+              log.error('config-loader', `Parallel block references unknown agent: ${agentName}`, {
+                mesh: config.mesh,
+                blockEntry: block.entry,
+              });
+            }
+          }
+
+          // Validate entry and exit exist
+          if (!agentNames.has(block.entry)) {
+            log.error('config-loader', `Parallel block entry agent not found: ${block.entry}`, { mesh: config.mesh });
+          }
+          if (!agentNames.has(block.exit)) {
+            log.error('config-loader', `Parallel block exit agent not found: ${block.exit}`, { mesh: config.mesh });
+          }
+
+          // Auto-add checkpoint: true to entry agent
+          const entryAgent = config.agents.find(a => a.name === block.entry);
+          if (entryAgent && !entryAgent.checkpoint) {
+            (entryAgent as any).checkpoint = true;
+            log.debug('config-loader', `Auto-enabled checkpoint for parallel entry: ${block.entry}`, {
+              mesh: config.mesh,
+            });
+          }
+
+          // Auto-add fork_from: entry to parallel agents (if not explicitly set)
+          for (const agentName of block.agents) {
+            const agent = config.agents.find(a => a.name === agentName);
+            if (agent && !agent.fork_from) {
+              (agent as any).fork_from = block.entry;
+              log.debug('config-loader', `Auto-wired fork_from for parallel agent: ${agentName}`, {
+                mesh: config.mesh,
+                forkFrom: block.entry,
+              });
+            }
+          }
+        }
       }
 
       // Store base path for relative prompt resolution

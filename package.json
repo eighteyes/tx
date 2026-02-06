@@ -26,6 +26,7 @@
     "better-sqlite3": "^11.0.0",
     "chokidar": "^4.0.0",
     "dotenv": "^17.2.3",
+    "fast-glob": "^3.3.3",
     "ioredis": "^5.9.0",
     "tar": "^6.2.0",
     "ws": "^8.18.3",
