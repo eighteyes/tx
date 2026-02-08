@@ -75,6 +75,12 @@ agents:
     # phase 1 - Scene structure, beats, transitions, pacing
     # Identifies decision points for player agency
 
+  - name: dialogue
+    model: sonnet
+    prompt: dialogue/prompt.md
+    # phase 2 - Character voice specialist
+    # Drafts dialogue for each exchange beat with delivery/subtext
+
   - name: system
     model: sonnet
     prompt: system/prompt.md
@@ -218,7 +224,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle ⇄ scene-crafter → narrator → linters → editor → scribe → core
+  # Phase flow: entry → game-coord|init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle ⇄ scene-crafter → dialogue → narrator → linters → editor → scribe → core
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
 
   # Phase coordinators
@@ -271,10 +277,12 @@ routing:
   fates:
     message:
       dramaturg: "World branches written → analyze story position"
+      scene-crafter: "Table-extend complete — subtable added to entropy-tables.yaml"
 
   dramaturg:
     message:
       possibility: "Outcome shapes ready → synthesize weights"
+      scene-crafter: "Table-extend complete — mechanical notes added"
 
   possibility:
     message:
@@ -292,11 +300,18 @@ routing:
     message:
       core: "Mid-turn player decisions"
       oracle: "Scene outline complete → validate continuity"
+      fates: "Table-extend OR micro-table request — new subtable or micro-injection"
+      dramaturg: "Table-extend request — add mechanical notes to new subtable"
 
   oracle:
     message:
-      narrator: "Continuity approved → render prose | Knowledge query response"
+      dialogue: "Continuity approved → draft character voices"
       scene-crafter: "Continuity violations → fix outline"
+      narrator: "Knowledge query response"
+
+  dialogue:
+    message:
+      narrator: "Dialogue drafted → render prose"
 
   scribe:
     message:
@@ -386,19 +401,13 @@ manifest:
   - id: context.yaml
     description: Turn context seeded by coordinator, consumed by creative agents
     location: workspace
-    reads: [dramaturg, system, cast, scene-crafter, narrator, scribe, fates, possibility]
+    reads: [dramaturg, system, cast, scene-crafter, narrator, scribe, fates, possibility, dialogue]
     writes: [init-turn]
 
-  - id: turn-brief.md
-    description: Turn initialization brief with player action and narrative state
-    location: workspace
-    reads: [dramaturg, system, cast, scene-crafter, fates]
-    writes: [entry, init-turn]
-
   - id: intent.yaml
-    description: Clarified player intent, hopes, and off-table outcomes from HITL
+    description: Single source for player action — raw input, clarified intent, hopes, off-table outcomes
     location: workspace
-    reads: [dramaturg, system]
+    reads: [fates, dramaturg, possibility, system, cast, scene-crafter, narrator]
     writes: [init-turn]
 
   - id: action-lock.yaml
@@ -422,8 +431,14 @@ manifest:
   - id: entropy-tables.yaml
     description: Weighted probability tables synthesized from fates + dramaturg
     location: workspace
-    reads: [system]
-    writes: [possibility]
+    reads: [system, scene-crafter, fates, dramaturg]
+    writes: [possibility, fates, dramaturg]
+
+  - id: entropy-selection.yaml
+    description: Resolved entropy outcomes from primary + subtable rolls
+    location: workspace
+    reads: [scene-crafter, narrator, scribe]
+    writes: [system]
 
   - id: resolution.yaml
     description: Mechanical outcome tables and trait resolution
@@ -434,14 +449,20 @@ manifest:
   - id: reactions.yaml
     description: NPC reactions and character voice responses
     location: workspace
-    reads: [scene-crafter, narrator, scribe, oracle]
+    reads: [scene-crafter, narrator, scribe, oracle, dialogue]
     writes: [cast]
 
   - id: scene-outline.yaml
     description: Scene beats, pacing, and decision points
     location: workspace
-    reads: [narrator, oracle, visual, scribe]
+    reads: [narrator, oracle, visual, scribe, dialogue]
     writes: [scene-crafter]
+
+  - id: dialogue.yaml
+    description: Character-specific dialogue drafts with delivery notes and subtext
+    location: workspace
+    reads: [narrator]
+    writes: [dialogue]
 
   - id: prose-draft.md
     description: Working prose draft iterated through lint/edit cycle
@@ -523,7 +544,7 @@ manifest:
     description: Individual character entity files (traits, bonds, state)
     location: game
     persistent: true
-    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, calibrator]
+    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, calibrator, dialogue]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt

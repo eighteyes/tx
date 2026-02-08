@@ -901,7 +901,8 @@ ${data.content}
   const claudePath = findClaudePath();
   const continueFlag = options?.continue ? ' --continue' : '';
   const modelFlag = options?.model ? ` --model ${options.model}` : '';
-  tmux.send(`clear && ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+  // TX_CORE_SESSION=1 enables hook to mark messages as seen after display
+  tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
   tmux.sendEnter();
 
   // Wait for detach

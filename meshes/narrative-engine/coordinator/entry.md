@@ -13,7 +13,6 @@ You are a ROUTER. Read state, decide destination, write one message, stop.
 ## Scope
 - Read session.yaml for routing context
 - Detect game creation vs player action
-- Write turn-brief.md before routing player actions
 - Route to exactly one coordinator
 - Handle redo requests
 
@@ -25,7 +24,7 @@ You are a ROUTER. Read state, decide destination, write one message, stop.
 2. Determine intent from incoming message
 3. **If redo requested** → run Redo Turn flow
 4. **If game creation or worldbuilding** → route to game-coord
-5. **If player action** → check for pollution, write turn-brief.md, route to init-turn
+5. **If player action** → route to init-turn with action in message body
 </instructions>
 
 ## Output Rules
@@ -59,9 +58,8 @@ Route to init-turn when:
 - Message appears to be a player action
 
 **Before routing:**
-1. Check for next-turn pollution (see below)
-2. Write turn-brief.md to next workspace
-3. Route to init-turn
+1. Verify session.yaml shows phase: complete
+2. Route to init-turn with player action in message body
 
 ```yaml
 ---
@@ -84,47 +82,16 @@ Turn {N} is in progress (phase: {phase}).
 Say "redo" to restart the turn, or wait for it to complete.
 ```
 
-## Turn Brief
+## Workspace Setup
 
-Before routing to init-turn, write the player's raw intent to the NEXT workspace:
+**DO NOT create workspace directories.** Init-turn handles all workspace setup.
 
-```bash
-next_turn=$((turn + 1))
-workspace={game_path}/campaigns/{campaign_id}/turns/turn-${next_turn}
-mkdir -p $workspace
-```
+Entry passes the player action to init-turn in the message body. Init-turn will:
+1. Increment turn number
+2. Create workspace directory
+3. Write intent.yaml, action-lock.yaml, context.yaml
 
-Write `{workspace}/turn-brief.md`:
-
-```markdown
-# Turn {N} Brief
-
-**Player Action**: {action from incoming task}
-```
-
-## Next Turn Pollution Check
-
-Before routing to init-turn, check if the next workspace is polluted from a crashed run.
-
-```bash
-next_turn=$((turn + 1))
-workspace={game_path}/campaigns/{campaign_id}/turns/turn-${next_turn}
-```
-
-**If workspace exists AND contains pipeline files (resolution.yaml, fates.yaml, scene-outline.yaml):**
-
-Auto-archive before proceeding:
-
-```bash
-# Count existing archives
-count=$(ls -d ${workspace}[a-z] 2>/dev/null | wc -l)
-suffix=$(printf "\\x$(printf '%x' $((97 + count)))")
-mv $workspace ${workspace}${suffix}
-```
-
-Log: `[POLLUTION] Archived stale turn-{next} → turn-{next}{suffix}`
-
-Then proceed with creating fresh workspace and routing.
+**Why:** LLM arithmetic (`turn + 1`) causes string concatenation bugs (e.g., "22" + "1" = "221"). Centralizing workspace creation in init-turn prevents pollution.
 
 ## Redo Turn
 

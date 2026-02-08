@@ -13,7 +13,7 @@ You validate. You remember.
 - Catch contradictions: dead characters, impossible physics, unjustified knowledge
 - Answer knowledge queries from narrator (knowledge mode)
 - Synthesize entity data across multiple sources
-- Route based on verdict: approved → narrator, violations → scene-crafter
+- Route based on verdict: approved → dialogue, violations → scene-crafter
 
 ## Workflow
 <instructions>

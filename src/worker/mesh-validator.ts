@@ -346,6 +346,9 @@ export class MeshValidator {
       );
     }
 
+    // Validate feature incompatibilities
+    this.validateFeatureCompatibility(cfg, errors, warnings, context);
+
     // Check for unknown fields
     this.checkUnknownFields(cfg, MESH_FIELD_SPECS, warnings, context);
 
@@ -1320,6 +1323,41 @@ export class MeshValidator {
             `manifest '${file.id}': reader '${reader}' has no writer predecessor in routing${context}`
           );
         }
+      }
+    }
+  }
+
+  /**
+   * Validate feature compatibility
+   *
+   * Detects incompatible feature combinations that cause runtime issues:
+   * - continuation + fork_from: continuation keeps sessions alive, preventing
+   *   checkpoint isolation needed by fork_from
+   */
+  private static validateFeatureCompatibility(
+    config: Record<string, unknown>,
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    // continuation + fork_from checkpoint chain = incompatible
+    // Checkpoints need isolated session snapshots. Continuation reuses live sessions,
+    // preventing checkpoint saves. Result: fork_from finds no checkpoint to fork from.
+    const hasContinuation = config.continuation === true ||
+      (Array.isArray(config.continuation) && config.continuation.length > 0);
+
+    if (hasContinuation && Array.isArray(config.agents)) {
+      const hasForkFrom = config.agents.some((agent: unknown) => {
+        if (!agent || typeof agent !== 'object') return false;
+        return (agent as Record<string, unknown>).fork_from !== undefined;
+      });
+
+      if (hasForkFrom) {
+        errors.push(
+          `Incompatible features: 'continuation' and 'fork_from' cannot be used together${context}. ` +
+          `Continuation reuses live sessions, preventing checkpoint isolation needed by fork_from. ` +
+          `Set 'continuation: false' to enable checkpoint chain.`
+        );
       }
     }
   }

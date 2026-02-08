@@ -213,6 +213,64 @@ extract_event_id() {
     return 1
 }
 
+# Extract player outcome type (catastrophic, failure, mixed, success, breakthrough, transformational)
+extract_player_type() {
+    local entropy="$1"
+    local in_table=0
+    local current_type=""
+    local matched=0
+
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^player_outcome_table: ]]; then
+            in_table=1
+            continue
+        fi
+
+        if [[ $in_table -eq 1 && "$line" =~ ^[a-z_]+: && ! "$line" =~ ^[[:space:]] ]]; then
+            break
+        fi
+
+        if [[ $in_table -eq 1 && "$line" =~ "- range:" ]]; then
+            if [[ $matched -eq 1 ]]; then
+                echo "$current_type"
+                return 0
+            fi
+            current_range=$(echo "$line" | sed 's/.*range:[[:space:]]*//' | tr -d '"')
+            local low=$(echo "$current_range" | cut -d'-' -f1)
+            local high=$(echo "$current_range" | cut -d'-' -f2)
+            if [[ $entropy -ge $low && $entropy -le $high ]]; then
+                matched=1
+            else
+                matched=0
+            fi
+            current_type=""
+            continue
+        fi
+
+        if [[ $in_table -eq 1 && $matched -eq 1 && "$line" =~ ^[[:space:]]+type: ]]; then
+            current_type=$(echo "$line" | sed 's/.*type:[[:space:]]*//' | tr -d '"')
+        fi
+    done < "$ENTROPY_TABLES"
+
+    if [[ $matched -eq 1 ]]; then
+        echo "$current_type"
+        return 0
+    fi
+
+    echo ""
+    return 1
+}
+
+# List all branch tables with their triggers (for agent evaluation)
+# Output: YAML-formatted list of tables and trigger conditions
+list_branch_tables() {
+    yq '.branch_tables | to_entries | .[] | {
+        "table": .key,
+        "triggers": .value.triggers,
+        "outcome_count": (.value.outcomes | length)
+    }' "$ENTROPY_TABLES" 2>/dev/null || echo "# No branch tables found"
+}
+
 # Check if a branch table exists for given event_id
 branch_table_exists() {
     local event_id="$1"
@@ -405,33 +463,15 @@ case "$MODE" in
         # 1. Resolve player outcome
         PLAYER_OUTCOME=$(extract_outcome "player_outcome_table" "$PLAYER_ENTROPY")
         PLAYER_MECHANICAL=$(extract_mechanical_note "player_outcome_table" "$PLAYER_ENTROPY")
+        PLAYER_TYPE=$(extract_player_type "$PLAYER_ENTROPY") || PLAYER_TYPE=""
 
         # 2. Resolve world event
         WORLD_OUTCOME=$(extract_outcome "world_event_table" "$WORLD_ENTROPY")
         WORLD_EVENT_ID=$(extract_event_id "$WORLD_ENTROPY") || WORLD_EVENT_ID=""
         WORLD_MECHANICAL=$(extract_mechanical_note "world_event_table" "$WORLD_ENTROPY")
 
-        # 3. Check for branch table and resolve if exists
-        BRANCH_CHAIN=""
-        BRANCH_ENTROPY=""
-        BRANCH_ID=""
-        BRANCH_MECHANICAL=""
-        if [[ -n "$WORLD_EVENT_ID" && "$WORLD_EVENT_ID" != "none" ]]; then
-            if branch_table_exists "$WORLD_EVENT_ID"; then
-                BRANCH_ENTROPY=$(get_next_branch_entropy)
-                BRANCH_OUTCOME=$(resolve_branch_outcome "$WORLD_EVENT_ID" "$BRANCH_ENTROPY") || BRANCH_OUTCOME=""
-                BRANCH_ID=$(resolve_branch_id "$WORLD_EVENT_ID" "$BRANCH_ENTROPY") || BRANCH_ID=""
-                BRANCH_MECHANICAL=$(extract_branch_mechanical_note "$WORLD_EVENT_ID" "$BRANCH_ENTROPY")
-
-                if [[ -n "$BRANCH_OUTCOME" && "$BRANCH_OUTCOME" != "NO_BRANCH_MATCH" ]]; then
-                    BRANCH_CHAIN="branch_entropy: $BRANCH_ENTROPY
-branch_id: $WORLD_EVENT_ID.$BRANCH_ID
-branch_outcome: |
-$(echo "$BRANCH_OUTCOME" | sed 's/^/  /')
-branch_mechanical: \"$BRANCH_MECHANICAL\""
-                fi
-            fi
-        fi
+        # 3. List available branch tables (agent evaluates triggers, calls subtable mode)
+        BRANCH_TABLE_LIST=$(list_branch_tables)
 
         # === WRITE PRIMARY OUTPUT ===
         cat > "$OUTPUT" << 'HEADER'
@@ -443,6 +483,7 @@ HEADER
         cat >> "$OUTPUT" << EOF
 entropy_pool: [$POOL_STR]
 player_entropy: $PLAYER_ENTROPY
+player_type: $PLAYER_TYPE
 player_outcome: |
 $(echo "$PLAYER_OUTCOME" | sed 's/^/  /')
 player_mechanical: "$PLAYER_MECHANICAL"
@@ -452,18 +493,16 @@ world_event_id: $WORLD_EVENT_ID
 world_outcome: |
 $(echo "$WORLD_OUTCOME" | sed 's/^/  /')
 world_mechanical: "$WORLD_MECHANICAL"
+
+# Available branch tables — agent evaluates triggers and calls subtable mode
+# Use: entropy-resolver.sh <workspace> subtable <table_name>
+available_branches:
+$(echo "$BRANCH_TABLE_LIST" | sed 's/^/  /')
 EOF
 
-        if [[ -n "$BRANCH_CHAIN" ]]; then
-            echo "" >> "$OUTPUT"
-            echo "$BRANCH_CHAIN" >> "$OUTPUT"
-        fi
-
-        echo "Player: $PLAYER_ENTROPY → $(echo "$PLAYER_OUTCOME" | head -1 | cut -c1-60)..."
+        echo "Player: $PLAYER_ENTROPY → $PLAYER_TYPE"
         echo "World: $WORLD_ENTROPY → $WORLD_EVENT_ID"
-        if [[ -n "$BRANCH_CHAIN" ]]; then
-            echo "Branch: $BRANCH_ENTROPY → $WORLD_EVENT_ID.$BRANCH_ID"
-        fi
+        echo "Branch tables listed — agent evaluates triggers"
         ;;
 
     subtable|followon)

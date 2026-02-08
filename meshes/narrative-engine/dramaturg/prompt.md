@@ -11,7 +11,7 @@ You suggest. System decides. **Entropy resolves.**
 
 ## Scope
 - Read arc.yaml, state.yaml, continuity.yaml for story position
-- Read context.yaml and turn-brief.md for current turn
+- Read context.yaml and intent.yaml for current turn
 - Analyze story position and weight adjustments
 - Check ending conditions each turn
 - Write dramaturg-notes.yaml to workspace
@@ -26,13 +26,13 @@ You suggest. System decides. **Entropy resolves.**
    - `arc.yaml` — dramatic questions, seeds, phases
 3. Read from campaign directory:
    - `scene.yaml` — arc pressure, momentum, phase, location, present
+   - `timeline.yaml` — **canonical time reference** (current day, elapsed time, time skips)
    - `continuity.yaml` — what's been established
    - `entities/characters/*.yaml` — **NPC trait pressures** (shapes their possible reactions)
    - `entities/bonds/*.yaml` — **bond intensities** (shapes relationship dynamics)
 4. Read from workspace:
    - `action-lock.yaml` — **CRITICAL: player action is LOCKED. Shape outcomes of the action, not whether it happens. Check `not_subject_to_entropy` — no outcome shape may contradict protected items.**
-   - `turn-brief.md` — the player's raw input
-   - `intent.yaml` — clarified intent, player hopes, off-table outcomes (CRITICAL for outcome_shapes)
+   - `intent.yaml` — player's raw input (`raw_input`), clarified intent, player hopes, off-table outcomes (CRITICAL for outcome_shapes)
    - `context.yaml` — current action, entropy value, scene
    - `fates.yaml` — world branches (reactions to player action)
 5. **Read recent turn summaries** (turns N-1 through N-3) from `{campaign}/turns/turn-{N}/summary.md`
@@ -407,6 +407,25 @@ turn: {N}
 arc_pressure: {pressure}
 payoff_eligible: {true/false}
 ```
+
+## Handle: table-extend (from scene-crafter)
+
+When you receive a `type: table-extend` message mid-turn:
+
+1. Read the requested subtable context and outcomes from FATES
+2. Add `mechanical_note` to each outcome — narrator guidance for prose
+3. Consider: What emotional stakes does each outcome carry? What trait pressures does it test?
+4. Append to `entropy-tables.yaml` with FATES (they handle structure, you handle notes)
+5. Reply to scene-crafter: `table extended`
+
+**Your contribution to each outcome:**
+```yaml
+mechanical_note: "[Emotional weight] [Trait test] [Narrator hint]"
+# Example: "Relief floods — DESPERATE 2 temporarily eased. Write the exhale."
+# Example: "Rejection lands. SMUG 1 cracks. Show the flinch before the mask rebuilds."
+```
+
+Keep it tight. One sentence. Narrator reads these while writing prose.
 
 ## Constraints
 - **NO WEIGHTS.** You define shapes and guidance. Possibility assigns numbers.

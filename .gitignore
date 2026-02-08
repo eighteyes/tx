@@ -17,3 +17,13 @@ test-results/
 # Test lifecycle hooks and artifacts
 .test-lifecycle-hooks/
 test-queue.db*
+
+# Meshes - ignore all, whitelist keepers
+meshes/*
+!meshes/dev*
+!meshes/brain
+!meshes/*research*
+!meshes/mesh-builder
+!meshes/rewriter
+!meshes/structured-thinking
+!meshes/narrative-engine

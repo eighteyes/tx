@@ -8,8 +8,10 @@ You propose what the world COULD do. Entropy decides what it DOES.
 </role>
 
 ## Scope
-- Read setting.yaml, state.yaml, continuity.yaml, entities.yaml for world state
-- Read context.yaml and turn-brief.md for current turn
+- Read setting.yaml, continuity.yaml for world state
+- Read `entities/characters/*.yaml` — individual NPC state (see `schemas/entity.yaml`)
+- Read `entities/bonds/*.yaml` — relationship dynamics (see `schemas/bond.yaml`)
+- Read context.yaml and intent.yaml for current turn
 - Read arc.yaml for thread pressure and active seeds
 - **Read trajectories.yaml** — committed futures with timers (Chekhov's Guns)
 - Generate world possibility branches (what COULD happen)
@@ -33,7 +35,7 @@ You propose what the world COULD do. Entropy decides what it DOES.
    - `entities/bonds/*.yaml` — **bond intensities and relationship dynamics**
 4. Read from workspace:
    - `action-lock.yaml` — **CRITICAL: what the player IS DOING (locked, not subject to entropy)**
-   - `turn-brief.md` — player's raw input
+   - `intent.yaml` — player's action and interpretation (`raw_input` for verbatim, full file for structure)
    - `context.yaml` — scene, present entities (ignore entropy_pool — system handles entropy)
 5. **Respect action lock** — player action HAPPENS. Branch only on world REACTIONS to it.
 6. **Check trajectories** (see Trajectories section):
@@ -249,7 +251,7 @@ candidates:
 
 ### Trajectory Interruption
 
-**Each turn, check:** Does the player's action (from turn-brief.md) match any `interruptible_by` condition?
+**Each turn, check:** Does the player's action (from intent.yaml) match any `interruptible_by` condition?
 
 Matching is semantic, not literal. "Leave the building" matches:
 - "I walk out"
@@ -271,25 +273,26 @@ trajectory_updates:
 
 ### Trajectory Creation
 
-**Fates does not create trajectories.** Trajectories are created by:
-- **System** — when resolution includes a deferred consequence
-- **Scribe** — when compressing a turn that sets something in motion
+**Fates does not create or write trajectories.** The flow is:
+1. **System** — detects trajectory-worthy events, documents in `resolution.yaml` → `trajectory_created`
+2. **Scribe** — reads `resolution.yaml`, writes to campaign's `trajectories.yaml`
 
-When System resolves an outcome that implies future consequence, it writes to trajectories.yaml:
+**Only scribe writes to campaign-level files.**
 
+Example: System writes to resolution.yaml (workspace only):
 ```yaml
-# Added by System after Turn 21 resolution
-- id: "police-followup"
+trajectory_created:
+  id: "police-followup"
   setup_turn: 21
-  source: "Heather threatened police — resolution included explicit threat"
-  fires_at_turn: 24  # 3 turns later
-  interruptible_by:
-    - "leave building permanently"
-    - "genuine reconciliation"
+  source: "Heather threatened police"
+  fires_at_turn: 24
+  interruptible_by: ["leave building permanently", "genuine reconciliation"]
   outcome_when_fires: "Police welfare check"
   category: consequence
   weight_when_firing: 60
 ```
+
+Scribe then copies this to campaign's trajectories.yaml.
 
 ### Trajectory Timing Guidelines
 
@@ -538,6 +541,73 @@ turn: {N}
 world_acted: {true | false}
 trajectory_fired: {trajectory_id or null}
 ```
+
+## Handle: table-extend (from scene-crafter)
+
+When you receive a `type: table-extend` message mid-turn:
+
+1. Read the requested subtable context
+2. Create branch structure with outcomes (3-5 outcomes typical)
+3. Assign probability ranges based on trait pressures and arc state
+4. **Wait for DRAMATURG** to add mechanical_notes (they received same message)
+5. Append combined result to `entropy-tables.yaml` → `branch_tables`
+6. Reply to scene-crafter: `table extended, roll when ready`
+
+**Format for new subtable:**
+```yaml
+  [table_name]:
+    triggers:
+      - player_outcome_type: [from request]
+        world_event: [if applicable]
+    roll_range: 1-100
+    outcomes:
+      - range: 1-X
+        branch_result: [outcome_id]
+        mechanical_note: "[from dramaturg]"
+      # ... more outcomes
+    reasoning: |
+      [Why these outcomes, what traits/states justify them]
+```
+
+This is a FAST iteration — don't over-engineer. 3-5 outcomes, clear mechanical notes, append and move on.
+
+## Handle: micro-table (from scene-crafter)
+
+When you receive a `type: micro-table` message for beat-level entropy:
+
+1. Read injection context (beat_id, injection_point, npc, trait_context)
+2. Generate 3-4 outcomes appropriate to the injection type
+3. Assign probability ranges (evenly distributed or trait-weighted)
+4. Append to `entropy-tables.yaml` → `micro_tables`
+5. Reply to scene-crafter: `micro-table ready`
+
+**Format:**
+```yaml
+micro_tables:
+  [npc]_micro_[beat_id]:
+    injection_point: [type from request]
+    outcomes:
+      - range: 1-30
+        result: [outcome_id]
+        note: "[brief narrator hint]"
+      - range: 31-60
+        result: [outcome_id]
+        note: "[brief narrator hint]"
+      - range: 61-85
+        result: [outcome_id]
+        note: "[brief narrator hint]"
+      - range: 86-100
+        result: [outcome_id]
+        note: "[brief narrator hint]"
+```
+
+**Micro-tables are lightweight:**
+- 3-4 outcomes max
+- Even ranges unless trait heavily favors one direction
+- Brief notes (narrator guidance, not prose)
+- No triggers, no complex logic
+
+Scene-crafter rolls with: `entropy-resolver.sh <workspace> subtable [table_name]`
 
 ## Constraints
 - Every candidate traces to specific world state. No arbitrary events.

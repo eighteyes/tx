@@ -38,6 +38,20 @@ Message body content here.
 
 \`\`\`
 
+### Message ID Generation
+
+When you need a unique ID for \`msg-id\`, use ONE of these safe methods:
+
+\`\`\`bash
+# PREFERRED: timestamp-based (fast, never hangs)
+$(date +%s%N | tail -c 8)
+
+# ALTERNATIVE: uuidgen (if available)
+$(uuidgen | cut -c1-8)
+\`\`\`
+
+**NEVER use**: \`cat /dev/urandom | tr -dc ...\` — this can hang indefinitely.
+
 ### Human-in-the-Loop (HITL)
 
 To ask the human a question, send a message to \`core/core\`:

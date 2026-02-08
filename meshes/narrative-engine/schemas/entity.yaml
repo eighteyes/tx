@@ -1,0 +1,232 @@
+# Entity Schema Definition
+# Canonical format for character entities
+# Referenced by: calibrator (creation), scribe (evolution), all readers
+
+# =============================================================================
+# CHARACTER ENTITY SCHEMA
+# =============================================================================
+# Game-level: Starting state (pressure 1, empty episodes)
+# Campaign-level: Evolved state (updated pressures, episode history)
+
+character:
+  # --- IDENTITY ---
+  id: "{kebab-case-name}"           # e.g., "kaitlin-reyes"
+  entity_type: character
+  name:
+    first: "{First}"
+    surname: "{Surname}"
+  protagonist: true | false          # Only one true per game
+
+  # --- APPEARANCE (for visual interpreter) ---
+  # REQUIRED: Entities without appearance.visual_tags are INVALID
+  appearance:
+    age: "{decade}s"                 # "mid-20s", "early 40s" — REQUIRED
+    ethnicity: "{description}"       # REQUIRED
+    build: "{body type}"             # REQUIRED
+    hair: "{description}"            # REQUIRED
+    skin: "{description}"            # REQUIRED
+    face: "{notable features}"       # optional
+    style: "{clothing aesthetic}"    # REQUIRED
+    colors: "{preferred palette}"    # optional
+    visual_tags: "{REQUIRED — prompt-ready description for image generation}"
+    # visual_tags MUST be:
+    # - Self-contained (no character names)
+    # - 10-25 words
+    # - Include: gender, age range, ethnicity, hair, skin, build, style
+    #
+    # Good: "petite Latina woman, mid-20s, long black hair, olive skin, casual clothes"
+    # Bad: "Kaitlin with long black hair" (name in prompt)
+    # Bad: "woman" (too vague)
+    # Bad: "A beautiful young woman with flowing locks..." (prose, not tags)
+
+  # --- FOUNDATION (psychological bedrock) ---
+  foundation:
+    ideology: "{belief system}"      # What framework they build self on
+    function: "{what it provides}"   # Why they need it
+    shadow: "{hidden cost}"          # What it protects them from seeing
+
+  # --- TRAITS ---
+  traits:
+    # Starting traits with baseline pressure
+    starting:
+      TRAIT_NAME:
+        pressure: 1                  # Always 1 at game start
+        description: "{what it looks like}"
+        function: "{what it does for them}"
+        shadow: "{what it costs them}"
+      # Repeat for each trait (typically 3-5)
+
+    # Evolved traits (campaign only, added by scribe)
+    evolved: {}                      # Empty at game start
+    # Example when populated:
+    # evolved:
+    #   MERCILESS_CLARITY:
+    #     from: INTELLIGENT
+    #     pressure: 6
+    #     description: "..."
+
+    # Psychological profile
+    wound: "{core injury}"
+    lie: "{what they tell themselves}"
+    wants: "{conscious desire}"
+    needs: "{unconscious need}"
+    blind_spot: "{what they can't see about themselves}"
+
+    # Voice templates (for narrator/cast internal voice)
+    # REQUIRED: Every trait in starting MUST have a voices entry
+    voices:
+      TRAIT_NAME:
+        speaks_as: "{example internal monologue — how this trait sounds in first person}"
+      # speaks_as is the trait's VOICE, not description
+      # Good: "You see it. You can't stop seeing it. Every angle, every flaw."
+      # Bad: "She notices details and analyzes them." (description, not voice)
+      #
+      # Calibrator must extract speaks_as for EVERY trait in starting section
+
+  # --- HIDDEN PAST (optional but powerful) ---
+  # Calibrator extracts if player mentions secrets, history, criminal past
+  hidden_past:
+    exists: true | false             # Quick check flag
+
+    # What happened
+    incident:
+      what: "{brief description}"
+      when: "{relative time — 'before the story', '3 years ago'}"
+      where: "{location if relevant}"
+      severity: "minor | moderate | severe | life-altering"
+
+    # Who knows
+    knowledge:
+      who_knows: ["{character_id}"]  # List of characters with this info
+      who_suspects: ["{character_id}"]
+      could_discover: ["{character_id}"]  # Characters who might find out
+      public_record: true | false    # Searchable? Court records?
+
+    # Pattern recognition
+    pattern:
+      connects_to_traits: ["{TRAIT}"]  # Which traits formed from this
+      trigger_conditions: "{what reactivates this}"
+      current_relevance: "{how it connects to present story}"
+
+    # Narrative implications
+    implications:
+      if_revealed: "{what happens when this comes out}"
+      protects_with: "{how they hide it — ideology, performance, geography}"
+      leaks_through: "{how it shows despite protection}"
+
+  # --- PROGRESSIVE DISCLOSURE LAYERS ---
+  layers:
+    first_glance:
+      - "{observable detail}"
+      - "{observable detail}"
+    familiar:
+      - "{known behavior pattern}"
+      - "{known behavior pattern}"
+    intimate:
+      - "{vulnerable truth}"
+      - "{vulnerable truth}"
+
+  # --- EPISODE HISTORY ---
+  episodes: []                       # Empty at game start
+  # Campaign adds brief episodes:
+  # - turn: N
+  #   event: "{one sentence}"
+  #   trait_changes: {TRAIT: delta}  # optional
+  #   bond_changes: {bond_id: delta} # optional
+  #
+  # KEEP EPISODES BRIEF. No narrative essays.
+  # Max 3 lines per episode. Scribe responsibility.
+
+  # --- CURRENT STATE ---
+  current_state:
+    location: "Unknown"              # Set by scene, not stored long-term
+    armor_status: "intact"           # intact | cracked | shattered
+    vulnerability_state: "defended"  # defended | exposed | raw
+    # DO NOT store arc_pressure here - that's in scene.yaml
+    # DO NOT store turn-specific narrative - that's in prose
+
+  # --- BONDS (references only) ---
+  bonds: []                          # List of bond entity IDs
+  # e.g., ["heather_kaitlin"]
+  # Full bond data lives in /entities/bonds/{id}.yaml
+
+# =============================================================================
+# NPC ENTITY (simplified)
+# =============================================================================
+# NPCs have same structure but may omit:
+# - hidden_past (unless relevant)
+# - Some psychological depth
+# - protagonist: false (or omit)
+
+# =============================================================================
+# WHAT GOES WHERE
+# =============================================================================
+#
+# IN ENTITY FILE:
+# - Identity, appearance, foundation
+# - Trait definitions with pressure values
+# - Psychological profile (wound/lie/wants/needs)
+# - Layers for progressive disclosure
+# - Brief episode log
+# - Bond references
+#
+# NOT IN ENTITY FILE (belongs elsewhere):
+# - arc_pressure (scene.yaml)
+# - Turn-specific narrative/prose
+# - Detailed turn-by-turn state changes
+# - Bond intensity/history (bond entities)
+# - Location (scene.yaml.closing.positions)
+
+# =============================================================================
+# EVOLUTION RULES (for scribe)
+# =============================================================================
+#
+# SCRIBE MAY UPDATE:
+# - traits.starting.{TRAIT}.pressure (1-5)
+# - traits.evolved (add new evolved traits)
+# - episodes (append brief entries)
+# - current_state.armor_status
+# - current_state.vulnerability_state
+# - bonds (add new bond references)
+#
+# SCRIBE MUST NOT:
+# - Add arc_pressure to entity
+# - Write narrative essays in episodes
+# - Duplicate scene data into entity
+# - Modify foundation (immutable)
+# - Modify layers (calibrator-only)
+
+# =============================================================================
+# VALIDATION RULES (for calibrator)
+# =============================================================================
+#
+# REQUIRED FIELDS — entity is INVALID without these:
+# - id
+# - name.first
+# - name.surname
+# - appearance.visual_tags (10-25 words, no names)
+# - appearance.age
+# - appearance.ethnicity
+# - appearance.build
+# - appearance.hair
+# - appearance.skin
+# - appearance.style
+# - foundation.ideology
+# - foundation.function
+# - foundation.shadow
+# - traits.starting (at least 2 traits)
+# - traits.wound
+# - traits.lie
+# - traits.wants
+# - traits.needs
+# - layers.first_glance (at least 2 items)
+#
+# CROSS-VALIDATION:
+# - Every trait in traits.starting MUST have entry in traits.voices
+# - traits.voices.{TRAIT}.speaks_as must be first-person voice, not description
+# - appearance.visual_tags must NOT contain character name
+#
+# FORBIDDEN SURNAMES (AI defaults — never use):
+# Smith, Johnson, Williams, Brown, Jones, Garcia, Miller, Davis, Wilson, Moore,
+# Chen, Wang, Li, Zhang, Liu, Lee, Kim, Park, Nguyen, Patel, Taylor, Anderson,
+# Thomas, Jackson, White, Harris, Martin, Thompson, Robinson, Clark, Lewis

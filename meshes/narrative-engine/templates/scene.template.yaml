@@ -1,0 +1,34 @@
+# scene.template.yaml
+# Consolidated scene state - replaces state.yaml + closing.yaml
+# Campaign level = current state. Turn folders preserve history.
+
+turn: {N}
+
+# Arc state (formerly in state.yaml)
+arc:
+  pressure: {0-200}
+  phase: "{rising|complication|climax|catastrophe|falling}"
+  momentum: "{rising|peak|falling|stable|threshold}"
+
+# Scene geography
+location: "{physical location description}"
+present: ["{character_id}", "{character_id}"]
+pov_character: "{character_id}"
+
+# Physical closing state (formerly closing.yaml)
+closing:
+  door: "{open|closed|ajar}"
+  positions:
+    "{character_id}": "{physical position and facing}"
+    "{character_id}": "{physical position or 'offscreen'}"
+  objects: ["{visible object}", "{visible object}"]
+  time: "{morning|afternoon|evening|night}"
+
+# Narrative suspension point
+suspended:
+  action: "{what just happened or is about to happen}"
+  question: "{what hangs unresolved}"
+
+# Prose anchor for continuity
+prose_anchor: |
+  {Last 2-3 sentences of prose.md - verbatim ending}

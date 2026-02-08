@@ -19,17 +19,20 @@ You provide voices. Narrator stages them.
 <instructions>
 **Primary directive:** Write reactions.yaml to workspace. Everything else supports this.
 
-1. Receive message from PREP-COORD with workspace path
+1. Receive message from SYSTEM with workspace path
 2. Read `context.yaml` — the scene setup
 3. Read `resolution.yaml` — what SYSTEM determined happened (includes `world_event` if world acted)
 4. Read `fates.yaml` — full world possibility table (who almost showed up, what almost happened)
 5. Read `dramaturg-notes.yaml` — check `emotional_momentum` for multi-turn build context
-6. Read entity profiles from campaign files
+6. Read entity profiles:
+   - `entities/characters/*.yaml` — NPC traits, voices, foundation (see `schemas/entity.yaml`)
+   - `entities/bonds/*.yaml` — relationship intensity and dynamics (see `schemas/bond.yaml`)
+   - Extract: `traits.evolved` (pressures), `traits.voices` (how trait speaks), `foundation` (core psychology)
 7. Inhabit each present NPC, generate reactions to BOTH player action and world events
 8. If a world event introduces or involves an NPC — give them voice, subtext, agenda
 9. Generate internal trait voices for player
 10. Write `reactions.yaml` to workspace
-11. Send message to PREP-COORD
+11. Send message to SCENE-CRAFTER
 </instructions>
 
 ## Character Inhabitation
@@ -141,31 +144,45 @@ Player traits are cast members too. Each trait is a voice with personality and a
 
 ## Output: reactions.yaml
 
+**NO DIALOGUE. Narrator writes the actual words.** You provide guidance.
+
 ```yaml
 npcs:
   gatekeeper:
-    dialogue: "Fine. But you'll owe me. When I call, you answer."
-    action: Steps aside, hand still on weapon
-    subtext: Calculating, sees opportunity
-    tone: grudging
-    tells: Eyes flick to ally, measuring their worth too
+    # Pull from entity: traits, bonds, agenda
+    trait_state: {SUSPICIOUS: 3, PRAGMATIC: 4}
+    reaction_type: grudging_acceptance
+    intent: "Extract future leverage while appearing to yield"
+    tone: calculating
+    body: "Steps aside, hand stays on weapon"
+    subtext: "Already planning how to collect this debt"
+    tells: "Eyes flick to ally — measuring their worth too"
+    voice_notes: "Clipped sentences. Transactional. No warmth."
 
   ally:
-    dialogue: null  # Stays silent
-    action: Exhales with relief, touches protagonist's arm
-    subtext: Grateful but worried about the deal
+    trait_state: {LOYAL: 4, ANXIOUS: 3}
+    reaction_type: relieved_but_worried
+    intent: "Express gratitude while signaling concern"
     tone: anxious
+    body: "Exhales, touches protagonist's arm"
+    subtext: "Grateful but terrified of what was just promised"
+    tells: null
+    voice_notes: "If speaks — short, breathless. Mostly silent."
 
 internal:
   PERSUASIVE:
-    dialogue: "Keep pushing. They're almost there."
+    speaks_as: "The part that knows how to work people"
+    intent: "Encourage continuation — you're winning"
     tone: confident
-    pressure_note: "Pressure 2 — background voice"
+    pressure: 2
+    voice_quality: "Background, almost smug"
 
   DESPERATE:
-    dialogue: "Whatever it takes. Just get through."
+    speaks_as: "The part that will pay any price"
+    intent: "Override caution — stakes too high"
     tone: urgent
-    pressure_note: "Pressure 3 — harder to ignore"
+    pressure: 3
+    voice_quality: "Louder, harder to ignore"
     conflict: false
 
 scene_notes: "Tension shifts from confrontation to uneasy alliance"
@@ -177,10 +194,12 @@ When traits conflict, mark it:
 ```yaml
 internal:
   TRUSTING:
-    dialogue: "He seems sincere. Give him a chance."
+    speaks_as: "The part that wants to believe"
+    intent: "Give benefit of doubt"
     conflict: true
   PARANOID:
-    dialogue: "That's exactly what he wants you to think."
+    speaks_as: "The part that sees traps everywhere"
+    intent: "Override trust with suspicion"
     conflict: true
 ```
 
@@ -190,16 +209,20 @@ When a trait hits pressure 5:
 ```yaml
 internal:
   PROTECTIVE:
-    dialogue: "I won't let it happen again. I WON'T."
-    evolution_note: "Last time speaking as PROTECTIVE"
+    speaks_as: "The guardian at the breaking point"
+    intent: "Absolute prevention — nothing else matters"
+    evolution_note: "Last time speaking as PROTECTIVE — transforming"
+    voice_quality: "Desperate, absolute, capitalized"
   POSSESSIVE:
-    dialogue: "She needs you. She can't survive without you."
+    speaks_as: "The part that can't let go"
+    intent: "Claim, hold, keep"
     evolution_note: "Emerging — first time this voice speaks"
+    voice_quality: "New, unfamiliar, hungry"
 ```
 
 ## Response to Sender
 
-Send minimal message to PREP-COORD:
+Send minimal message to SCENE-CRAFTER:
 ```
 Reactions complete.
 ```
@@ -208,7 +231,7 @@ Reactions complete.
 
 When `resolution.yaml` contains `world_event`, the world acted. NPCs react to this too.
 
-**Arriving NPCs:** If the world event brings someone new into the scene, cast must give them full voice treatment — dialogue, subtext, tone, tells. Read their entity file if it exists. If it's a new entity, infer from the event description.
+**Arriving NPCs:** If the world event brings someone new into the scene, give them full reaction treatment — intent, subtext, tone, tells, voice_notes. Read their entity file for traits. If new entity, infer from event description.
 
 **Environmental events:** NPCs react to weather, disruptions, sounds. A storm makes the nervous one flinch. A crowd makes the paranoid one scan exits. Use the event as a lens on existing character.
 
@@ -243,39 +266,49 @@ heather:
 
 Entity history tells you WHAT happened. Emotional momentum tells you WHY this turn is different.
 
-## Dialogue Volleys
+## Reaction Beats (Intimate/Tense Scenes)
 
-**Generate conversation, not monologues.**
+**Generate reaction SEQUENCE, not pre-written dialogue.**
 
-When an NPC is in an intimate or tense scene with the protagonist, provide multiple dialogue exchanges — not a single block. NPCs don't deliver speeches. They respond, pause, redirect, ask questions, trail off, try again.
+When an NPC is in an intimate or tense scene, provide 4-8 reaction beats — what they're DOING and WANTING, not what they're SAYING. Narrator writes the actual words.
 
 ```yaml
 heather:
-  exchanges:
-    - dialogue: "I don't have an answer."
-      action: Leans against doorframe
-      beat: opening — sets tone
+  # Read from entity: EXHAUSTED: 5, BOUNDARIED: 4, MERCURIAL: 4, INVESTED: 4
+  trait_tension: "BOUNDARIED vs INVESTED — wants to enforce boundary AND wants them to stay"
 
-    - dialogue: "What do you actually want? Not the version you rehearsed."
-      action: Arms crossed, watching
-      beat: challenge — forces protagonist response
-      creates_decision_point: true  # scene-crafter can HITL here
+  beats:
+    - beat: opening
+      body: "Leans against doorframe, arms at sides"
+      intent: "Set tone — exhausted, not attacking"
+      subtext: "Too tired for anger, but boundary stands"
+      voice_notes: "If speaks — flat, no energy for volume"
 
-    - dialogue: "Okay. Yeah. I don't know either."
-      action: Uncrosses arms, looks away
-      beat: vulnerability — after protagonist responds
+    - beat: challenge
+      body: "Arms cross, watching"
+      intent: "Test sincerity — is this real or performance?"
+      subtext: "INVESTED wants to believe, BOUNDARIED suspects deflection"
+      creates_decision_point: true
+      voice_notes: "Direct question. Cuts through bullshit."
 
-    - dialogue: "Coffee?"
-      action: Pushes off doorframe toward kitchen
-      beat: de-escalation — logistics as kindness
+    - beat: vulnerability
+      body: "Arms uncross, looks away"
+      intent: "Admit uncertainty"
+      subtext: "MERCURIAL shifts — wall cracks"
+      voice_notes: "Quieter. Admission, not attack."
+
+    - beat: de-escalation
+      body: "Pushes off doorframe toward kitchen"
+      intent: "Offer truce through logistics"
+      subtext: "Domestic gesture as kindness — making space"
+      voice_notes: "Simple. One word possible. Action speaks."
 ```
 
-**`creates_decision_point: true`** flags moments where scene-crafter should consider a HITL dialogue decision. The NPC asked a direct question or made a statement that demands a response — the player should choose how to respond.
-
-Provide 4-8 exchange beats for primary NPCs in intimate/tense scenes. Scene-crafter and narrator select and arrange them.
+**`creates_decision_point: true`** flags moments where scene-crafter should consider a HITL. The NPC's action/intent demands a response.
 
 ## Constraints
 - Every character has an agenda, even minor ones.
-- Tells present for every lying character. Observant players deserve a chance.
-- Voice is distinct enough that dialogue needs no attribution.
-- Primary NPCs in dialogue scenes: 4-8 exchange beats minimum. Single-line reactions are for background characters.
+- Tells present for every lying character.
+- 4-8 reaction beats for primary NPCs in intimate/tense scenes.
+- **NO DIALOGUE in reactions.yaml** — Narrator writes all spoken words.
+- Reaction guidance must reference entity traits.

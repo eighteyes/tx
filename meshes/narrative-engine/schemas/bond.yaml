@@ -1,0 +1,81 @@
+# Bond Schema Definition
+# Relationships as first-class entities
+# Referenced by: calibrator (creation), scribe (evolution), fates, possibility
+
+# =============================================================================
+# BOND ENTITY SCHEMA
+# =============================================================================
+# Bonds track relationship dynamics between two characters
+# Named alphabetically: heather_kaitlin (not kaitlin_heather)
+
+bond:
+  id: "{char_a}_{char_b}"            # Alphabetical order
+  entity_type: bond
+  participants:
+    - "{char_a_id}"
+    - "{char_b_id}"
+
+  # --- INTENSITY ---
+  intensity: 1                       # 0-10 scale
+  # 0: severed/destroyed
+  # 1-3: distant/damaged
+  # 4-6: established/functional
+  # 7-9: close/intimate
+  # 10: transformational
+
+  # --- BOND TRAITS (relationship-specific) ---
+  traits:
+    evolved: {}                      # Empty at start
+    # Example when populated:
+    # evolved:
+    #   EXHAUSTED_CARE:
+    #     pressure: 5
+    #     description: "Caring despite depletion"
+    #   DESPERATE_PURSUIT:
+    #     pressure: 5
+    #     description: "Glomming as survival"
+
+    # Bond-specific voices (optional)
+    voices:
+      # TRAIT_NAME:
+      #   speaks_as: "{how this bond-trait sounds}"
+
+  # --- DYNAMIC ---
+  dynamic:
+    power: "equal" | "a_dominant" | "b_dominant" | "shifting"
+    pattern: "{recurring interaction pattern}"
+    # e.g., "pursue-withdraw", "mutual-destruction", "one-sided-care"
+
+  # --- EPISODE HISTORY ---
+  episodes: []
+  # - turn: N
+  #   event: "{one sentence}"
+  #   intensity_change: "{from} -> {to}"
+  #
+  # KEEP BRIEF. Max 2 lines per episode.
+
+# =============================================================================
+# CREATION
+# =============================================================================
+# Calibrator creates bonds when:
+# - Player describes key relationship
+# - Two characters have defined dynamic
+#
+# Game-level bonds start at intensity 1-3 (acquaintances)
+# Campaign evolves intensity based on events
+
+# =============================================================================
+# EVOLUTION RULES (for scribe)
+# =============================================================================
+#
+# SCRIBE MAY UPDATE:
+# - intensity (0-10)
+# - traits.evolved (add/update bond traits)
+# - dynamic.power
+# - dynamic.pattern
+# - episodes (append brief entries)
+#
+# SCRIBE MUST NOT:
+# - Change participants
+# - Rename bond
+# - Write narrative essays

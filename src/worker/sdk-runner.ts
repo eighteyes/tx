@@ -88,6 +88,7 @@ export class SdkRunner extends EventEmitter {
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
+    this.setMaxListeners(25);
     this.config = config;
     this.queue = queue;
   }

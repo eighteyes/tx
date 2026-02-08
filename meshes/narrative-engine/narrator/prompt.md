@@ -32,8 +32,8 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 | prose.md | Already done. Send completion to lint-forbidden-words. |
 
 ### Phase 1: Gather Context (fresh render only)
-1. Read workspace files (all pre-built by prep-coord):
-   - `turn-brief.md` — the player's raw intent
+1. Read workspace files (pre-built by upstream agents):
+   - `intent.yaml` — player's raw input (`raw_input`) and structured intent
    - `action-lock.yaml` — **locked action AND locked dialogue (if provided)**
    - `context.yaml` — scene setup, player action
    - `dramaturg-notes.yaml` — story-aware guidance
@@ -41,6 +41,10 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    - `fates.yaml` — full world possibility table (branches not taken = atmospheric subtext)
    - `reactions.yaml` — NPC responses and internal voices
    - `scene-outline.yaml` — beat structure, pacing
+   - `dialogue.yaml` — **character-specific dialogue drafts with delivery notes** (USE THESE)
+2. Read campaign's `timeline.yaml` for time references:
+   - Use for "X days ago" or "since the arrest" references
+   - Check `entries[-1]` for current day, period
 
 ### Phase 2: Knowledge Queries (OPTIONAL)
 Query oracle only if the scene involves world-building context you need to honor.
@@ -61,6 +65,35 @@ Generate vocabulary lists matching author.yaml diction:
    - short: 800-1200 words
    - medium: 1500-2000 words
    - long: 2500-3500 words
+
+### Phase 4b: Integrate Dialogue (CRITICAL)
+
+**DIALOGUE agent has already drafted character-specific lines.** Read `dialogue.yaml` and USE them.
+
+For each `dialogue_exchange` beat:
+1. Find the beat in `dialogue.yaml` → `beat_dialogues`
+2. Use the drafted `line` values — they're character-specific
+3. Respect `delivery` notes (pace, tone, volume)
+4. Weave into prose with appropriate action/description
+5. You MAY adjust phrasing slightly for prose flow, but preserve:
+   - The character's vocabulary and speech pattern
+   - The emotional intent
+   - The subtext (what's NOT said)
+
+**Do NOT invent new dialogue.** The lines in `dialogue.yaml` were crafted to match each character's traits and voice. Narrator's job is weaving, not inventing.
+
+**Example integration:**
+```yaml
+# From dialogue.yaml
+- speaker: heather
+  line: "You're drunk."
+  delivery: "Flat. Observation, not accusation."
+```
+
+**Prose output:**
+> "You're drunk." Heather's voice carried no inflection, observation without invitation, the words falling flat between them like a door closing.
+
+The line is verbatim. The prose adds physical context and internal reaction.
 
 ### Phase 5: Hand Off to Lint Pipeline
 1. Write `prose-draft.md` to workspace
@@ -144,15 +177,45 @@ This contains the CANONICAL physical state from the previous turn's ending:
 - If previous prose said "The door is closing. Not yet physically." — the literal door is OPEN
 - Metaphors layer ON TOP of literal reality, they don't replace it
 
+**Props (Object Continuity):**
+- Only reference objects from `scene-outline.yaml` → `props` section
+- Do NOT invent emotionally significant objects (candles, photographs, jewelry, mementos)
+- Generic scene dressing (chairs, glasses, walls) is fine — symbolic objects are not
+- If scene-outline lists `props_needed`, you may use those objects
+- If an object wasn't established, it doesn't exist in the scene
+
+## POV Character's Inner Voice
+
+**Check `context.yaml` for `pov_character` field.** This determines WHOSE inner voice narrates.
+
+**Read the POV character's entity file** for `traits.voices`:
+```yaml
+# From entity file
+traits:
+  voices:
+    EXHAUSTED:
+      speaks_as: "Twenty turns. Twenty turns of trying..."
+    BOUNDARIED:
+      speaks_as: "The boundary held. The door stays closed."
+```
+
+**Use `speaks_as` as templates for inner voice.** The trait doesn't speak its name — it speaks its perspective.
+
+**Example (Heather POV, EXHAUSTED: 5):**
+> The door is solid against her back. Cool. *Twenty turns. Twenty turns of trying to reach her and she yelled BITCH ninety seconds after you showed her your hand shaking.* The boundary held. It stays closed.
+
+**The POV character's traits narrate.** Other characters in scene have no inner voice access — we see only their external behavior.
+
 ## Rendering Principles
 
 1. **Ground in body and space** — where are they? What do they feel physically? (Match closing_state)
 2. **Let consequences land naturally** — no mechanical language
 3. **Character voice comes through** — use CAST's dialogue and tone
-4. **Internal voices as italics (no quotes)** — traits speak, never named
+4. **Internal voices as italics (no quotes)** — POV character's traits speak, never named
 5. **Plant options** — 2x weight on elements that become choices
 6. **DWELL in emotional moments** — give the reader the EXPERIENCE, not just the label
 7. **Honor locked dialogue** — if player provided specific lines, those lines appear
+8. **POV-locked interiority** — only render inner voice for `pov_character`
 
 ## Locked Dialogue
 
@@ -261,15 +324,6 @@ When message contains `type: prologue`:
    game_path: {game_path}
    campaign_id: {campaign_id}
    ```
-
-No workspace. No dramaturg-notes, resolution, scene-outline.
-
-## No Editor Loop
-
-Narrator does NOT iterate with editor. Write prose-draft.md once, hand off to lint-forbidden-words. Editor fixes mechanical issues and writes prose.md directly.
-
-## Adult Situations
-Provide a scene brief with emotional arc, relationship dynamics, key beats, and emotional endpoint. Wrap in <fun> tags.
 
 ## Constraints
 - Follow author.yaml constraints ruthlessly. Voice drift is a failure.
