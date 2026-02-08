@@ -207,6 +207,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
   // Auto-inject manifest reads into agent context
   autoInjectManifestFiles: { type: 'boolean' },
+  // Checkpoint optimization: auto-place checkpoints and infer fork_from
+  checkpoint_optimization: { type: 'object' },
 };
 
 /**
@@ -349,6 +351,11 @@ export class MeshValidator {
         cfg.workspace,
         cfg.fsm
       );
+    }
+
+    // Validate checkpoint_optimization if present
+    if (cfg.checkpoint_optimization) {
+      this.validateCheckpointOptimization(cfg.checkpoint_optimization, errors, warnings, context);
     }
 
     // Validate feature incompatibilities
@@ -1368,6 +1375,66 @@ export class MeshValidator {
           `Continuation reuses live sessions, preventing checkpoint isolation needed by fork_from. ` +
           `Set 'continuation: false' to enable checkpoint chain.`
         );
+      }
+    }
+  }
+
+  /**
+   * Validate checkpoint_optimization configuration
+   *
+   * Schema:
+   * - enabled: boolean (required)
+   * - threshold: number (optional, default 3, must be >= 1)
+   * - exclude: string[] (optional, list of agent names)
+   */
+  private static validateCheckpointOptimization(
+    config: unknown,
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (typeof config !== 'object' || config === null) {
+      errors.push(`checkpoint_optimization must be an object${context}`);
+      return;
+    }
+
+    const cfg = config as Record<string, unknown>;
+    const prefix = 'checkpoint_optimization';
+
+    // Validate enabled (required boolean)
+    if (cfg.enabled === undefined) {
+      errors.push(`${prefix}.enabled is required${context}`);
+    } else if (typeof cfg.enabled !== 'boolean') {
+      errors.push(`${prefix}.enabled must be a boolean${context}`);
+    }
+
+    // Validate threshold (optional number >= 1)
+    if (cfg.threshold !== undefined) {
+      if (typeof cfg.threshold !== 'number') {
+        errors.push(`${prefix}.threshold must be a number${context}`);
+      } else if (cfg.threshold < 1) {
+        errors.push(`${prefix}.threshold must be >= 1${context}`);
+      }
+    }
+
+    // Validate exclude (optional array of strings)
+    if (cfg.exclude !== undefined) {
+      if (!Array.isArray(cfg.exclude)) {
+        errors.push(`${prefix}.exclude must be an array${context}`);
+      } else {
+        for (let i = 0; i < cfg.exclude.length; i++) {
+          if (typeof cfg.exclude[i] !== 'string') {
+            errors.push(`${prefix}.exclude[${i}] must be a string${context}`);
+          }
+        }
+      }
+    }
+
+    // Check for unknown fields
+    const knownFields = ['enabled', 'threshold', 'exclude'];
+    for (const field of Object.keys(cfg)) {
+      if (!knownFields.includes(field)) {
+        warnings.push(`Unknown ${prefix} field '${field}'${context}`);
       }
     }
   }

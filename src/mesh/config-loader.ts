@@ -23,6 +23,8 @@ import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingM
 import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
+import { runCheckpointOptimization } from './checkpoint-optimizer.ts';
+import type { CheckpointOptimizationConfig, CheckpointOptimizationResult } from './checkpoint-optimizer.ts';
 
 /**
  * Routing destination in mesh config
@@ -147,6 +149,7 @@ export interface MeshConfig {
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
+  checkpoint_optimization?: CheckpointOptimizationConfig;  // Auto-checkpoint and fork inference from manifest
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -423,6 +426,16 @@ export class MeshConfigLoader extends EventEmitter {
             }
           }
         }
+      }
+
+      // Run checkpoint optimization if enabled and manifest is present
+      if (config.checkpoint_optimization?.enabled && config.manifest && config.manifest.length > 0) {
+        runCheckpointOptimization(
+          config.agents,
+          config.manifest,
+          config.checkpoint_optimization,
+          config.mesh
+        );
       }
 
       // Store base path for relative prompt resolution

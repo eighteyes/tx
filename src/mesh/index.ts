@@ -77,3 +77,13 @@ export {
   type MeshConfigLoaderEvents,
   type ParallelBlock,
 } from './config-loader.ts';
+
+// Checkpoint Optimizer (static checkpoint optimization from manifest)
+export {
+  computeCheckpointScores,
+  autoEnableCheckpoints,
+  inferForkFrom,
+  runCheckpointOptimization,
+  type CheckpointOptimizationConfig,
+  type CheckpointOptimizationResult,
+} from './checkpoint-optimizer.ts';

@@ -749,6 +749,89 @@ agents:
 
 ---
 
+## Checkpoint Optimization
+
+Automatically place checkpoints and infer fork_from based on manifest analysis.
+
+### `checkpoint_optimization`
+- **Type**: `object`
+- **Required**: No
+- **Behavior**: Analyzes the mesh manifest to automatically:
+  1. Enable `checkpoint: true` for high-fanout agents (many downstream readers)
+  2. Infer `fork_from` for agents that read from a single checkpointed writer
+
+#### Configuration Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable auto-checkpoint and fork inference |
+| `threshold` | number | `3` | Fanout threshold: agents with score >= threshold get checkpoint |
+| `exclude` | string[] | `[]` | Agents to never auto-checkpoint |
+
+#### Fanout Scoring
+
+Each agent is scored by how many other agents read files it writes:
+
+```
+Agent score = sum of reader counts for each file the agent writes
+```
+
+For example, if agent `setup` writes to `context.md` which is read by 5 other agents, and writes to `config.yaml` read by 3 agents, its score is 8.
+
+#### Behavior
+
+- **Auto-checkpoint**: Agents with score >= threshold get `checkpoint: true` (unless explicitly set or excluded)
+- **Auto-fork**: Agents that read from exactly one checkpointed writer get `fork_from` inferred
+- **Explicit wins**: Explicit `checkpoint` or `fork_from` in agent config is never overridden
+
+#### Example
+
+```yaml
+mesh: narrative-engine
+description: "Story generation with shared context"
+
+checkpoint_optimization:
+  enabled: true
+  threshold: 3
+  exclude: [scribe]  # Never auto-checkpoint the scribe
+
+manifest:
+  - id: context.md
+    writes: [init-turn]
+    reads: [fates, dramaturg, possibility, dialogue, narrator, scene-crafter]
+  - id: scene.md
+    writes: [scene-crafter]
+    reads: [dialogue, narrator]
+
+agents:
+  - name: init-turn
+    model: haiku
+    prompt: init-turn.md
+    # Auto: checkpoint: true (score: 6)
+
+  - name: scene-crafter
+    model: sonnet
+    prompt: scene-crafter.md
+    # Auto: checkpoint: true (score: 2... wait, below threshold!)
+    # Auto: fork_from: init-turn (reads from init-turn only)
+
+  - name: dialogue
+    model: sonnet
+    prompt: dialogue.md
+    # Auto: fork_from: scene-crafter (reads from scene-crafter only)
+```
+
+**Result of optimization** (logged at mesh load):
+```
+checkpoint-optimizer: Checkpoint analysis complete
+  meshName: narrative-engine
+  scores: { init-turn: 6, scene-crafter: 2 }
+  autoCheckpointed: [init-turn]
+  inferredForks: { scene-crafter: init-turn, dialogue: scene-crafter }
+```
+
+---
+
 ## Parallel Execution
 
 Fork from entry, run agents concurrently, join at exit.
