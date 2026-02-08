@@ -37,6 +37,12 @@ interface MaxMessagesOverride {
   limit?: number | null;
 }
 
+interface MaxMeshMessagesOverride {
+  strict?: boolean;
+  warning?: boolean;
+  limit?: number | null;
+}
+
 interface MaxTurnsOverride {
   strict?: boolean;
   warning?: boolean;
@@ -71,6 +77,7 @@ interface MeshOverrides extends AgentOverrides {
   agents?: Record<string, AgentOverrides>;
   artifact?: ArtifactConfig;
   edge_limit?: EdgeLimitConfig;
+  max_mesh_messages?: MaxMeshMessagesOverride | number | null;
 }
 
 interface GuardrailsSchema {
@@ -82,6 +89,7 @@ interface GuardrailsSchema {
   artifact?: ArtifactConfig;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
+  max_mesh_messages?: MaxMeshMessagesOverride | number | null;
   meshes?: Record<string, MeshOverrides>;
 }
 
@@ -100,6 +108,7 @@ const DEFAULTS = {
   artifact: { post_validation: true, pre_validation: true, max_retry: 2 },
   max_messages: null as number | null,
   max_turns: null as number | null,
+  max_mesh_messages: null as number | null,
 };
 
 export class GuardrailConfig {
@@ -192,7 +201,7 @@ export class GuardrailConfig {
   /**
    * Extract numeric limit from union type (number | null | {limit, strict, warning}).
    */
-  private extractLimit(value: MaxMessagesOverride | MaxTurnsOverride | number | null | undefined): number | null | undefined {
+  private extractLimit(value: MaxMessagesOverride | MaxTurnsOverride | MaxMeshMessagesOverride | number | null | undefined): number | null | undefined {
     if (value === undefined) return undefined;
     if (value === null || typeof value === 'number') return value;
     // Object form: { strict, warning, limit }
@@ -254,6 +263,30 @@ export class GuardrailConfig {
   }
 
   /**
+   * Resolve max_mesh_messages limit.
+   * Mesh-level only (no agent override — this is a mesh-wide cap).
+   * Chain: mesh-local mesh config > mesh config.yaml > global mesh > global > default (null).
+   */
+  getMaxMeshMessages(meshName: string): number | null {
+    const local = this.meshLocal.get(meshName);
+    const g = this.config.guardrails;
+
+    // Mesh-local max_mesh_messages (from mesh's config.yaml guardrails section)
+    const localMesh = this.extractLimit(local?.max_mesh_messages as MaxMeshMessagesOverride | number | null | undefined);
+    if (localMesh !== undefined) return localMesh;
+
+    // Global mesh override
+    const globalMesh = this.extractLimit(g?.meshes?.[meshName]?.max_mesh_messages);
+    if (globalMesh !== undefined) return globalMesh;
+
+    // Global default
+    const globalVal = this.extractLimit(g?.max_mesh_messages);
+    if (globalVal !== undefined) return globalVal;
+
+    return DEFAULTS.max_mesh_messages;
+  }
+
+  /**
    * Resolve artifact validation config.
    * Mesh-level only (no agent override — artifacts are mesh-scoped).
    */
@@ -288,7 +321,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'edge_limit' | 'artifact' | 'max_messages' | 'max_turns',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'edge_limit' | 'artifact' | 'max_messages' | 'max_turns' | 'max_mesh_messages',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -312,6 +345,7 @@ export class GuardrailConfig {
     const sources: Array<{ strict?: boolean; warning?: boolean } | undefined> = [];
 
     // Agent-level guardrails (write_gate, read_gate, identity_gate, routing_error, max_messages, max_turns)
+    // max_mesh_messages is mesh-level only
     const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'routing_error', 'max_messages', 'max_turns'];
     if (agentName && agentGuardrails.includes(guardrail)) {
       // Mesh-local agent

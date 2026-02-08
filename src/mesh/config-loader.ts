@@ -85,6 +85,7 @@ export interface MeshGuardrailOverrides {
 
 export interface MeshGuardrailConfig extends MeshGuardrailOverrides {
   agents?: Record<string, MeshGuardrailOverrides>;
+  max_mesh_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
 }
 
 /**
@@ -144,6 +145,8 @@ export interface MeshConfig {
   manifest_enforcement?: ManifestEnforcementConfig;  // Artifact validation settings
   guardrails?: MeshGuardrailConfig;  // Per-mesh guardrail overrides (mesh-local wins over global)
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
+  max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
+  autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 

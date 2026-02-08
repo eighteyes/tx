@@ -1,0 +1,88 @@
+# dev-brain mesh
+# Development with learning capture: implementer → reviewer → brain
+# Tests: scratch space manifest, rearmatter extraction, brain-update postHook
+
+mesh: dev-brain
+description: "Development mesh with learning capture. Implementer builds, reviewer gates, brain ingests lessons."
+
+intents:
+  patterns:
+    - build
+    - implement
+    - fix
+    - develop
+
+agents:
+  - name: implementer
+    model: sonnet
+    prompt: implementer/prompt.md
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+
+entry_point: implementer
+boundary_agents: [reviewer]
+
+workspace:
+  path: ".ai/output/dev-brain/{task-id}/"
+
+# File manifest: declares scratch space for learning capture
+manifest:
+  - id: working-notes
+    location: "{workspace}/working-notes.md"
+    description: "Accumulated insights, gotchas, and learnings during implementation"
+    writes: [implementer]
+    reads: [reviewer]
+    persistent: true
+
+  - id: decisions
+    location: "{workspace}/decisions.md"
+    description: "Key decisions made with rationale"
+    writes: [implementer, reviewer]
+    reads: [reviewer]
+    persistent: true
+
+routing:
+  implementer:
+    complete:
+      reviewer: "Implementation ready for review"
+    blocked:
+      core: "Need clarification from human"
+
+  reviewer:
+    complete:
+      core: "Approved - ready to merge"
+    blocked:
+      implementer: "Changes requested"
+
+# Rearmatter: agent self-assessment at end of each turn
+rearmatter:
+  required: true
+  schema:
+    status: "complete | blocked | needs-review"
+    confidence: "1-5 scale"
+    gotchas: "Issues discovered"
+    learnings: "Insights for brain"
+
+# Lifecycle hooks
+lifecycle:
+  post:
+    - quality:evaluate
+    - brain-update
+
+playbook_notes: |
+  Two-agent dev mesh with brain integration.
+
+  Flow: implementer (sonnet) → reviewer (opus) → core
+
+  Learning capture:
+  - working-notes.md: Accumulated during implementation
+  - decisions.md: Key decisions with rationale
+  - rearmatter: Structured self-assessment per turn
+
+  PostHooks:
+  - quality:evaluate: Staff engineer gate before completion
+  - brain-update: Sends git diff + rearmatter to brain mesh
+
+  Brain mesh receives learnings and updates BRAIN.md.

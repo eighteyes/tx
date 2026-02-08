@@ -604,6 +604,45 @@ manifest_enforcement:
   max_retry: 2            # Resume agent N times before failing
 ```
 
+### `max_mesh_messages`
+- **Type**: `number` or `{ strict?: boolean; warning?: boolean; limit?: number }`
+- **Required**: No
+- **Default**: null (no limit)
+- **Behavior**: Mesh-wide cap on total messages across all agents in a mesh run. When the limit is reached:
+  - Strict mode: kills all active workers in the mesh
+  - Warning mode: logs and allows mesh to continue
+
+Resets when a new turn starts (entry_point receives a task).
+
+```yaml
+# Simple form
+max_mesh_messages: 50
+
+# Object form with mode control
+max_mesh_messages:
+  strict: true
+  warning: true
+  limit: 50
+```
+
+### `autoInjectManifestFiles`
+- **Type**: `boolean`
+- **Required**: No
+- **Default**: `true`
+- **Behavior**: When enabled, files declared in `manifest[].reads` for an agent are automatically preloaded into the agent's context (merged with explicit `load` field). Individual manifest entries can override this with `autoInject: false`.
+
+```yaml
+# Disable auto-injection for the entire mesh
+autoInjectManifestFiles: false
+
+# Per-entry override in manifest
+manifest:
+  - id: config.yaml
+    reads: [worker]
+    writes: []
+    autoInject: false  # Skip this file even if mesh-level is true
+```
+
 ---
 
 ## Iteration Control

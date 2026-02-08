@@ -276,6 +276,10 @@ export class WorkerDispatcher extends EventEmitter {
   // Reset when a new turn starts (entry_point receives a task)
   private edgeCounters: Map<string, number> = new Map();
 
+  // Mesh-wide message counters per turn (key: mesh name, value: total message count)
+  // Reset when a new turn starts (entry_point receives a task)
+  private meshMessageCounters: Map<string, number> = new Map();
+
   // Track completed agents per mesh session for preflight filtering
   // Key: mesh instance name, Value: set of agent names that have completed
   // Reset when entry_point receives a new task
@@ -579,6 +583,60 @@ export class WorkerDispatcher extends EventEmitter {
         fallback: meshConfig.routing_fallback,
       });
     }
+
+    // Mesh-wide message counting: increment counter and check limit
+    const meshCount = (this.meshMessageCounters.get(meshName) || 0) + 1;
+    this.meshMessageCounters.set(meshName, meshCount);
+
+    // Check max_mesh_messages limit
+    // First check mesh config.yaml directly, then fall back to guardrails chain
+    const meshMaxMessages = meshConfig?.max_mesh_messages;
+    let maxMeshLimit: number | null = null;
+    if (meshMaxMessages !== undefined) {
+      // Direct mesh config value (number or object with limit)
+      if (typeof meshMaxMessages === 'number') {
+        maxMeshLimit = meshMaxMessages;
+      } else if (meshMaxMessages && typeof meshMaxMessages === 'object' && 'limit' in meshMaxMessages) {
+        maxMeshLimit = meshMaxMessages.limit ?? null;
+      }
+    }
+    // Fall back to guardrails chain if not set in mesh config
+    if (maxMeshLimit === null) {
+      maxMeshLimit = this.guardrails.getMaxMeshMessages(meshName);
+    }
+
+    if (maxMeshLimit !== null && meshCount >= maxMeshLimit) {
+      const mode = this.guardrails.getMode('max_mesh_messages', meshName);
+      if (!mode.strict) {
+        if (mode.warning) {
+          log.warn('dispatcher', 'max_mesh_messages limit reached (warning mode)', {
+            meshName,
+            maxMeshMessages: maxMeshLimit,
+            messagesSent: meshCount,
+          });
+          log.activity('guardrail:max-mesh-messages:warning', meshName, `max_mesh_messages warning (${meshCount}/${maxMeshLimit}, allowed)`);
+        }
+        // Non-strict: allow the mesh to continue
+      } else {
+        // Strict mode: kill all active workers in this mesh
+        log.warn('dispatcher', 'max_mesh_messages limit reached — killing all mesh workers', {
+          meshName,
+          maxMeshMessages: maxMeshLimit,
+          messagesSent: meshCount,
+        });
+        log.activity('guardrail:max-mesh-messages', meshName, `max_mesh_messages STRICT KILL (${maxMeshLimit}) — killing all workers`);
+
+        // Kill all workers in this mesh
+        const meshPrefix = `${meshName}/`;
+        for (const agentId of this.workerLifecycle.getAllAgentIds()) {
+          if (agentId.startsWith(meshPrefix)) {
+            for (const worker of this.workerLifecycle.getForAgent(agentId)) {
+              worker.runner.kill('max_mesh_messages limit reached');
+            }
+          }
+        }
+      }
+    }
   }
 
   // ============================================================================
@@ -597,7 +655,8 @@ export class WorkerDispatcher extends EventEmitter {
     }
     this.completedAgents.delete(meshName);
     this.cachedManifestVars.delete(meshName);
-    log.debug('dispatcher', 'Edge counters, completed agents, and manifest vars reset for new turn', { meshName });
+    this.meshMessageCounters.delete(meshName);
+    log.debug('dispatcher', 'Edge counters, mesh message counter, completed agents, and manifest vars reset for new turn', { meshName });
   }
 
   /**
@@ -2913,9 +2972,11 @@ Please advise the agent or check mesh configuration.`;
       const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
       const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
 
+      // Collect files for preload (from load field + manifest auto-inject)
+      const preloadedFiles: Array<{ path: string; content: string }> = [];
+
       // Handle agent preload (load field) - inject file contents before agent starts
       if (agent.load && agent.load.length > 0) {
-        const preloadedFiles: Array<{ path: string; content: string }> = [];
         const glob = await import('fast-glob');
 
         for (const pattern of agent.load) {
@@ -2948,24 +3009,6 @@ Please advise the agent or check mesh configuration.`;
             log.warn('dispatcher', `Failed to resolve preload pattern: ${pattern}`, { error: String(err) });
           }
         }
-
-        if (preloadedFiles.length > 0) {
-          // Build preload section
-          const preloadSection = ['# Preloaded Files\n'];
-          for (const { path: filePath, content } of preloadedFiles) {
-            const ext = filePath.split('.').pop() || '';
-            preloadSection.push(`## ${filePath}`);
-            preloadSection.push(`\`\`\`${ext}`);
-            preloadSection.push(content);
-            preloadSection.push('```\n');
-          }
-          systemPrompt = `${systemPrompt}\n\n${preloadSection.join('\n')}`;
-          log.info('dispatcher', `Preloaded files for agent`, {
-            agentId,
-            count: preloadedFiles.length,
-            patterns: agent.load,
-          });
-        }
       }
 
       // Inject file manifest contract if present
@@ -2977,6 +3020,9 @@ Please advise the agent or check mesh configuration.`;
 
         // Use cached manifest variables if available, otherwise resolve from session.yaml
         const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
+
+        // Auto-inject setting: mesh-level default (true if not specified)
+        const meshAutoInject = meshConfig.autoInjectManifestFiles !== false;
 
         for (const entry of meshConfig.manifest) {
           let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
@@ -2992,10 +3038,29 @@ Please advise the agent or check mesh configuration.`;
           };
 
           if (entry.reads.includes(agent.name)) {
+            // Determine if we should auto-inject this entry's content into preload
+            // Entry-level autoInject overrides mesh-level autoInjectManifestFiles
+            const shouldAutoInject = entry.autoInject !== undefined ? entry.autoInject : meshAutoInject;
+
             // Inject file contents for reads if path is fully resolved and file exists
             if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
               try {
-                fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8');
+                const content = fs.readFileSync(resolvedPath, 'utf-8');
+                fileEntry.content = content;
+
+                // Auto-inject into preload if enabled and not already in preloadedFiles
+                if (shouldAutoInject) {
+                  const relativePath = path.relative(this.config.workDir, resolvedPath);
+                  const alreadyPreloaded = preloadedFiles.some(f => f.path === relativePath);
+                  if (!alreadyPreloaded) {
+                    const stats = fs.statSync(resolvedPath);
+                    if (stats.size <= 200 * 1024) {
+                      preloadedFiles.push({ path: relativePath, content });
+                    } else {
+                      log.warn('dispatcher', `Skipping large file in manifest auto-inject: ${resolvedPath} (${stats.size} bytes)`);
+                    }
+                  }
+                }
               } catch {
                 // Non-fatal — file listed but unreadable
               }
@@ -3016,6 +3081,25 @@ Please advise the agent or check mesh configuration.`;
             injectedContents: injectedCount,
           });
         }
+      }
+
+      // Build preload section (from load field + manifest auto-inject)
+      if (preloadedFiles.length > 0) {
+        const preloadSection = ['# Preloaded Files\n'];
+        for (const { path: filePath, content } of preloadedFiles) {
+          const ext = filePath.split('.').pop() || '';
+          preloadSection.push(`## ${filePath}`);
+          preloadSection.push(`\`\`\`${ext}`);
+          preloadSection.push(content);
+          preloadSection.push('```\n');
+        }
+        systemPrompt = `${systemPrompt}\n\n${preloadSection.join('\n')}`;
+        log.info('dispatcher', `Preloaded files for agent`, {
+          agentId,
+          count: preloadedFiles.length,
+          fromLoad: agent.load?.length || 0,
+          fromManifest: preloadedFiles.length - (agent.load?.length || 0),
+        });
       }
 
       // Chaos contract: build gate hooks from manifest

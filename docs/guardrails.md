@@ -229,6 +229,40 @@ Per-agent cap on SDK conversation turns.
 
 Strict: SDK enforces hard limit. Warning: emits event at threshold, no kill.
 
+### Max Mesh Messages
+
+Mesh-wide cap on total messages across all agents in a mesh run.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `limit` | null | Total message cap for mesh (null = no limit) |
+
+Strict: kills all active workers in the mesh. Warning: logs and allows mesh to continue.
+
+Configured at mesh level only (not per-agent). Resets when a new turn starts (entry_point receives a task).
+
+```yaml
+# Mesh config.yaml - direct value
+max_mesh_messages: 50
+
+# Mesh config.yaml - object form
+max_mesh_messages:
+  strict: true
+  warning: true
+  limit: 50
+
+# Global config.yaml guardrails
+guardrails:
+  max_mesh_messages:
+    strict: false
+    warning: true
+    limit: 100
+  meshes:
+    my-mesh:
+      max_mesh_messages:
+        limit: 30
+```
+
 ### Violation Escalation
 
 Gate violations inject a steering message that tells the agent what paths are allowed. The message includes guidance to write to `core/core` if the agent believes a path should be allowed — putting escalation in the agent's hands rather than auto-notifying.

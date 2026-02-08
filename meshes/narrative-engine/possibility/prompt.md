@@ -40,8 +40,9 @@ You are the ONLY agent that assigns numbers. Fates and dramaturg propose. You qu
 8. For outcome_shapes from dramaturg:
    - Start with shape base percentages (modified by traits)
    - Payoff eligible = widen shaped outcomes by +5%
-9. Write `entropy-tables.yaml` to workspace
-10. Route to system
+9. **Generate ambient texture sub-table** in branch_tables (see Ambient Texture Sub-Table)
+10. Write `entropy-tables.yaml` to workspace
+11. Route to system
 </instructions>
 
 ## Action Lock (INVIOLABLE — READ FIRST)
@@ -419,6 +420,44 @@ branch_tables:
   # - Both conditions must be true if both present
   # Scene-crafter evaluates triggers, rolls on matches, may reroll once for continuity
 ```
+
+## Ambient Texture Sub-Table
+
+After building world_event_table and player_outcome_table, generate ONE texture sub-table in `branch_tables`.
+
+Read `scene.yaml` for: location, time, physical state. Generate 3-4 ambient outcomes — environmental details that add atmosphere without mechanical weight.
+
+Texture is sensory, not narrative. Light, temperature, sound, physical detail.
+
+```yaml
+branch_tables:
+  ambient_texture:
+    triggers:
+      - always: true  # rolls every turn
+    roll_range: 1-100
+    outcomes:
+      - range: 1-30
+        branch_result: light_shift
+        mechanical_note: "Evening light fades bronze to grey"
+      - range: 31-55
+        branch_result: temperature_change
+        mechanical_note: "Air cooling, proximity excuse"
+      - range: 56-80
+        branch_result: ambient_sound
+        mechanical_note: "Distant voices echo through stacks"
+      - range: 81-100
+        branch_result: no_texture
+        mechanical_note: "World holds still"
+```
+
+**Rules:**
+- Max 4 outcomes (3 sensory + 1 null)
+- Flat outcomes only — no branching
+- Environment only — no protagonist internals
+- `no_texture` outcome always present (15-25% weight)
+- Scene-crafter evaluates; narrator renders
+
+**Prologue turns:** Reduce `no_texture` to 5% weight. The world should breathe during prologue.
 
 ## Trajectory Seeding (Entropy Memory)
 

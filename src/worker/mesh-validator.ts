@@ -100,6 +100,7 @@ export interface ManifestEntry {
   description?: string;
   reads: string[];
   writes: string[];
+  autoInject?: boolean;  // Override mesh-level autoInjectManifestFiles for this entry
 }
 
 /**
@@ -202,6 +203,10 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   routing_retry_max: { type: 'number' },
   // Manifest enforcement settings
   manifest_enforcement: { type: 'object' },
+  // Mesh-wide message limit (guardrail)
+  max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
+  // Auto-inject manifest reads into agent context
+  autoInjectManifestFiles: { type: 'boolean' },
 };
 
 /**
@@ -1142,6 +1147,11 @@ export class MeshValidator {
       // Validate persistent
       if (file.persistent !== undefined && typeof file.persistent !== 'boolean') {
         errors.push(`${prefix} '${file.id}': persistent must be a boolean${context}`);
+      }
+
+      // Validate autoInject
+      if (file.autoInject !== undefined && typeof file.autoInject !== 'boolean') {
+        errors.push(`${prefix} '${file.id}': autoInject must be a boolean${context}`);
       }
 
       // Validate location against workspace.locations

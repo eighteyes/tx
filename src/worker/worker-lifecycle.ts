@@ -211,6 +211,13 @@ export class WorkerLifecycleManager {
   /**
    * Get all agent IDs that have active workers
    */
+  getAllAgentIds(): string[] {
+    return Array.from(this.activeWorkers.keys());
+  }
+
+  /**
+   * Get all agent IDs that have active workers
+   */
   getAgentIds(): string[] {
     return Array.from(this.activeWorkers.keys());
   }

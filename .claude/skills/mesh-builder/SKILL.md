@@ -581,6 +581,8 @@ For ensemble `aggregation` field:
 | `routing_fallback` | string | Global fallback agent for routing errors |
 | `routing_retry_max` | number | Max messages per routing edge before fallback |
 | `manifest_enforcement` | object | Artifact validation settings |
+| `max_mesh_messages` | number/object | Mesh-wide message cap (guardrail) |
+| `autoInjectManifestFiles` | boolean | Auto-preload manifest reads (default: true) |
 
 ## Route Validation
 
@@ -684,6 +686,7 @@ Unified runtime enforcement with **strict/warning mode** on every guardrail. Con
 - **Edge limit**: Per-edge message caps. Configurable per mesh.
 - **Artifact validation**: Pre/post validation of agent outputs. Default: enabled, 2 retries.
 - **Max messages/turns**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object.
+- **Max mesh messages**: Mesh-wide cap on total messages across all agents in a mesh run.
 - **Max turns (warning mode)**: SDK limit bypassed, turns tracked manually, event emitted at threshold.
 - **Parity**: Always-on, non-configurable.
 
@@ -712,6 +715,10 @@ guardrails:
     warning: true
     limit: null
   max_turns:
+    strict: false
+    warning: true
+    limit: null
+  max_mesh_messages:
     strict: false
     warning: true
     limit: null

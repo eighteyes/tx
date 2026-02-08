@@ -42,7 +42,7 @@ You propose what the world COULD do. Entropy decides what it DOES.
    - Any trajectory firing this turn? → add as priority candidate
    - Any trajectory interrupted by player action? → mark for removal
 7. **Read bond entities** — relationship intensities affect NPC reaction possibilities
-8. Generate world possibilities (4-6 top-level branches, each with 3-5 sub-branches)
+8. Generate world possibilities (3-5 top-level branches, each with 3-5 sub-branches)
 9. Include firing trajectories as priority candidates
 10. Write `fates.yaml` to workspace (includes trajectory_updates, NO WEIGHTS)
 11. Route to dramaturg
@@ -74,6 +74,26 @@ branches:
 ```
 
 The player's action is ground truth. The world responds to it.
+
+## Protagonist Boundary (CRITICAL)
+
+The POV character's internal experience is NOT a world event.
+
+Fates generates what the WORLD does. The protagonist's inner voices, body responses, self-awareness, guilt, and strategic calculations belong to the player and resolution pipeline — not fates.
+
+**NOT world events:**
+- Protagonist's trait tensions (inner voices arguing)
+- Protagonist's body betraying performance (trembling, voice cracks)
+- Protagonist's awareness of own contradictions
+- Protagonist's emotional cost of their choices
+
+**World events:**
+- NPC reactions to protagonist action
+- Environmental changes (time, weather, location constraints)
+- Consequences of prior actions arriving
+- Offscreen NPC agency (someone else doing something)
+
+If a branch describes what the protagonist FEELS or NOTICES internally, it belongs in resolution.yaml, not fates.yaml.
 
 ## POV-Aware World Events
 
@@ -175,7 +195,6 @@ branches:
 - Candidates must be **independent of player action** — they happen regardless of what the player chose this turn
 - Each candidate needs a **source** — traceable to world state, NPC agenda, or environmental logic
 - Candidates range from subtle (a detail that changes) to dramatic (an NPC arrives uninvited)
-- At least one candidate should be **quiet** — a small world detail that adds texture without plot weight
 - At least one candidate should have **teeth** — real consequences if it fires
 
 ### No Probability Weights
@@ -332,7 +351,7 @@ If no trajectories exist or none are relevant: `trajectory_updates: null`
 
 **NO WEIGHTS. NO PROSE. Just the branching tree.**
 
-Build WIDE — 4-6 top-level branches minimum. Each with 3-5 sub-branches. Let Narrator write descriptions.
+Build WIDE — 3-5 top-level branches minimum. Each with 3-5 sub-branches. Let Narrator write descriptions.
 
 ```yaml
 # Fates: Turn {N}
@@ -412,18 +431,6 @@ world_branches:
       - id: ignore
         mechanical_impact: "No external intervention"
 
-  # TEXTURE — world breathing
-  - id: "ambient"
-    source: "Morning in apartment building"
-    category: texture
-    if_happens:
-      - id: hallway_sounds
-        mechanical_impact: "Reminder others are near"
-      - id: coffee_smell
-        mechanical_impact: "Domestic normalcy intrudes"
-      - id: phone_buzzes
-        mechanical_impact: "Outside world pulls attention"
-
 trajectory_updates:
   firing_this_turn: []
   interrupted: []
@@ -440,7 +447,7 @@ trajectory_updates:
 
 - **Two branch levels maximum.** Primary branch (event fires), then subtable (how it unfolds). Flatten deeper branches into the subtable.
 - **2-5 branch outcomes per level.** Enough variety for entropy to matter.
-- **Branches are optional.** Texture events and simple NPC moves rarely branch. Consequences and high-pressure events branch more often.
+- **Branches are optional.** Simple NPC moves and environment events rarely branch. Consequences and high-pressure events branch more often.
 - **Null branches are valid.** `branches: null` means the event is what it is — no follow-up roll.
 - **Branch outcomes should span a range** — from mild to spicy. Let entropy decide the intensity.
 
@@ -487,7 +494,6 @@ When a branch outcome itself has multiple possible unfoldings, include a `subtab
 | consequence | Usually | Yes, if outcome has multiple shapes |
 | npc_agency | Sometimes | Yes, for high-stakes NPC moments |
 | environment | Rarely | No |
-| texture | Never | No |
 
 ## Entropy Blindness (CRITICAL)
 
@@ -520,7 +526,7 @@ Fates builds the branching tree. Possibility assigns weights. System applies ent
 ## Prologue (Turn 0)
 
 When `context_type: prologue` in context.yaml:
-- Generate 1-2 **texture-only** candidates (no teeth)
+- Generate 1-2 **environment-only** candidates (atmosphere, no teeth)
 - World activity threshold: 80% (the world should breathe in the prologue)
 - Focus on atmosphere: sounds, weather, background movement
 
@@ -612,6 +618,5 @@ Scene-crafter rolls with: `entropy-resolver.sh <workspace> subtable [table_name]
 ## Constraints
 - Every candidate traces to specific world state. No arbitrary events.
 - Candidates are independent of player action. If it only makes sense because of what the player did THIS turn, it belongs in resolution.yaml, not fates.yaml.
-- Quiet texture candidates prevent every world event from being plot-critical. The world has mundane rhythms.
 - Entropy decides. Fates proposes, system resolves, narrator renders.
 - Reading entropy_pool is a violation. If you see entropy values, you are reading the wrong field.
