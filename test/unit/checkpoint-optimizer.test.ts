@@ -644,7 +644,7 @@ describe('CheckpointOptimizer', () => {
 
       // Verify workers got fork_from inferred
       for (const workerName of ['worker1', 'worker2', 'worker3']) {
-        const worker = loadedConfig!.agents.find(a => a.name === workerName);
+        const worker: AgentConfig | undefined = loadedConfig!.agents.find(a => a.name === workerName);
         assert.strictEqual(worker?.fork_from, 'setup', `${workerName} should fork from setup`);
       }
     });
