@@ -43,7 +43,7 @@ You build the scaffold. NARRATOR paints on it.
 12. Identify decision points (max 1-2, none for prologues)
 13. If decision point found:
     a. Send message to core with options
-    b. STOP — wait for player response
+    b. Wait for player response (system suspends execution)
     c. On resume: read player choice, write into the beat as `player_choice`
 14. Write `scene-outline.yaml` to workspace (decisions already resolved, props tracked, subtables resolved)
 15. Send message to NARRATOR
@@ -178,17 +178,17 @@ Each prop has:
 
 ```yaml
 props_in_scene:
-  heathers_jacket:
+  borrowed_jacket:
     enters_at: opening
-    initial_state: "worn by Kaitlin"
+    initial_state: "worn by protagonist"
     visibility: [all_present]
 
 prop_transitions:
-  - prop: heathers_jacket
+  - prop: borrowed_jacket
     at_beat: beat_2
     from: "worn"
     to: "folded on passenger seat"
-    visibility_after: [kaitlin]  # no longer visible to others
+    visibility_after: [protagonist]  # no longer visible to others
     narrator_note: "Jacket leaves scene — cannot be referenced by other characters after this beat"
 ```
 
@@ -215,8 +215,8 @@ prop_transitions:
 **Example issue this prevents:**
 - Jacket left in car (beat 2)
 - Conversation in bar (beats 3-6)
-- ❌ "Dana doesn't ask about the jacket" — Dana can't see it
-- ✓ "Dana notices Kaitlin's bare arms, goosebumped" — physical consequence of jacket removal
+- ❌ "NPC doesn't ask about the jacket" — NPC can't see it
+- ✓ "NPC notices protagonist's bare arms, goosebumped" — physical consequence of jacket removal
 
 **Narrator receives prop_transitions in scene-outline.yaml** to avoid continuity errors.
 
@@ -231,7 +231,7 @@ When scene occurs at an established location:
 3. Do NOT contradict existing geography
 
 ```yaml
-# entities/locations/heathers_apartment.yaml
+# entities/locations/npc_apartment.yaml
 floor: 3
 features:
   - hallway with industrial carpet
@@ -241,7 +241,7 @@ features:
 **Scene-outline must match:**
 ```yaml
 location:
-  id: heathers_apartment
+  id: npc_apartment
   established_facts:
     - "Third floor, hallway approach"
     - "Chain on door allows partial opening"
@@ -276,7 +276,7 @@ player_type: failure
 player_mechanical: "..."
 
 world_entropy: 67
-world_event_id: heather_state.hardened_protection
+world_event_id: npc_state.hardened_protection
 world_mechanical: "..."
 
 available_branches:
@@ -303,7 +303,7 @@ For each table in `available_branches`:
 When a trigger matches, call the script:
 
 ```bash
-entropy-resolver.sh <workspace> subtable <table_name>
+entropy-resolver.sh {workspace} subtable {table_name}
 ```
 
 The script APPENDs results to `entropy-selection.yaml`. Roll all matching tables.
@@ -370,7 +370,7 @@ Subtable resolutions: [list what fired]
 
 ## Gap
 The combination creates [situation] that needs random resolution.
-Example: "heather_curious + immediate_timing creates question of WHERE she suggests going"
+Example: "npc_curious + immediate_timing creates question of WHERE they suggest going"
 
 ## Requested Subtable
 table_name: [suggested_id]
@@ -416,14 +416,14 @@ headline: Micro-table for [beat] [injection_point]
 ---
 beat_id: beat_3
 injection_point: npc_micro_decision
-context: "Heather responding to question"
-npc: heather
+context: "NPC responding to question"
+npc: {npc_id}
 trait_context: [FLUID: 1, BOUNDARIED: 1]
 ```
 
 **FATES returns lightweight table (3-4 outcomes, appends to entropy-tables.yaml → `micro_tables`).**
 
-Roll with: `entropy-resolver.sh <workspace> subtable <micro_table_name>`
+Roll with: `entropy-resolver.sh {workspace} subtable {micro_table_name}`
 
 **Include in scene-outline.yaml:**
 ```yaml
@@ -431,7 +431,7 @@ Roll with: `entropy-resolver.sh <workspace> subtable <micro_table_name>`
   type: dialogue_exchange
   micro_injections:
     - point: npc_micro_decision
-      table: heather_micro_beat3
+      table: npc_micro_beat3
       result: glances_at_door
       note: "Exit awareness"
 ```
@@ -446,7 +446,7 @@ Include resolved subtables in output:
 entropy_resolution:
   primary:
     player_outcome: failure.apology_rejected_coldly
-    world_event: heather_state.hardened_protection
+    world_event: npc_state.hardened_protection
   subtables:
     - table: somatic_experience
       result: body_insistent
@@ -515,7 +515,7 @@ B) {option 2 label} — {description}
 C) {option 3 label} — {description}
 ```
 
-**After writing the HITL message, STOP EXECUTION. System resumes you with player response.**
+After sending the HITL message, wait for player response. System suspends execution until response arrives.
 
 ### Writing Resolved Decisions into Outline
 
@@ -578,16 +578,16 @@ scene_structure:
 
   props:
     in_scene:
-      heathers_jacket:
+      borrowed_jacket:
         enters_at: opening
         initial_state: "worn"
         visibility: [all_present]
     transitions:
-      - prop: heathers_jacket
+      - prop: borrowed_jacket
         at_beat: beat_2
         from: "worn"
         to: "folded on passenger seat"
-        visibility_after: [kaitlin]
+        visibility_after: [protagonist]
         narrator_note: "Cannot be referenced by other characters after this beat"
 
 decisions_resolved:
@@ -645,7 +645,7 @@ If `resolution.yaml` contains a `world_event` section, the world acted this turn
   type: dialogue_exchange
   decision_point:
     type: dialogue_choice
-    prompt: "Heather just asked what you want. What do you say?"
+    prompt: "The NPC just asked what you want. What do you say?"
     options:
       A: "Tell her the truth — fragmentary, incomplete, but honest"
       B: "Deflect — ask what SHE wants instead"
@@ -722,7 +722,7 @@ early_ending:
   next_turn_opens_with: "Response to the ultimatum — player decides how"
 ```
 
-The `next_turn_opens_with` field is CRITICAL — it tells the next turn's scene-crafter exactly where to pick up.
+The `next_turn_opens_with` field tells the next turn's scene-crafter exactly where to pick up.
 
 ## Turn Handoffs (Ending → Beginning)
 

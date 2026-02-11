@@ -61,6 +61,8 @@ export interface SdkRunnerConfig {
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
   toolRestriction?: ToolRestriction;  // Tool access policy (default: unrestricted)
   sessionId?: string;  // Resume existing session (for interrupt/revision flow)
+  resumeSessionAt?: string;  // Message UUID for point-in-time fork (truncate to init state)
+  forkSession?: boolean;  // Branch into new session on resume (isolate from parent)
   command?: string;  // Agent-level slash command (fallback if message has no command)
   hooks?: Record<string, unknown[]>;  // SDK PreToolUse/PostToolUse hooks (chaos contracts)
   maxTurnsMode?: GuardrailMode;  // { strict, warning } for max_turns enforcement
@@ -75,6 +77,7 @@ export class SdkRunner extends EventEmitter {
   private currentQuery: ReturnType<typeof query> | null = null;
   private queryMetrics: QueryMetrics[] = [];
   private toolCallsCount: number = 0;  // Track tool calls for analytics
+  private firstUserMessageUuid: string | null = null;  // First user message UUID for session anchoring
   private startedAt: number = 0;
   private currentUserPrompt: string = '';  // Track for error context capture
   private turnCount: number = 0;  // Track turns for warning mode
@@ -386,6 +389,7 @@ export class SdkRunner extends EventEmitter {
         // Clear both runtime and config session IDs to prevent context accumulation
         this.currentSessionId = null;
         this.config.sessionId = undefined;
+        this.firstUserMessageUuid = null;
 
         totalProcessed++;
         log.info('sdk-runner', `Processing message`, { workerId, messageId: taskMessage.id, type: taskMessage.type });
@@ -415,6 +419,16 @@ export class SdkRunner extends EventEmitter {
         }
 
         try {
+          const resumeId = this.currentSessionId || this.config.sessionId;
+          if (this.config.forkSession || this.config.resumeSessionAt) {
+            log.info('sdk-runner', `Fork query options`, {
+              workerId,
+              resume: resumeId,
+              resumeSessionAt: this.config.resumeSessionAt,
+              forkSession: this.config.forkSession,
+              model: this.config.model,
+            });
+          }
           this.currentQuery = query({
             prompt: userPrompt,
             options: {
@@ -428,7 +442,9 @@ export class SdkRunner extends EventEmitter {
               settingSources: ['project'],  // Load project slash commands
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
-              resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
+              resume: resumeId,  // Resume session if available
+              resumeSessionAt: this.config.resumeSessionAt,  // Point-in-time fork UUID
+              forkSession: this.config.forkSession,  // Branch into new session
               hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
             }
           });
@@ -454,6 +470,8 @@ export class SdkRunner extends EventEmitter {
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
                 tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
                 resume: this.currentSessionId || this.config.sessionId,  // Resume session if available
+                resumeSessionAt: this.config.resumeSessionAt,  // Point-in-time fork UUID
+                forkSession: this.config.forkSession,  // Branch into new session
                 hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
               }
             });
@@ -552,6 +570,17 @@ export class SdkRunner extends EventEmitter {
               break;
 
             case 'user':
+              // Capture first user message UUID for session anchoring.
+              // The first user message UUID is the earliest persistable anchor point —
+              // system:init UUIDs are transient streaming events, not stored in the session.
+              // --resume-session-at needs a UUID that exists in the persisted session JSONL.
+              if (!this.firstUserMessageUuid) {
+                const userUuid = (msg as { uuid?: string }).uuid;
+                if (userUuid) {
+                  this.firstUserMessageUuid = userUuid;
+                  this.emit('init-anchor', { id: workerId, firstUserMessageUuid: userUuid });
+                }
+              }
               // Capture tool results for session transcript
               if (msg.tool_use_result !== undefined && msg.tool_use_result !== null) {
                 const resultStr = typeof msg.tool_use_result === 'string'
@@ -632,6 +661,22 @@ export class SdkRunner extends EventEmitter {
         exitCode?: number;
       };
 
+      // Exit code 1 with processed messages: treat as success with warning.
+      // Claude Code CLI may exit non-zero after successful work (e.g., session fork
+      // cleanup hitting API 400 concurrency errors). If we already processed messages,
+      // the work was done — don't trigger retry/error.
+      if (err.message?.includes('exited with code 1') && totalProcessed > 0) {
+        log.warn('sdk-runner', `Process exited with code 1 after successful work — treating as success`, {
+          workerId,
+          totalProcessed,
+          sessionId: this.currentSessionId,
+          hadFork: !!this.config.forkSession,
+        });
+        const output = sessionOutput.join('\n\n---\n\n');
+        this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
+        return { success: true, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId || undefined };
+      }
+
       // Check for Usage Policy errors - handle with HITL instead of crashing
       if (isUsagePolicyError(err)) {
         log.warn('sdk-runner', 'Usage Policy error detected, sending ask-human', { workerId });
@@ -681,7 +726,19 @@ export class SdkRunner extends EventEmitter {
       if (err.code !== undefined) errorContext.code = err.code;
       if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
 
-      log.error('sdk-runner', `Worker error`, errorContext);
+      // Demote expected exit patterns from error to warn/debug
+      const isAbortError = err.message.includes('aborted by user') ||
+                          err.message.includes('process aborted');
+      const isExitCode1 = err.message?.includes('exited with code 1');
+
+      if (isAbortError) {
+        log.debug('sdk-runner', `Worker aborted (expected)`, errorContext);
+      } else if (isExitCode1) {
+        log.warn('sdk-runner', `Worker exited with code 1`, errorContext);
+      } else {
+        log.error('sdk-runner', `Worker error`, errorContext);
+      }
+
       this.emit('error', {
         id: workerId,
         error: err.message,
@@ -935,7 +992,6 @@ export class SdkRunner extends EventEmitter {
 
           case 'system':
             if (msg.subtype === 'init') {
-              // Session ID should be the same as the resumed session
               this.emit('init', { id: workerId, tools: msg.tools, sessionId: this.currentSessionId, resumed: true });
             }
             break;

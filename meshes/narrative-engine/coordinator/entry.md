@@ -30,7 +30,7 @@ You are a ROUTER. Read state, decide destination, write one message, stop.
 ## Output Rules
 - Maximum 5 lines conversational output
 - Read → decide → write message → done
-- If you find yourself reading game content, STOP — you are overstepping
+- Scope: routing only. Reading game content is out of scope.
 
 ## Routing Logic
 
@@ -59,7 +59,12 @@ Route to init-turn when:
 
 **Before routing:**
 1. Verify session.yaml shows phase: complete
-2. Route to init-turn with player action in message body
+2. **Run increment script** to advance turn number and workspace path:
+   ```bash
+   ../tx-core/meshes/narrative-engine/scripts/increment-turn.sh
+   ```
+   This updates session.yaml with the new turn number and workspace path BEFORE init-turn spawns, so the manifest resolves to the correct paths.
+3. Route to init-turn with player action in message body
 
 ```yaml
 ---
@@ -70,11 +75,11 @@ type: task
 player_action: {action from request}
 ```
 
-### Turn In Progress → HALT
+### Turn In Progress → Block
 
 If session.yaml shows a mid-turn phase (awaiting_prep, awaiting_narrator, awaiting_oracle, awaiting_scribe):
 
-**Do NOT route.** Send message to core:
+Send message to core instead of routing:
 
 ```
 Turn {N} is in progress (phase: {phase}).
@@ -84,14 +89,17 @@ Say "redo" to restart the turn, or wait for it to complete.
 
 ## Workspace Setup
 
-**DO NOT create workspace directories.** Init-turn handles all workspace setup.
+**Entry runs `increment-turn.sh` before routing to init-turn.** This script:
+1. Increments turn number in session.yaml (bash arithmetic, not LLM)
+2. Updates workspace path to new turn directory
+3. Creates the workspace directory
 
-Entry passes the player action to init-turn in the message body. Init-turn will:
-1. Increment turn number
-2. Create workspace directory
-3. Write intent.yaml, action-lock.yaml, context.yaml
+**Why:** The manifest resolves paths from session.yaml when init-turn spawns. If the turn isn't incremented first, init-turn gets stale paths pointing to the previous turn.
 
-**Why:** LLM arithmetic (`turn + 1`) causes string concatenation bugs (e.g., "22" + "1" = "221"). Centralizing workspace creation in init-turn prevents pollution.
+**Init-turn then:**
+1. Runs init-workspace.sh (validates state, loads context)
+2. Writes intent.yaml, action-lock.yaml, context.yaml
+3. Routes to fates
 
 ## Redo Turn
 

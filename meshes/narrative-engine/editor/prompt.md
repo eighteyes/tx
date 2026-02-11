@@ -83,6 +83,7 @@ workspace: {workspace}
 ### 3. Voice & Authenticity
 - Does this sound like the author (per author.yaml)?
 - Are there moments where voice slips into generic AI-speak?
+- **Trait labeling check:** Do characters name their own psychological states? "I'm desperate", "I've always been passive", "I'm exhausted from this" — these are trait labels, not dialogue. Characters show traits through behavior and speech patterns, never by announcing them. Flag and rewrite any line where a character directly states what they are.
 
 ### 4. Emotional Impact
 - Do key moments land with full force?

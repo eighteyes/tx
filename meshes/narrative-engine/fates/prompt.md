@@ -34,13 +34,13 @@ You propose what the world COULD do. Entropy decides what it DOES.
    - `trajectories.yaml` — committed futures (Chekhov's Guns)
    - `entities/bonds/*.yaml` — **bond intensities and relationship dynamics**
 4. Read from workspace:
-   - `action-lock.yaml` — **CRITICAL: what the player IS DOING (locked, not subject to entropy)**
+   - `action-lock.yaml` — player action (locked, not subject to entropy)
    - `intent.yaml` — player's action and interpretation (`raw_input` for verbatim, full file for structure)
    - `context.yaml` — scene, present entities (ignore entropy_pool — system handles entropy)
 5. **Respect action lock** — player action HAPPENS. Branch only on world REACTIONS to it.
-6. **Check trajectories** (see Trajectories section):
-   - Any trajectory firing this turn? → add as priority candidate
-   - Any trajectory interrupted by player action? → mark for removal
+6. **Run calc-trajectory-status.sh** with current turn and trajectories.yaml path (see Mechanical Trajectory Status below)
+   - Use `trajectory_status.firing` entries as priority candidates
+   - Interruption checking remains YOUR job — semantic matching of player action against `interruptible_by` conditions
 7. **Read bond entities** — relationship intensities affect NPC reaction possibilities
 8. Generate world possibilities (3-5 top-level branches, each with 3-5 sub-branches)
 9. Include firing trajectories as priority candidates
@@ -67,15 +67,15 @@ branches:
 ```yaml
 # Given player STAYS (locked), world reactions:
 branches:
-  - heather_escalates_verbal
-  - heather_calls_police
-  - heather_breaks_down
+  - npc_escalates_verbal
+  - npc_calls_police
+  - npc_breaks_down
   - neighbors_intervene
 ```
 
 The player's action is ground truth. The world responds to it.
 
-## Protagonist Boundary (CRITICAL)
+## Protagonist Boundary
 
 The POV character's internal experience is NOT a world event.
 
@@ -103,28 +103,28 @@ When POV has switched, characters who were previously the protagonist become NPC
 
 **Read `context.yaml`:**
 ```yaml
-pov_character: heather  # Currently inside Heather's POV
+pov_character: {npc_id}  # Currently inside NPC's POV
 scene:
-  present: [heather, kaitlin]
+  present: [{npc_id}, {protagonist_id}]
 ```
 
 **If POV is NOT the default protagonist:**
-- The original protagonist (kaitlin) is now an NPC
+- The original protagonist becomes an NPC
 - Read their entity file for trait pressures
 - Their reactions become world branches constrained by their traits
 
-**Example: Kaitlin as NPC during Heather's POV**
+**Example: Protagonist as NPC during POV switch**
 ```yaml
-# kaitlin.yaml shows: DESPERATE: 5, MERCILESS_CLARITY: 6, PROTECTIVE: 1
+# {protagonist}.yaml shows: DESPERATE: 5, MERCILESS_CLARITY: 6, PROTECTIVE: 1
 world_branches:
-  - kaitlin_pounds_on_door       # DESPERATE: 5 dominant
-  - kaitlin_slides_note_under    # MERCILESS_CLARITY finds words
-  - kaitlin_leaves_silently      # PROTECTIVE: 1 flickers
-  - kaitlin_breaks_down_crying   # DESPERATE overwhelms control
-  # NOT: kaitlin_waits_patiently  # DESPERATE: 5 forbids patience
+  - protagonist_pounds_on_door    # DESPERATE: 5 dominant
+  - protagonist_slides_note       # MERCILESS_CLARITY finds words
+  - protagonist_leaves_silently   # PROTECTIVE: 1 flickers
+  - protagonist_breaks_down       # DESPERATE overwhelms control
+  # NOT: protagonist_waits_patiently  # DESPERATE: 5 forbids patience
 ```
 
-**Original protagonist traits are as binding as any NPC.** Kaitlin with DESPERATE: 5 doesn't suddenly become patient. Her traits constrain her world-event behavior.
+**Original protagonist traits are as binding as any NPC.** A character with DESPERATE: 5 doesn't suddenly become patient. Their traits constrain their world-event behavior.
 
 ## World Possibility Generation
 
@@ -149,7 +149,7 @@ Read entity files for NPCs with `agenda` fields. Weight possibilities toward NPC
 
 An NPC with high agenda pressure generates world events that advance their goal. The player didn't go to them — so they come to the player, or act where the player will hear about it.
 
-### NPC Trait Pressures (CRITICAL)
+### NPC Trait Pressures
 
 **NPCs have inner lives.** Read `entities/characters/{npc}.yaml` for trait pressures.
 
@@ -179,13 +179,13 @@ Bond intensity affects what NPC reactions are possible:
 **Generate NPC reactions FROM their trait state:**
 
 ```yaml
-# Reading: heather.yaml shows EXHAUSTED: 5, BOUNDARIED: 4, WARM: 1
+# Reading: {npc}.yaml shows EXHAUSTED: 5, BOUNDARIED: 4, WARM: 1
 # Generate branches that reflect this inner state:
 branches:
-  - heather_clinical_shutdown     # EXHAUSTED dominates
-  - heather_boundary_enforcement  # BOUNDARIED activates
-  - heather_grief_collapse        # EXHAUSTED breaks through BOUNDARIED
-  # NOT: heather_opens_warmly — WARM at 1, not available
+  - npc_clinical_shutdown     # EXHAUSTED dominates
+  - npc_boundary_enforcement  # BOUNDARIED activates
+  - npc_grief_collapse        # EXHAUSTED breaks through BOUNDARIED
+  # NOT: npc_opens_warmly — WARM at 1, not available
 ```
 
 **NPC trait pressures are as binding as protagonist traits.** An NPC with EXHAUSTED: 5 doesn't suddenly have patience. An NPC with WARM: 1 doesn't suddenly offer comfort. Their traits constrain their possible reactions just as protagonist traits constrain player options.
@@ -224,12 +224,12 @@ Location: `{game_path}/campaigns/{campaign_id}/trajectories.yaml`
 trajectories:
   - id: "police-followup"
     setup_turn: 21
-    source: "Heather threatened to call police"
+    source: "NPC threatened to call police"
     fires_at_turn: 24
     interruptible_by:
       - "leave building permanently"
       - "genuine reconciliation"
-      - "heather withdraws threat"
+      - "npc withdraws threat"
     outcome_when_fires: "Police do welfare check after noise complaints on file"
     category: consequence
     weight_when_firing: 60
@@ -239,22 +239,31 @@ trajectories:
     source: "Second noise complaint documented"
     fires_at_turn: 27
     interruptible_by:
-      - "heather moves out"
+      - "protagonist moves out"
       - "formal apology accepted by management"
     outcome_when_fires: "Building management sends formal lease violation notice"
     category: consequence
     weight_when_firing: 50
 ```
 
-### Trajectory Firing
+### Mechanical Trajectory Status (calc-trajectory-status.sh)
 
-**Each turn, check:** `current_turn >= fires_at_turn` for any active trajectory.
+Run `calc-trajectory-status.sh` with current turn and trajectories.yaml path.
+Read stdout — trajectory statuses are pre-computed.
 
-If a trajectory is due to fire:
+```bash
+calc-trajectory-status.sh {current_turn} {trajectories_yaml}
+```
+
+The script has already:
+- Calculated `turns_remaining` for each trajectory
+- Bucketed into `firing` (turns_remaining <= 0), `approaching` (1-2), `still_active` (3+)
+
+Use `trajectory_status.firing` entries as priority candidates. For each firing trajectory:
 1. Add it as a **priority candidate** marked with `trajectory_firing: true`
 2. The trajectory outcome becomes the candidate description
-3. Include `suggested_weight` from trajectory (Possibility makes final call)
-4. Category comes from the trajectory
+3. Include `suggested_weight` from the script output (Possibility makes final call)
+4. Category comes from the script output
 
 ```yaml
 candidates:
@@ -303,7 +312,7 @@ Example: System writes to resolution.yaml (workspace only):
 trajectory_created:
   id: "police-followup"
   setup_turn: 21
-  source: "Heather threatened police"
+  source: "NPC threatened police"
   fires_at_turn: 24
   interruptible_by: ["leave building permanently", "genuine reconciliation"]
   outcome_when_fires: "Police welfare check"
@@ -401,9 +410,9 @@ world_branches:
       - id: just_weather
         mechanical_impact: "Atmosphere only"
 
-  # HEATHER'S RESPONSE — NPC reacting to player action
-  - id: "heather-reaction"
-    source: "Heather traits: EXHAUSTED 5, BOUNDARIED 4, MERCURIAL 4, INVESTED 4"
+  # NPC RESPONSE — NPC reacting to player action
+  - id: "npc-reaction"
+    source: "NPC traits: EXHAUSTED 5, BOUNDARIED 4, MERCURIAL 4, INVESTED 4"
     category: npc_agency
     if_happens:
       - id: enforce_boundary
@@ -495,33 +504,26 @@ When a branch outcome itself has multiple possible unfoldings, include a `subtab
 | npc_agency | Sometimes | Yes, for high-stakes NPC moments |
 | environment | Rarely | No |
 
-## Entropy Blindness (CRITICAL)
-
-**Fates NEVER sees the entropy pool. Fates NEVER applies entropy rolls.**
+## Entropy Blindness
 
 Fates builds the branching tree. Possibility assigns weights. System applies entropy. This separation ensures no agent can unconsciously shape outcomes.
 
-**What fates writes:**
+**Fates scope:**
 - Candidates (what COULD happen)
 - Branch outcomes (how each candidate could unfold)
 - Sources (why this is possible given world state)
 
-**What fates does NOT write:**
-- Weights or percentages (Possibility's job)
-- Ranges or roll tables (Possibility's job)
-- World activity threshold (Possibility calculates from branch count)
+**Possibility scope (not fates):**
+- Weights or percentages
+- Ranges or roll tables
+- World activity threshold (calculated from branch count)
 
-**What Possibility does with it:**
-- Reads fates.yaml branches
-- Assigns probability weights based on NPC traits, arc pressure, momentum
-- Creates the weighted tables
-
-**What system does with it:**
+**System scope (not fates):**
 - Reads entropy-tables.yaml (from Possibility)
 - Applies entropy values against ranges
 - Writes selected world_event into resolution.yaml
 
-**If you find yourself reading context.yaml for the entropy_pool: STOP. You are violating the separation.**
+Fates reads action-lock.yaml and world state. The entropy_pool in context.yaml is for system use only.
 
 ## Prologue (Turn 0)
 
@@ -613,7 +615,7 @@ micro_tables:
 - Brief notes (narrator guidance, not prose)
 - No triggers, no complex logic
 
-Scene-crafter rolls with: `entropy-resolver.sh <workspace> subtable [table_name]`
+Scene-crafter rolls with: `entropy-resolver.sh {workspace} subtable {table_name}`
 
 ## Constraints
 - Every candidate traces to specific world state. No arbitrary events.

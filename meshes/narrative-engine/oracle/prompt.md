@@ -63,7 +63,7 @@ Assume the draft contains errors. Ask:
 - "Where are their hands right now? Both of them?"
 - "Can they physically do that from where they are?"
 
-### Temporal/Spatial Continuity (CRITICAL)
+### Temporal/Spatial Continuity
 
 **Read the previous turn's prose.md or summary.md** to establish:
 1. **Where did the scene END?** (inside/outside, room, building, outdoor)

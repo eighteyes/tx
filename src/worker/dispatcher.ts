@@ -232,6 +232,26 @@ interface SystemFeedbackEvent {
 
 // SuspendedSession is now imported from './session-manager.ts'
 
+/**
+ * Checkpoint entry: stores session state for start/end forks
+ * - sessionId: session to fork from
+ * - initMessageUuid: UUID of system:init message (for start-type forks, truncates to init state)
+ */
+interface CheckpointEntry {
+  sessionId: string;
+  initMessageUuid?: string;
+}
+
+/**
+ * Resolve checkpoint config to a checkpoint type.
+ * Handles backward compat: boolean true → 'start'
+ */
+function resolveCheckpointType(checkpoint: boolean | string | undefined): 'start' | 'end' | 'both' | null {
+  if (!checkpoint) return null;
+  if (checkpoint === true) return 'start';
+  return checkpoint as 'start' | 'end' | 'both';
+}
+
 export class WorkerDispatcher extends EventEmitter {
   private config: DispatcherConfig;
   private queue: MessageQueue;
@@ -290,12 +310,11 @@ export class WorkerDispatcher extends EventEmitter {
   // Key: mesh name, Value: resolved variable map (game-id, campaign-id, N, etc.)
   private cachedManifestVars: Map<string, Record<string, string>> = new Map();
 
-  // Session checkpoints for forking — saves sessionId when agent completes with checkpoint: true
-  // Key: `${meshName}/${agentName}`, Value: sessionId
+  // Session checkpoints for forking — saves session state for start/end forks
+  // Key: `${meshName}/${agentName}`, Value: CheckpointEntry with sessionId + optional initMessageUuid
   // Used by fork_from to resume from a previous agent's checkpoint
   // Note: Uses meshName (not meshInstance) so checkpoints persist within sequential mesh runs.
-  // For concurrent mesh runs, consider adding run IDs in the future.
-  private checkpoints: Map<string, string> = new Map();
+  private checkpoints: Map<string, CheckpointEntry> = new Map();
 
   // Parallel block tracking — manages fork/join execution for parallelism config
   // Key: `${meshName}:${blockIndex}`, Value: { agents to run, completed agents, exit agent }
@@ -306,6 +325,15 @@ export class WorkerDispatcher extends EventEmitter {
     entryAgent: string;       // Entry agent (fork point)
     timeout?: number;         // Optional timeout
     onPartial: 'continue' | 'abort';  // Behavior on partial failure
+  }> = new Map();
+
+  // Fan-out group tracking — manages dispatcher-routing fan-out/fan-in
+  // Key: `${meshName}:${joinAgent}`, Value: { agents in group, completed agents, join agent }
+  private fanOutGroups: Map<string, {
+    agents: Set<string>;      // Agents in the parallel group
+    completed: Set<string>;   // Agents that routed outcome:complete to join
+    joinAgent: string;        // The gated join target
+    startedAt: number;        // For timeout tracking
   }> = new Map();
 
 
@@ -1082,6 +1110,24 @@ export class WorkerDispatcher extends EventEmitter {
         this.trackMessageSent(event.from, event.agentId, event.type, event.filepath);
       };
       consumer.on('worker-message', this.boundWorkerMessageTrackingHandler);
+
+      // Subscribe to fan-out events for parallel group tracking
+      consumer.on('fan-out', (event: { meshName: string; agents: string[]; sourceAgent: string; joinAgent: string | null }) => {
+        if (event.joinAgent) {
+          this.registerFanOutGroup(event.meshName, event.agents, event.joinAgent);
+        } else {
+          log.warn('dispatcher', 'Fan-out without detectable join agent - no gate applied', {
+            meshName: event.meshName,
+            agents: event.agents,
+            sourceAgent: event.sourceAgent,
+          });
+        }
+      });
+
+      // Subscribe to fan-out-complete events for tracking completions
+      consumer.on('fan-out-complete', (event: { meshName: string; agentName: string; joinAgent: string }) => {
+        this.trackFanOutCompletion(event.meshName, event.agentName);
+      });
     }
   }
 
@@ -1511,6 +1557,10 @@ export class WorkerDispatcher extends EventEmitter {
       }
     }
 
+    // Fan-out re-engagement: if a completed fan-out agent receives a peer message,
+    // remove from completed set so it must re-complete before join ungates
+    this.handleFanOutReEngagement(meshName, agentName);
+
     log.info('dispatcher', `Spawning worker for message`, { agentId });
     this.spawnWorker(meshName, agent);
   }
@@ -1904,7 +1954,55 @@ The system will resume your session when the human responds.`;
           sessionId: sessionId.slice(0, 8),
         });
         this.removeActiveWorker(agentId, workerId);
-        await machine.complete(data);
+
+        // Check if resumed worker exited while awaiting responses (same as normal handler)
+        // This handles the case where the resumed worker sent messages during its session
+        const currentStatus = machine.getStatus();
+        const pendingOutgoingAsks = this.queue.getPendingAsks(agentId);
+        const hasPendingAsks = pendingOutgoingAsks.length > 0;
+
+        if (currentStatus === 'awaiting' || hasPendingAsks) {
+          if (data.sessionId) {
+            const fsmAwaitingResponses = machine.getAwaitingResponses();
+            const sqliteTargets = pendingOutgoingAsks.map(a => a.to_agent);
+            const allTargets = new Set([...fsmAwaitingResponses, ...sqliteTargets]);
+            const pendingCount = Math.max(fsmAwaitingResponses.size, pendingOutgoingAsks.length);
+
+            log.info('dispatcher', `Resumed worker exited while awaiting - re-suspending`, {
+              agentId,
+              workerId,
+              sessionId: data.sessionId.slice(0, 8),
+              targets: Array.from(allTargets),
+            });
+
+            this.sessionManager.suspend(agentId, {
+              sessionId: data.sessionId,
+              reason: 'await-response',
+              meshName,
+              agentConfig,
+              targetAgents: Array.from(allTargets),
+              pendingCount,
+            });
+
+            this.writeWorkerState();
+            // Don't complete FSM or drain queue - wait for responses
+            // But DO un-halt the mesh so other agents can process
+            this.emit('mesh:unhalted', { meshName, reason: 'ask-human-resolved-await-pending' });
+            this.processQueuedMeshMessages(meshName);
+            return;
+          }
+        }
+
+        try {
+          await machine.complete(data);
+        } catch (completeError) {
+          log.warn('dispatcher', `Resumed worker machine.complete failed`, {
+            agentId,
+            workerId,
+            error: (completeError as Error).message,
+          });
+        }
+
         this.emit('worker:complete', {
           ...data,
           transitionName: 'complete',
@@ -2467,18 +2565,21 @@ The system will resume your session when the human responds.`;
 
     // Clear session continuations unless persistence is enabled
     let clearedConversations = 0;
+    let clearedNamedConversations = 0;
     const meshConfig = this.meshConfigs.get(meshName);
     if (!meshConfig?.persistence) {
       clearedConversations = this.queue.clearConversationsForMesh(meshName);
+      clearedNamedConversations = this.queue.clearNamedConversationsForMesh(meshName);
     }
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0) {
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0 || clearedNamedConversations > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
         clearedBuffers,
         clearedDbSessions,
         clearedConversations,
+        clearedNamedConversations,
         clearedFSM: !!fsm,
       });
     }
@@ -2490,8 +2591,55 @@ The system will resume your session when the human responds.`;
       }
     }
 
+    // Clear fan-out groups for this mesh
+    for (const key of this.fanOutGroups.keys()) {
+      if (key.startsWith(`${meshName}:`)) {
+        this.fanOutGroups.delete(key);
+      }
+    }
+
     // Clear halted state file entry
     this.clearHaltedFile(meshName);
+  }
+
+  /**
+   * Hot-reload mesh configs at runtime.
+   * If meshName is provided, reloads only that mesh.
+   * Otherwise reloads all meshes.
+   */
+  reloadMeshConfigs(meshName?: string): void {
+    if (meshName) {
+      // Single mesh reload
+      const reloaded = this.configLoader.reload(meshName);
+      if (reloaded) {
+        const config = this.configLoader.get(meshName);
+        if (config) {
+          this.meshConfigs.set(meshName, config);
+
+          // Re-register guardrails
+          if (config.guardrails) {
+            this.guardrails.registerMesh(meshName, config.guardrails);
+          }
+
+          // Re-init FSM only if no active workers for this mesh
+          const activeWorkers = this.workerLifecycle.getWorkersForMesh(meshName);
+          if (activeWorkers.length === 0 && config.fsm) {
+            // Remove old FSM instance
+            const oldFsm = this.meshFSMs.get(meshName);
+            if (oldFsm) {
+              this.meshFSMs.delete(meshName);
+            }
+            this.initializeSingleFSM(meshName, config);
+          }
+        }
+      }
+      log.info('dispatcher', 'Reloaded mesh config', { meshName, success: reloaded });
+    } else {
+      // Full reload: clear all and re-scan
+      this.configLoader.clear();
+      this.loadMeshConfigs();
+      log.info('dispatcher', 'Reloaded all mesh configs');
+    }
   }
 
   /**
@@ -2725,8 +2873,8 @@ Please advise the agent or check mesh configuration.`;
     const { ensembleId, ensembleIndex, ensembleTotal, skipPostHooks, fsm: ensembleFsm, fsmStateConfig, task: ensembleTask } = options;
 
     // Parallel gate: defer exit agent until all parallel agents complete
-    if (this.isParallelGated(meshName, agent.name)) {
-      log.info('dispatcher', 'Agent gated by incomplete parallel block - deferring spawn', {
+    if (this.isParallelGated(meshName, agent.name) || this.isFanOutGated(meshName, agent.name)) {
+      log.info('dispatcher', 'Agent gated by incomplete parallel/fan-out block - deferring spawn', {
         agentId,
         meshName,
       });
@@ -2958,15 +3106,47 @@ Please advise the agent or check mesh configuration.`;
       // Check for workspace config (agent-level overrides mesh-level)
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
 
-      // Create workspace and inject context if configured
-      if (workspaceConfig) {
-        const workspace = this.workspaceManager.createWorkspace(taskId, workspaceConfig);
-        systemPrompt = this.promptInjector.injectWorkspace(systemPrompt, {
-          workspace,
-          taskId,
-        });
-        log.info('dispatcher', `Created workspace for task`, { agentId, taskId, dir: workspace.dir });
+      // Resolve workspace directory:
+      // 1. FSM context $workspace variable (highest priority — gates use this path)
+      // 2. Workspace config from agent/mesh
+      // 3. Default: .ai/tx/workspaces/<mesh-name>
+      let resolvedWorkspaceDir: string | undefined;
+
+      // Check FSM context for workspace variable (gates resolve $workspace from this)
+      const fsmObj = ensembleFsm || this.meshFSMs.get(meshName);
+      if (fsmObj && fsmObj.isInitialized()) {
+        const fsmCtx = fsmObj.getStatus().context;
+        if (fsmCtx?.workspace && typeof fsmCtx.workspace === 'string') {
+          resolvedWorkspaceDir = path.isAbsolute(fsmCtx.workspace as string)
+            ? fsmCtx.workspace as string
+            : path.join(this.config.workDir, fsmCtx.workspace as string);
+        }
       }
+
+      if (workspaceConfig && !resolvedWorkspaceDir) {
+        const workspace = this.workspaceManager.createWorkspace(taskId, workspaceConfig);
+        resolvedWorkspaceDir = workspace.dir;
+      }
+
+      // Default workspace when nothing else is configured
+      if (!resolvedWorkspaceDir) {
+        resolvedWorkspaceDir = path.join(this.config.workDir, '.ai', 'tx', 'workspaces', meshName);
+      }
+
+      // Ensure directory exists and inject into prompt
+      if (!fs.existsSync(resolvedWorkspaceDir)) {
+        fs.mkdirSync(resolvedWorkspaceDir, { recursive: true });
+      }
+      const workspaceInfo: import('../workspace/index.ts').WorkspaceInfo = {
+        taskId,
+        dir: resolvedWorkspaceDir,
+        outputFiles: new Map(),
+      };
+      systemPrompt = this.promptInjector.injectWorkspace(systemPrompt, {
+        workspace: workspaceInfo,
+        taskId,
+      });
+      log.info('dispatcher', `Created workspace for task`, { agentId, taskId, dir: resolvedWorkspaceDir });
 
       // Manifest paths — hoisted for chaos gate access
       const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
@@ -3354,31 +3534,66 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Check for session continuation - explicit frontmatter takes priority
       let sessionId: string | undefined;
+      let resumeSessionAt: string | undefined;
+      let forkSession: boolean | undefined;
+
+      // Named conversation: conversation-id → stored SDK session ID
+      const frontmatterConversationId = nextMsg?.payload?.['conversation-id'] as string | undefined;
+      if (frontmatterConversationId) {
+        const storedSessionId = this.queue.getNamedConversationSessionId(agentId, frontmatterConversationId);
+        if (storedSessionId) {
+          sessionId = storedSessionId;
+          log.info('dispatcher', `Resuming named conversation '${frontmatterConversationId}' for ${agentId}`, {
+            conversationId: frontmatterConversationId,
+            sessionId: sessionId.slice(0, 8) + '...'
+          });
+        } else {
+          log.info('dispatcher', `New named conversation '${frontmatterConversationId}' for ${agentId} (fresh session)`);
+        }
+      }
+
+      // Raw SDK session-id (existing behavior)
       const frontmatterSessionId = nextMsg?.payload?.['session-id'] as string | undefined;
-      if (frontmatterSessionId) {
+      if (!frontmatterConversationId && frontmatterSessionId) {
         sessionId = frontmatterSessionId;
         log.info('dispatcher', `Using explicit session-id from frontmatter for ${agentId}`, {
           sessionId: sessionId.slice(0, 8) + '...'
         });
-      } else if (agent.fork_from) {
-        // Session forking: load checkpoint from parent agent
-        const checkpointKey = `${meshName}/${agent.fork_from}`;
-        const checkpointSession = this.checkpoints.get(checkpointKey);
-        if (checkpointSession) {
-          sessionId = checkpointSession;
-          log.info('dispatcher', `Forking session from ${agent.fork_from} for ${agentId}`, {
+      } else if (!sessionId && !frontmatterConversationId && agent.fork_from) {
+        // Session forking: parse fork target for optional :end suffix
+        // "narrator" (default=start) or "narrator:end" (full execution context)
+        const [forkAgent, forkType] = agent.fork_from.includes(':')
+          ? agent.fork_from.split(':') as [string, string]
+          : [agent.fork_from, 'start'];
+
+        const checkpointKey = `${meshName}/${forkAgent}`;
+        const checkpoint = this.checkpoints.get(checkpointKey);
+        if (checkpoint) {
+          sessionId = checkpoint.sessionId;
+          forkSession = true;  // always fork into new session (isolate from parent)
+
+          if (forkType !== 'end' && checkpoint.initMessageUuid) {
+            // Start fork: truncate to init state (system prompt + preloaded files only)
+            resumeSessionAt = checkpoint.initMessageUuid;
+          }
+          // else: end fork — resume full session (no resumeSessionAt, gets full context)
+
+          log.info('dispatcher', `Forking session from ${forkAgent}:${forkType} for ${agentId}`, {
             checkpointKey,
-            sessionId: sessionId.slice(0, 8) + '...'
+            sessionId,
+            resumeSessionAt,
+            forkType,
           });
         } else {
-          log.warn('dispatcher', `fork_from specified but no checkpoint found for ${agent.fork_from}`, {
+          log.warn('dispatcher', `fork_from specified but no checkpoint found for ${forkAgent}`, {
             agentId,
             checkpointKey,
             availableCheckpoints: Array.from(this.checkpoints.keys()),
           });
         }
-      } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
-              || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
+      } else if (!frontmatterConversationId
+              && (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
+              || this.shouldPersistAgent(agent.name, meshConfig?.persistence))) {
         const existingSession = this.queue.getConversationId(agentId);
         if (existingSession) {
           sessionId = existingSession;
@@ -3398,6 +3613,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         mcpServers,
         toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
         sessionId,  // Resume session if continuation enabled
+        resumeSessionAt,  // Point-in-time fork UUID (start forks only)
+        forkSession,  // Branch into new session (fork isolation)
         command: agent.command,  // Agent-level slash command
         maxTurns: this.guardrails.getMaxTurns(meshName!, agent.name) ?? agent.max_turns,  // Guardrail > mesh config > null
         maxTurnsMode: this.guardrails.getMode('max_turns', meshName!, agent.name),
@@ -3449,7 +3666,41 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       worker.on('init', (data) => {
+        // Start checkpoint: capture sessionId at init time (UUID arrives via init-anchor).
+        // Downstream agents with fork_from may be dispatched when this agent's outbound
+        // message hits the consumer — before this agent completes. Saving at init
+        // ensures the checkpoint exists when the downstream agent needs it.
+        const cpType = resolveCheckpointType(agent.checkpoint);
+        if ((cpType === 'start' || cpType === 'both') && data.sessionId && meshName) {
+          const checkpointKey = `${meshName}/${agent.name}`;
+          this.checkpoints.set(checkpointKey, {
+            sessionId: data.sessionId,
+          });
+          log.info('dispatcher', `Start checkpoint saved at init for ${agentId}`, {
+            checkpointKey,
+            sessionId: data.sessionId,
+          });
+        }
+
         this.emit('worker:init', data);
+      });
+
+      // init-anchor: first user message UUID — the earliest persistable anchor point.
+      // system:init UUIDs are transient streaming events not stored in the session JSONL.
+      // --resume-session-at requires a UUID that exists in the persisted session.
+      worker.on('init-anchor', (data) => {
+        const cpType = resolveCheckpointType(agent.checkpoint);
+        if ((cpType === 'start' || cpType === 'both') && meshName) {
+          const checkpointKey = `${meshName}/${agent.name}`;
+          const existing = this.checkpoints.get(checkpointKey);
+          if (existing) {
+            existing.initMessageUuid = data.firstUserMessageUuid;
+            log.info('dispatcher', `Init anchor set for ${agentId}`, {
+              checkpointKey,
+              firstUserMessageUuid: data.firstUserMessageUuid,
+            });
+          }
+        }
       });
 
       // Transition on message processing
@@ -3908,14 +4159,42 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           });
         }
 
-        // Save checkpoint for session forking (if agent has checkpoint: true)
-        if (agent.checkpoint && data.sessionId && meshName) {
-          const checkpointKey = `${meshName}/${agentName}`;
-          this.checkpoints.set(checkpointKey, data.sessionId);
-          log.info('dispatcher', `Checkpoint saved for ${agentId}`, {
-            checkpointKey,
+        // Save named conversation mapping (conversation-id → SDK session)
+        const messageConversationId = nextMsg?.payload?.['conversation-id'] as string | undefined;
+        if (messageConversationId && data.sessionId) {
+          this.queue.setNamedConversationSessionId(agentId, messageConversationId, data.sessionId);
+          log.info('dispatcher', `Named conversation '${messageConversationId}' saved for ${agentId}`, {
+            conversationId: messageConversationId,
             sessionId: data.sessionId.slice(0, 8) + '...'
           });
+        }
+
+        // Save end checkpoint for session forking.
+        // Start checkpoints are saved at init time (early save). End checkpoints
+        // capture the full execution context for continuation-style forks.
+        // Preserves initMessageUuid from the start checkpoint if one was saved.
+        const cpType = resolveCheckpointType(agent.checkpoint);
+        if ((cpType === 'end' || cpType === 'both') && data.sessionId && meshName) {
+          const checkpointKey = `${meshName}/${agentName}`;
+          const existing = this.checkpoints.get(checkpointKey);
+          this.checkpoints.set(checkpointKey, {
+            sessionId: data.sessionId,
+            initMessageUuid: existing?.initMessageUuid,  // preserve from init save
+          });
+          log.info('dispatcher', `End checkpoint saved for ${agentId}`, {
+            checkpointKey,
+            sessionId: data.sessionId.slice(0, 8) + '...',
+          });
+        } else if (cpType === 'start' && data.sessionId && meshName) {
+          // Start-only checkpoint: update sessionId at completion (idempotent, session constant)
+          const checkpointKey = `${meshName}/${agentName}`;
+          const existing = this.checkpoints.get(checkpointKey);
+          if (existing) {
+            this.checkpoints.set(checkpointKey, {
+              ...existing,
+              sessionId: data.sessionId,
+            });
+          }
         }
 
         // Emit quality pass if we had preflight and made it here without errors
@@ -4022,6 +4301,34 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
         const activeWorker = workerInfo?.worker;
         const workerHookContext = activeWorker?.hookContext || hookContext;
+
+        // Check for expected exit patterns (CLI exits with code 1 after work, or abort from kill)
+        const isExitCode1 = data.error?.includes('exited with code 1');
+        const isAbortError = data.error?.includes('aborted by user') ||
+                            data.error?.includes('process aborted');
+        const workerWroteMessages = activeWorker?.messagesSent && activeWorker.messagesSent.length > 0;
+
+        // If the worker wrote messages and then exited with code 1, treat as completion
+        // The CLI regularly exits non-zero after successful work
+        if (isExitCode1 && workerWroteMessages) {
+          log.warn('dispatcher', `Worker exited with code 1 after writing messages — treating as completion`, {
+            agentId, workerId: errorWorkerId,
+            messagesSent: activeWorker!.messagesSent.length,
+          });
+          this.cleanupWorker(agentId, errorWorkerId);
+          this.processNextQueuedMessage(agentId);
+          return;
+        }
+
+        // Demote expected exits that didn't produce work — clean up without retry
+        if (isAbortError) {
+          log.debug('dispatcher', `Worker aborted (expected)`, {
+            agentId, workerId: errorWorkerId,
+          });
+          this.cleanupWorker(agentId, errorWorkerId);
+          this.processNextQueuedMessage(agentId);
+          return;
+        }
 
         // ENSEMBLE MODE: Record error and return early (no FSM retry logic)
         if (workerHookContext.ensembleId) {
@@ -4574,6 +4881,120 @@ Forked from parallel entry: ${entryAgent}
       }
     }
     return false;
+  }
+
+  // ============================================================================
+  // Fan-Out Group Management
+  // ============================================================================
+
+  /**
+   * Register a fan-out group from consumer's fan-out event.
+   * Creates tracking state for the parallel group and its join gate.
+   */
+  private registerFanOutGroup(meshName: string, agents: string[], joinAgent: string): void {
+    const groupKey = `${meshName}:${joinAgent}`;
+
+    // Don't overwrite if already tracking (edge case: re-trigger)
+    if (this.fanOutGroups.has(groupKey)) {
+      log.warn('dispatcher', 'Fan-out group already registered, skipping', {
+        meshName, joinAgent, agents,
+      });
+      return;
+    }
+
+    this.fanOutGroups.set(groupKey, {
+      agents: new Set(agents),
+      completed: new Set(),
+      joinAgent,
+      startedAt: Date.now(),
+    });
+
+    log.info('dispatcher', 'Registered fan-out group', {
+      meshName,
+      agents,
+      joinAgent,
+      groupKey,
+    });
+  }
+
+  /**
+   * Track a fan-out agent completing (routing outcome:complete to join agent).
+   * When all agents complete, ungates the join agent.
+   */
+  private trackFanOutCompletion(meshName: string, agentName: string): void {
+    for (const [groupKey, group] of this.fanOutGroups.entries()) {
+      if (!groupKey.startsWith(`${meshName}:`)) continue;
+      if (!group.agents.has(agentName)) continue;
+
+      group.completed.add(agentName);
+
+      log.info('dispatcher', 'Fan-out agent completed', {
+        meshName,
+        agentName,
+        groupKey,
+        completed: Array.from(group.completed),
+        total: group.agents.size,
+      });
+
+      // Check if all agents are done
+      if (group.completed.size === group.agents.size) {
+        const joinAgentId = `${meshName}/${group.joinAgent}`;
+
+        log.info('dispatcher', 'All fan-out agents completed - join agent ungated', {
+          meshName,
+          joinAgent: group.joinAgent,
+          completedAgents: Array.from(group.completed),
+        });
+
+        this.emit('fan-out:complete', {
+          meshName,
+          groupKey,
+          joinAgent: group.joinAgent,
+          completedAgents: Array.from(group.completed),
+        });
+
+        // Clean up group state BEFORE triggering join agent
+        this.fanOutGroups.delete(groupKey);
+
+        // Trigger join agent - process any queued messages
+        this.processNextQueuedMessage(joinAgentId);
+      }
+
+      return; // Found the group, done
+    }
+  }
+
+  /**
+   * Handle re-engagement: a completed fan-out agent receives a peer message.
+   * Removes from completed set so it must re-complete before join ungates.
+   */
+  private handleFanOutReEngagement(meshName: string, agentName: string): void {
+    for (const [groupKey, group] of this.fanOutGroups.entries()) {
+      if (!groupKey.startsWith(`${meshName}:`)) continue;
+      if (!group.agents.has(agentName)) continue;
+
+      if (group.completed.has(agentName)) {
+        group.completed.delete(agentName);
+        log.info('dispatcher', 'Fan-out agent re-engaged (removed from completed)', {
+          meshName,
+          agentName,
+          groupKey,
+          remainingCompleted: Array.from(group.completed),
+        });
+      }
+      return;
+    }
+  }
+
+  /**
+   * Check if an agent is a join agent gated by an incomplete fan-out group.
+   */
+  isFanOutGated(meshName: string, agentName: string): boolean {
+    const groupKey = `${meshName}:${agentName}`;
+    const group = this.fanOutGroups.get(groupKey);
+    if (!group) return false;
+    // Join agent is gated until all agents in the group have completed
+    return group.completed.size < group.agents.size;
   }
 
   /**

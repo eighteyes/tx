@@ -23,8 +23,6 @@ import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingM
 import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
-import { runCheckpointOptimization } from './checkpoint-optimizer.ts';
-import type { CheckpointOptimizationConfig, CheckpointOptimizationResult } from './checkpoint-optimizer.ts';
 
 /**
  * Routing destination in mesh config
@@ -111,7 +109,7 @@ export interface AgentConfig {
   max_turns?: number;  // API round-trip limit per invocation (runtime guardrail)
   max_messages?: number;  // Outbound message limit per worker invocation (chaos contract)
   load?: string[];  // Files to preload into context (globs supported, validated against manifest reads)
-  checkpoint?: boolean;  // Save session state on completion for forking
+  checkpoint?: boolean | 'start' | 'end' | 'both';  // Checkpoint type: start (after init), end (after completion), both
   fork_from?: string;  // Fork from another agent's checkpoint
 }
 
@@ -149,7 +147,6 @@ export interface MeshConfig {
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
-  checkpoint_optimization?: CheckpointOptimizationConfig;  // Auto-checkpoint and fork inference from manifest
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -298,6 +295,16 @@ export class MeshConfigLoader extends EventEmitter {
   }
 
   /**
+   * Reload a single mesh config from disk.
+   * Invalidates the cached config and re-reads from the filesystem.
+   * Returns true if the mesh was successfully reloaded.
+   */
+  reload(meshName: string): boolean {
+    this.meshConfigs.delete(meshName);
+    return this.loadOnDemand(meshName);
+  }
+
+  /**
    * Recursively scan mesh directory for config files (max depth 2)
    * Supports: config.yaml, config.yml (preferred) and config.json (legacy)
    */
@@ -380,6 +387,11 @@ export class MeshConfigLoader extends EventEmitter {
         } else if (!agent.model) {
           (agent as any).model = 'sonnet';  // Default model when not specified
         }
+
+        // Normalize checkpoint: true → 'start' (backward compat)
+        if (agent.checkpoint === true) {
+          (agent as any).checkpoint = 'start';
+        }
       }
 
       // Normalize parallel blocks: validate and auto-wire fork_from/checkpoint
@@ -405,10 +417,10 @@ export class MeshConfigLoader extends EventEmitter {
             log.error('config-loader', `Parallel block exit agent not found: ${block.exit}`, { mesh: config.mesh });
           }
 
-          // Auto-add checkpoint: true to entry agent
+          // Auto-add checkpoint: 'start' to entry agent (captures init state for forking)
           const entryAgent = config.agents.find(a => a.name === block.entry);
           if (entryAgent && !entryAgent.checkpoint) {
-            (entryAgent as any).checkpoint = true;
+            (entryAgent as any).checkpoint = 'start';
             log.debug('config-loader', `Auto-enabled checkpoint for parallel entry: ${block.entry}`, {
               mesh: config.mesh,
             });
@@ -426,16 +438,6 @@ export class MeshConfigLoader extends EventEmitter {
             }
           }
         }
-      }
-
-      // Run checkpoint optimization if enabled and manifest is present
-      if (config.checkpoint_optimization?.enabled && config.manifest && config.manifest.length > 0) {
-        runCheckpointOptimization(
-          config.agents,
-          config.manifest,
-          config.checkpoint_optimization,
-          config.mesh
-        );
       }
 
       // Store base path for relative prompt resolution

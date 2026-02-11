@@ -18,7 +18,7 @@ const dataDir = join(projectDir, '.ai', 'tx', 'data');
 
 // ─── Shared data readers ───────────────────────────────────────────────
 
-function readRuntime(): { inject: boolean; startedAt?: string; sessionName?: string } | null {
+function readRuntime(): { inbox?: string; inject?: boolean; startedAt?: string; sessionName?: string } | null {
   const runtimePath = join(dataDir, 'runtime.json');
   if (!existsSync(runtimePath)) return null;
   try {
@@ -32,6 +32,7 @@ function readStatus(): {
   meshes: Record<string, { activeWorkers: number; state: string; suspendedAgent?: string; haltReason?: string; pendingMessages?: number }>;
   workers: string[];
   pendingAsks: number;
+  pendingQueue?: Record<string, number>;
   timestamp?: string;
 } {
   const statusPath = join(dataDir, 'status.json');
@@ -113,6 +114,11 @@ function outputStatusBar(): void {
     parts.push('IDLE');
   }
 
+  // Extract agent names for later use
+  const agentNames = (status.workers || [])
+    .map(w => w.split('/').pop() || w)
+    .join(',');
+
   // Messages for core (unread)
   if (messagesForCore > 0) {
     parts.push(`${messagesForCore}📨`);
@@ -128,14 +134,21 @@ function outputStatusBar(): void {
     parts.push(`${status.pendingAsks}❓`);
   }
 
-  // Active workers
+  // Active workers with agent names
   if (activeWorkers > 0) {
-    parts.push(`${activeWorkers}🔧`);
+    parts.push(`${activeWorkers}🔧 ${agentNames}`);
   }
 
   // Suspended/awaiting
   if (suspendedCount > 0) {
     parts.push(`${suspendedCount}💤`);
+  }
+
+  // Pending queue messages (waiting for dispatch)
+  const pendingQueue = status.pendingQueue || {};
+  const totalPending = Object.values(pendingQueue).reduce((sum, n) => sum + n, 0);
+  if (totalPending > 0) {
+    parts.push(`${totalPending}⏳`);
   }
 
   console.log(parts.join(' │ '));
@@ -144,9 +157,14 @@ function outputStatusBar(): void {
 // ─── Hook context mode (default) ──────────────────────────────────────
 
 function outputHookContext(): void {
-  // 1. Check runtime config
+  // 1. Check runtime config — only fire for 'hook' inbox mode
   const runtime = readRuntime();
-  if (!runtime || !runtime.inject) {
+  if (!runtime) {
+    process.exit(0);
+  }
+  // Backward compat: old runtime.json has inject:true/false, new has inbox:'hook'|'inject'|'ask'
+  const inboxMode = runtime.inbox ?? (runtime.inject ? 'hook' : 'ask');
+  if (inboxMode !== 'hook') {
     process.exit(0);
   }
 
@@ -193,11 +211,22 @@ function outputHookContext(): void {
       ).join('\n')
     : '';
 
+  // 7. Build pending queue summary (agents with queued but undispatched messages)
+  const pendingQueue = status.pendingQueue || {};
+  const pendingEntries = Object.entries(pendingQueue).filter(([, n]) => n > 0);
+  const pendingQueueXml = pendingEntries.length > 0
+    ? `\n  <pending-queue count="${pendingEntries.reduce((s, [, n]) => s + n, 0)}">\n` +
+      pendingEntries.map(([agent, count]) =>
+        `    <agent id="${escapeXml(agent)}" pending="${count}" />`
+      ).join('\n') +
+      `\n  </pending-queue>`
+    : '';
+
   const output = `<tx-context>
   <status meshes="${escapeXml(meshSummary)}" pending-asks="${status.pendingAsks}" />
   <messages count="${newMessages.length}">
 ${messagesXml}
-  </messages>
+  </messages>${pendingQueueXml}
 </tx-context>`;
 
   console.log(output);

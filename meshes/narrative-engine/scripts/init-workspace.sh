@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # init-workspace.sh - Deterministic workspace setup for init-turn
-# Reads session, increments turn, creates workspace, loads state, outputs YAML blob to stdout.
+# Reads session (already incremented by entry), loads state, outputs YAML blob to stdout.
 # Responsibilities:
-#   - Read session.yaml and derive paths
-#   - Increment turn number
+#   - Read session.yaml (turn/workspace already set by entry's increment-turn.sh)
 #   - Detect and archive polluted workspaces
 #   - Bootstrap new campaigns (--new-campaign)
-#   - Create workspace directory
 #   - Load protagonist entity (campaign > game, with game-level fallback for starting traits/foundation)
 #   - Load scene.yaml and timeline.yaml
 #   - Run snapshot-campaign.sh
-#   - Atomically update session.yaml
 #   - Output state blob YAML to stdout
+#
+# NOTE: Turn increment happens in entry agent via increment-turn.sh BEFORE init-turn spawns.
+# This ensures the manifest resolves to the correct workspace paths.
 
 set -euo pipefail
 
@@ -76,6 +76,7 @@ campaign_id=$(yq -r '.campaign_id // "null"' "$SESSION")
 current_turn=$(yq -r '.turn // 0' "$SESSION")
 game_path=$(yq -r '.game_path // "null"' "$SESSION")
 pov_character=$(yq -r '.pov_character // "null"' "$SESSION")
+workspace=$(yq -r '.workspace // "null"' "$SESSION")
 
 if [[ "$game_id" == "null" || "$game_path" == "null" ]]; then
   err "session.yaml missing game_id or game_path"
@@ -91,11 +92,13 @@ campaign_dir="$game_path/campaigns/$campaign_id"
 vlog "Session: game=$game_id campaign=$campaign_id turn=$current_turn"
 
 # ─────────────────────────────────────────────
-# 2. INCREMENT TURN
+# 2. USE CURRENT TURN (entry already incremented)
 # ─────────────────────────────────────────────
 
-new_turn=$((current_turn + 1))
-vlog "Turn: $current_turn → $new_turn"
+# Entry agent runs increment-turn.sh BEFORE spawning init-turn.
+# Session.yaml already has the correct turn number and workspace.
+new_turn=$current_turn
+vlog "Turn: $new_turn (set by entry)"
 
 # ─────────────────────────────────────────────
 # 3. CAMPAIGN CHECK
@@ -177,7 +180,11 @@ fi
 # 5. WORKSPACE POLLUTION CHECK
 # ─────────────────────────────────────────────
 
-workspace="$campaign_dir/turns/turn-$new_turn"
+# Workspace path already set by entry via increment-turn.sh
+# Only compute if not set (e.g., new campaign bootstrap)
+if [[ "$workspace" == "null" || -z "$workspace" ]]; then
+  workspace="$campaign_dir/turns/turn-$new_turn"
+fi
 pollution_status="clean"
 
 if [[ -d "$workspace" ]]; then
@@ -267,21 +274,20 @@ if [[ -x "$SCRIPT_DIR/snapshot-campaign.sh" ]]; then
 fi
 
 # ─────────────────────────────────────────────
-# 11. UPDATE SESSION.YAML (atomic)
+# 11. VALIDATE SESSION.YAML (entry already set turn/workspace)
 # ─────────────────────────────────────────────
 
-tmp_session=$(mktemp)
-cp "$SESSION" "$tmp_session"
-
-yq -i "
-  .turn = $new_turn |
-  .campaign_id = \"$campaign_id\" |
-  .workspace = \"$workspace\" |
-  .phase = \"awaiting_prep\"
-" "$tmp_session"
-
-mv "$tmp_session" "$SESSION"
-vlog "Session updated: turn=$new_turn phase=awaiting_prep"
+# Entry agent already updated turn, workspace, and phase.
+# Only update campaign_id if it changed (new campaign bootstrap).
+if [[ "$campaign_status" == "just_created" ]]; then
+  tmp_session=$(mktemp)
+  cp "$SESSION" "$tmp_session"
+  yq -i ".campaign_id = \"$campaign_id\"" "$tmp_session"
+  mv "$tmp_session" "$SESSION"
+  vlog "Session updated: campaign_id=$campaign_id"
+else
+  vlog "Session validated: turn=$new_turn workspace=$workspace"
+fi
 
 # ─────────────────────────────────────────────
 # 12. BUILD STATE BLOB (yq-assembled, stdout)

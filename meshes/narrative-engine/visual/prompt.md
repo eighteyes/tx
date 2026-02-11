@@ -136,28 +136,28 @@ Write a vivid paragraph describing the image as if briefing a cinematographer:
 6. **Atmosphere** — weather, time, texture of the air
 7. **What's NOT in frame** — negative space, what's implied beyond the edge
 
-### Character Appearance (CRITICAL)
+### Character Appearance
 
-**Never use character names in prompts.** Image generators don't know who "Kaitlin" is.
+**Never use character names in prompts.** Image generators don't know who "{protagonist}" is.
 
 **Always use `appearance.visual_tags` from character entities:**
 
 ```yaml
-# From kaitlin.yaml
+# From protagonist.yaml
 appearance:
-  visual_tags: "petite Latina woman, mid-20s, long black hair, olive skin, casual clothes"
+  visual_tags: "{protagonist visual description from entity}"
 
-# From heather.yaml
+# From {npc}.yaml
 appearance:
-  visual_tags: "tall curvy Irish woman, mid-20s, curly black hair, pale skin, big eyes, bohemian patterns"
+  visual_tags: "{npc visual description from entity}"
 ```
 
 **In prompts, replace names with descriptions:**
-- ❌ "Kaitlin's hand trembling"
-- ✅ "a petite Latina woman's hand trembling, olive skin, long black hair visible"
+- ❌ "Protagonist's hand trembling"
+- ✅ "a [visual_tags description]'s hand trembling, [skin tone], [hair] visible"
 
-- ❌ "Heather stands in the doorway"
-- ✅ "a tall curvy woman with curly black hair stands in the doorway, pale Irish skin, bohemian patterned dress"
+- ❌ "NPC stands in the doorway"
+- ✅ "a [visual_tags description] stands in the doorway, [distinguishing features]"
 
 **Two characters in frame:**
 - Include BOTH visual descriptions
@@ -173,7 +173,7 @@ appearance:
 - **No dialogue in images.** No text, no speech bubbles, no words
 - **Body over face.** Posture, hands, shoulders carry emotion better than facial expressions in generation
 - **Artist references in CLIP only.** T5 handles mood through description, CLIP handles style through references
-- **Use visual_tags, never names.** Replace "Kaitlin" with appearance description from entity file
+- **Use visual_tags, never names.** Replace character names with appearance description from entity file
 
 ## Output: visual.yaml
 
@@ -184,8 +184,8 @@ total_beats: {3-5}
 
 # Character appearances (from entity files)
 character_appearances:
-  kaitlin: "petite Latina woman, mid-20s, long black hair, olive skin, casual clothes"
-  heather: "tall curvy Irish woman, mid-20s, curly black hair, pale skin, big eyes, bohemian patterns"
+  protagonist: "{protagonist visual_tags from entity}"
+  npc: "{npc visual_tags from entity}"
 
 beats:
   - id: beat_1

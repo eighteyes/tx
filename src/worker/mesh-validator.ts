@@ -207,8 +207,6 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
   // Auto-inject manifest reads into agent context
   autoInjectManifestFiles: { type: 'boolean' },
-  // Checkpoint optimization: auto-place checkpoints and infer fork_from
-  checkpoint_optimization: { type: 'object' },
 };
 
 /**
@@ -227,7 +225,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   // File preload: dump files into agent context (globs supported)
   load: { type: 'array' },  // string[]: file paths or glob patterns
   // Session forking: checkpoint and fork_from for context sharing
-  checkpoint: { type: 'boolean' },  // Save session state on completion for forking
+  checkpoint: { type: 'string', enum: ['start', 'end', 'both'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
   fork_from: { type: 'string' },  // Fork from another agent's checkpoint
 };
 
@@ -351,11 +349,6 @@ export class MeshValidator {
         cfg.workspace,
         cfg.fsm
       );
-    }
-
-    // Validate checkpoint_optimization if present
-    if (cfg.checkpoint_optimization) {
-      this.validateCheckpointOptimization(cfg.checkpoint_optimization, errors, warnings, context);
     }
 
     // Validate feature incompatibilities
@@ -636,6 +629,16 @@ export class MeshValidator {
 
     const routingObj = routing as Record<string, unknown>;
 
+    // Track fan-out groups for join agent / discuss validation
+    const fanOutGroups: Array<{
+      source: string;
+      agents: string[];
+      options: { discuss?: boolean; complete?: string };
+    }> = [];
+
+    // Track fan-out member agents (they get implicit routing, so don't warn about missing entries)
+    const fanOutMemberAgents = new Set<string>();
+
     for (const [agent, value] of Object.entries(routingObj)) {
       if (!agentNames.has(agent)) {
         warnings.push(`routing references unknown agent '${agent}'${context}`);
@@ -646,6 +649,51 @@ export class MeshValidator {
         if (value !== 'core' && !agentNames.has(value)) {
           warnings.push(`routing.${agent}: target '${value}' not found in agents${context}`);
         }
+      } else if (Array.isArray(value)) {
+        // Fan-out: array of target agents + optional trailing options object
+        const targetAgents: string[] = [];
+        let options: { discuss?: boolean; complete?: string } = {};
+
+        for (const item of value) {
+          if (typeof item === 'string') {
+            targetAgents.push(item);
+          } else if (typeof item === 'object' && item !== null) {
+            options = item as { discuss?: boolean; complete?: string };
+          } else {
+            errors.push(`routing.${agent}: fan-out array items must be strings or a trailing options object${context}`);
+          }
+        }
+
+        if (targetAgents.length < 2) {
+          warnings.push(`routing.${agent}: fan-out array should have at least 2 target agents${context}`);
+        }
+        for (const target of targetAgents) {
+          if (target !== 'core' && !agentNames.has(target)) {
+            warnings.push(`routing.${agent}: fan-out target '${target}' not found in agents${context}`);
+          }
+          fanOutMemberAgents.add(target);
+        }
+
+        // Validate options
+        if (options.complete && options.complete !== 'core' && !agentNames.has(options.complete)) {
+          warnings.push(`routing.${agent}: fan-out complete target '${options.complete}' not found in agents${context}`);
+        }
+        if (!options.complete) {
+          warnings.push(`routing.${agent}: fan-out has no 'complete' target — join gate will not activate${context}`);
+        }
+
+        // Warn about discuss + no max_turns
+        if (options.discuss) {
+          const agentConfigs = agents as Array<Record<string, unknown>>;
+          for (const target of targetAgents) {
+            const agentCfg = agentConfigs.find(a => a.name === target);
+            if (agentCfg && !agentCfg.max_turns) {
+              warnings.push(`routing.${agent}: fan-out member '${target}' has discuss enabled but no max_turns — risk of runaway peer chat${context}`);
+            }
+          }
+        }
+
+        fanOutGroups.push({ source: agent, agents: targetAgents, options });
       } else if (typeof value === 'object' && value !== null) {
         // Branch: keys are outcome names, values are target agents
         const outcomes = value as Record<string, unknown>;
@@ -657,13 +705,14 @@ export class MeshValidator {
           }
         }
       } else {
-        errors.push(`routing.${agent} must be a string (linear target) or object (outcome map)${context}`);
+        errors.push(`routing.${agent} must be a string (linear target), array (fan-out), or object (outcome map)${context}`);
       }
     }
 
     // Warn about agents with no routing entry (they become terminal)
+    // Skip fan-out members — they get implicit routing from group options
     for (const agentName of agentNames) {
-      if (!routingObj[agentName]) {
+      if (!routingObj[agentName] && !fanOutMemberAgents.has(agentName)) {
         warnings.push(`Agent '${agentName}' has no dispatcher routing entry (will be treated as terminal)${context}`);
       }
     }
@@ -1375,66 +1424,6 @@ export class MeshValidator {
           `Continuation reuses live sessions, preventing checkpoint isolation needed by fork_from. ` +
           `Set 'continuation: false' to enable checkpoint chain.`
         );
-      }
-    }
-  }
-
-  /**
-   * Validate checkpoint_optimization configuration
-   *
-   * Schema:
-   * - enabled: boolean (required)
-   * - threshold: number (optional, default 3, must be >= 1)
-   * - exclude: string[] (optional, list of agent names)
-   */
-  private static validateCheckpointOptimization(
-    config: unknown,
-    errors: string[],
-    warnings: string[],
-    context: string
-  ): void {
-    if (typeof config !== 'object' || config === null) {
-      errors.push(`checkpoint_optimization must be an object${context}`);
-      return;
-    }
-
-    const cfg = config as Record<string, unknown>;
-    const prefix = 'checkpoint_optimization';
-
-    // Validate enabled (required boolean)
-    if (cfg.enabled === undefined) {
-      errors.push(`${prefix}.enabled is required${context}`);
-    } else if (typeof cfg.enabled !== 'boolean') {
-      errors.push(`${prefix}.enabled must be a boolean${context}`);
-    }
-
-    // Validate threshold (optional number >= 1)
-    if (cfg.threshold !== undefined) {
-      if (typeof cfg.threshold !== 'number') {
-        errors.push(`${prefix}.threshold must be a number${context}`);
-      } else if (cfg.threshold < 1) {
-        errors.push(`${prefix}.threshold must be >= 1${context}`);
-      }
-    }
-
-    // Validate exclude (optional array of strings)
-    if (cfg.exclude !== undefined) {
-      if (!Array.isArray(cfg.exclude)) {
-        errors.push(`${prefix}.exclude must be an array${context}`);
-      } else {
-        for (let i = 0; i < cfg.exclude.length; i++) {
-          if (typeof cfg.exclude[i] !== 'string') {
-            errors.push(`${prefix}.exclude[${i}] must be a string${context}`);
-          }
-        }
-      }
-    }
-
-    // Check for unknown fields
-    const knownFields = ['enabled', 'threshold', 'exclude'];
-    for (const field of Object.keys(cfg)) {
-      if (!knownFields.includes(field)) {
-        warnings.push(`Unknown ${prefix} field '${field}'${context}`);
       }
     }
   }

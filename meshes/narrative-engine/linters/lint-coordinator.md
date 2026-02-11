@@ -35,7 +35,7 @@ You fire once to start, receive the result once when the chain completes.
    dialogue_pairs: {workspace}/dialogue-pairs.txt
    game_path: {game_path}
    ```
-4. **STOP** — wait for chain to complete.
+4. Wait for chain to complete.
 
 ### On Response (from lint-temporal — chain complete)
 

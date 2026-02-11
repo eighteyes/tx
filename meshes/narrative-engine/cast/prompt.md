@@ -61,13 +61,13 @@ For each NPC present, consider:
 For each significant NPC, write:
 
 ```yaml
-heather:
+npc:
   surface_command: "Get out"  # What they said
   subtext_want: "Don't just leave like everyone else"  # What they actually want
   internal_conflict:
-    - "Part of her wants Kaitlin to fight for this"
+    - "Part of them wants protagonist to fight for this"
     - "Said 'get out' but hasn't moved to enforce it"
-    - "Exhausted but watching — waiting to see what Kaitlin does"
+    - "Exhausted but watching — waiting to see what protagonist does"
 ```
 
 ### Why Backpressure Matters
@@ -94,9 +94,9 @@ If the player's action (from action-lock.yaml) contradicts an NPC's stated comma
 3. NPC reaction should show BOTH — anger at disobedience AND response to what the defiance means
 
 ```yaml
-heather:
+npc:
   reaction_to_defiance:
-    surface_response: "anger — she was disobeyed"
+    surface_response: "anger — they were disobeyed"
     depth_response: "terror/relief — someone stayed"
     conflict_visible: "Voice angry, body hasn't moved to enforce"
 ```
@@ -252,7 +252,7 @@ For NPCs on the receiving end of the pressurized axis:
 
 Add `momentum_context` to relevant NPCs in reactions.yaml:
 ```yaml
-heather:
+npc:
   momentum_context:
     axis: "trust"
     build_turns: [14, 15, 16]
@@ -273,7 +273,7 @@ Entity history tells you WHAT happened. Emotional momentum tells you WHY this tu
 When an NPC is in an intimate or tense scene, provide 4-8 reaction beats — what they're DOING and WANTING, not what they're SAYING. Narrator writes the actual words.
 
 ```yaml
-heather:
+npc:
   # Read from entity: EXHAUSTED: 5, BOUNDARIED: 4, MERCURIAL: 4, INVESTED: 4
   trait_tension: "BOUNDARIED vs INVESTED — wants to enforce boundary AND wants them to stay"
 

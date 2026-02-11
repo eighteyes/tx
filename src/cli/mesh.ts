@@ -7,6 +7,7 @@
  *   tx mesh status <mesh> --next   Machine-readable dispatch instructions
  *   tx mesh status <mesh> --json   Full JSON with per-state gate status
  *   tx mesh kill <mesh>       Kill all workers for a mesh (via SIGUSR2 to tx start)
+ *   tx mesh reload [mesh]     Hot-reload mesh config(s) at runtime (via SIGUSR2)
  *   tx mesh clear <mesh>      Clear SQLite state (suspended sessions, pending asks, FSM)
  *   tx mesh unstick <mesh>    Clear halt state only (preserves FSM state)
  *   tx mesh validate <mesh>   Validate mesh configuration
@@ -79,6 +80,7 @@ interface MeshActivity {
   meshName: string;
   suspendedCount: number;
   pendingAsksCount: number;
+  pendingQueueCount: number;
   sessionCount: number;
   hasFsmState: boolean;
   hasWorkers: boolean;
@@ -176,10 +178,20 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
       workersByMesh.set(meshName, current + 1);
     }
 
+    // Get pending queue messages grouped by mesh
+    const queueStats = queue.getStats();
+    const pendingQueueByMesh = new Map<string, number>();
+    for (const [agent, count] of Object.entries(queueStats.byAgent)) {
+      const meshName = agent.split('/')[0];
+      const current = pendingQueueByMesh.get(meshName) || 0;
+      pendingQueueByMesh.set(meshName, current + count);
+    }
+
     // Combine all meshes
     const allMeshes = new Set<string>([
       ...suspendedByMesh.keys(),
       ...pendingByMesh.keys(),
+      ...pendingQueueByMesh.keys(),
       ...sessionsByMesh.keys(),
       ...fsmMeshes,
       ...workersByMesh.keys(),
@@ -191,6 +203,7 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
         meshName,
         suspendedCount: suspendedByMesh.get(meshName) || 0,
         pendingAsksCount: pendingByMesh.get(meshName) || 0,
+        pendingQueueCount: pendingQueueByMesh.get(meshName) || 0,
         sessionCount: sessionsByMesh.get(meshName) || 0,
         hasFsmState: fsmMeshes.has(meshName),
         hasWorkers: workersByMesh.has(meshName),
@@ -220,10 +233,11 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
       chalk.dim('MESH'.padEnd(20)) +
       chalk.dim('SUSPENDED'.padEnd(12)) +
       chalk.dim('PENDING'.padEnd(10)) +
+      chalk.dim('QUEUED'.padEnd(10)) +
       chalk.dim('SESSIONS'.padEnd(10)) +
       chalk.dim('STATUS')
     );
-    console.log(chalk.dim('-'.repeat(62)));
+    console.log(chalk.dim('-'.repeat(72)));
 
     for (const mesh of meshActivities) {
       const statusParts: string[] = [];
@@ -235,6 +249,7 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
         chalk.cyan(mesh.meshName.padEnd(20)) +
         (mesh.suspendedCount > 0 ? chalk.yellow(String(mesh.suspendedCount).padEnd(12)) : chalk.dim('0'.padEnd(12))) +
         (mesh.pendingAsksCount > 0 ? chalk.yellow(String(mesh.pendingAsksCount).padEnd(10)) : chalk.dim('0'.padEnd(10))) +
+        (mesh.pendingQueueCount > 0 ? chalk.magenta(String(mesh.pendingQueueCount).padEnd(10)) : chalk.dim('0'.padEnd(10))) +
         String(mesh.sessionCount).padEnd(10) +
         statusParts.join(', ')
       );
@@ -709,6 +724,75 @@ async function killMeshWorkers(meshName: string, flags: MeshFlags): Promise<void
   if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
   if (flags.json) {
     console.log(JSON.stringify({ killed: false, message: 'Timeout waiting for ACK from tx start' }));
+  } else {
+    console.log(chalk.yellow(`Timeout waiting for response from tx start (PID ${pid})`));
+  }
+}
+
+/**
+ * Reload mesh configs at runtime via SIGUSR2 control signal to the running tx start process.
+ * Reloads a single mesh or all meshes.
+ */
+async function reloadMeshConfigs(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const dataDir = path.join(cwd, '.ai/tx/data');
+  const pidFile = path.join(dataDir, '.pid');
+  const controlFile = path.join(dataDir, 'control.json');
+
+  if (!fs.existsSync(pidFile)) {
+    if (flags.json) {
+      console.log(JSON.stringify({ reloaded: false, message: 'tx start not running' }));
+    } else {
+      console.log(chalk.yellow('tx start is not running. Start it first with: tx start'));
+    }
+    return;
+  }
+
+  const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+  if (isNaN(pid)) {
+    console.error(chalk.red('Invalid PID in .pid file'));
+    return;
+  }
+
+  // Write control file
+  const ctrl: Record<string, string> = { action: 'reload-meshes' };
+  if (meshName) ctrl.mesh = meshName;
+  fs.writeFileSync(controlFile, JSON.stringify(ctrl));
+
+  // Send SIGUSR2
+  try {
+    process.kill(pid, 'SIGUSR2');
+  } catch (err) {
+    if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+    if (flags.json) {
+      console.log(JSON.stringify({ reloaded: false, message: 'tx start process not found (stale PID)' }));
+    } else {
+      console.log(chalk.yellow(`tx start process (PID ${pid}) not found — stale PID file`));
+    }
+    return;
+  }
+
+  // Poll for ACK (control file deletion) with timeout
+  const timeout = 5000;
+  const interval = 100;
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    if (!fs.existsSync(controlFile)) {
+      if (flags.json) {
+        console.log(JSON.stringify({ reloaded: true, mesh: meshName || 'all' }));
+      } else {
+        console.log(chalk.green(`✓ Reloaded ${meshName || 'all'} mesh config(s)`));
+      }
+      return;
+    }
+    await new Promise(r => setTimeout(r, interval));
+  }
+
+  // Timeout
+  if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+  if (flags.json) {
+    console.log(JSON.stringify({ reloaded: false, message: 'Timeout waiting for ACK from tx start' }));
   } else {
     console.log(chalk.yellow(`Timeout waiting for response from tx start (PID ${pid})`));
   }
@@ -2708,6 +2792,7 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('list')}                    List meshes with activity
   ${chalk.cyan('status')} <mesh>           Show mesh state snapshot
   ${chalk.cyan('kill')} <mesh>             Kill all workers for a mesh (via tmux)
+  ${chalk.cyan('reload')} [mesh]           Hot-reload mesh config(s) at runtime
   ${chalk.cyan('clear')} <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
   ${chalk.cyan('unstick')} <mesh>          Clear halt state only (preserves FSM state)
   ${chalk.cyan('validate')} <mesh>         Validate mesh configuration
@@ -2792,6 +2877,10 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await killMeshWorkers(meshName, flags);
+        break;
+
+      case 'reload':
+        await reloadMeshConfigs(meshName, flags);
         break;
 
       case 'clear':

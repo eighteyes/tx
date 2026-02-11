@@ -150,6 +150,14 @@ export class MessageQueue {
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_await_agent ON await_state(agent_id);
+
+      CREATE TABLE IF NOT EXISTS named_conversations (
+        agent_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (agent_id, conversation_id)
+      );
     `);
   }
 
@@ -364,6 +372,40 @@ export class MessageQueue {
   clearConversationsForMesh(meshName: string): number {
     const result = this.db.prepare(
       `DELETE FROM sessions WHERE agent_id LIKE ?`
+    ).run(`${meshName}/%`);
+    return result.changes;
+  }
+
+  // ============================================
+  // Named Conversations (conversation-id mapping)
+  // ============================================
+
+  /**
+   * Look up the SDK session ID for a named conversation
+   */
+  getNamedConversationSessionId(agentId: string, conversationId: string): string | null {
+    const row = this.db.prepare(
+      `SELECT session_id FROM named_conversations WHERE agent_id = ? AND conversation_id = ?`
+    ).get(agentId, conversationId) as { session_id: string } | undefined;
+    return row?.session_id ?? null;
+  }
+
+  /**
+   * Store or update the SDK session ID for a named conversation
+   */
+  setNamedConversationSessionId(agentId: string, conversationId: string, sessionId: string): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO named_conversations (agent_id, conversation_id, session_id, updated_at)
+      VALUES (?, ?, ?, ?)
+    `).run(agentId, conversationId, sessionId, Date.now());
+  }
+
+  /**
+   * Clear named conversations for a mesh (on mesh completion when persistence is off)
+   */
+  clearNamedConversationsForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      `DELETE FROM named_conversations WHERE agent_id LIKE ?`
     ).run(`${meshName}/%`);
     return result.changes;
   }

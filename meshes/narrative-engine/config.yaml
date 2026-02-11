@@ -385,6 +385,24 @@ manifest_enforcement:
   max_retry: 2
 
 # ==========================================
+# GUARDRAILS
+# ==========================================
+
+guardrails:
+  max_messages:
+    limit: 3
+  agents:
+    init-turn:
+      routing_error:
+        strict: true
+    scene-crafter:
+      max_messages:
+        limit: 5
+    editor:
+      max_messages:
+        limit: 5
+
+# ==========================================
 # MANIFEST - File-centric I/O manifest (source of truth)
 # ==========================================
 
@@ -506,11 +524,12 @@ manifest:
     reads: [dramaturg]
     writes: [scribe]
 
-  - id: closing.yaml
-    description: Canonical physical state at turn end for next turn continuity
-    location: workspace
-    reads: [init-turn, narrator]
-    writes: [scribe]
+  # RETIRED: closing.yaml — replaced by scene.yaml (campaign-level, single source of truth)
+  # - id: closing.yaml
+  #   description: Canonical physical state at turn end for next turn continuity
+  #   location: workspace
+  #   reads: [init-turn, narrator]
+  #   writes: [scribe]
 
   - id: calibration-state.yaml
     description: HITL calibration extraction progress tracker
@@ -544,7 +563,14 @@ manifest:
     description: Individual character entity files (traits, bonds, state)
     location: game
     persistent: true
-    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, calibrator, dialogue]
+    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, possibility, dramaturg, calibrator, dialogue, visual]
+    writes: [scribe, calibrator]
+
+  - id: entities/bonds/
+    description: Bond entity files (relationship intensity, dynamics)
+    location: game
+    persistent: true
+    reads: [fates, possibility, cast, dramaturg]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt
@@ -575,12 +601,34 @@ manifest:
     reads: [init-turn, entry]
     writes: [init-turn, entry]
 
-  - id: state.yaml
-    description: Campaign mechanical state — active effects, conditions, resources
+  # RETIRED: state.yaml — replaced by scene.yaml (campaign-level, single source of truth)
+  # - id: state.yaml
+  #   description: Campaign mechanical state — active effects, conditions, resources
+  #   location: campaign
+  #   persistent: true
+  #   reads: [init-turn, dramaturg, system, scribe, fates]
+  #   writes: [init-turn, scribe]
+
+  - id: scene.yaml
+    description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, dramaturg, system, scribe, fates]
-    writes: [init-turn, scribe]
+    reads: [init-turn, fates, dramaturg, possibility, scene-crafter]
+    writes: [scribe]
+
+  - id: trajectories.yaml
+    description: Committed futures with timers (Chekhov's Guns)
+    location: campaign
+    persistent: true
+    reads: [fates]
+    writes: [scribe]
+
+  - id: timeline.yaml
+    description: Canonical time tracking — day counter, time skips, elapsed time
+    location: campaign
+    persistent: true
+    reads: [narrator, dramaturg]
+    writes: [scribe]
 
   - id: continuity.yaml
     description: Canonical facts, established details, and continuity anchors

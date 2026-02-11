@@ -20,6 +20,7 @@ import { deploy } from './deploy.ts';
 import { session } from './session.ts';
 import { recover } from './recover.ts';
 import { mesh } from './mesh.ts';
+import { inbox } from './inbox.ts';
 import { forensics } from './forensics.ts';
 import { log } from '../shared/logger.ts';
 
@@ -111,6 +112,7 @@ Commands:
   tx spy            Real-time activity stream
   tx tasks          View task queue
   tx session        View and search agent sessions
+  tx inbox          Show pending messages for core (unread file paths)
   tx mesh           Manage mesh state (list, status, kill, clear, validate)
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
@@ -159,7 +161,8 @@ Options:
   --low              Use cost-effective models (replaces opus with sonnet)
   --ultra-low        Use ultra low cost mode (forces haiku for everything)
   --debug            Enable forensics analysis for all meshes
-  --no-inject        Disable context injection hook`,
+  --inbox <mode>     Message delivery mode: hook (default), inject, ask
+  --no-inject        Alias for --inbox ask (backward compat)`,
 
   msg: `tx msg - View messages
 
@@ -403,6 +406,7 @@ Actions:
   list                    List meshes with activity
   status <mesh>           Show mesh state snapshot
   kill <mesh>             Kill all workers for a mesh (via tmux)
+  reload [mesh]           Hot-reload mesh config(s) at runtime
   clear <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
   validate <mesh>         Validate mesh configuration
   fsm-chain <mesh>        Show FSM state transition chain with validation
@@ -493,6 +497,7 @@ async function main() {
         serveHost: flags.H as string || flags.host as string,
         debug: Boolean(flags.debug),
         noInject: Boolean(flags.noInject),
+        inbox: (flags.inbox as 'inject' | 'hook' | 'ask' | undefined),
       });
       break;
 
@@ -667,6 +672,14 @@ async function main() {
       if (wantsHelp) { showHelp('recover'); break; }
       await recover(args.filter(a => !a.startsWith('-')), {
         json: Boolean(flags.json),
+      });
+      break;
+
+    case 'inbox':
+      if (wantsHelp) { console.log('tx inbox - Show pending messages for core\n\nOptions:\n  --all   Show all messages, not just unread\n  --peek  Don\'t mark as read'); break; }
+      await inbox({
+        all: Boolean(flags.all),
+        peek: Boolean(flags.peek),
       });
       break;
 

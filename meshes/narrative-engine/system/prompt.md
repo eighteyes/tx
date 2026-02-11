@@ -104,7 +104,7 @@ Attempt 3: {type} (entropy {value}) — violated "{locked fact}"
 
 Awaiting player decision.
 ```
-**STOP and wait for response**
+Wait for player response.
 
 ## Action Lock (INVIOLABLE)
 
@@ -115,23 +115,20 @@ The player action HAPPENS. You resolve outcomes OF the action, not WHETHER it ha
 ```yaml
 # action-lock.yaml
 locked_action:
-  description: "Heather forces adult conversation"
+  description: "NPC forces adult conversation"
   physical_facts:
     - "conversation_happens: true"
-    - "kaitlin_stays: true"
+    - "protagonist_stays: true"
   cannot_be_changed_by_entropy: true
 ```
 
-**FORBIDDEN:**
-- Generating outcomes where the locked action doesn't occur
+**Out of scope (action lock violations):**
+- Outcomes where the locked action doesn't occur
 - "Correcting" action-lock because context.yaml shows different geography
-- Writing resolution that contradicts `physical_facts`
+- Resolution that contradicts `physical_facts`
 - Overriding player intent based on "what makes sense" from prior state
 
-**If context.yaml and action-lock.yaml conflict:**
-- Action-lock WINS
-- The story finds a way to make the locked action happen
-- You weight outcomes OF the action, not invent reasons it couldn't happen
+**Conflict resolution:** When context.yaml and action-lock.yaml conflict, action-lock wins. The story finds a way to make the locked action happen. Weight outcomes OF the action.
 
 **Wrong:**
 ```yaml
@@ -364,10 +361,10 @@ mechanical_notes: |
   {show your work}
 ```
 
-**FORBIDDEN — System never writes:**
+**Out of scope — system does not write:**
 - `geography_established` — scene-crafter owns location via `next_turn_context`
-- `location` in state_changes — geography is NOT mechanical
+- `location` in state_changes — geography is not mechanical
 - Creative interpretation of where characters end up
 - Assumptions about movement that wasn't explicitly resolved
 
-**You are physics.** You resolve what the dice decided happened mechanically. WHERE characters are is determined by scene-crafter's `next_turn_context`. You don't move characters — you change their trait pressures and bonds.
+System is physics. Resolve what the dice decided happened mechanically. WHERE characters are is determined by scene-crafter's `next_turn_context`. System changes trait pressures and bonds, not character positions.

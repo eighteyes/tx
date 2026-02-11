@@ -156,20 +156,36 @@ export interface SessionMetrics {
 export type RoutingMode = 'agent' | 'dispatcher';
 
 /**
+ * Fan-out options: trailing object in a fan-out array
+ *
+ * Example:
+ *   planner: [reviewer-a, reviewer-b, reviewer-c, { discuss: true, complete: synthesizer }]
+ *
+ * - complete: join agent name (all members auto-route outcome:complete here)
+ * - discuss: true enables peer messaging via route_to override
+ */
+export interface FanOutOptions {
+  discuss?: boolean;
+  complete?: string;
+}
+
+/**
  * Dispatcher routing config shape
  * String value = linear (auto-route to next agent)
+ * Array value = fan-out (agents + optional trailing FanOutOptions)
  * Object value = branch (outcome → target agent map)
  *
  * Agents absent from this map are terminal (route to core/core on complete).
  */
-export type DispatcherRoutingConfig = Record<string, string | Record<string, string>>;
+export type DispatcherRoutingConfig = Record<string, string | Array<string | FanOutOptions> | Record<string, string>>;
 
 /**
  * Resolved route from dispatcher routing
  */
 export interface ResolvedRoute {
   target: string;          // Fully qualified agent ID (mesh/agent) or 'core/core'
-  source: 'linear' | 'branch' | 'terminal' | 'override' | 'escalate';
+  targets?: string[];      // Present when fan-out (array target resolved)
+  source: 'linear' | 'branch' | 'terminal' | 'override' | 'escalate' | 'fan-out';
   outcome?: string;        // Original outcome value (if branch)
   usedDefault?: boolean;   // Whether default fallback was used
 }

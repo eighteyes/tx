@@ -80,7 +80,7 @@ Write `summary.md` to workspace:
 See: prose.md
 ```
 
-## Scene State Extraction (CRITICAL)
+## Scene State Extraction
 
 **Replaces closing.yaml + state.yaml.** Single canonical file for turn continuity.
 
@@ -133,7 +133,7 @@ prose_anchor: |
 
 **Why scene.yaml matters:** Init-turn reads ONLY scene.yaml for turn setup. No more reading closing.yaml + state.yaml + scene-outline.yaml. Single source of truth.
 
-## Timeline Management (CRITICAL)
+## Timeline Management
 
 **Canonical time tracking.** The single source of truth for when things happen.
 
@@ -209,7 +209,7 @@ When relationship intensity changes this turn, update the bond entity.
 {campaign_path}/entities/bonds/{alphabetical_id}.yaml
 ```
 
-**Naming convention:** Alphabetical order. `heather_kaitlin`, never `kaitlin_heather`.
+**Naming convention:** Alphabetical order. `npc_protagonist`, never `protagonist_npc`.
 
 ### When to Update
 
@@ -222,9 +222,9 @@ When relationship intensity changes this turn, update the bond entity.
 ### Bond Entity Format
 
 ```yaml
-id: heather_kaitlin
+id: npc_protagonist
 entity_type: bond
-participants: [heather, kaitlin]
+participants: [npc, protagonist]
 intensity: {new intensity value}
 
 traits:
@@ -267,11 +267,11 @@ Props are objects with narrative weight. When a prop changes location or state, 
 ### Prop Entity Format
 
 ```yaml
-id: heathers_jacket
+id: borrowed_jacket
 entity_type: prop
-owner: heather          # original owner
-held_by: kaitlin        # current possessor
-location: "backseat of Kaitlin's car"
+owner: npc              # original owner
+held_by: protagonist    # current possessor
+location: "backseat of protagonist's car"
 
 narrative_weight: high
 symbolism: "tenderness after ending, connection across distance"
@@ -285,7 +285,7 @@ transitions:
     to: "backseat"
 
 visibility:
-  current: [kaitlin]
+  current: [protagonist]
 ```
 
 ### Reading Prop State from Prose
@@ -328,7 +328,7 @@ Locations are places with narrative significance. When a location's details are 
 ### Location Entity Format
 
 ```yaml
-id: heathers_apartment
+id: npc_apartment
 entity_type: location
 address: "1847 Oak Street"  # if mentioned
 building_type: apartment_complex
@@ -373,24 +373,24 @@ changes:
 
 ### Character Entity Updates
 
-**LEAN FORMAT — NEVER write these to entity files:**
+**Lean format.** Entity files stay compact.
 
-| Forbidden Field | Where It Belongs |
-|-----------------|------------------|
+| Field | Location |
+|-------|----------|
 | `arc_pressure` | scene.yaml |
 | `current_state.trait_pressures` | Compute from traits.evolved |
 | `current_state.bond_X` | Bond entity file |
-| `internal_state` prose blobs | Redundant with episodes |
+| `internal_state` prose blobs | summary.md |
 | Turn-by-turn narrative essays | summary.md |
 | Location (except baseline) | scene.yaml.closing.positions |
 
-**DO write:**
-- Append to `episodes[]` (BRIEF — 5-15 words max)
+**Write to entity files:**
+- Append to `episodes[]` (5-15 words max)
 - Update `traits.evolved` when pressure changes (including decay fields)
 - Update `traits.voices` when voice evolves
 - Update `current_state.armor_status` and `vulnerability_state` only
 
-### Episode Brevity (CRITICAL)
+### Episode Brevity
 
 Episodes must be **5-15 words**. Longer entries bloat context for all agents.
 
@@ -404,8 +404,8 @@ Episodes must be **5-15 words**. Longer entries bloat context for all agents.
 **Bad (too long):**
 ```yaml
 - turn: 21
-  event: "After Heather set boundary with 'I can't give you that right now,'
-    Kaitlin's frustration boiled into fury and she yelled 'You stupid BITCH,
+  event: "After NPC set boundary with 'I can't give you that right now,'
+    protagonist's frustration boiled into fury and they yelled 'You stupid BITCH,
     can't you see that I like you!?' at full volume. Neighbors heard.
     Public escalation after nineteen turns of private patience..."
   # NO. This belongs in summary.md, not entity episodes.
@@ -623,7 +623,7 @@ Verify `summary.md` exists for turns N-2 through N-5.
 | New law/truth | `game/setting.yaml` |
 | New arc branch | `game/arc.yaml` |
 
-Process: Read target file → append (NEVER modify existing) → log in `game/changelog.md`.
+Process: Read target file → append new entries only → log in `game/changelog.md`.
 
 ## Entities Folder Structure
 
@@ -635,7 +635,7 @@ entities/
   bonds/
     {a_b}.yaml              # alphabetical naming
   props/                    # objects with narrative weight
-    {prop-id}.yaml          # e.g., heathers-jacket.yaml
+    {prop-id}.yaml          # e.g., borrowed-jacket.yaml
   locations/
     {location-id}.yaml
   items/                    # generic items (no narrative weight)

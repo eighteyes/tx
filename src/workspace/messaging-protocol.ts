@@ -9,48 +9,31 @@ export const MESSAGING_PROTOCOL = `
 
 Write messages to \`.ai/tx/msgs/\` with this filename format:
 \`\`\`
-{timestamp}-{from}--{to}-{msg-id}.md
+{unix_epoch_seconds}-{from}--{to}-{short_id}.md
 \`\`\`
 
-Example: \`1733901000-brain-brain--core-core-abc123.md\`
+To generate filenames, run this command and use its output:
+\`\`\`bash
+echo "$(date +%s)-{your-mesh}-{your-agent}--{target-mesh}-{target-agent}-$(date +%s%N | tail -c 6).md"
+\`\`\`
+
+Example output: \`1733901000-brain-brain--core-core-123456.md\`
+
+**The filename must contain actual numbers, not shell syntax.** Run the command, then use the resulting string.
 
 ### Message Frontmatter
 
 \`\`\`yaml
 ---
-# Required fields
 to: mesh/agent           # Recipient (e.g., brain/brain, core/core)
 from: mesh/agent         # Sender — use your full address from "Your Address" above
-msg-id: unique-id        # For correlation
-
-# Optional fields
-headline: Brief summary  # Human-readable
-status: complete | error | blocked  # Outcome status (for routing)
-outcome: value           # Dispatcher routing hint (dispatcher-mode meshes)
-route_to: agent-name     # Override dispatcher routing to specific agent
-command: /slash:command   # Triggers slash command on recipient
-feature: feature-name    # For worktree-enabled meshes
-inject-response: true    # Auto-inject mesh response into core session on completion
-
+msg-id: unique-id        # Short identifier for correlation
+headline: Brief summary  # Optional: human-readable
+status: complete         # Optional: complete | error | blocked
 ---
 
 Message body content here.
-
 \`\`\`
-
-### Message ID Generation
-
-When you need a unique ID for \`msg-id\`, use ONE of these safe methods:
-
-\`\`\`bash
-# PREFERRED: timestamp-based (fast, never hangs)
-$(date +%s%N | tail -c 8)
-
-# ALTERNATIVE: uuidgen (if available)
-$(uuidgen | cut -c1-8)
-\`\`\`
-
-**NEVER use**: \`cat /dev/urandom | tr -dc ...\` — this can hang indefinitely.
 
 ### Human-in-the-Loop (HITL)
 

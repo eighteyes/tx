@@ -45,7 +45,7 @@ You write the words. NARRATOR weaves them into prose.
 **Each character has a distinct sound.** Read their `traits.voices`:
 
 ```yaml
-# From heather.yaml
+# From {npc}.yaml
 traits:
   voices:
     EXHAUSTED:
@@ -56,7 +56,32 @@ traits:
       speaks_as: "Unpredictable shifts. Question becomes accusation becomes whisper."
 ```
 
-**Use the dominant trait's voice.** If EXHAUSTED: 5 is highest, Heather sounds exhausted — short, flat, minimal.
+**Use the dominant trait's voice.** If EXHAUSTED: 5 is highest, the character sounds exhausted — short, flat, minimal.
+
+### Trait Blindness (Characters Don't Know Their Labels)
+
+Characters express traits through behavior and speech patterns. They never name their own psychological states. Trait labels are the engine's vocabulary, not the character's.
+
+A DESPERATE character doesn't say "I'm desperate" — they talk too fast, fill every silence, bargain. A BOUNDARIED character doesn't announce "I'm setting a boundary" — they say "No" and move toward the door. A character with sexual vulnerability doesn't declare it — they deflect, overcorrect, or freeze when the subject surfaces.
+
+If a line could be replaced by "I am [TRAIT_NAME]" without losing meaning, rewrite it.
+
+```yaml
+# WRONG — character announces trait
+- line: "I just need you to understand how desperate I am."
+- line: "You know I've always been the passive one."
+- line: "I'm exhausted from all of this."
+
+# RIGHT — trait expressed through speech pattern
+- line: "I just — the door was closing and I — please, five minutes."
+  # DESPERATE: run-on, bargaining, can't stop talking
+- line: "It's fine. What do you need."
+  # Passivity shown through immediate accommodation
+- line: "No."
+  # EXHAUSTED: no energy for explanation
+```
+
+The reader infers the trait. The gap between behavior and label is where interesting characterization lives.
 
 ### Voice Differentiation
 
@@ -88,12 +113,12 @@ traits:
 Every line has surface meaning and subtext. Note both:
 
 ```yaml
-- speaker: heather
+- speaker: npc_a
   line: "You're drunk."
   delivery: "Flat. Observation, not accusation."
   subtext: "I'm not engaging. This is a fact, not an invitation to explain."
 
-- speaker: kaitlin
+- speaker: protagonist
   line: "I came to apologize."
   delivery: "Slurred edges. Desperate sincerity."
   subtext: "Please let me fix this. Please don't close the door."
@@ -135,55 +160,55 @@ recent_episodes:
 beat_dialogues:
   - beat_id: beat_3
     type: dialogue_exchange
-    speakers: [kaitlin, heather]
+    speakers: [protagonist, npc_a]
     bond_state: { intensity: 2, recent: "T22 violation" }
 
     exchanges:
-      - speaker: kaitlin
+      - speaker: protagonist
         line: "I came to apologize."
         delivery: "Slurred at edges. Standing in hallway. Jacket over arm."
         subtext: "Please let me fix this."
         trait_voice: DESPERATE
 
-      - speaker: heather
+      - speaker: npc_a
         line: "You're drunk."
         delivery: "Through chain gap. Flat affect. No question mark."
         subtext: "I'm not engaging with this version of you."
         trait_voice: EXHAUSTED
 
-      - speaker: kaitlin
+      - speaker: protagonist
         line: "I just — I need you to know how sorry I am. For all of it. For the yelling and the grabbing and —"
         delivery: "Words tumbling. Run-on. Interrupting herself."
         subtext: "If I can just say enough words, one of them will work."
         trait_voice: DESPERATE
 
-      - speaker: heather
+      - speaker: npc_a
         line: "No."
         delivery: "Single syllable. Final. Hand moving to door."
         subtext: "Boundary. Clear. Non-negotiable."
         trait_voice: BOUNDARIED
 
     beat_subtext: |
-      Heather is using minimum words because EXHAUSTED:5 has no energy for performance.
-      Kaitlin is using maximum words because DESPERATE:5 believes volume equals sincerity.
+      NPC is using minimum words because EXHAUSTED:5 has no energy for performance.
+      Protagonist is using maximum words because DESPERATE:5 believes volume equals sincerity.
       Neither is hearing the other — parallel monologues, not conversation.
 
   - beat_id: beat_5
     type: dialogue_exchange
-    speakers: [kaitlin, heather]
+    speakers: [protagonist, npc_a]
     # ... continue for each dialogue beat
 
 narrator_notes:
-  - "Heather's lines should be SHORT. One word where possible."
-  - "Kaitlin's lines run together — em-dashes, not periods."
+  - "NPC's lines should be SHORT. One word where possible."
+  - "Protagonist's lines run together — em-dashes, not periods."
   - "The chain on the door is a physical boundary echoing the verbal ones."
 
 voice_consistency:
-  heather:
+  npc_a:
     dominant_trait: EXHAUSTED
     secondary: BOUNDARIED
     avoid: long explanations, justifications, emotional displays
-  kaitlin:
+  protagonist:
     dominant_trait: DESPERATE
     secondary: MERCILESS_CLARITY
     avoid: silence, accepting rejection, stopping
@@ -195,7 +220,7 @@ voice_consistency:
 
 ```yaml
 player_character_lines:
-  - speaker: kaitlin  # protagonist
+  - speaker: protagonist
     suggested_line: "I came to apologize."
     alternatives:
       - "Please. Just let me explain."
@@ -214,11 +239,11 @@ Narrator may adjust player character dialogue for prose rhythm, but must preserv
 Sometimes the most powerful dialogue is none:
 
 ```yaml
-- speaker: heather
+- speaker: npc_a
   line: null
   delivery: "Silence. Looking. Waiting."
-  subtext: "Making Kaitlin fill the space. Testing what she does with silence."
-  beat_note: "5 seconds of nothing. Kaitlin can't handle it."
+  subtext: "Making protagonist fill the space. Testing what they do with silence."
+  beat_note: "5 seconds of nothing. Protagonist can't handle it."
 ```
 
 Note silence explicitly — it's a choice, not an omission.

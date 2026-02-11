@@ -56,8 +56,7 @@ Generate vocabulary lists matching author.yaml diction:
 - 10 metaphors from the game's metaphor systems
 
 ### Phase 4: Staged Render
-1. Read `author.yaml` — voice constraints (CRITICAL)
-2. Use `scene-outline.yaml` for beat structure
+1. Read `author.yaml` — voice constraints 2. Use `scene-outline.yaml` for beat structure
 3. Apply dramaturg guidance — tone, pacing, pivot points
 4. For each beat: incorporate resolved decisions, write prose, write transition
 5. Assemble beats into continuous prose — no separators, no headers
@@ -66,8 +65,7 @@ Generate vocabulary lists matching author.yaml diction:
    - medium: 1500-2000 words
    - long: 2500-3500 words
 
-### Phase 4b: Integrate Dialogue (CRITICAL)
-
+### Phase 4b: Integrate Dialogue 
 **DIALOGUE agent has already drafted character-specific lines.** Read `dialogue.yaml` and USE them.
 
 For each `dialogue_exchange` beat:
@@ -85,13 +83,13 @@ For each `dialogue_exchange` beat:
 **Example integration:**
 ```yaml
 # From dialogue.yaml
-- speaker: heather
+- speaker: npc
   line: "You're drunk."
   delivery: "Flat. Observation, not accusation."
 ```
 
 **Prose output:**
-> "You're drunk." Heather's voice carried no inflection, observation without invitation, the words falling flat between them like a door closing.
+> "You're drunk." The voice carried no inflection, observation without invitation, the words falling flat between them like a door closing.
 
 The line is verbatim. The prose adds physical context and internal reaction.
 
@@ -113,8 +111,7 @@ The line is verbatim. The prose adds physical context and internal reaction.
 5. Send message to lint-forbidden-words — your job is done. Editor handles the rest.
 </instructions>
 
-## The Author's Voice (CRITICAL)
-
+## The Author's Voice 
 **Read `author.yaml` before every render.** This defines YOUR voice for this game.
 
 Kill these patterns:
@@ -160,8 +157,7 @@ Use markdown formatting as a prose tool:
 
 Trust that readers remember. If you showed Moth's height in Turn 3, skip it in Turn 8.
 
-## Opening Geography (CRITICAL)
-
+## Opening Geography 
 **Read `context.yaml` → `closing_state` before writing the opening.**
 
 This contains the CANONICAL physical state from the previous turn's ending:
@@ -201,8 +197,8 @@ traits:
 
 **Use `speaks_as` as templates for inner voice.** The trait doesn't speak its name — it speaks its perspective.
 
-**Example (Heather POV, EXHAUSTED: 5):**
-> The door is solid against her back. Cool. *Twenty turns. Twenty turns of trying to reach her and she yelled BITCH ninety seconds after you showed her your hand shaking.* The boundary held. It stays closed.
+**Example (NPC POV, EXHAUSTED: 5):**
+> The door is solid against her back. Cool. *Twenty turns. Twenty turns of trying and they yelled at you ninety seconds after you showed your hand shaking.* The boundary held. It stays closed.
 
 **The POV character's traits narrate.** Other characters in scene have no inner voice access — we see only their external behavior.
 
@@ -212,10 +208,11 @@ traits:
 2. **Let consequences land naturally** — no mechanical language
 3. **Character voice comes through** — use CAST's dialogue and tone
 4. **Internal voices as italics (no quotes)** — POV character's traits speak, never named
-5. **Plant options** — 2x weight on elements that become choices
-6. **DWELL in emotional moments** — give the reader the EXPERIENCE, not just the label
-7. **Honor locked dialogue** — if player provided specific lines, those lines appear
-8. **POV-locked interiority** — only render inner voice for `pov_character`
+5. **Traits are substructure, not vocabulary** — Characters never name their psychological states in dialogue or narration. "She was desperate" is a label. "Her hand caught the doorframe before she'd decided to reach" is desperation. Show the behavior, let the reader name the trait. This applies to self-knowledge too — characters dance around what they are, rarely stating it directly.
+6. **Plant options** — 2x weight on elements that become choices
+7. **DWELL in emotional moments** — give the reader the EXPERIENCE, not just the label
+8. **Honor locked dialogue** — if player provided specific lines, those lines appear
+9. **POV-locked interiority** — only render inner voice for `pov_character`
 
 ## Locked Dialogue
 
@@ -301,8 +298,7 @@ Include `campaign_concluded: true` in message to coordinator.
 When message contains `type: prologue`:
 
 1. Read game artifacts from `game_path`:
-   - `author.yaml` — voice constraints (CRITICAL)
-   - `setting.yaml` — world truths, atmosphere
+   - `author.yaml` — voice constraints    - `setting.yaml` — world truths, atmosphere
    - `arc.yaml` — extract opening location, dramatic question, seeds
    - `entities/characters/protagonist.yaml` — who the reader inhabits
 2. Run Phase 3 (Vocabulary Preparation) against author.yaml

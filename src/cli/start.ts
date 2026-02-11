@@ -25,7 +25,8 @@ export interface StartOptions {
   servePort?: number; // server port (default: 9898)
   serveHost?: string; // server host (default: 0.0.0.0)
   debug?: boolean; // enable forensics and verbose logging for all meshes
-  noInject?: boolean; // disable context injection hook
+  noInject?: boolean; // deprecated: use inbox instead
+  inbox?: 'inject' | 'hook' | 'ask'; // message delivery mode (default: hook)
 }
 
 /**
@@ -290,6 +291,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
         } else if (ctrl.action === 'clear-mesh' && ctrl.mesh) {
           disp.clearMeshState(ctrl.mesh);
           log.info('start', 'SIGUSR2: cleared mesh state', { mesh: ctrl.mesh });
+        } else if (ctrl.action === 'reload-meshes') {
+          disp.reloadMeshConfigs(ctrl.mesh);
+          log.info('start', 'SIGUSR2: reloaded mesh configs', { mesh: ctrl.mesh || 'all' });
         }
 
         // Delete control file as ACK
@@ -301,16 +305,19 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   };
 
   // Write runtime.json for context hook
+  // Resolve inbox mode: explicit flag > backward-compat noInject > default 'hook'
+  const inboxMode = options?.inbox || (options?.noInject ? 'ask' : 'hook');
   const runtimePath = path.join(dataDir, 'runtime.json');
   const runtimeState = {
-    inject: !options?.noInject,  // true by default
+    inbox: inboxMode,
+    inject: inboxMode === 'hook' || inboxMode === 'inject',  // backward compat for stale hook copies
     startedAt: new Date().toISOString(),
     sessionName: tmux.name,
     projectDir: cwd,
     txRoot,
   };
   fs.writeFileSync(runtimePath, JSON.stringify(runtimeState, null, 2));
-  log.info('start', 'Wrote runtime.json', { inject: runtimeState.inject });
+  log.info('start', 'Wrote runtime.json', { inbox: inboxMode });
 
   // Initialize pending-for-core.json (empty on startup)
   const pendingPath = path.join(dataDir, 'pending-for-core.json');
@@ -767,10 +774,15 @@ ${data.content}
         }
       }
 
+      // Query pending queue messages (waiting for dispatch)
+      const queueStats = queue.getStats();
+      const pendingQueue = queueStats.byAgent;
+
       const status = {
         meshes,
         workers,
         pendingAsks,
+        pendingQueue,
         timestamp: new Date().toISOString(),
       };
 
@@ -821,13 +833,13 @@ ${data.content}
     if (type === 'task-complete') {
       log.warn('deprecated-message-type', `Legacy type="task-complete" used in start.ts`, { type, file: 'start.ts', detail: 'Use status: complete instead of type: task-complete' });
       const [mesh] = from.split('/');
-      const removed = removeOutgoingTask(mesh);
+      removeOutgoingTask(mesh);
+    }
 
-      // Active injection if inject-response was set on the outgoing task
-      if (removed?.injectResponse) {
-        log.info('injector', 'inject-response flag set, attempting active injection', { mesh, from });
-        tryInjectResponse(filepath, from);
-      }
+    // Active injection: inject ALL core-messages into tmux session
+    if (inboxMode === 'inject') {
+      log.info('injector', 'Inject mode: actively injecting core-message', { from, type });
+      tryInjectResponse(filepath, from);
     }
 
     writeStatusFile();  // This now updates status bar with all counts

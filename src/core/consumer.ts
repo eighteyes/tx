@@ -148,6 +148,94 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
+   * Try to load a mesh on-demand when a message arrives for an unknown mesh.
+   * This enables hot-registration: new meshes added after TX starts are detected
+   * when first messaged.
+   *
+   * Returns true if mesh was successfully loaded, false otherwise.
+   */
+  private tryLoadMeshOnDemand(meshName: string): boolean {
+    // Check for config file in standard locations
+    const meshDir = path.join(this.meshesDir, meshName);
+    const yamlPath = path.join(meshDir, 'config.yaml');
+    const ymlPath = path.join(meshDir, 'config.yml');
+    const jsonPath = path.join(meshDir, 'config.json');
+
+    let configPath: string | null = null;
+    if (fs.existsSync(yamlPath)) configPath = yamlPath;
+    else if (fs.existsSync(ymlPath)) configPath = ymlPath;
+    else if (fs.existsSync(jsonPath)) configPath = jsonPath;
+
+    // Also check TX_ROOT/meshes if different from project meshes
+    if (!configPath && process.env.TX_ROOT) {
+      const globalMeshDir = path.join(process.env.TX_ROOT, 'meshes', meshName);
+      const globalYamlPath = path.join(globalMeshDir, 'config.yaml');
+      const globalYmlPath = path.join(globalMeshDir, 'config.yml');
+      const globalJsonPath = path.join(globalMeshDir, 'config.json');
+
+      if (fs.existsSync(globalYamlPath)) configPath = globalYamlPath;
+      else if (fs.existsSync(globalYmlPath)) configPath = globalYmlPath;
+      else if (fs.existsSync(globalJsonPath)) configPath = globalJsonPath;
+    }
+
+    if (!configPath) {
+      return false;
+    }
+
+    try {
+      const content = fs.readFileSync(configPath, 'utf-8');
+      const config = configPath.endsWith('.json')
+        ? JSON.parse(content)
+        : YAML.parse(content);
+
+      // Validate mesh name matches
+      if (config.mesh !== meshName) {
+        log.warn('consumer', 'Mesh config name mismatch during hot-load', {
+          expected: meshName,
+          actual: config.mesh,
+          configPath,
+        });
+        return false;
+      }
+
+      // Register entry point
+      const entryPoint = (config.entry_point as string) || 'worker';
+      this.meshEntryPoints.set(meshName, entryPoint);
+
+      // Register agent names for partial name resolution
+      const agents = config.agents as Array<{ name: string }> | undefined;
+      if (agents && Array.isArray(agents)) {
+        const agentNames = new Set(agents.map((a) => a.name));
+        this.meshAgents.set(meshName, agentNames);
+      }
+
+      // Extract slash commands from intents.commands
+      const intents = config.intents as { commands?: Record<string, string> } | undefined;
+      if (intents?.commands) {
+        for (const slashCmd of Object.values(intents.commands)) {
+          this.commandToMesh.set(slashCmd, meshName);
+        }
+      }
+
+      log.info('consumer', 'Hot-loaded mesh config', {
+        meshName,
+        entryPoint,
+        agentCount: agents?.length || 0,
+        configPath,
+      });
+
+      return true;
+    } catch (err) {
+      log.error('consumer', 'Failed to hot-load mesh config', {
+        meshName,
+        configPath,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+  }
+
+  /**
    * Load entry_point mappings from mesh configs
    * Enables routing: to: dev → to: dev/worker
    */
@@ -270,6 +358,34 @@ ${body}
 
     fs.writeFileSync(filepath, message);
     log.info('consumer', 'Wrote command routing error to core', { msgId, refMsgId });
+  }
+
+  /**
+   * Write a fan-out task file for a parallel target agent.
+   * Chokidar picks this up → normal processFile() → worker-message emit.
+   */
+  private writeFanOutTask(targetAgentId: string, fromAgent: string, body: string): void {
+    const timestamp = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const msgId = `fanout-${timestamp}-${rand}`;
+    const [meshName, agentName] = targetAgentId.split('/');
+    const filename = `${timestamp}-fanout-${fromAgent.replace('/', '-')}--${meshName}-${agentName}-${msgId}.md`;
+    const filepath = path.join(this.watchDir, filename);
+
+    const content = `---
+to: ${targetAgentId}
+from: ${fromAgent}
+type: task
+msg-id: ${msgId}
+headline: Fan-out task
+timestamp: ${new Date().toISOString()}
+---
+
+${body}
+`;
+
+    fs.writeFileSync(filepath, content);
+    log.info('consumer', 'Wrote fan-out task', { targetAgentId, fromAgent, msgId });
   }
 
   /**
@@ -448,6 +564,32 @@ ${body}
           });
         }
         return;
+      }
+
+      // Cross-mesh validation: reject messages to nonexistent meshes
+      // First attempt on-demand loading for new meshes added after TX started
+      if (targetMesh !== 'core' &&
+          !toAgent.startsWith('system/') &&
+          !this.meshAgents.has(targetMesh)) {
+        // Try hot-loading the mesh before dropping the message
+        const loaded = this.tryLoadMeshOnDemand(targetMesh);
+        if (!loaded) {
+          log.warn('consumer', 'Dropped message to nonexistent mesh', {
+            from: fromAgent,
+            to: toAgent,
+            targetMesh,
+            file: filename,
+            knownMeshes: Array.from(this.meshAgents.keys()).sort(),
+          });
+          // Notify sender's mesh via error to core
+          this.writeErrorToCore(
+            `Agent \`${fromAgent}\` tried to send to \`${toAgent}\` but mesh \`${targetMesh}\` does not exist. Message dropped.`,
+            parsed.frontmatter['msg-id'] || filename
+          );
+          return;
+        }
+        // Mesh was hot-loaded successfully — re-resolve the toAgent in case entry_point differs
+        toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
       }
 
       // Command validation: check if target mesh handles this command
@@ -1116,9 +1258,51 @@ ${body}
         outcome,
         routeTo,
         target: resolved.target,
+        targets: resolved.targets,
         source: resolved.source,
         usedDefault: resolved.usedDefault,
       });
+
+      // Fan-out: write extra task files for targets[1..N-1]
+      if (resolved.targets && resolved.targets.length > 1) {
+        // Read original message body for fan-out copies
+        const originalContent = fs.readFileSync(filepath, 'utf-8');
+        const originalParsed = this.parseMessage(originalContent);
+        const body = originalParsed?.body || '';
+
+        for (let i = 1; i < resolved.targets.length; i++) {
+          this.writeFanOutTask(resolved.targets[i], fromAgent, body);
+        }
+
+        // Detect join agent from router
+        const parallelGroup = router.getParallelGroup(senderAgent);
+        const joinAgent = parallelGroup?.joinAgent || null;
+
+        // Emit fan-out event for dispatcher to register the group
+        this.emit('fan-out', {
+          meshName,
+          agents: resolved.targets.map(t => t.split('/')[1]),
+          sourceAgent: senderAgent,
+          joinAgent,
+        });
+
+        log.info('consumer', 'Fan-out dispatched', {
+          from: fromAgent,
+          targets: resolved.targets,
+          joinAgent,
+        });
+      }
+
+      // Check if this agent is completing into a fan-out join agent
+      // Source 'branch' covers both explicit and implicit fan-out member routing
+      if (outcome === 'complete' && resolved.target !== 'core/core') {
+        this.emit('fan-out-complete', {
+          meshName,
+          agentName: senderAgent,
+          joinAgent: resolved.target.split('/')[1],
+        });
+      }
+
       return resolved.target;
     }
 

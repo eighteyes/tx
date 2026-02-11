@@ -271,7 +271,7 @@ hidden_past:
 - `/entities/characters/{npc-id}.yaml` (for each NPC)
 - `/entities/bonds/{a_b}.yaml` (for each bond)
 
-### Phase 6c: Authorship (CRITICAL)
+### Phase 6c: Authorship
 
 This phase requires iteration. Do not rush.
 
@@ -472,7 +472,7 @@ Write session.yaml before sending task to narrator.
 - Iterate author.yaml until the player confirms. Voice shapes all future prose.
 - Preserve productive ambiguity — undefined spaces generate stories.
 
-### Entity Validation (CRITICAL)
+### Entity Validation
 
 **Before writing any entity file, verify:**
 
