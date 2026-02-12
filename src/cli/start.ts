@@ -792,13 +792,22 @@ ${data.content}
     }
   };
 
-  // Active injection: retry loop for inject-response messages
-  const tryInjectResponse = (filepath: string, from: string, retries: number = 10) => {
+  // Active injection: serialized queue to avoid competing retry loops
+  const injectionQueue: Array<{ filepath: string; from: string }> = [];
+  let injectionRunning = false;
+
+  const processInjectionQueue = () => {
+    if (injectionRunning || injectionQueue.length === 0) return;
+    injectionRunning = true;
+
+    const { filepath: fp, from } = injectionQueue.shift()!;
     let attempt = 0;
+    const maxRetries = 15;
+
     const tryOnce = () => {
       attempt++;
       try {
-        const content = fs.readFileSync(filepath, 'utf-8');
+        const content = fs.readFileSync(fp, 'utf-8');
         const bodyMatch = content.split(/^---$/m);
         const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
 
@@ -806,21 +815,31 @@ ${data.content}
         const injected = injectPrompt(tmux, message);
 
         if (injected) {
-          log.info('injector', 'Active injection succeeded', { from, attempt });
+          log.info('injector', 'Active injection succeeded', { from, attempt, queued: injectionQueue.length });
+          injectionRunning = false;
+          // Process next queued message after a brief pause for Claude to absorb
+          setTimeout(processInjectionQueue, 1000);
           return;
         }
       } catch (err) {
         log.warn('injector', 'Active injection read error', { from, attempt, error: String(err) });
       }
 
-      if (attempt < retries) {
-        log.debug('injector', 'Active injection retry', { from, attempt, remaining: retries - attempt });
-        setTimeout(tryOnce, 3000);
+      if (attempt < maxRetries) {
+        log.debug('injector', 'Active injection retry', { from, attempt, remaining: maxRetries - attempt });
+        setTimeout(tryOnce, 2000);
       } else {
         log.warn('injector', 'Active injection exhausted retries, falling back to pending', { from, attempts: attempt });
+        injectionRunning = false;
+        processInjectionQueue();
       }
     };
     tryOnce();
+  };
+
+  const tryInjectResponse = (filepath: string, from: string) => {
+    injectionQueue.push({ filepath, from });
+    processInjectionQueue();
   };
 
   // Subscribe to core-message BEFORE starting dispatcher to avoid race

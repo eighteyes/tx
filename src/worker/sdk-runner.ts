@@ -380,10 +380,14 @@ export class SdkRunner extends EventEmitter {
     const sessionOutput: string[] = [];
 
     try {
-      while (true) {
-        const taskMessage = this.queue.pollOne(workerId);
-        if (!taskMessage) break;
-
+      // OAOM (One-Agent-One-Message): Process exactly ONE message per run.
+      // The dispatcher expects each worker run to handle a single task.
+      // FSM dispatch messages arrive in the queue while the worker is running,
+      // and must be processed by a NEW worker instance for state isolation.
+      // The while loop was causing workers to poll and process FSM dispatch
+      // messages meant for the next state transition.
+      const taskMessage = this.queue.pollOne(workerId);
+      if (taskMessage) {
         // Fresh context for each message - don't accumulate conversation history
         // Session resume is only for explicit interrupt/feedback flows via resume(), not queue processing
         // Clear both runtime and config session IDs to prevent context accumulation
