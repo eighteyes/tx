@@ -41,8 +41,10 @@ export class MeshManager extends EventEmitter {
   /**
    * Load all mesh configurations from meshes/ directory
    * Called during dispatcher startup
+   * CRITICAL: This method is async because FSM initialization must complete
+   * before the dispatcher starts processing messages.
    */
-  loadAllMeshes(): void {
+  async loadAllMeshes(): Promise<void> {
     try {
       const meshRoots: Array<{ dir: string; isGlobal: boolean }> = [];
 
@@ -78,8 +80,8 @@ export class MeshManager extends EventEmitter {
         this.scanMeshDir(meshRoot, isGlobal, 0);
       }
 
-      // Initialize FSMs for meshes that have fsm config
-      this.initializeFSMs();
+      // Initialize FSMs for meshes that have fsm config - MUST await
+      await this.initializeFSMs();
     } catch (error) {
       log.error('mesh-manager', 'Failed to load mesh configs', {
         error: (error as Error).message,
@@ -371,18 +373,24 @@ export class MeshManager extends EventEmitter {
 
   /**
    * Initialize FSM instances for all meshes with fsm config
+   * CRITICAL: This method is async and MUST be awaited to ensure all FSM states are persisted
+   * before the system starts processing messages.
    */
-  private initializeFSMs(): void {
+  private async initializeFSMs(): Promise<void> {
+    const initPromises: Promise<void>[] = [];
     for (const [meshName, config] of this.meshConfigs) {
       if (!config.fsm) continue;
-      this.initializeSingleFSM(meshName, config);
+      initPromises.push(this.initializeSingleFSM(meshName, config));
     }
+    await Promise.all(initPromises);
   }
 
   /**
    * Initialize FSM for a single mesh
+   * CRITICAL: This method is async and MUST be awaited to ensure FSM state is persisted
+   * before any message validation occurs.
    */
-  private initializeSingleFSM(meshName: string, config: MeshConfig): void {
+  private async initializeSingleFSM(meshName: string, config: MeshConfig): Promise<void> {
     try {
       const fsm = new MeshFSM(
         meshName,
@@ -426,15 +434,24 @@ export class MeshManager extends EventEmitter {
         this.emit('fsm:script-run', event);
       });
 
-      // Initialize the FSM (loads or creates state)
-      fsm.initialize().catch(error => {
+      // Store in map first so it's accessible during initialization callbacks
+      this.meshFSMs.set(meshName, fsm);
+
+      // Initialize the FSM (loads or creates state) - MUST await
+      try {
+        await fsm.initialize();
+        log.debug('mesh-fsm', 'FSM initialized successfully', {
+          meshName,
+          initialState: fsm.getCurrentState(),
+        });
+      } catch (initError) {
         log.error('mesh-fsm', 'Failed to initialize FSM', {
           meshName,
-          error: (error as Error).message,
+          error: (initError as Error).message,
         });
-      });
-
-      this.meshFSMs.set(meshName, fsm);
+        // Remove from map on init failure
+        this.meshFSMs.delete(meshName);
+      }
     } catch (error) {
       log.error('mesh-manager', `Failed to create FSM for mesh: ${meshName}`, {
         error: (error as Error).message,

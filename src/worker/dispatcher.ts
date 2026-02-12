@@ -1044,8 +1044,8 @@ export class WorkerDispatcher extends EventEmitter {
   async start(consumer?: EventEmitter): Promise<void> {
     if (this.running) return;
 
-    // Load all mesh configs
-    this.loadMeshConfigs();
+    // Load all mesh configs (includes FSM initialization - must await)
+    await this.loadMeshConfigs();
 
     // Restore suspended sessions from SQLite (crash recovery)
     this.restoreSuspendedSessions();
@@ -1221,8 +1221,9 @@ export class WorkerDispatcher extends EventEmitter {
   /**
    * Handle incoming worker message - spawn worker for each message
    * Allows concurrent workers for the same agentId (runtime parallelism)
+   * CRITICAL: This method is async to support awaiting FSM initialization
    */
-  private handleWorkerMessage(agentId: string): void {
+  private async handleWorkerMessage(agentId: string): Promise<void> {
     if (!this.running) return;
 
     // OAOM (One-Agent-One-Message): Check if agent already has an active worker
@@ -1399,8 +1400,9 @@ export class WorkerDispatcher extends EventEmitter {
 
         // Always (re-)initialize FSM for entry point runs — previous completion
         // may have deleted the FSM instance via clearMeshState
+        // CRITICAL: Must await to ensure FSM state is persisted before checking isInitialized()
         if (meshConfig.fsm) {
-          this.initializeSingleFSM(meshName, meshConfig);
+          await this.initializeSingleFSM(meshName, meshConfig);
         }
       }
     }
@@ -2607,7 +2609,7 @@ The system will resume your session when the human responds.`;
    * If meshName is provided, reloads only that mesh.
    * Otherwise reloads all meshes.
    */
-  reloadMeshConfigs(meshName?: string): void {
+  async reloadMeshConfigs(meshName?: string): Promise<void> {
     if (meshName) {
       // Single mesh reload
       const reloaded = this.configLoader.reload(meshName);
@@ -2629,7 +2631,7 @@ The system will resume your session when the human responds.`;
             if (oldFsm) {
               this.meshFSMs.delete(meshName);
             }
-            this.initializeSingleFSM(meshName, config);
+            await this.initializeSingleFSM(meshName, config);
           }
         }
       }
@@ -2637,7 +2639,7 @@ The system will resume your session when the human responds.`;
     } else {
       // Full reload: clear all and re-scan
       this.configLoader.clear();
-      this.loadMeshConfigs();
+      await this.loadMeshConfigs();
       log.info('dispatcher', 'Reloaded all mesh configs');
     }
   }
@@ -4486,8 +4488,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
   /**
    * Initialize FSM for a single mesh (called during JIT loading)
+   * CRITICAL: This method is async and MUST be awaited to ensure FSM state is persisted
+   * before any message validation occurs. The FSM.initialize() writes initial state to SQLite.
    */
-  private initializeSingleFSM(meshName: string, config: MeshConfig): void {
+  private async initializeSingleFSM(meshName: string, config: MeshConfig): Promise<void> {
     try {
       const fsm = new MeshFSM(
         meshName,
@@ -4500,15 +4504,25 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Wire FSM events using consolidated helper
       this.wireFSMEvents(fsm, meshName);
 
-      // Initialize the FSM
-      fsm.initialize().catch(error => {
+      // Store in map first so it's accessible during initialization callbacks
+      this.meshFSMs.set(meshName, fsm);
+
+      // Initialize the FSM - MUST await to ensure state is persisted
+      try {
+        await fsm.initialize();
+        log.debug('mesh-fsm', 'FSM initialized successfully', {
+          meshName,
+          initialState: fsm.getCurrentState(),
+        });
+      } catch (initError) {
         log.error('mesh-fsm', 'Failed to initialize FSM (JIT)', {
           meshName,
-          error: (error as Error).message,
+          error: (initError as Error).message,
         });
-      });
-
-      this.meshFSMs.set(meshName, fsm);
+        // Remove from map on init failure so it can be retried
+        this.meshFSMs.delete(meshName);
+        throw initError;
+      }
     } catch (error) {
       log.error('mesh-fsm', 'Failed to create FSM (JIT)', {
         meshName,
@@ -4520,8 +4534,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
   /**
    * Load all mesh configs from meshes/ directory structure
    * Delegates to MeshConfigLoader (Phase 2 refactoring)
+   * CRITICAL: This method is async because FSM initialization must complete
+   * before the dispatcher starts processing messages.
    */
-  private loadMeshConfigs(): void {
+  private async loadMeshConfigs(): Promise<void> {
     // Wire up config loader events
     this.configLoader.on('mesh:loaded', (data) => this.emit('mesh:loaded', data));
     this.configLoader.on('mesh:invalid', (data) => this.emit('mesh:invalid', data));
@@ -4537,44 +4553,64 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       }
     }
 
-    // Initialize FSMs for meshes that have fsm config
-    this.initializeFSMs();
+    // Initialize FSMs for meshes that have fsm config - MUST await
+    await this.initializeFSMs();
   }
 
   /**
    * Initialize FSM instances for meshes with fsm config
+   * CRITICAL: This method is async and MUST be awaited to ensure all FSM states are persisted
+   * before the dispatcher starts processing messages.
    */
-  private initializeFSMs(): void {
+  private async initializeFSMs(): Promise<void> {
+    const initPromises: Promise<void>[] = [];
+
     for (const [meshName, config] of this.meshConfigs) {
       if (!config.fsm) continue;
 
-      try {
-        const fsm = new MeshFSM(
-          meshName,
-          config.fsm,
-          this.queue.getDatabase(),
-          config._basePath || this.config.workDir,
-          this.config.workDir
-        );
-
-        // Wire FSM events using consolidated helper
-        this.wireFSMEvents(fsm, meshName);
-
-        // Initialize the FSM (loads or creates state)
-        fsm.initialize().catch(error => {
-          log.error('mesh-fsm', 'Failed to initialize FSM', {
+      const initPromise = (async () => {
+        try {
+          const fsm = new MeshFSM(
             meshName,
+            config.fsm!,
+            this.queue.getDatabase(),
+            config._basePath || this.config.workDir,
+            this.config.workDir
+          );
+
+          // Wire FSM events using consolidated helper
+          this.wireFSMEvents(fsm, meshName);
+
+          // Store in map first so it's accessible during initialization callbacks
+          this.meshFSMs.set(meshName, fsm);
+
+          // Initialize the FSM (loads or creates state) - MUST await
+          try {
+            await fsm.initialize();
+            log.debug('mesh-fsm', 'FSM initialized successfully', {
+              meshName,
+              initialState: fsm.getCurrentState(),
+            });
+          } catch (initError) {
+            log.error('mesh-fsm', 'Failed to initialize FSM', {
+              meshName,
+              error: (initError as Error).message,
+            });
+            // Remove from map on init failure
+            this.meshFSMs.delete(meshName);
+          }
+        } catch (error) {
+          log.error('mesh-fsm', `Failed to create FSM for mesh: ${meshName}`, {
             error: (error as Error).message,
           });
-        });
+        }
+      })();
 
-        this.meshFSMs.set(meshName, fsm);
-      } catch (error) {
-        log.error('mesh-fsm', `Failed to create FSM for mesh: ${meshName}`, {
-          error: (error as Error).message,
-        });
-      }
+      initPromises.push(initPromise);
     }
+
+    // Wait for all FSM initializations to complete
+    await Promise.all(initPromises);
   }
 
   // scanMeshDir, loadMeshConfigFromFile, loadMeshConfigsFromLegacyDir

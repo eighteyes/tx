@@ -792,54 +792,65 @@ ${data.content}
     }
   };
 
-  // Active injection: serialized queue to avoid competing retry loops
-  const injectionQueue: Array<{ filepath: string; from: string }> = [];
-  let injectionRunning = false;
+  // Active injection: persistent poll drains queue whenever Claude is idle
+  const injectionQueue: Array<{ filepath: string; from: string; queuedAt: number }> = [];
+  let injectionPollTimer: ReturnType<typeof setInterval> | null = null;
+  const INJECTION_POLL_MS = 2000;
+  const INJECTION_STALE_MS = 5 * 60 * 1000; // 5 minutes — give up on stale entries
 
-  const processInjectionQueue = () => {
-    if (injectionRunning || injectionQueue.length === 0) return;
-    injectionRunning = true;
-
-    const { filepath: fp, from } = injectionQueue.shift()!;
-    let attempt = 0;
-    const maxRetries = 15;
-
-    const tryOnce = () => {
-      attempt++;
-      try {
-        const content = fs.readFileSync(fp, 'utf-8');
-        const bodyMatch = content.split(/^---$/m);
-        const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
-
-        const message = `[mesh response from ${from}]\n\n${body}`;
-        const injected = injectPrompt(tmux, message);
-
-        if (injected) {
-          log.info('injector', 'Active injection succeeded', { from, attempt, queued: injectionQueue.length });
-          injectionRunning = false;
-          // Process next queued message after a brief pause for Claude to absorb
-          setTimeout(processInjectionQueue, 1000);
-          return;
-        }
-      } catch (err) {
-        log.warn('injector', 'Active injection read error', { from, attempt, error: String(err) });
+  const drainInjectionQueue = () => {
+    if (injectionQueue.length === 0) {
+      // Nothing to inject — stop polling
+      if (injectionPollTimer) {
+        clearInterval(injectionPollTimer);
+        injectionPollTimer = null;
+        log.debug('injector', 'Injection queue empty, polling stopped');
       }
+      return;
+    }
 
-      if (attempt < maxRetries) {
-        log.debug('injector', 'Active injection retry', { from, attempt, remaining: maxRetries - attempt });
-        setTimeout(tryOnce, 2000);
-      } else {
-        log.warn('injector', 'Active injection exhausted retries, falling back to pending', { from, attempts: attempt });
-        injectionRunning = false;
-        processInjectionQueue();
+    const now = Date.now();
+    const head = injectionQueue[0];
+
+    // Drop stale entries (already in pending-for-core.json as fallback)
+    if (now - head.queuedAt > INJECTION_STALE_MS) {
+      injectionQueue.shift();
+      log.warn('injector', 'Dropped stale injection (>5m), available via tx inbox', { from: head.from, queued: injectionQueue.length });
+      return; // Next poll will process the next item
+    }
+
+    try {
+      const content = fs.readFileSync(head.filepath, 'utf-8');
+      const bodyMatch = content.split(/^---$/m);
+      const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
+
+      const message = `[mesh response from ${head.from}]\n\n${body}`;
+      const injected = injectPrompt(tmux, message);
+
+      if (injected) {
+        injectionQueue.shift();
+        log.info('injector', 'Active injection succeeded', {
+          from: head.from,
+          waitMs: now - head.queuedAt,
+          queued: injectionQueue.length,
+        });
       }
-    };
-    tryOnce();
+      // If not injected, leave at head — next poll will retry
+    } catch (err) {
+      log.warn('injector', 'Active injection read error', { from: head.from, error: String(err) });
+      injectionQueue.shift(); // Remove bad entry
+    }
   };
 
   const tryInjectResponse = (filepath: string, from: string) => {
-    injectionQueue.push({ filepath, from });
-    processInjectionQueue();
+    injectionQueue.push({ filepath, from, queuedAt: Date.now() });
+
+    // Start polling if not already running
+    if (!injectionPollTimer) {
+      injectionPollTimer = setInterval(drainInjectionQueue, INJECTION_POLL_MS);
+      // Also try immediately
+      drainInjectionQueue();
+    }
   };
 
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
