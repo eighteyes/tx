@@ -1376,15 +1376,30 @@ export class WorkerDispatcher extends EventEmitter {
       const resumeMesh = pendingMsg?.payload?.['resume-mesh'] === true ||
                          pendingMsg?.payload?.['resume-mesh'] === 'true';
 
-      // Reset edge iteration counters for new turn
-      this.resetEdgeCounters(meshName);
+      // Check if this is an FSM internal dispatch (not a new mesh run from outside)
+      // FSM dispatches come from 'system/fsm-dispatch' and should NOT reset the FSM
+      const isFsmDispatch = pendingMsg?.from_agent === 'system/fsm-dispatch';
 
-      if (resumeMesh) {
-        log.info('dispatcher', `Resuming mesh (resume-mesh flag set)`, {
-          meshName,
-          agentId,
-          hasSuspendedSessions: this.sessionManager.getSuspendedCount() > 0,
-        });
+      // Reset edge iteration counters only for truly new external runs
+      if (!isFsmDispatch) {
+        this.resetEdgeCounters(meshName);
+      }
+
+      if (resumeMesh || isFsmDispatch) {
+        // FSM dispatch: the FSM is already tracking state, just proceed with spawn
+        if (isFsmDispatch) {
+          log.debug('dispatcher', `FSM internal dispatch, preserving FSM state`, {
+            meshName,
+            agentId,
+            currentFsmState: this.meshFSMs.get(meshName)?.getCurrentState(),
+          });
+        } else {
+          log.info('dispatcher', `Resuming mesh (resume-mesh flag set)`, {
+            meshName,
+            agentId,
+            hasSuspendedSessions: this.sessionManager.getSuspendedCount() > 0,
+          });
+        }
       } else {
         // Clear any stale state from previous incomplete run
         const hadState = this.sessionManager.getSuspendedCount() > 0 ||

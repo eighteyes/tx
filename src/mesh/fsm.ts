@@ -1829,7 +1829,7 @@ Please investigate and provide guidance to the agent.
 
       const msgContent = `---
 to: ${agentId}
-from: core/core
+from: system/fsm-dispatch
 type: task
 msg-id: ${msgId}
 headline: FSM dispatch — execute ${toState}
