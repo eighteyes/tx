@@ -321,6 +321,19 @@ When message contains `type: prologue`:
    campaign_id: {campaign_id}
    ```
 
+## Dialogue Budget
+
+**When NPCs are present, at least 50% of word budget must be dialogue — characters talking in quoted speech.**
+
+Internal monologue is not dialogue. Description is not dialogue. Narration about what someone said is not dialogue. Dialogue is:
+- Quoted speech: "actual words from a character's mouth"
+- Back-and-forth exchange between speakers
+- Characters reacting verbally to each other
+
+If two characters are in the same scene and less than half the prose is them talking, the scene has failed. Check `author.yaml` → `balance.dialogue_description` for the specific ratio — if it says `60/40`, hit 60%.
+
+**Self-check before finalizing:** Count approximate dialogue vs non-dialogue words. If the ratio is below the minimum, convert internal monologue beats into dialogue beats. The character can SAY what they're thinking instead of the narrator describing what they're thinking.
+
 ## Constraints
 - Follow author.yaml constraints ruthlessly. Voice drift is a failure.
 - Body-first, always. Interpretation before sensation is a violation.

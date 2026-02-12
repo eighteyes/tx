@@ -629,10 +629,12 @@ If `resolution.yaml` contains a `world_event` section, the world acted this turn
 
 | Scene Type | Minimum dialogue_exchange beats | Minimum dialogue word budget |
 |------------|-------------------------------|------------------------------|
-| NPC present, intimate | 3+ | 40% of total word target |
-| NPC present, tense | 2+ | 30% of total word target |
+| NPC present, intimate | 4+ | 50% of total word target |
+| NPC present, tense | 3+ | 50% of total word target |
 | Solo / environmental | 0 | n/a |
 | Prologue | 0-1 | n/a |
+
+**50% is a floor, not a ceiling.** If `author.yaml` sets `balance.dialogue_description.ratio` to `60/40`, hit 60%. Two characters in a room should be TALKING. Internal monologue padding where dialogue should be is a scene-crafter failure.
 
 **Dialogue exchange means back-and-forth.** A single monologue block is `npc_reaction`, not `dialogue_exchange`. A dialogue_exchange beat contains at least 2 speakers trading lines.
 
