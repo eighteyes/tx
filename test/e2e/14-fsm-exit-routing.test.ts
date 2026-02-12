@@ -191,7 +191,7 @@ describe('FSM Exit-Based Routing Integration', () => {
           name: 'conditional',
           coordinator: 'worker',
           exit: {
-            run: 'if [ "$signal" = "PASS" ]; then echo "success"; else echo "retry"; fi',
+            run: 'if [ "$FSM_CTX_SIGNAL" = "PASS" ]; then echo "success"; else echo "retry"; fi',
           },
         },
         {

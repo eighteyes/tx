@@ -799,6 +799,122 @@ export class MeshFSM extends EventEmitter {
   }
 
   /**
+   * Clean gate files for all states using initial context.
+   * Called when mesh is reset to clear stale gate files from previous runs.
+   * Uses config.context (initial values) for variable resolution, NOT runtime state.
+   */
+  cleanGateFiles(): number {
+    let deletedCount = 0;
+
+    // Use initial context from config for variable resolution
+    // (NOT stateData.context which may have runtime values)
+    const initialContext = this.config.context || {};
+
+    for (const stateConfig of this.stateMap.values()) {
+      // Check exit.gates (map of agent -> gate file paths)
+      if (stateConfig.exit?.gates) {
+        for (const gatePaths of Object.values(stateConfig.exit.gates)) {
+          for (const gatePath of gatePaths) {
+            // Only clean file paths (starting with $ or containing /)
+            // Skip script names (bare identifiers)
+            if (!gatePath.startsWith('$') && !gatePath.includes('/')) {
+              continue;
+            }
+
+            // Resolve the gate path using initial context
+            let resolved = gatePath;
+            for (const [key, value] of Object.entries(initialContext)) {
+              if (typeof value === 'string' || typeof value === 'number') {
+                resolved = resolved.replace(new RegExp(`\\$${key}\\b`, 'g'), String(value));
+              }
+            }
+            // Fallback: if $workspace still present, use workDir
+            if (resolved.includes('$workspace')) {
+              resolved = resolved.replace(/\$workspace/g, this.workDir);
+            }
+            // Resolve relative paths against workDir
+            if (!path.isAbsolute(resolved)) {
+              resolved = path.join(this.workDir, resolved);
+            }
+
+            // Delete the file if it exists
+            try {
+              if (fs.existsSync(resolved)) {
+                fs.unlinkSync(resolved);
+                deletedCount++;
+                log.debug('mesh-fsm', 'Deleted stale gate file', {
+                  meshName: this.meshName,
+                  gatePath,
+                  resolved,
+                });
+              }
+            } catch (err) {
+              log.warn('mesh-fsm', 'Failed to delete gate file', {
+                meshName: this.meshName,
+                gatePath,
+                resolved,
+                error: (err as Error).message,
+              });
+            }
+          }
+        }
+      }
+
+      // Check entry_gates (array of gate paths)
+      if (stateConfig.entry_gates) {
+        for (const gatePath of stateConfig.entry_gates) {
+          // Only clean file paths
+          if (!gatePath.startsWith('$') && !gatePath.includes('/')) {
+            continue;
+          }
+
+          // Resolve the gate path using initial context
+          let resolved = gatePath;
+          for (const [key, value] of Object.entries(initialContext)) {
+            if (typeof value === 'string' || typeof value === 'number') {
+              resolved = resolved.replace(new RegExp(`\\$${key}\\b`, 'g'), String(value));
+            }
+          }
+          if (resolved.includes('$workspace')) {
+            resolved = resolved.replace(/\$workspace/g, this.workDir);
+          }
+          if (!path.isAbsolute(resolved)) {
+            resolved = path.join(this.workDir, resolved);
+          }
+
+          try {
+            if (fs.existsSync(resolved)) {
+              fs.unlinkSync(resolved);
+              deletedCount++;
+              log.debug('mesh-fsm', 'Deleted stale entry gate file', {
+                meshName: this.meshName,
+                gatePath,
+                resolved,
+              });
+            }
+          } catch (err) {
+            log.warn('mesh-fsm', 'Failed to delete entry gate file', {
+              meshName: this.meshName,
+              gatePath,
+              resolved,
+              error: (err as Error).message,
+            });
+          }
+        }
+      }
+    }
+
+    if (deletedCount > 0) {
+      log.info('mesh-fsm', 'Cleaned stale gate files for mesh reset', {
+        meshName: this.meshName,
+        deletedCount,
+      });
+    }
+
+    return deletedCount;
+  }
+
+  /**
    * Handle a message and validate/execute FSM transitions
    *
    * This is the central validation point for ALL message types.

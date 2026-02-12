@@ -2556,8 +2556,12 @@ The system will resume your session when the human responds.`;
     const { sessions: clearedSessions, buffers: clearedBuffers } = this.sessionManager.clearForMesh(meshName);
 
     // Clear FSM state for this mesh (both in-memory instance AND persisted SQLite row)
+    // CRITICAL: Clean gate files BEFORE deleting FSM to avoid stale files causing infinite loops
     const fsm = this.meshFSMs.get(meshName);
+    let clearedGateFiles = 0;
     if (fsm) {
+      // Clean stale gate files from previous run
+      clearedGateFiles = fsm.cleanGateFiles();
       fsm.getPersistence().deleteState(meshName);
       this.meshFSMs.delete(meshName);
     }
@@ -2574,7 +2578,7 @@ The system will resume your session when the human responds.`;
       clearedNamedConversations = this.queue.clearNamedConversationsForMesh(meshName);
     }
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0 || clearedNamedConversations > 0) {
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0 || clearedNamedConversations > 0 || clearedGateFiles > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
@@ -2582,6 +2586,7 @@ The system will resume your session when the human responds.`;
         clearedDbSessions,
         clearedConversations,
         clearedNamedConversations,
+        clearedGateFiles,
         clearedFSM: !!fsm,
       });
     }
@@ -4505,6 +4510,17 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Wire FSM events using consolidated helper
       this.wireFSMEvents(fsm, meshName);
 
+      // CRITICAL: Clean stale gate files BEFORE initializing FSM state
+      // This prevents infinite loops when re-running a mesh that left gate files from a prior run.
+      // Must happen before initialize() which creates/loads persistent state.
+      const clearedGateFiles = fsm.cleanGateFiles();
+      if (clearedGateFiles > 0) {
+        log.info('dispatcher', 'Cleaned stale gate files before FSM init', {
+          meshName,
+          clearedGateFiles,
+        });
+      }
+
       // Store in map first so it's accessible during initialization callbacks
       this.meshFSMs.set(meshName, fsm);
 
@@ -4581,6 +4597,16 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           // Wire FSM events using consolidated helper
           this.wireFSMEvents(fsm, meshName);
+
+          // CRITICAL: Clean stale gate files BEFORE initializing FSM state
+          // This prevents infinite loops when re-running a mesh that left gate files from a prior run.
+          const clearedGateFiles = fsm.cleanGateFiles();
+          if (clearedGateFiles > 0) {
+            log.info('dispatcher', 'Cleaned stale gate files before FSM init', {
+              meshName,
+              clearedGateFiles,
+            });
+          }
 
           // Store in map first so it's accessible during initialization callbacks
           this.meshFSMs.set(meshName, fsm);
