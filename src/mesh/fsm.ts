@@ -267,6 +267,59 @@ export class MeshFSM extends EventEmitter {
 
       // Execute onEnter for initial state
       await this.executeOnEnter(this._initialState);
+
+      // Execute entry.set for initial state (same as transitions do)
+      const initialStateConfig = this.stateMap.get(this._initialState);
+      if (initialStateConfig?.entry?.set) {
+        for (const [key, valueExpr] of Object.entries(initialStateConfig.entry.set)) {
+          const evalContext: Record<string, unknown> = { ...this.stateData.context };
+          const simpleResult = this.expressionEvaluator.evaluate(valueExpr, evalContext);
+
+          if (simpleResult.success && simpleResult.isSimpleExpression) {
+            const output = String(simpleResult.value);
+            this.updateContext({ [key]: output });
+            log.debug('mesh-fsm', 'Initial entry.set evaluated (simple)', {
+              meshName: this.meshName,
+              key,
+              value: output,
+              expression: valueExpr,
+            });
+          } else {
+            // Shell fallback
+            let expr = valueExpr;
+            for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
+              if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
+                expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+              }
+            }
+            let shellExpr = expr;
+            if (shellExpr.startsWith('$(') && !shellExpr.startsWith('$((') && shellExpr.endsWith(')')) {
+              shellExpr = shellExpr.slice(2, -1);
+            }
+            const result = await this.scriptExecutor.executeInline(shellExpr, {
+              fsmState: this._initialState,
+              fsmMeshName: this.meshName,
+              ...this.stateData.context,
+            });
+            if (result.success) {
+              const output = result.stdout.trim();
+              this.updateContext({ [key]: output });
+              log.debug('mesh-fsm', 'Initial entry.set evaluated (shell)', {
+                meshName: this.meshName,
+                key,
+                value: output,
+              });
+            } else {
+              log.error('mesh-fsm', 'Initial entry.set failed', {
+                meshName: this.meshName,
+                key,
+                expression: valueExpr,
+                stderr: result.stderr,
+              });
+            }
+          }
+        }
+      }
     } else {
       log.debug('mesh-fsm', 'Loaded existing FSM state', {
         meshName: this.meshName,
@@ -356,10 +409,16 @@ export class MeshFSM extends EventEmitter {
         return trimmed;
       }
 
-      // Otherwise treat as script (inline)
+      // Otherwise treat as script (resolve name to path via fsm.scripts)
       try {
         const scriptContext = this.buildScriptContext(context);
-        const result = await this.scriptExecutor.executeInline(exit.run, scriptContext);
+        // Resolve script name to path (e.g., "route-selector" → "scripts/route-selector.sh")
+        const scriptPath = this.config.scripts?.[trimmed];
+        const scriptToExecute = scriptPath || trimmed;
+        // Use execute() for file paths, executeInline() for inline commands
+        const result = scriptPath
+          ? await this.scriptExecutor.execute(scriptPath, scriptContext)
+          : await this.scriptExecutor.executeInline(trimmed, scriptContext);
 
         if (result.success) {
           const output = result.stdout.trim();

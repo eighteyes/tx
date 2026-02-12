@@ -1348,7 +1348,7 @@ export class WorkerDispatcher extends EventEmitter {
     if (!meshConfig) {
       // Try JIT loading before failing
       log.info('dispatcher', 'Mesh not loaded, attempting JIT load', { meshName, agentId });
-      const loaded = this.tryLoadMeshOnDemand(meshName);
+      const loaded = await this.tryLoadMeshOnDemand(meshName);
       if (!loaded) {
         log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
         // Inject routing correction back to sender (if we know who sent it)
@@ -4450,7 +4450,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
    * Try to load a mesh on-demand when a message arrives for an unloaded mesh
    * Delegates to MeshConfigLoader (Phase 2 refactoring)
    */
-  private tryLoadMeshOnDemand(meshName: string): boolean {
+  private async tryLoadMeshOnDemand(meshName: string): Promise<boolean> {
     try {
       const loaded = this.configLoader.loadOnDemand(meshName);
 
@@ -4465,9 +4465,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.guardrails.registerMesh(meshName, config.guardrails);
           }
 
-          // Initialize FSM if needed
+          // Initialize FSM if needed - MUST await to ensure state is persisted
+          // before any message validation or context injection
           if (config.fsm) {
-            this.initializeSingleFSM(meshName, config);
+            await this.initializeSingleFSM(meshName, config);
           }
         }
         log.info('dispatcher', 'Mesh loaded on-demand', { meshName });
