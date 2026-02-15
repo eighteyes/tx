@@ -14,6 +14,7 @@ import { prompt } from './prompt.ts';
 import { tool } from './tool.ts';
 import { run } from './run.ts';
 import { validateMesh } from './validate-mesh.ts';
+import { watchRepo } from './watch.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -103,6 +104,7 @@ Commands:
   tx tasks          View task queue
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
+  tx watch           External repo watcher (web bridge)
   tx validate-mesh  Validate mesh configuration
 
 Run 'tx <command> -h' for command-specific options.`,
@@ -231,6 +233,31 @@ get-www options:
 youtube-transcript options:
   -l, --lang <lang>     Language code (e.g., "en")
   -T, --timestamps      Include timestamps`,
+
+  watch: `tx watch - External repo watcher (Claude Code web bridge)
+
+Usage: tx watch <repo-path> [options]
+
+Arguments:
+  repo-path     Path to local clone of the external repo
+
+Options:
+  --branch <name>     Branch to watch (default: main)
+  --remote <name>     Git remote (default: origin)
+  --interval <ms>     Poll interval in ms (default: 5000)
+  --no-push           Don't push responses back to inbox
+  --init              Initialize repo-path with skill template
+
+Examples:
+  tx watch ~/code/tx-relay
+  tx watch ~/code/tx-relay --branch dev --interval 3000
+  tx watch ~/code/tx-relay --init
+  tx watch ~/code/tx-relay --no-push
+
+Flow:
+  1. Claude Code web uses /msg skill → writes to outbox/ → pushes
+  2. tx watch polls for changes → copies to .ai/tx/msgs/
+  3. tx fires meshes, responses pushed back to inbox/`,
 
   'validate-mesh': `tx validate-mesh - Validate mesh configuration
 
@@ -400,6 +427,18 @@ async function main() {
         lang: flags.l as string || flags.lang as string,
         timestamps: Boolean(flags.T || flags.timestamps),
         providers: Boolean(flags.providers)
+      });
+      break;
+
+    case 'watch':
+      if (wantsHelp) { showHelp('watch'); break; }
+      await watchRepo({
+        repo: args.find(a => !a.startsWith('-')) || '',
+        branch: flags.branch as string | undefined,
+        remote: flags.remote as string | undefined,
+        interval: flags.interval as string | undefined,
+        noPush: Boolean(flags.noPush),
+        init: Boolean(flags.init),
       });
       break;
 
