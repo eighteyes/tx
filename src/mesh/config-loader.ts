@@ -57,6 +57,8 @@ export interface ManifestEnforcementConfig {
   post_validation?: boolean;  // Check writes exist after agent completes (default: true)
   pre_validation?: boolean;   // Check reads exist before dispatching (default: true)
   max_retry?: number;         // Resume agent N times before failing out (default: 2)
+  strict?: boolean;           // Strict mode: block/kill on validation failure (default: false)
+  warning?: boolean;          // Warning mode: log warning on failure (default: true)
 }
 
 /**
@@ -78,7 +80,7 @@ export interface MeshGuardrailOverrides {
   write_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   read_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   identity_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
-  routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number };
+  routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number; routing_retry_max?: number | null; routing_fallback?: string | null };
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
 }
@@ -106,10 +108,11 @@ export interface AgentConfig {
   command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
+  thinking?: boolean;  // Enable extended thinking (default: true). Set false to disable.
   max_turns?: number;  // API round-trip limit per invocation (runtime guardrail)
   max_messages?: number;  // Outbound message limit per worker invocation (chaos contract)
   load?: string[];  // Files to preload into context (globs supported, validated against manifest reads)
-  checkpoint?: boolean | 'start' | 'end' | 'both';  // Checkpoint type: start (after init), end (after completion), both
+  checkpoint?: boolean | 'start' | 'end';  // Checkpoint type: start (after init), end (after completion)
   fork_from?: string;  // Fork from another agent's checkpoint
 }
 
@@ -134,8 +137,8 @@ export interface MeshConfig {
   };
   routing_mode?: RoutingMode;  // 'agent' (default) or 'dispatcher' (opt-in centralized routing)
   routing?: MeshRouting | DispatcherRoutingConfig;  // Shape depends on routing_mode
-  routing_fallback?: string;  // Global fallback agent when edge iteration limits hit
-  routing_retry_max?: number; // Max messages on any routing edge per turn before fallback
+  routing_fallback?: string;  // DEPRECATED: Use guardrails.routing_error.routing_fallback
+  routing_retry_max?: number; // DEPRECATED: Use guardrails.routing_error.routing_retry_max
   toolRestriction?: ToolRestriction;  // Tool access policy for all agents in mesh
   iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
@@ -147,6 +150,8 @@ export interface MeshConfig {
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
+  stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
+  check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
@@ -188,6 +193,16 @@ export class MeshConfigLoader extends EventEmitter {
    */
   loadAll(): Map<string, MeshConfig> {
     try {
+      // TX_SERVE_MESHES: comma-separated allowlist of mesh names to load
+      // When set, only meshes in this list are loaded (server publishing filter)
+      const serveMeshes = process.env.TX_SERVE_MESHES
+        ? new Set(process.env.TX_SERVE_MESHES.split(',').map(s => s.trim()).filter(Boolean))
+        : null;
+
+      if (serveMeshes) {
+        log.info('config-loader', `TX_SERVE_MESHES filter active: ${[...serveMeshes].join(', ')}`);
+      }
+
       const meshRoots: Array<{ dir: string; isGlobal: boolean }> = [];
 
       // Project meshes
@@ -241,6 +256,15 @@ export class MeshConfigLoader extends EventEmitter {
     // Check if already loaded
     if (this.meshConfigs.has(meshName)) {
       return true;
+    }
+
+    // TX_SERVE_MESHES filter: block on-demand loading of filtered meshes
+    const serveMeshes = process.env.TX_SERVE_MESHES
+      ? new Set(process.env.TX_SERVE_MESHES.split(',').map(s => s.trim()).filter(Boolean))
+      : null;
+    if (serveMeshes && !serveMeshes.has(meshName)) {
+      log.debug('config-loader', `Blocked on-demand load (TX_SERVE_MESHES filter): ${meshName}`);
+      return false;
     }
 
     // Try to find and load the config
@@ -440,8 +464,30 @@ export class MeshConfigLoader extends EventEmitter {
         }
       }
 
+      // Backward-compat: migrate top-level routing_fallback/routing_retry_max into guardrails.routing_error
+      if (config.routing_fallback !== undefined || config.routing_retry_max !== undefined) {
+        if (!config.guardrails) config.guardrails = {};
+        if (!config.guardrails.routing_error) config.guardrails.routing_error = {};
+        if (config.routing_fallback !== undefined && config.guardrails.routing_error.routing_fallback === undefined) {
+          config.guardrails.routing_error.routing_fallback = config.routing_fallback;
+        }
+        if (config.routing_retry_max !== undefined && config.guardrails.routing_error.routing_retry_max === undefined) {
+          config.guardrails.routing_error.routing_retry_max = config.routing_retry_max;
+        }
+        log.warn('config-loader', `Mesh '${config.mesh}' uses deprecated top-level routing_fallback/routing_retry_max — move to guardrails.routing_error`);
+      }
+
       // Store base path for relative prompt resolution
       config._basePath = basePath;
+
+      // TX_SERVE_MESHES filter: skip meshes not in the allowlist
+      const serveMeshes = process.env.TX_SERVE_MESHES
+        ? new Set(process.env.TX_SERVE_MESHES.split(',').map(s => s.trim()).filter(Boolean))
+        : null;
+      if (serveMeshes && !serveMeshes.has(config.mesh)) {
+        log.debug('config-loader', `Skipping mesh (TX_SERVE_MESHES filter): ${config.mesh}`);
+        return;
+      }
 
       this.meshConfigs.set(config.mesh, config);
       this.emit('mesh:loaded', { mesh: config.mesh, agents: config.agents.length });

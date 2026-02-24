@@ -108,6 +108,11 @@ export class MeshController {
    * @returns Array of mesh metadata
    */
   async listMeshes(): Promise<{ meshes: MeshMetadata[] }> {
+    // TX_SERVE_MESHES: comma-separated allowlist of mesh names to publish
+    const serveMeshes = process.env.TX_SERVE_MESHES
+      ? new Set(process.env.TX_SERVE_MESHES.split(',').map(s => s.trim()).filter(Boolean))
+      : null;
+
     const meshes: MeshMetadata[] = [];
 
     try {
@@ -117,6 +122,10 @@ export class MeshController {
         if (!entry.isDirectory()) continue;
 
         const meshName = entry.name;
+
+        // TX_SERVE_MESHES filter: skip meshes not in the allowlist
+        if (serveMeshes && !serveMeshes.has(meshName)) continue;
+
         const meshPath = path.join(this.meshesDir, meshName);
 
         // Check for config.yaml or config.json
@@ -180,6 +189,14 @@ export class MeshController {
    * @returns Mesh data including config, raw content, and config type
    */
   async getMesh(name: string): Promise<MeshData> {
+    // TX_SERVE_MESHES filter: reject meshes not in the allowlist
+    const serveMeshes = process.env.TX_SERVE_MESHES
+      ? new Set(process.env.TX_SERVE_MESHES.split(',').map(s => s.trim()).filter(Boolean))
+      : null;
+    if (serveMeshes && !serveMeshes.has(name)) {
+      throw new MeshNotFoundError(name);
+    }
+
     const meshPath = path.join(this.meshesDir, name);
 
     // Check for config.yaml or config.json

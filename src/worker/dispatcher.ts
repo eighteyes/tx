@@ -246,10 +246,11 @@ interface CheckpointEntry {
  * Resolve checkpoint config to a checkpoint type.
  * Handles backward compat: boolean true → 'start'
  */
-function resolveCheckpointType(checkpoint: boolean | string | undefined): 'start' | 'end' | 'both' | null {
+function resolveCheckpointType(checkpoint: boolean | string | undefined): 'start' | 'end' | null {
   if (!checkpoint) return null;
   if (checkpoint === true) return 'start';
-  return checkpoint as 'start' | 'end' | 'both';
+  if (checkpoint === 'both') return 'start';  // backward compat: 'both' treated as 'start'
+  return checkpoint as 'start' | 'end';
 }
 
 export class WorkerDispatcher extends EventEmitter {
@@ -334,6 +335,8 @@ export class WorkerDispatcher extends EventEmitter {
     completed: Set<string>;   // Agents that routed outcome:complete to join
     joinAgent: string;        // The gated join target
     startedAt: number;        // For timeout tracking
+    fanIn: 'batch' | 'queue' | 'drain';
+    transform?: 'summarize';
   }> = new Map();
 
 
@@ -556,7 +559,7 @@ export class WorkerDispatcher extends EventEmitter {
     const [meshName, agentName] = fromAgentId.split('/');
     const meshConfig = this.meshConfigs.get(meshName);
     const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
-    const maxMessages = agentConfig?.max_messages;
+    const maxMessages = this.guardrails.getMaxMessages(meshName, agentName) ?? agentConfig?.max_messages ?? null;
 
     if (maxMessages != null) {
       const workers = this.workerLifecycle.getForAgent(fromAgentId);
@@ -588,28 +591,31 @@ export class WorkerDispatcher extends EventEmitter {
     }
 
     // Edge iteration counting: increment counter for this routing edge
-    const edgeKey = `${fromAgentId}->${toAgentId}`;
-    const count = (this.edgeCounters.get(edgeKey) || 0) + 1;
-    this.edgeCounters.set(edgeKey, count);
+    // Skip core/core — agents should always be able to ask the human
+    if (toAgentId !== 'core/core') {
+      const edgeKey = `${fromAgentId}->${toAgentId}`;
+      const count = (this.edgeCounters.get(edgeKey) || 0) + 1;
+      this.edgeCounters.set(edgeKey, count);
 
-    // Check if this edge has hit the global iteration limit
-    const max = meshConfig?.routing_retry_max;
-    if (max && meshConfig?.routing_fallback && messageType === 'message' && count >= max) {
-      log.warn('dispatcher', 'Edge iteration limit reached', {
-        edge: edgeKey,
-        count,
-        max,
-        fallback: meshConfig.routing_fallback,
-      });
+      // Check if this edge has hit the iteration limit (resolved via guardrail chain)
+      const routingFallback = this.guardrails.getRoutingFallback(meshName);
+      if (routingFallback.max && routingFallback.fallback && messageType === 'message' && count >= routingFallback.max) {
+        log.warn('dispatcher', 'Edge iteration limit reached', {
+          edge: edgeKey,
+          count,
+          max: routingFallback.max,
+          fallback: routingFallback.fallback,
+        });
 
-      this.emit('edge:limit-reached', {
-        meshName,
-        from: fromAgentId,
-        to: toAgentId,
-        count,
-        max,
-        fallback: meshConfig.routing_fallback,
-      });
+        this.emit('edge:limit-reached', {
+          meshName,
+          from: fromAgentId,
+          to: toAgentId,
+          count,
+          max: routingFallback.max,
+          fallback: routingFallback.fallback,
+        });
+      }
     }
 
     // Mesh-wide message counting: increment counter and check limit
@@ -689,24 +695,23 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Check if a message should be redirected due to edge iteration limit.
-   * Uses mesh-level routing_retry_max and routing_fallback.
+   * Uses guardrail resolution chain for routing_retry_max and routing_fallback.
    * Returns the fallback agentId if limit reached, null otherwise.
    */
   private getEdgeFallback(
     fromAgentId: string,
     toAgentId: string,
     meshName: string,
-    meshConfig: MeshConfig,
   ): string | null {
-    const max = meshConfig.routing_retry_max;
-    if (!max || !meshConfig.routing_fallback) return null;
+    const { max, fallback } = this.guardrails.getRoutingFallback(meshName);
+    if (!max || !fallback) return null;
 
     const edgeKey = `${fromAgentId}->${toAgentId}`;
     const count = this.edgeCounters.get(edgeKey) || 0;
 
     if (count < max) return null;
 
-    return `${meshName}/${meshConfig.routing_fallback}`;
+    return `${meshName}/${fallback}`;
   }
 
   // ============================================================================
@@ -1112,9 +1117,16 @@ export class WorkerDispatcher extends EventEmitter {
       consumer.on('worker-message', this.boundWorkerMessageTrackingHandler);
 
       // Subscribe to fan-out events for parallel group tracking
-      consumer.on('fan-out', (event: { meshName: string; agents: string[]; sourceAgent: string; joinAgent: string | null }) => {
+      consumer.on('fan-out', (event: {
+        meshName: string;
+        agents: string[];
+        sourceAgent: string;
+        joinAgent: string | null;
+        fanIn?: 'batch' | 'queue' | 'drain';
+        transform?: 'summarize';
+      }) => {
         if (event.joinAgent) {
-          this.registerFanOutGroup(event.meshName, event.agents, event.joinAgent);
+          this.registerFanOutGroup(event.meshName, event.agents, event.joinAgent, event.fanIn, event.transform);
         } else {
           log.warn('dispatcher', 'Fan-out without detectable join agent - no gate applied', {
             meshName: event.meshName,
@@ -1259,6 +1271,17 @@ export class WorkerDispatcher extends EventEmitter {
           }
           return;
         }
+      }
+
+      // Check if this is a drain-mode join agent — inject into running worker
+      const [oaomMesh, oaomAgent] = agentId.split('/');
+      const drainGroup = this.getDrainFanOutGroup(oaomMesh, oaomAgent);
+      if (drainGroup) {
+        log.info('dispatcher', 'Drain mode: injecting into running join agent', {
+          agentId,
+        });
+        await this.injectDrainMessage(agentId, oaomMesh);
+        return;
       }
 
       const queueDepth = this.queue.countPending(agentId);
@@ -1406,11 +1429,26 @@ export class WorkerDispatcher extends EventEmitter {
                         this.sessionManager.getBufferedResponseCount(agentId) > 0 ||
                         this.meshFSMs.has(meshName);
         if (hadState) {
+          // Save the current message before clearing — clearMeshState purges
+          // all pending messages, but this message triggered the new run
+          const savedMsg = this.queue.pollOne(agentId);
+
           log.info('dispatcher', `New mesh run at entry point, clearing stale state`, {
             meshName,
             agentId,
           });
           this.clearMeshState(meshName);
+
+          // Re-insert the current message so the worker can poll it
+          if (savedMsg) {
+            this.queue.insert({
+              from_agent: savedMsg.from_agent,
+              to_agent: savedMsg.to_agent || agentId,
+              type: savedMsg.type,
+              payload: savedMsg.payload || {},
+              source_file: savedMsg.source_file,
+            });
+          }
         }
 
         // Always (re-)initialize FSM for entry point runs — previous completion
@@ -1466,9 +1504,10 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Edge iteration limit: redirect to fallback if edge is exhausted
     if (senderAgentId && senderAgentId !== 'core/core') {
-      const fallbackAgentId = this.getEdgeFallback(senderAgentId, agentId, meshName, meshConfig);
+      const fallbackAgentId = this.getEdgeFallback(senderAgentId, agentId, meshName);
       if (fallbackAgentId) {
-        const edgeMode = this.guardrails.getMode('edge_limit', meshName);
+        const edgeMode = this.guardrails.getMode('routing_error', meshName);
+        const { max: edgeMax } = this.guardrails.getRoutingFallback(meshName);
         if (!edgeMode.strict) {
           // Non-strict: log and allow the message through
           if (edgeMode.warning) {
@@ -1477,7 +1516,7 @@ export class WorkerDispatcher extends EventEmitter {
               fallback: fallbackAgentId,
               sender: senderAgentId,
             });
-            log.activity('guardrail:edge-limit:warning', agentId, `Edge limit warning (${meshConfig.routing_retry_max}) on ${senderAgentId}→${agentId} (allowed)`);
+            log.activity('guardrail:routing-error:edge-limit:warning', agentId, `Edge limit warning (${edgeMax}) on ${senderAgentId}→${agentId} (allowed)`);
           }
           // Fall through to normal dispatch
         } else {
@@ -1486,7 +1525,7 @@ export class WorkerDispatcher extends EventEmitter {
             fallback: fallbackAgentId,
             sender: senderAgentId,
           });
-          log.activity('guardrail:edge-limit', agentId, `Edge limit STRICT REDIRECT (${meshConfig.routing_retry_max}) ${senderAgentId}→${agentId} → ${fallbackAgentId}`);
+          log.activity('guardrail:routing-error:edge-limit', agentId, `Edge limit STRICT REDIRECT (${edgeMax}) ${senderAgentId}→${agentId} → ${fallbackAgentId}`);
 
           // Consume the message from the original target's queue
           const msg = this.queue.pollOne(agentId);
@@ -1526,10 +1565,10 @@ export class WorkerDispatcher extends EventEmitter {
             return findWriters(fileId, meshConfig.manifest!);
           }))];
 
-          const artifactMode = this.guardrails.getMode('artifact', meshName);
-          if (!artifactMode.strict) {
+          const manifestMode = { strict: meshConfig.manifest_enforcement?.strict ?? false, warning: meshConfig.manifest_enforcement?.warning ?? true };
+          if (!manifestMode.strict) {
             // Non-strict: allow dispatch, optionally warn
-            if (artifactMode.warning) {
+            if (manifestMode.warning) {
               log.warn('dispatcher', 'Pre-dispatch preflight failed (warning mode, allowing)', {
                 agentId,
                 problems,
@@ -1787,6 +1826,17 @@ export class WorkerDispatcher extends EventEmitter {
           targetAgents: [targetAgentId],
           pendingCount,
         });
+
+        // Always persist sessionId for HITL, independent of continuation setting.
+        // HITL resumption requires the original session context — without this,
+        // the human's response would be delivered to a fresh worker with no memory
+        // of what it asked.
+        if (sessionId) {
+          this.queue.setConversationId(senderAgentId, sessionId);
+          log.info('dispatcher', `Session saved for HITL resume: ${senderAgentId}`, {
+            sessionId: sessionId.slice(0, 8) + '...',
+          });
+        }
 
         // Defer worker kill to avoid race condition with SDK message processing
         // The worker may still be writing the ask-human message file when this event fires
@@ -2584,6 +2634,9 @@ The system will resume your session when the human responds.`;
     // Clear SQLite suspended sessions for this mesh (survives restart)
     const clearedDbSessions = this.queue.clearSuspendedSessionsForMesh(meshName);
 
+    // Purge stale pending messages from previous runs
+    const clearedPendingMsgs = this.queue.clearPendingMessagesForMesh(meshName);
+
     // Clear session continuations unless persistence is enabled
     let clearedConversations = 0;
     let clearedNamedConversations = 0;
@@ -2593,12 +2646,13 @@ The system will resume your session when the human responds.`;
       clearedNamedConversations = this.queue.clearNamedConversationsForMesh(meshName);
     }
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedConversations > 0 || clearedNamedConversations > 0 || clearedGateFiles > 0) {
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedPendingMsgs > 0 || clearedConversations > 0 || clearedNamedConversations > 0 || clearedGateFiles > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
         clearedBuffers,
         clearedDbSessions,
+        clearedPendingMsgs,
         clearedConversations,
         clearedNamedConversations,
         clearedGateFiles,
@@ -3145,6 +3199,26 @@ Please advise the agent or check mesh configuration.`;
         }
       }
 
+      // 2. Resolved workspace location from manifest variables (per-turn path)
+      // If the config declares workspace.locations with a 'workspace' key,
+      // resolve template variables from session.yaml and use the result.
+      // Falls back gracefully: if session.yaml is missing or variables don't resolve,
+      // the path will contain unresolved {tokens} and we skip to the static fallback.
+      if (!resolvedWorkspaceDir && workspaceConfig) {
+        const wsLocations = (workspaceConfig as any)?.locations || {};
+        if (Object.keys(wsLocations).length > 0) {
+          const varMap = this.cachedManifestVars.get(meshName)
+            || this.resolveManifestVariables(meshName, wsLocations);
+          this.cachedManifestVars.set(meshName, varMap);
+          if (varMap['workspace'] && !varMap['workspace'].includes('{')) {
+            resolvedWorkspaceDir = path.isAbsolute(varMap['workspace'])
+              ? varMap['workspace']
+              : path.join(this.config.workDir, varMap['workspace']);
+          }
+        }
+      }
+
+      // 3. Static workspace config from agent/mesh
       if (workspaceConfig && !resolvedWorkspaceDir) {
         const workspace = this.workspaceManager.createWorkspace(taskId, workspaceConfig);
         resolvedWorkspaceDir = workspace.dir;
@@ -3461,13 +3535,14 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         );
         const ctx = router.getInjectionContext(agent.name);
         systemPrompt = injectDispatcherRoutingInstructions(
-          systemPrompt, ctx.sentinel, ctx.validOutcomes, ctx.availableAgents, ctx.isTerminal
+          systemPrompt, ctx.sentinel, ctx.validOutcomes, ctx.availableAgents, ctx.isTerminal, ctx.peers
         );
         log.info('dispatcher', 'Injected dispatcher routing instructions', {
           agentId,
           sentinel: ctx.sentinel,
           isTerminal: ctx.isTerminal,
           validOutcomes: ctx.validOutcomes,
+          peers: ctx.peers,
         });
       } else {
         // Agent mode: inject per-agent routing table (existing behavior)
@@ -3613,15 +3688,22 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             availableCheckpoints: Array.from(this.checkpoints.keys()),
           });
         }
-      } else if (!frontmatterConversationId
-              && (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
-              || this.shouldPersistAgent(agent.name, meshConfig?.persistence))) {
-        const existingSession = this.queue.getConversationId(agentId);
-        if (existingSession) {
-          sessionId = existingSession;
-          log.info('dispatcher', `Resuming session for ${agentId}`, {
-            sessionId: sessionId.slice(0, 8) + '...'
-          });
+      } else if (!frontmatterConversationId) {
+        // Check for HITL-suspended session first (always honored, independent of continuation)
+        const suspended = this.sessionManager.get(agentId);
+        const hasSuspendedSession = suspended?.sessionId;
+
+        if (hasSuspendedSession
+            || this.shouldContinueAgent(agent.name, meshConfig?.continuation)
+            || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
+          const existingSession = this.queue.getConversationId(agentId);
+          if (existingSession) {
+            sessionId = existingSession;
+            log.info('dispatcher', `Resuming session for ${agentId}`, {
+              sessionId: sessionId.slice(0, 8) + '...',
+              reason: hasSuspendedSession ? 'hitl-resume' : 'continuation',
+            });
+          }
         }
       }
 
@@ -3641,6 +3723,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         maxTurns: this.guardrails.getMaxTurns(meshName!, agent.name) ?? agent.max_turns,  // Guardrail > mesh config > null
         maxTurnsMode: this.guardrails.getMode('max_turns', meshName!, agent.name),
         hooks: chaosHooks,  // Chaos contract hooks (write-gate)
+        thinking: agent.thinking,  // Extended thinking control (false = disabled)
       };
 
       const worker = new SdkRunner(runnerConfig, this.queue);
@@ -3693,7 +3776,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         // message hits the consumer — before this agent completes. Saving at init
         // ensures the checkpoint exists when the downstream agent needs it.
         const cpType = resolveCheckpointType(agent.checkpoint);
-        if ((cpType === 'start' || cpType === 'both') && data.sessionId && meshName) {
+        if (cpType === 'start' && data.sessionId && meshName) {
           const checkpointKey = `${meshName}/${agent.name}`;
           this.checkpoints.set(checkpointKey, {
             sessionId: data.sessionId,
@@ -3712,7 +3795,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // --resume-session-at requires a UUID that exists in the persisted session.
       worker.on('init-anchor', (data) => {
         const cpType = resolveCheckpointType(agent.checkpoint);
-        if ((cpType === 'start' || cpType === 'both') && meshName) {
+        if (cpType === 'start' && meshName) {
           const checkpointKey = `${meshName}/${agent.name}`;
           const existing = this.checkpoints.get(checkpointKey);
           if (existing) {
@@ -4016,10 +4099,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             const validation = validateAgentArtifacts(agent.name, meshConfigForValidation.manifest, 'writes', ctx);
 
             if (validation.missing.length > 0) {
-              const artifactMode = this.guardrails.getMode('artifact', meshName);
-              if (!artifactMode.strict) {
+              const manifestMode = { strict: meshConfigForValidation.manifest_enforcement?.strict ?? false, warning: meshConfigForValidation.manifest_enforcement?.warning ?? true };
+              if (!manifestMode.strict) {
                 // Non-strict: allow completion, optionally log
-                if (artifactMode.warning) {
+                if (manifestMode.warning) {
                   log.warn('dispatcher', 'Artifact post-validation failed (warning mode, allowing)', {
                     agentId,
                     missing: validation.missing,
@@ -4196,7 +4279,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         // capture the full execution context for continuation-style forks.
         // Preserves initMessageUuid from the start checkpoint if one was saved.
         const cpType = resolveCheckpointType(agent.checkpoint);
-        if ((cpType === 'end' || cpType === 'both') && data.sessionId && meshName) {
+        if (cpType === 'end' && data.sessionId && meshName) {
           const checkpointKey = `${meshName}/${agentName}`;
           const existing = this.checkpoints.get(checkpointKey);
           this.checkpoints.set(checkpointKey, {
@@ -4969,7 +5052,13 @@ Forked from parallel entry: ${entryAgent}
    * Register a fan-out group from consumer's fan-out event.
    * Creates tracking state for the parallel group and its join gate.
    */
-  private registerFanOutGroup(meshName: string, agents: string[], joinAgent: string): void {
+  private registerFanOutGroup(
+    meshName: string,
+    agents: string[],
+    joinAgent: string,
+    fanIn: 'batch' | 'queue' | 'drain' = 'batch',
+    transform?: 'summarize'
+  ): void {
     const groupKey = `${meshName}:${joinAgent}`;
 
     // Don't overwrite if already tracking (edge case: re-trigger)
@@ -4985,6 +5074,8 @@ Forked from parallel entry: ${entryAgent}
       completed: new Set(),
       joinAgent,
       startedAt: Date.now(),
+      fanIn,
+      transform,
     });
 
     log.info('dispatcher', 'Registered fan-out group', {
@@ -4992,6 +5083,8 @@ Forked from parallel entry: ${entryAgent}
       agents,
       joinAgent,
       groupKey,
+      fanIn,
+      transform,
     });
   }
 
@@ -5017,11 +5110,13 @@ Forked from parallel entry: ${entryAgent}
       // Check if all agents are done
       if (group.completed.size === group.agents.size) {
         const joinAgentId = `${meshName}/${group.joinAgent}`;
+        const { fanIn, transform } = group;
 
         log.info('dispatcher', 'All fan-out agents completed - join agent ungated', {
           meshName,
           joinAgent: group.joinAgent,
           completedAgents: Array.from(group.completed),
+          fanIn,
         });
 
         this.emit('fan-out:complete', {
@@ -5034,8 +5129,14 @@ Forked from parallel entry: ${entryAgent}
         // Clean up group state BEFORE triggering join agent
         this.fanOutGroups.delete(groupKey);
 
-        // Trigger join agent - process any queued messages
-        this.processNextQueuedMessage(joinAgentId);
+        // Branch on fan_in mode
+        if (fanIn === 'batch') {
+          // Batch: combine all messages into one, spawn single worker
+          this.deliverBatchToJoinAgent(meshName, joinAgentId, transform);
+        } else {
+          // Queue mode: current OAOM behavior (N cold starts)
+          this.processNextQueuedMessage(joinAgentId);
+        }
       }
 
       return; // Found the group, done
@@ -5071,8 +5172,184 @@ Forked from parallel entry: ${entryAgent}
     const groupKey = `${meshName}:${agentName}`;
     const group = this.fanOutGroups.get(groupKey);
     if (!group) return false;
+    // Drain mode: no gate — messages flow immediately
+    if (group.fanIn === 'drain') return false;
     // Join agent is gated until all agents in the group have completed
     return group.completed.size < group.agents.size;
+  }
+
+  // ============================================================================
+  // Fan-In Delivery Methods
+  // ============================================================================
+
+  /**
+   * Deliver all pending messages to join agent as a single batched message.
+   * Polls all queued messages, combines them, optionally summarizes, then
+   * inserts a synthetic combined message and triggers OAOM processing.
+   */
+  private async deliverBatchToJoinAgent(
+    meshName: string,
+    joinAgentId: string,
+    transform?: 'summarize'
+  ): Promise<void> {
+    const messages = this.queue.poll(joinAgentId);
+    if (messages.length === 0) {
+      log.warn('dispatcher', 'Batch delivery: no pending messages for join agent', {
+        meshName, joinAgentId,
+      });
+      this.processNextQueuedMessage(joinAgentId);
+      return;
+    }
+
+    log.info('dispatcher', 'Batch delivery: combining messages for join agent', {
+      meshName,
+      joinAgentId,
+      messageCount: messages.length,
+      transform,
+    });
+
+    let combinedBody = this.buildBatchedContent(messages);
+
+    if (transform === 'summarize') {
+      combinedBody = await this.summarizeContent(combinedBody, messages.length);
+    }
+
+    // Insert synthetic combined message
+    this.queue.insert({
+      from_agent: 'system/fan-in',
+      to_agent: joinAgentId,
+      type: 'task',
+      payload: {
+        headline: `Batched fan-in: ${messages.length} responses`,
+        body: combinedBody,
+        'fan-in-count': messages.length,
+        'fan-in-sources': messages.map(m => m.from_agent),
+      },
+    });
+
+    // Spawn join agent normally (OAOM: sees one combined message)
+    this.processNextQueuedMessage(joinAgentId);
+  }
+
+  /**
+   * Build combined markdown content from multiple messages for batch delivery.
+   */
+  private buildBatchedContent(messages: Message[]): string {
+    const parts: string[] = [`## Batched Fan-In (${messages.length} responses)\n`];
+    for (const msg of messages) {
+      parts.push(`### From: ${msg.from_agent}`);
+      if (msg.payload.headline) parts.push(`**Headline**: ${msg.payload.headline}`);
+      if (msg.payload.body) parts.push(msg.payload.body as string);
+      parts.push('');
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * Summarize content using a haiku pre-pass (transform: summarize).
+   * Falls back to raw content if summarization fails.
+   */
+  private async summarizeContent(content: string, count: number): Promise<string> {
+    try {
+      const { query } = await import('@anthropic-ai/claude-agent-sdk');
+      const prompt = `Summarize these ${count} agent responses into a single coherent briefing.\nPreserve key findings, decisions, and artifacts. Be concise but complete.\n\n${content}`;
+
+      const result = query({
+        prompt,
+        options: {
+          model: 'claude-haiku-4-5-20251001',
+          maxTurns: 1,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+        }
+      });
+
+      let summary = '';
+      for await (const event of result) {
+        if (event.type === 'assistant' && event.message?.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'text') summary += block.text;
+          }
+        }
+      }
+
+      if (summary) {
+        log.info('dispatcher', 'Summarize transform completed', {
+          inputLength: content.length,
+          outputLength: summary.length,
+          count,
+        });
+        return summary;
+      }
+
+      log.warn('dispatcher', 'Summarize transform produced empty output, using raw content');
+      return content;
+    } catch (error) {
+      log.error('dispatcher', 'Summarize transform failed, using raw content', {
+        error: (error as Error).message,
+      });
+      return content;
+    }
+  }
+
+  /**
+   * Build content string from a single message (for drain mode injection).
+   */
+  private buildSingleMessageContent(msg: Message): string {
+    const parts: string[] = [];
+    parts.push(`### From: ${msg.from_agent}`);
+    if (msg.payload.headline) parts.push(`**Headline**: ${msg.payload.headline}`);
+    if (msg.payload.body) parts.push(msg.payload.body as string);
+    return parts.join('\n');
+  }
+
+  /**
+   * Check if an agent is a join agent in a drain-mode fan-out group.
+   * Returns group info if drain mode, null otherwise.
+   */
+  private getDrainFanOutGroup(meshName: string, agentName: string): { transform?: 'summarize' } | null {
+    const groupKey = `${meshName}:${agentName}`;
+    const group = this.fanOutGroups.get(groupKey);
+    if (!group || group.fanIn !== 'drain') return null;
+    return { transform: group.transform };
+  }
+
+  /**
+   * Inject a message into a running drain-mode join agent via resumeSession.
+   * Polls one message, optionally summarizes, then injects into the active worker.
+   */
+  private async injectDrainMessage(agentId: string, meshName: string): Promise<void> {
+    const msg = this.queue.pollOne(agentId);
+    if (!msg) return;
+
+    const [, agentName] = agentId.split('/');
+    let content = this.buildSingleMessageContent(msg);
+
+    const drainGroup = this.getDrainFanOutGroup(meshName, agentName);
+    if (drainGroup?.transform === 'summarize') {
+      content = await this.summarizeContent(content, 1);
+    }
+
+    const workers = this.workerLifecycle.getForAgent(agentId);
+    const activeWorker = workers[workers.length - 1];
+    const sessionId = activeWorker?.runner.getSessionId();
+
+    if (sessionId) {
+      await this.resumeSession({
+        reason: 'system-feedback',
+        agentId,
+        sessionId,
+        prompt: `## New Fan-In Response\n\n${content}`,
+        runner: activeWorker.runner,
+        interrupt: true,
+        metadata: { fanInDrain: true, from: msg.from_agent },
+      });
+    } else {
+      log.warn('dispatcher', 'Drain injection: no active session for join agent, queuing', {
+        agentId,
+        from: msg.from_agent,
+      });
+    }
   }
 
   /**
