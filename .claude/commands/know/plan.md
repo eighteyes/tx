@@ -4,6 +4,7 @@ description: Walk through QA-based planning workflow to build complete product v
 category: Know
 tags: [know, planning, qa, vision]
 ---
+Interactive QA-based planning to build product vision and populate spec-graph.
 
 **Main Objective**
 
@@ -22,28 +23,45 @@ All spec-graph modifications MUST use know CLI commands. Never edit spec-graph.j
 ```
 This triggers the full feature workflow: duplicate check → HITL clarification → scaffolding → registration → graph linking.
 
+**Scaffolding Code-Link Placeholders**
+
+**After adding each feature and component to the spec-graph, create placeholder code-link refs:**
+
+```bash
+# Feature placeholder (status: planned — AI fills in during /know:build)
+know -g .ai/know/spec-graph.json add code-link <feature>-code '{"modules":[],"classes":[],"packages":[],"status":"planned"}'
+know -g .ai/know/spec-graph.json link feature:<name> code-link:<feature>-code
+
+# Component placeholder (repeat for each component)
+know -g .ai/know/spec-graph.json add code-link <component>-code '{"modules":[],"classes":[],"packages":[],"status":"planned"}'
+know -g .ai/know/spec-graph.json link component:<name> code-link:<component>-code
+```
+
+These placeholders ensure `know graph cross coverage` shows 0% instead of missing entities.
+Track coverage: `know graph cross coverage --spec-only`
+
 **Adding Other Entities** - Use `know add`:
 ```bash
-know -g .ai/spec-graph.json add user <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add objective <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add component <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add action <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add operation <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add interface <key> '{"name":"...","description":"..."}'
-know -g .ai/spec-graph.json add requirement <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add user <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add objective <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add component <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add action <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add operation <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add interface <key> '{"name":"...","description":"..."}'
+know -g .ai/know/spec-graph.json add requirement <key> '{"name":"...","description":"..."}'
 ```
 
 **Linking Dependencies** - Use `know link`:
 ```bash
-know -g .ai/spec-graph.json link user:developer objective:manage-data
-know -g .ai/spec-graph.json link objective:manage-data feature:data-import
-know -g .ai/spec-graph.json link feature:data-import action:upload-file
-know -g .ai/spec-graph.json link action:upload-file component:file-processor
+know -g .ai/know/spec-graph.json link user:developer objective:manage-data
+know -g .ai/know/spec-graph.json link objective:manage-data feature:data-import
+know -g .ai/know/spec-graph.json link feature:data-import action:upload-file
+know -g .ai/know/spec-graph.json link action:upload-file component:file-processor
 ```
 
 **Validation** - Always validate after modifications:
 ```bash
-know -g .ai/spec-graph.json validate
+know -g .ai/know/spec-graph.json validate
 ```
 
 **Exploration Strategy**
@@ -86,18 +104,103 @@ IF code AND complete spec-graph (>10 entities, has users/objectives/features):
   → Run specific modes or use /know:add for new features
 ```
 
+---
+
+## QA Batch Generation (Before Any Mode)
+
+After the maturity assessment, generate a deep question bank before running any modes. This front-loads the discovery work and avoids drip-feeding 5 questions at a time across 10 sessions.
+
+**Target: 35+ questions covering all software dimensions.**
+
+**Step 1 — Gather context for agents:**
+```bash
+# If spec-graph exists:
+know -g .ai/know/spec-graph.json list --type user
+know -g .ai/know/spec-graph.json list --type objective
+know -g .ai/know/spec-graph.json list --type feature
+know -g .ai/know/spec-graph.json check stats
+```
+Also read `.ai/know/input.md` and any existing README/docs.
+
+**Step 2 — Launch 8 Task agents in a SINGLE message** (parallel):
+
+**Agent 1 — Users & Objectives** (→ `user:*`, `objective:*` entities)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `user` and `objective` graph entities. A `user` entity is a distinct persona with a name like `user:developer`, `user:admin`, `user:end-user`. An `objective` is what that user wants to accomplish, named like `objective:manage-data`, `objective:monitor-status`. Ask about: who are the distinct types of people using this system, what does each user type want to accomplish (their top 1-2 objectives), how do their goals or access levels differ, what does success look like for each user type, and are there secondary or system-level actors (e.g. cron jobs, webhooks) that need modeling. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 2 — Features** (→ `feature:*` entities)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `feature` entities. A `feature` is a named system capability that serves user objectives, like `feature:user-auth`, `feature:data-import`, `feature:report-generation`. Ask about: what are the top-level capabilities this system must provide, which capabilities are distinct enough to be separate named features, which features are essential vs optional for v1, which objectives does each feature serve, and are any features prerequisites for others. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 3 — Actions** (→ `action:*` entities)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `action` entities. An `action` is a discrete, named thing a user does within a feature, like `action:login`, `action:upload-file`, `action:approve-request`, `action:export-report`. Ask about: for each major feature, what specific things does a user do step by step, what triggers each action (button click, form submit, schedule), what is the primary action of each feature, what are the supporting or secondary actions, and are any actions shared across multiple features. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 4 — Components** (→ `component:*` entities)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `component` entities. A `component` is a distinct implementation responsibility, like `component:auth-handler`, `component:file-processor`, `component:report-builder`, `component:notification-sender`. Ask about: what are the distinct implementation responsibilities this system needs, which responsibilities are isolated enough to be named components, what does each component receive as input and produce as output, which components are shared infrastructure vs feature-specific, and which components have side effects (external calls, writes, notifications). Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 5 — Data Models** (→ `data-model:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `data-model` reference entries. Ask about: what are the primary data entities (name each and list 3-5 key fields), what are the relationships between those entities (one-to-one, one-to-many, many-to-many), what data must be persisted vs can be computed on the fly, which data entity is the most central and what is its lifecycle (created → updated → deleted/archived), and what data is owned by one feature vs shared across features. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 6 — Interfaces & API Contracts** (→ `interface:*`, `api_contract:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `interface` and `api_contract` reference entries. Ask about: what are the main screens or views (name each and describe its primary content and user goal), what are the main API endpoints (path, method, key request/response fields), what data does each screen display and where does it come from, what forms exist and what fields do they contain, and how does the system expose or consume any external APIs. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 7 — Business Logic & Security** (→ `business_logic:*`, `security-spec:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `business_logic` and `security-spec` reference entries. Ask about: what are the non-obvious domain rules that govern system behavior (validation rules, approval gates, state machine transitions), who can access each feature and under what conditions (role-based, ownership-based), what data is sensitive and how must it be handled or protected, what audit trail or activity log is required, and what are the edge cases in the most complex user workflow. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Agent 8 — Configuration & Constraints** (→ `configuration:*`, `constraint:*`, `acceptance_criterion:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `configuration`, `constraint`, and `acceptance_criterion` reference entries. Ask about: what runtime settings or environment variables does the system need, what feature flags or toggles are anticipated, what are the hard invariants that must never be violated (data integrity rules, required fields, state preconditions), what does a working v1 look like from each user's perspective (acceptance criteria), and what are the deployment or environment assumptions. Format as a numbered list. Do NOT ask about scale, load, or performance."
+
+**Step 3 — Collect and write to `.ai/know/qa/plan-questions.md`:**
+
+```markdown
+# Plan QA: [project name]
+_Each answer maps to a graph entity or reference. See type hints per section._
+
+## 1. Users & Objectives  [→ user:*, objective:*]
+1. ...
+
+## 2. Features  [→ feature:*]
+6. ...
+
+## 3. Actions  [→ action:*]
+11. ...
+
+## 4. Components  [→ component:*]
+16. ...
+
+## 5. Data Models  [→ data-model:*]
+21. ...
+
+## 6. Interfaces & API Contracts  [→ interface:*, api_contract:*]
+26. ...
+
+## 7. Business Logic & Security  [→ business_logic:*, security-spec:*]
+31. ...
+
+## 8. Configuration & Constraints  [→ configuration:*, constraint:*, acceptance_criterion:*]
+36. ...
+
+---
+_Answers:_
+```
+
+**Step 4 — Present to user:**
+> "I've generated [N] questions about your project across 8 domains. Please answer as many as you can — paste answers after each question in the file, or answer in chat. The more you answer, the less I'll need to guess later."
+
+Show the full file contents in chat.
+
+**Step 5 — Iterate:**
+- After user responds: read answers, update qa.md with inline responses
+- If significant gaps remain in any domain: generate 3-5 follow-up questions for that domain only
+- Once answers are sufficient, proceed to Planning Modes (modes use answers; they do NOT re-ask covered questions)
+
+---
+
 **Planning Modes**
 
-Each mode follows this pattern:
-1. Generate QA questions based on current state
-2. Write questions to `.ai/know/qa/[mode-name].md`
-3. Interactive QA session with user
-4. Generate mode artifacts (markdown files)
-5. **Add entities to spec-graph using know CLI** (see Graph Operations above)
-6. **Link dependencies using `know link`**
-7. **Confirm with user before executing commands**
-8. Validate graph: `know -g .ai/spec-graph.json validate`
-9. Save QA session results
+Modes now focus on **graph-building and artifact generation** — not question-asking. QA is complete before modes run. Each mode:
+1. Reads answers from `.ai/know/qa/plan-questions.md`
+2. Generates mode artifacts from those answers
+3. Adds entities to spec-graph using know CLI
+4. Validates and links
 
 ---
 
@@ -164,21 +267,21 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
 - **Graph Commands to Execute**:
   ```bash
   # Add users
-  know -g .ai/spec-graph.json add user developer '{"name":"Developer","description":"..."}'
-  know -g .ai/spec-graph.json add user end-user '{"name":"End User","description":"..."}'
+  know -g .ai/know/spec-graph.json add user developer '{"name":"Developer","description":"..."}'
+  know -g .ai/know/spec-graph.json add user end-user '{"name":"End User","description":"..."}'
 
   # Add objectives
-  know -g .ai/spec-graph.json add objective manage-data '{"name":"Manage Data","description":"..."}'
+  know -g .ai/know/spec-graph.json add objective manage-data '{"name":"Manage Data","description":"..."}'
 
   # Link users to objectives
-  know -g .ai/spec-graph.json link user:developer objective:manage-data
+  know -g .ai/know/spec-graph.json link user:developer objective:manage-data
 
   # Add features via /know:add (triggers full workflow)
   /know:add data-import
   /know:add user-auth
 
   # Validate
-  know -g .ai/spec-graph.json validate
+  know -g .ai/know/spec-graph.json validate
   ```
 
 ---
@@ -223,29 +326,29 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
 - **Graph Commands to Execute**:
   ```bash
   # Add components
-  know -g .ai/spec-graph.json add component auth-handler '{"name":"Auth Handler","description":"..."}'
-  know -g .ai/spec-graph.json add component data-processor '{"name":"Data Processor","description":"..."}'
+  know -g .ai/know/spec-graph.json add component auth-handler '{"name":"Auth Handler","description":"..."}'
+  know -g .ai/know/spec-graph.json add component data-processor '{"name":"Data Processor","description":"..."}'
 
   # Add actions
-  know -g .ai/spec-graph.json add action login '{"name":"Login","description":"..."}'
-  know -g .ai/spec-graph.json add action export-report '{"name":"Export Report","description":"..."}'
+  know -g .ai/know/spec-graph.json add action login '{"name":"Login","description":"..."}'
+  know -g .ai/know/spec-graph.json add action export-report '{"name":"Export Report","description":"..."}'
 
   # Add operations
-  know -g .ai/spec-graph.json add operation validate-token '{"name":"Validate Token","description":"..."}'
+  know -g .ai/know/spec-graph.json add operation validate-token '{"name":"Validate Token","description":"..."}'
 
   # Add interfaces
-  know -g .ai/spec-graph.json add interface api-gateway '{"name":"API Gateway","description":"..."}'
+  know -g .ai/know/spec-graph.json add interface api-gateway '{"name":"API Gateway","description":"..."}'
 
   # Add requirements
-  know -g .ai/spec-graph.json add requirement auth '{"name":"Authentication","description":"..."}'
+  know -g .ai/know/spec-graph.json add requirement auth '{"name":"Authentication","description":"..."}'
 
   # Link the chain: feature → action → component → operation
-  know -g .ai/spec-graph.json link feature:user-auth action:login
-  know -g .ai/spec-graph.json link action:login component:auth-handler
-  know -g .ai/spec-graph.json link component:auth-handler operation:validate-token
+  know -g .ai/know/spec-graph.json link feature:user-auth action:login
+  know -g .ai/know/spec-graph.json link action:login component:auth-handler
+  know -g .ai/know/spec-graph.json link component:auth-handler operation:validate-token
 
   # Validate
-  know -g .ai/spec-graph.json validate
+  know -g .ai/know/spec-graph.json validate
   ```
 
 - Spec-graph references:
@@ -278,15 +381,15 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
 - **Graph Commands to Execute**:
   ```bash
   # Add API interfaces
-  know -g .ai/spec-graph.json add interface rest-api '{"name":"REST API","description":"..."}'
-  know -g .ai/spec-graph.json add interface graphql-endpoint '{"name":"GraphQL Endpoint","description":"..."}'
+  know -g .ai/know/spec-graph.json add interface rest-api '{"name":"REST API","description":"..."}'
+  know -g .ai/know/spec-graph.json add interface graphql-endpoint '{"name":"GraphQL Endpoint","description":"..."}'
 
   # Link interfaces to actions
-  know -g .ai/spec-graph.json link interface:rest-api action:login
-  know -g .ai/spec-graph.json link interface:rest-api action:export-report
+  know -g .ai/know/spec-graph.json link interface:rest-api action:login
+  know -g .ai/know/spec-graph.json link interface:rest-api action:export-report
 
   # Validate
-  know -g .ai/spec-graph.json validate
+  know -g .ai/know/spec-graph.json validate
   ```
 
 ---
@@ -314,15 +417,15 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
 - **Graph Commands to Execute**:
   ```bash
   # Add UI interfaces (screens)
-  know -g .ai/spec-graph.json add interface dashboard '{"name":"Dashboard","description":"Main overview screen"}'
-  know -g .ai/spec-graph.json add interface settings '{"name":"Settings","description":"User preferences screen"}'
+  know -g .ai/know/spec-graph.json add interface dashboard '{"name":"Dashboard","description":"Main overview screen"}'
+  know -g .ai/know/spec-graph.json add interface settings '{"name":"Settings","description":"User preferences screen"}'
 
   # Link screens to actions they enable
-  know -g .ai/spec-graph.json link interface:dashboard action:view-reports
-  know -g .ai/spec-graph.json link interface:settings action:update-profile
+  know -g .ai/know/spec-graph.json link interface:dashboard action:view-reports
+  know -g .ai/know/spec-graph.json link interface:settings action:update-profile
 
   # Validate
-  know -g .ai/spec-graph.json validate
+  know -g .ai/know/spec-graph.json validate
   ```
 
 ---
@@ -444,22 +547,20 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
 
 1. **Assess maturity** (use decision tree above)
 2. **Determine required modes** based on assessment
-3. **For each required mode**:
-   a. Generate QA questions (5-10 per mode)
-   b. Write questions to `.ai/know/qa/[mode-name].md`
-   c. **Interactive QA session**: Present questions, collect answers
-   d. Update `.ai/know/revised-input.md` with learnings
-   e. Generate mode artifacts (markdown files in `.ai/know/`)
-   f. **Prepare graph commands** (see "Graph Commands to Execute" in each mode)
-   g. **Show user the exact commands to be executed**
-   h. **Ask for confirmation before executing**
-   i. **Execute commands**:
-      - For features: `/know:add <feature-name>` (full workflow)
-      - For other entities: `know -g .ai/spec-graph.json add <type> <key> '{...}'`
-      - For dependencies: `know -g .ai/spec-graph.json link <from> <to>`
-   j. Validate graph: `know -g .ai/spec-graph.json validate`
-   k. Save QA session with answers to `.ai/know/qa/[mode-name].md`
-4. **Final delivery mode** - validate and generate project.md
+3. **Run QA Batch Generation** (see section above) — generates 35+ questions across 8 domains
+4. **Present questions, collect answers, iterate** — before any graph writes
+5. **For each required mode** (using answers from step 4):
+   a. Read relevant answers from `.ai/know/qa/plan-questions.md`
+   b. Generate mode artifacts (markdown files in `.ai/know/`)
+   c. **Prepare graph commands** (see "Graph Commands to Execute" in each mode)
+   d. **Show user the exact commands to be executed**
+   e. **Ask for confirmation before executing**
+   f. **Execute commands**:
+      - For features: `/know:add <feature-name>` (full workflow; qa.md already answered)
+      - For other entities: `know -g .ai/know/spec-graph.json add <type> <key> '{...}'`
+      - For dependencies: `know -g .ai/know/spec-graph.json link <from> <to>`
+   g. Validate graph: `know -g .ai/know/spec-graph.json validate`
+6. **Final delivery mode** - validate and generate project.md
 
 ## Key Principles
 
@@ -494,4 +595,5 @@ Assistant: Assessing project maturity...
 - Can skip modes based on maturity assessment
 
 ---
+`r2` - QA Batch Generation phase: 8 parallel Task agents → 35+ questions → plan-questions.md → iterate; modes now consume answers instead of re-asking; Workflow Execution updated
 `r1` - Added explicit Graph Operations section with know CLI commands; added "Graph Commands to Execute" examples to Modes 2-5; updated Workflow Execution to specify /know:add for features vs know CLI for other entities

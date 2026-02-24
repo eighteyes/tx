@@ -2,6 +2,8 @@
  * Prompt Building Types
  */
 
+import type { DispatchInjectionContext } from '../shared/types.ts';
+
 export interface PromptSection {
   name: string;
   content: string;
@@ -9,7 +11,7 @@ export interface PromptSection {
 }
 
 /**
- * Routing configuration for prompt injection
+ * Routing configuration for prompt injection (agent-mode)
  * Format: { status: { destination: "reason" } }
  */
 export interface RoutingConfig {
@@ -27,7 +29,8 @@ export interface PromptContext {
   workspaceContext?: string;
   qualityGates?: string[];
   agentCount?: number;  // Number of agents in this mesh (>1 = no Task tool)
-  routing?: RoutingConfig;  // Message routing configuration
+  routing?: RoutingConfig;  // Agent-mode routing configuration
+  dispatcherRouting?: DispatchInjectionContext;  // Dispatcher-mode routing context
   msgsDir?: string;  // Messages directory for response instructions
 }
 

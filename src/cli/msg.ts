@@ -76,6 +76,7 @@ interface ParsedMessage {
   status: string;
   content: string;
   rearmatter: Record<string, unknown> | null;
+  source?: 'local' | 'session';
 }
 
 interface ParsedSession {
@@ -112,7 +113,7 @@ interface MsgOptions {
 /**
  * Parse message file
  */
-async function readMessage(filepath: string): Promise<ParsedMessage | null> {
+async function readMessage(filepath: string, source?: ParsedMessage['source']): Promise<ParsedMessage | null> {
   try {
     const content = fs.readFileSync(filepath, 'utf-8');
     const parts = content.split(/^---$/m);
@@ -152,7 +153,8 @@ async function readMessage(filepath: string): Promise<ParsedMessage | null> {
       headline: frontmatter.headline || '',
       status: frontmatter.status || '',
       content: body,
-      rearmatter
+      rearmatter,
+      source
     };
   } catch {
     return null;
@@ -417,7 +419,7 @@ function displayMessage(msg: ParsedMessage, options: MsgOptions = {}): void {
 /**
  * Get all messages from directory
  */
-async function getAllMessages(logDir: string): Promise<ParsedMessage[]> {
+async function getAllMessages(logDir: string, source?: ParsedMessage['source']): Promise<ParsedMessage[]> {
   if (!fs.existsSync(logDir)) return [];
 
   const files = fs.readdirSync(logDir);
@@ -425,7 +427,7 @@ async function getAllMessages(logDir: string): Promise<ParsedMessage[]> {
 
   for (const file of files) {
     if (!file.endsWith('.md')) continue;
-    const msg = await readMessage(path.join(logDir, file));
+    const msg = await readMessage(path.join(logDir, file), source);
     if (msg) messages.push(msg);
   }
 
@@ -433,13 +435,27 @@ async function getAllMessages(logDir: string): Promise<ParsedMessage[]> {
 }
 
 /**
+ * Merge and sort messages from multiple directories
+ */
+async function getMessagesFromDirs(dirs: Array<{ dir: string; source: ParsedMessage['source'] }>): Promise<ParsedMessage[]> {
+  const results = await Promise.all(dirs.map(({ dir, source }) => getAllMessages(dir, source)));
+  const merged = results.flat();
+  return merged.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+}
+
+/**
  * Interactive mode with vim-style navigation
  */
 async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise<void> {
-  const sessionsDir = path.join(path.dirname(logDir), 'sessions');
-  const sysMsgsDir = path.join(path.dirname(logDir), 'sys-msgs');
+  const txDir = path.dirname(logDir);
+  const sessionsDir = path.join(txDir, 'sessions');
+  const sessionMsgsDir = path.join(txDir, 'sessions/msgs');
+  const sysMsgsDir = path.join(txDir, 'sys-msgs');
 
-  let messages = await getAllMessages(logDir);
+  let messages = await getMessagesFromDirs([
+    { dir: logDir, source: 'local' },
+    { dir: sessionMsgsDir, source: 'session' }
+  ]);
   messages = messages.filter(msg => matchesFilter(msg, options));
   const limit = parseInt(options.limit || '50');
   messages = messages.slice(-limit);
@@ -476,6 +492,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
   let viewingPrompt = false;
   let detailScrollOffset = 0;
   let watcher: FSWatcher | null = null;
+  let sessionMsgsWatcher: FSWatcher | null = null;
   let sysWatcher: FSWatcher | null = null;
   let promptsWatcher: FSWatcher | null = null;
 
@@ -732,6 +749,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     leftCol.push(`${colors.dim}To:${colors.reset}       ${msg.to}`);
     if (msg.headline) leftCol.push(`${colors.dim}Headline:${colors.reset} ${msg.headline}`);
     if (msg.msgId) leftCol.push(`${colors.dim}Msg ID:${colors.reset}   ${msg.msgId}`);
+    if (msg.source === 'session') leftCol.push(`${colors.dim}Source:${colors.reset}   ${colors.cyan}session${colors.reset}`);
 
     // Rearmatter (right column)
     if (msg.rearmatter && Object.keys(msg.rearmatter).length > 0) {
@@ -977,6 +995,28 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     });
   }
 
+  function setupSessionMsgsWatcher(): void {
+    if (sessionMsgsWatcher) return;
+    if (!fs.existsSync(sessionMsgsDir)) return;
+
+    sessionMsgsWatcher = watch(sessionMsgsDir, {
+      ignoreInitial: true,
+      persistent: true,
+      awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 }
+    });
+
+    sessionMsgsWatcher.on('add', async (filepath: string) => {
+      if (!filepath.endsWith('.md')) return;
+      const msg = await readMessage(filepath, 'session');
+      if (msg && matchesFilter(msg, options)) {
+        messages.push(msg);
+        messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+        selectedIndex = messages.length - 1;
+        if (!viewingDetail) display();
+      }
+    });
+  }
+
   function setupSysWatcher(): void {
     if (sysWatcher) return;
     if (!fs.existsSync(sysMsgsDir)) return;
@@ -1022,6 +1062,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
 
   // Always follow - set up watchers immediately
   setupWatcher();
+  setupSessionMsgsWatcher();
   setupSysWatcher();
   setupPromptsWatcher();
 
@@ -1186,6 +1227,7 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
     if (watcher) watcher.close();
+    if (sessionMsgsWatcher) sessionMsgsWatcher.close();
     if (sysWatcher) sysWatcher.close();
     if (promptsWatcher) promptsWatcher.close();
     console.log(`\n${colors.dim}Exited message viewer${colors.reset}\n`);
@@ -1198,7 +1240,11 @@ async function msgInteractive(logDir: string, options: MsgOptions = {}): Promise
  * Simple list mode
  */
 async function msgList(logDir: string, options: MsgOptions): Promise<void> {
-  let messages = await getAllMessages(logDir);
+  const sessionMsgsDir = path.join(path.dirname(logDir), 'sessions/msgs');
+  let messages = await getMessagesFromDirs([
+    { dir: logDir, source: 'local' },
+    { dir: sessionMsgsDir, source: 'session' }
+  ]);
   messages = messages.filter(msg => matchesFilter(msg, options));
   const limit = parseInt(options.limit || '50');
   messages = messages.slice(-limit);
@@ -1217,7 +1263,11 @@ async function msgList(logDir: string, options: MsgOptions): Promise<void> {
  * JSON output mode
  */
 async function msgJson(logDir: string, options: MsgOptions): Promise<void> {
-  let messages = await getAllMessages(logDir);
+  const sessionMsgsDir = path.join(path.dirname(logDir), 'sessions/msgs');
+  let messages = await getMessagesFromDirs([
+    { dir: logDir, source: 'local' },
+    { dir: sessionMsgsDir, source: 'session' }
+  ]);
   messages = messages.filter(msg => matchesFilter(msg, options));
   const limit = parseInt(options.limit || '50');
   messages = messages.slice(-limit);
@@ -1230,23 +1280,29 @@ async function msgJson(logDir: string, options: MsgOptions): Promise<void> {
 export async function msg(options: MsgOptions = {}): Promise<void> {
   const workDir = process.env.TX_CWD || process.cwd();
   const logDir = path.join(workDir, '.ai/tx/msgs');
+  const sessionMsgsDir = path.join(workDir, '.ai/tx/sessions/msgs');
 
-  if (!fs.existsSync(logDir)) {
-    console.log(`${colors.yellow}⚠${colors.reset} Message directory not found: ${logDir}`);
+  if (!fs.existsSync(logDir) && !fs.existsSync(sessionMsgsDir)) {
+    console.log(`${colors.yellow}⚠${colors.reset} Message directories not found:`);
+    console.log(`  ${colors.dim}${logDir}${colors.reset}`);
+    console.log(`  ${colors.dim}${sessionMsgsDir}${colors.reset}`);
     console.log(`${colors.dim}No messages yet.${colors.reset}\n`);
     return;
   }
 
+  // Ensure logDir path exists so downstream functions can resolve sibling dirs
+  const effectiveLogDir = fs.existsSync(logDir) ? logDir : path.join(workDir, '.ai/tx/msgs');
+
   // JSON output mode
   if (options.json) {
-    return msgJson(logDir, options);
+    return msgJson(effectiveLogDir, options);
   }
 
   // Interactive mode with auto-follow (default)
   if (options.interactive !== false) {
-    return msgInteractive(logDir, options);
+    return msgInteractive(effectiveLogDir, options);
   }
 
   // Simple list mode
-  return msgList(logDir, options);
+  return msgList(effectiveLogDir, options);
 }

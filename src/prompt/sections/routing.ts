@@ -79,13 +79,15 @@ export function injectRoutingInstructions(
 
 /**
  * Build dispatcher-mode routing section for an agent prompt.
- * Provides sentinel address, valid outcomes, and available agents for route_to.
+ * Provides sentinel address, valid outcomes, available agents for route_to,
+ * and peer list for fan-out discuss routing.
  */
 export function buildDispatcherRoutingSection(
   sentinel: string,
   validOutcomes: string[] | null,
   availableAgents: string[],
-  isTerminal: boolean
+  isTerminal: boolean,
+  peers?: string[]
 ): string {
   const lines: string[] = [];
   lines.push('## Message Routing\n');
@@ -94,20 +96,40 @@ export function buildDispatcherRoutingSection(
   if (isTerminal) {
     lines.push('You are a terminal agent. Set `outcome: complete` when your work is finished.\n');
   } else if (validOutcomes === null) {
-    // Linear — any outcome accepted
+    // Linear or fan-out source — any outcome accepted
     lines.push('Set `outcome:` in your frontmatter to describe your result.\n');
   } else if (validOutcomes.length > 0) {
-    // Branch — specific outcomes required
+    // Branch or fan-out member — specific outcomes
+    const hasDiscuss = peers && peers.length > 0 && validOutcomes.includes('discuss');
+
     lines.push('Set `outcome:` in your frontmatter to one of these values:\n');
     for (const outcome of validOutcomes) {
-      lines.push(`- \`${outcome}\``);
+      if (outcome === 'complete') {
+        lines.push('- `complete` — signal your work is finished');
+      } else if (outcome === 'discuss' && hasDiscuss) {
+        lines.push('- `discuss` — discuss with a peer (requires `route_to:` specifying which peer)');
+      } else {
+        lines.push(`- \`${outcome}\``);
+      }
     }
     lines.push('');
+
+    // Peer list for discuss routing
+    if (hasDiscuss) {
+      lines.push('Peers available for discussion:');
+      for (const peer of peers!) {
+        lines.push(`- \`${peer}\``);
+      }
+      lines.push('');
+    }
   }
 
   lines.push('Special outcomes:');
   lines.push('- `outcome: escalate` — escalate to human operator');
-  lines.push('- `outcome: complete` — signal work is finished\n');
+  if (!validOutcomes || !validOutcomes.includes('complete')) {
+    lines.push('- `outcome: complete` — signal work is finished');
+  }
+  lines.push('');
 
   if (availableAgents.length > 0) {
     lines.push('Override routing with `route_to:` in frontmatter (valid agents):');
@@ -130,8 +152,9 @@ export function injectDispatcherRoutingInstructions(
   sentinel: string,
   validOutcomes: string[] | null,
   availableAgents: string[],
-  isTerminal: boolean
+  isTerminal: boolean,
+  peers?: string[]
 ): string {
-  const section = buildDispatcherRoutingSection(sentinel, validOutcomes, availableAgents, isTerminal);
+  const section = buildDispatcherRoutingSection(sentinel, validOutcomes, availableAgents, isTerminal, peers);
   return `${systemPrompt}\n\n${section}`;
 }

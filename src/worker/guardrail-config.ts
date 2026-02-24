@@ -29,6 +29,8 @@ interface RoutingErrorOverride {
   strict?: boolean;
   warning?: boolean;
   max_retries?: number;
+  routing_retry_max?: number | null;
+  routing_fallback?: string | null;
 }
 
 interface MaxMessagesOverride {
@@ -58,25 +60,8 @@ interface AgentOverrides {
   max_turns?: MaxTurnsOverride | number | null;
 }
 
-interface ArtifactConfig {
-  strict?: boolean;
-  warning?: boolean;
-  post_validation?: boolean;
-  pre_validation?: boolean;
-  max_retry?: number;
-}
-
-interface EdgeLimitConfig {
-  strict?: boolean;
-  warning?: boolean;
-  routing_retry_max?: number | null;
-  routing_fallback?: string | null;
-}
-
 interface MeshOverrides extends AgentOverrides {
   agents?: Record<string, AgentOverrides>;
-  artifact?: ArtifactConfig;
-  edge_limit?: EdgeLimitConfig;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
 }
 
@@ -85,8 +70,6 @@ interface GuardrailsSchema {
   read_gate?: GateOverride;
   identity_gate?: GateOverride;
   routing_error?: RoutingErrorOverride;
-  edge_limit?: EdgeLimitConfig;
-  artifact?: ArtifactConfig;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
@@ -103,9 +86,7 @@ const DEFAULTS = {
   write_gate: { kill_threshold: null as number | null },
   read_gate: { kill_threshold: null as number | null },
   identity_gate: { kill_threshold: null as number | null },
-  routing_error: { max_retries: 3 },
-  edge_limit: { routing_retry_max: null as number | null, routing_fallback: null as string | null },
-  artifact: { post_validation: true, pre_validation: true, max_retry: 2 },
+  routing_error: { max_retries: 3, routing_retry_max: null as number | null, routing_fallback: null as string | null },
   max_messages: null as number | null,
   max_turns: null as number | null,
   max_mesh_messages: null as number | null,
@@ -205,9 +186,11 @@ export class GuardrailConfig {
     if (value === undefined) return undefined;
     if (value === null || typeof value === 'number') return value;
     // Object form: { strict, warning, limit }
-    // limit: null means "not set" — return undefined to continue the chain
-    // limit: <number> means "set" — return the number
-    return value.limit === null || value.limit === undefined ? undefined : value.limit;
+    // limit absent (undefined) → continue chain
+    // limit: null → explicit "no limit" (stop chain)
+    // limit: <number> → set limit (stop chain)
+    if (value.limit === undefined) return undefined;
+    return value.limit;
   }
 
   /**
@@ -287,32 +270,48 @@ export class GuardrailConfig {
   }
 
   /**
-   * Resolve artifact validation config.
-   * Mesh-level only (no agent override — artifacts are mesh-scoped).
+   * Resolve routing fallback config (edge iteration loop prevention).
+   * Chain: mesh-local agent > mesh-local mesh > global agent > global mesh > global > default.
    */
-  getArtifactConfig(meshName: string): { preValidation: boolean; postValidation: boolean; maxRetry: number } {
+  getRoutingFallback(meshName: string, agentName?: string): { max: number | null; fallback: string | null } {
+    const local = this.meshLocal.get(meshName);
     const g = this.config.guardrails;
 
-    const meshArtifact = g?.meshes?.[meshName]?.artifact ?? g?.artifact;
-    return {
-      preValidation: meshArtifact?.pre_validation ?? g?.artifact?.pre_validation ?? DEFAULTS.artifact.pre_validation,
-      postValidation: meshArtifact?.post_validation ?? g?.artifact?.post_validation ?? DEFAULTS.artifact.post_validation,
-      maxRetry: meshArtifact?.max_retry ?? g?.artifact?.max_retry ?? DEFAULTS.artifact.max_retry,
-    };
-  }
+    // Mesh-local agent
+    if (agentName) {
+      const localAgent = local?.agents?.[agentName]?.routing_error;
+      if (localAgent?.routing_retry_max !== undefined) {
+        return { max: localAgent.routing_retry_max, fallback: localAgent.routing_fallback ?? DEFAULTS.routing_error.routing_fallback };
+      }
+    }
 
-  /**
-   * Resolve edge limit config.
-   * Global and mesh-level only.
-   */
-  getEdgeLimit(meshName: string): { max: number | null; fallback: string | null } {
-    const g = this.config.guardrails;
+    // Mesh-local mesh
+    const localMesh = local?.routing_error;
+    if (localMesh?.routing_retry_max !== undefined) {
+      return { max: localMesh.routing_retry_max, fallback: localMesh.routing_fallback ?? DEFAULTS.routing_error.routing_fallback };
+    }
 
-    const meshEdge = g?.meshes?.[meshName]?.edge_limit ?? g?.edge_limit;
-    return {
-      max: meshEdge?.routing_retry_max ?? g?.edge_limit?.routing_retry_max ?? DEFAULTS.edge_limit.routing_retry_max,
-      fallback: meshEdge?.routing_fallback ?? g?.edge_limit?.routing_fallback ?? DEFAULTS.edge_limit.routing_fallback,
-    };
+    // Global agent
+    if (agentName) {
+      const globalAgent = g?.meshes?.[meshName]?.agents?.[agentName]?.routing_error;
+      if (globalAgent?.routing_retry_max !== undefined) {
+        return { max: globalAgent.routing_retry_max, fallback: globalAgent.routing_fallback ?? DEFAULTS.routing_error.routing_fallback };
+      }
+    }
+
+    // Global mesh
+    const globalMesh = g?.meshes?.[meshName]?.routing_error;
+    if (globalMesh?.routing_retry_max !== undefined) {
+      return { max: globalMesh.routing_retry_max, fallback: globalMesh.routing_fallback ?? DEFAULTS.routing_error.routing_fallback };
+    }
+
+    // Global
+    const globalVal = g?.routing_error;
+    if (globalVal?.routing_retry_max !== undefined) {
+      return { max: globalVal.routing_retry_max, fallback: globalVal.routing_fallback ?? DEFAULTS.routing_error.routing_fallback };
+    }
+
+    return { max: DEFAULTS.routing_error.routing_retry_max, fallback: DEFAULTS.routing_error.routing_fallback };
   }
 
   /**
@@ -321,7 +320,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'edge_limit' | 'artifact' | 'max_messages' | 'max_turns' | 'max_mesh_messages',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -367,7 +366,7 @@ export class GuardrailConfig {
       const globalMeshVal = globalMeshOverrides ? (globalMeshOverrides as Record<string, unknown>)[guardrail] : undefined;
       sources.push(this.extractModeFields(globalMeshVal));
     } else {
-      // Mesh-level only (artifact, edge_limit) — still check mesh-local
+      // Mesh-level only (max_mesh_messages) — still check mesh-local
       const localVal = local ? (local as Record<string, unknown>)[guardrail] : undefined;
       sources.push(this.extractModeFields(localVal));
       const globalMeshOverrides = g?.meshes?.[meshName];

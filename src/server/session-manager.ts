@@ -34,6 +34,8 @@ export interface SessionManagerConfig {
   defaultTtlSeconds?: number;
   hibernateAfterIdleSeconds?: number;
   cleanupIntervalSeconds?: number;
+  /** Resolve entry agent for a mesh from its config. Falls back to meshId/worker if not provided. */
+  resolveEntryAgent?: (meshId: string) => string;
 }
 
 export interface SessionManagerEvents {
@@ -52,6 +54,7 @@ export class SessionManager extends EventEmitter {
   private hibernateAfterIdle: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private cleanupIntervalSeconds: number;
+  private resolveEntryAgent: (meshId: string) => string;
 
   constructor(config: SessionManagerConfig) {
     super();
@@ -59,6 +62,7 @@ export class SessionManager extends EventEmitter {
     this.defaultTtl = config.defaultTtlSeconds || 3600; // 1 hour
     this.hibernateAfterIdle = config.hibernateAfterIdleSeconds || 1800; // 30 min
     this.cleanupIntervalSeconds = config.cleanupIntervalSeconds || 60;
+    this.resolveEntryAgent = config.resolveEntryAgent || ((meshId) => `${meshId}/worker`);
   }
 
   /**
@@ -97,7 +101,7 @@ export class SessionManager extends EventEmitter {
       config: {
         ...config,
         ttlSeconds: config.ttlSeconds || this.defaultTtl,
-        entryAgent: config.entryAgent || `${config.meshId}/worker`,
+        entryAgent: config.entryAgent || this.resolveEntryAgent(config.meshId),
       },
       messageCount: 0,
       workerCount: 0,
@@ -137,7 +141,7 @@ export class SessionManager extends EventEmitter {
       config: {
         meshId: stored.meshId,
         tenantId: stored.tenantId,
-        entryAgent: `${stored.meshId}/worker`,
+        entryAgent: this.resolveEntryAgent(stored.meshId),
         ttlSeconds: this.defaultTtl,
         metadata: stored.metadata,
       },
@@ -225,7 +229,7 @@ export class SessionManager extends EventEmitter {
       config: {
         meshId: stored.meshId,
         tenantId: stored.tenantId,
-        entryAgent: `${stored.meshId}/worker`,
+        entryAgent: this.resolveEntryAgent(stored.meshId),
         ttlSeconds: this.defaultTtl,
         metadata: stored.metadata,
       },
@@ -267,7 +271,7 @@ export class SessionManager extends EventEmitter {
         config: {
           meshId: s.meshId,
           tenantId: s.tenantId,
-          entryAgent: `${s.meshId}/worker`,
+          entryAgent: this.resolveEntryAgent(s.meshId),
           ttlSeconds: this.defaultTtl,
         },
         messageCount: 0,

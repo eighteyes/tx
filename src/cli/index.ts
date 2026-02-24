@@ -4,7 +4,7 @@
  */
 
 import dotenv from 'dotenv';
-import { start, stop } from './start.ts';
+import { start, stop, restart } from './start.ts';
 import { status, printStatus } from './status.ts';
 import { msg } from './msg.ts';
 import { logs } from './logs.ts';
@@ -102,6 +102,7 @@ const HELP = {
 
 Commands:
   tx start          Start core agent (attaches to tmux)
+  tx restart        Restart services (keeps Claude session)
   tx stop           Stop core agent
   tx status         Show system status
   tx recover        View and resume interrupted work from crashes
@@ -163,6 +164,17 @@ Options:
   --debug            Enable forensics analysis for all meshes
   --inbox <mode>     Message delivery mode: hook (default), inject, ask
   --no-inject        Alias for --inbox ask (backward compat)`,
+
+  restart: `tx restart - Restart backend services (keeps Claude session alive)
+
+Usage: tx restart [options]
+
+Stops running TX services via SIGTERM, then starts fresh services
+and reattaches to the existing tmux/Claude session.
+
+Options: Same as 'tx start' (--model, --low, --ultra-low, --debug, --inbox, etc.)
+
+If no tmux session exists, behaves like 'tx start'.`,
 
   msg: `tx msg - View messages
 
@@ -408,6 +420,7 @@ Actions:
   kill <mesh>             Kill all workers for a mesh (via tmux)
   reload [mesh]           Hot-reload mesh config(s) at runtime
   clear <mesh>            Clear SQLite state (suspended sessions, pending asks, FSM)
+  drain <mesh>            Drain all pending messages (mark delivered, unblock queue)
   validate <mesh>         Validate mesh configuration
   fsm-chain <mesh>        Show FSM state transition chain with validation
 
@@ -475,7 +488,7 @@ async function main() {
 
   // Block AI agents from running commands that spawn mesh workers
   // --force bypasses this guard (for supervised Claude Code sessions)
-  const blockedCommands = ['start', 'run', 'msg'];
+  const blockedCommands = ['start', 'run', 'msg', 'restart'];
   if (process.env.CLAUDECODE === '1' && blockedCommands.includes(command) && !flags.force) {
     console.error('\n🚫 AI USE NOT ALLOWED\n');
     console.error(`The "${command}" command cannot be run from Claude Code.`);
@@ -497,6 +510,20 @@ async function main() {
         serveHost: flags.H as string || flags.host as string,
         debug: Boolean(flags.debug),
         noInject: Boolean(flags.noInject),
+        inbox: (flags.inbox as 'inject' | 'hook' | 'ask' | undefined),
+      });
+      break;
+
+    case 'restart':
+      if (wantsHelp) { showHelp('restart'); break; }
+      await restart(undefined, {
+        model: flags.model as string | undefined,
+        low: Boolean(flags.low),
+        ultraLow: Boolean(flags.ultraLow),
+        serve: Boolean(flags.serve),
+        servePort: flags.p ? parseInt(flags.p as string, 10) : (flags.port ? parseInt(flags.port as string, 10) : undefined),
+        serveHost: flags.H as string || flags.host as string,
+        debug: Boolean(flags.debug),
         inbox: (flags.inbox as 'inject' | 'hook' | 'ask' | undefined),
       });
       break;

@@ -85,11 +85,11 @@ fsm:
   - State variables needed
   - Parallel execution (`ensemble: { type: parallel }`)
 
-**Routing Patterns**:
-- **Sequential**: agent-a → agent-b → agent-c → core
-- **Branching**: Use FSM with conditional exits
-- **Parallel**: Use FSM ensemble state (`ensemble: { type: parallel }`) with aggregation
-- **Fan-out/fan-in**: Ensemble state with multiple agents, each with explicit routing
+**Routing Patterns** (full reference: `.claude/skills/mesh-builder/SKILL.md`):
+- **Sequential**: `agent-a: agent-b` (string = linear)
+- **Branching**: `agent-a: { complete: { agent-b: "Intent description" }, rejected: { agent-c: "Why" } }` (object = branch)
+- **Fan-out/fan-in**: `planner: [worker-a, worker-b, { discuss: true, complete: join-agent }]` (array = fan-out)
+- **Parallel (FSM)**: Use FSM ensemble state (`ensemble: { type: parallel }`) for state-machine workflows
 
 **Keep it Simple**:
 - Start with routing-only if workflow is linear

@@ -98,16 +98,51 @@ export class PromptInjector {
   }
 
   /**
-   * Inject workspace context into a system prompt
+   * Replace template tokens in prompt text with resolved values.
+   *
+   * Template tokens are `{key}` placeholders embedded in agent prompt text.
+   * This method performs string replacement BEFORE any section injection,
+   * so agents can reference dynamic paths inline (e.g., `ls {workspace}/draft.md`).
+   *
+   * Built-in tokens (always available when workspace context is provided):
+   *   - `{workspace}` → resolved absolute workspace directory path
+   *
+   * Additional tokens can be supplied via the `extraTokens` map for
+   * mesh-specific variables (e.g., `{game-id}`, `{campaign-id}`, `{N}`).
+   *
+   * Safe for all meshes — tokens that don't appear in the prompt are no-ops.
+   * Unresolved tokens (no matching key) are left as-is.
+   *
+   * @param prompt - Raw prompt text potentially containing `{token}` placeholders
+   * @param tokens - Map of token names to replacement values
+   * @returns Prompt with all matching tokens replaced
+   */
+  replaceTemplateTokens(prompt: string, tokens: Record<string, string>): string {
+    let result = prompt;
+    for (const [key, value] of Object.entries(tokens)) {
+      result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+    }
+    return result;
+  }
+
+  /**
+   * Inject workspace context into a system prompt.
+   *
+   * First replaces any `{workspace}` template tokens in the prompt text
+   * with the resolved workspace directory, then appends the workspace
+   * context section (output files, write guidance).
    */
   injectWorkspace(basePrompt: string, context: InjectionContext): string {
     const { workspace, taskId } = context;
 
-    // Build workspace section
-    const workspaceSection = this.buildWorkspaceSection(workspace, taskId);
+    // Replace {workspace} template tokens in prompt text before appending section
+    const prompt = this.replaceTemplateTokens(basePrompt, {
+      workspace: workspace.dir,
+    });
 
-    // Append workspace section to base prompt
-    return `${basePrompt}\n\n${workspaceSection}`;
+    // Build and append workspace section
+    const workspaceSection = this.buildWorkspaceSection(workspace, taskId);
+    return `${prompt}\n\n${workspaceSection}`;
   }
 
   /**

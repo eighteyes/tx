@@ -72,14 +72,22 @@ export class CoreWebSocketHandler {
    * Attach to an existing HTTP server
    */
   attach(server: HttpServer): void {
-    this.wss = new WebSocketServer({
-      server,
-      path: '/v1/core/stream',
-    });
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     this.wss.on('error', (err) => {
       log.error('core-websocket', 'WebSocket server error', { error: err.message });
+    });
+
+    // Handle upgrades only for /v1/core/stream
+    server.on('upgrade', (request, socket, head) => {
+      const pathname = new URL(request.url || '/', `http://${request.headers.host}`).pathname;
+      if (pathname === '/v1/core/stream') {
+        this.wss!.handleUpgrade(request, socket, head, (ws) => {
+          this.wss!.emit('connection', ws, request);
+        });
+      }
+      // Don't touch socket for other paths — let other handlers process them
     });
 
     // Start heartbeat

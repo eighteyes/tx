@@ -4,10 +4,11 @@ description: Interactive QA walkthrough for end-user acceptance testing of compl
 category: Know
 tags: [know, review, qa, testing, acceptance]
 ---
+Interactive QA walkthrough for end-user acceptance testing of a completed feature.
 
 **Main Objective**
 
-Guide user through interactive end-user acceptance testing of a completed feature using the generated QA_STEPS.md, recording results and updating feature status based on approval.
+Execute `know feature review <feature>` which validates completion, guides interactive QA testing, and records approval decision.
 
 **CRITICAL: ACTIVE TESTING WORKFLOW**
 This is NOT just a code review. The assistant should:
@@ -37,27 +38,30 @@ This is NOT just a code review. The assistant should:
 
 **Workflow**
 
-### 1. Initialization
+### 1. Extract Feature Name
 
 **Steps**:
-1. Verify feature directory exists at `.ai/know/<feature>/`
-2. Check that `QA_STEPS.md` exists (if not, inform user to run `/know:build` Phase 7 first)
-3. Check spec-graph status (using **haiku agent**):
-   - `know -g .ai/spec-graph.json show feature:<name>`
-   - Verify status is "complete", "review-ready", or "in-progress"
-4. Load `QA_STEPS.md` content
+1. Extract feature name from conversation context or prompt user
+2. Verify feature directory exists at `.ai/know/<feature>/`
 
-### 2. Display Context and Confirm User is Ready to Test
+### 2. Execute Review Command
 
 **Steps**:
-1. Show feature objective from QA_STEPS.md
-2. Display prerequisites/setup requirements
-3. **Explicitly remind user**: "You will need to manually test the feature in your running application. I will guide you through each test step and record your results."
-4. Ask user: "Is your application running and are you ready to begin testing? [Yes/No]"
-   - If No: Exit with message "Start your application and complete prerequisites first"
-   - If Yes: Proceed to interactive testing
+1. Run the know CLI command:
+   ```bash
+   know feature review <feature-name>
+   ```
+2. The command will:
+   - Validate completion (implementation linkage, requirements)
+   - Load QA_STEPS.md
+   - Display context and prerequisites
+   - Prompt user to begin testing
+   - Guide through interactive test execution
+   - Record results
+   - Handle approval decision
+   - Update spec-graph status
 
-### 3. Interactive Test Execution
+### 3. Interactive Test Execution (handled by CLI)
 
 **For each test step in QA_STEPS.md**:
 
@@ -279,7 +283,7 @@ Step 1: [PASS/FAIL/SKIP]
 
 **Using haiku agent**:
 - If Approved:
-  - `know -g .ai/spec-graph.json update feature:<name> '{"status": "done"}'` (or similar update)
+  - `know -g .ai/know/spec-graph.json update feature:<name> '{"status": "done"}'` (or similar update)
   - Add review completion date to meta if possible
 - If Needs Work:
   - Keep status as "in-progress"
@@ -349,11 +353,17 @@ Assistant: Created review-results.md and review-feedback.md
 
 ## Notes
 
-- **Active testing examples**:
-  - CLI test: Run `know phases` and verify output format
-  - File test: Check that `.ai/know/feature/summary.md` was created
-  - Data test: Execute Python script and validate JSON output
-  - UI test: Ask user "Does the login button appear blue?"
+- **Skill wraps CLI command**: This skill calls `know feature review <feature>` which handles validation and orchestration
+- **Graph-based completion validation**:
+  - CLI validates bidirectional spec↔code linkage before QA testing
+  - Structural validation ensures code actually implements spec
+  - Can't mark "done" without proper graph connections
+  - Replaces fragile markdown checklists with queryable graph structure
+- **Interactive QA workflow** (handled by skill/CLI):
+  - Test what's automatable (CLI commands, file checks, API calls)
+  - Guide user through manual validation (UI, UX, visual elements)
+  - Record results and collect approval decision
+  - Create bugs/changes if "Needs Work"
 - Use AskUserQuestion tool for all yes/no and multi-choice prompts
 - Keep language user-facing (not technical) in QA_STEPS.md
 - Record actual vs expected for all failures
@@ -361,5 +371,7 @@ Assistant: Created review-results.md and review-feedback.md
 - **Worktree compatibility**:
   - Can run from feature worktree (recommended - test in isolation)
   - Can run from main repo (also works - reads `.ai/know/<feature>/`)
-  - Can run from any location with access to `.ai/` directory
   - Feature remains in worktree until `/know:done` is run
+
+---
+`r1`

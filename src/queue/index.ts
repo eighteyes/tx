@@ -488,6 +488,16 @@ export class MessageQueue {
   }
 
   /**
+   * Count pending messages for all agents in a mesh
+   */
+  countPendingForMesh(meshName: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as c FROM messages WHERE to_agent LIKE ? AND status = 'pending'
+    `).get(`${meshName}/%`) as { c: number };
+    return row.c;
+  }
+
+  /**
    * Get queue stats
    */
   getStats(): { pending: number; delivered: number; total: number; byAgent: Record<string, number> } {
@@ -526,6 +536,17 @@ export class MessageQueue {
    */
   clearPendingMessages(): void {
     this.db.prepare('DELETE FROM messages WHERE status = ?').run('pending');
+  }
+
+  /**
+   * Clear pending messages for a specific mesh (both to and from)
+   * Called on new mesh run at entry_point to purge stale messages from previous runs
+   */
+  clearPendingMessagesForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM messages WHERE status = ? AND (to_agent LIKE ? OR from_agent LIKE ?)'
+    ).run('pending', `${meshName}/%`, `${meshName}/%`);
+    return result.changes;
   }
 
   /**

@@ -113,6 +113,12 @@ agents:
     # Adversarial prose review against author.yaml
     # Works with narrator in phase 3
 
+  - name: prose-eval
+    model: haiku
+    prompt: prose-eval/prompt.md
+    # Post-editor evaluation gate — scores prose against 5-dimension rubric
+    # Never fixes, only evaluates. Routes to visual on pass, editor on fail (once)
+
   - name: visual
     model: sonnet
     prompt: visual/prompt.md
@@ -161,6 +167,12 @@ agents:
     prompt: linters/cadence.md
     # Mechanical: Sentence length distribution + monotony thresholds
     # Downgraded from sonnet — counting and threshold comparison
+
+  - name: lint-metrics
+    model: haiku
+    prompt: linters/lint-metrics.md
+    # Computational: FK readability, sentence variance, coherence, dialogue ratio
+    # Runs compute-metrics.sh — pure text processing, no LLM judgment
 
   - name: lint-dialogue
     model: haiku
@@ -216,15 +228,14 @@ continuation: true
 # ROUTING - Phase coordinator architecture
 # ==========================================
 
-routing_fallback: entry
-routing_retry_max: 3
-
 routing:
   # All agent communication uses 'message' type.
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle ⇄ scene-crafter → dialogue → narrator → linters → editor → scribe → core
+  # Phase flow: entry → game-coord|init-turn → entropy-architect/architect → scene-sim/simulator → oracle ⇄ scene-sim/simulator → narrator → linters → editor → prose-eval → visual → scribe → core
+  # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
+  # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
 
   # Phase coordinators
@@ -250,7 +261,9 @@ routing:
 
   init-turn:
     message:
-      fates: "Turn workspace ready — action locked"
+      entropy-architect/architect: "Turn workspace ready — action locked"
+      # FALLBACK: Original 4-agent chain (uncomment fates, comment entropy-architect to revert)
+      # fates: "Turn workspace ready — action locked"
 
   # RETIRED: validate-coord — oracle routes directly (approved → narrator, violations → scene-crafter)
   # validate-coord:
@@ -292,26 +305,31 @@ routing:
     message:
       cast: "Mechanical resolution complete → generate reactions"
 
-  cast:
-    message:
-      scene-crafter: "Character reactions ready → design scene beats"
+  # DORMANT: cast routing (absorbed into scene-sim/simulator)
+  # cast:
+  #   message:
+  #     scene-crafter: "Character reactions ready → design scene beats"
 
-  scene-crafter:
-    message:
-      core: "Mid-turn player decisions"
-      oracle: "Scene outline complete → validate continuity"
-      fates: "Table-extend OR micro-table request — new subtable or micro-injection"
-      dramaturg: "Table-extend request — add mechanical notes to new subtable"
+  # DORMANT: scene-crafter routing (absorbed into scene-sim/simulator)
+  # scene-crafter:
+  #   message:
+  #     core: "Mid-turn player decisions"
+  #     oracle: "Scene outline complete → validate continuity"
+  #     fates: "Table-extend OR micro-table request — new subtable or micro-injection"
+  #     dramaturg: "Table-extend request — add mechanical notes to new subtable"
 
   oracle:
     message:
-      dialogue: "Continuity approved → draft character voices"
-      scene-crafter: "Continuity violations → fix outline"
-      narrator: "Knowledge query response"
+      narrator: "Continuity approved → render prose"
+      scene-sim/simulator: "Continuity violations → fix scene script"
+      # DORMANT: dialogue routing (replaced by scene-sim pipeline)
+      # dialogue: "Continuity approved → draft character voices"
+      # scene-crafter: "Continuity violations → fix outline"
 
-  dialogue:
-    message:
-      narrator: "Dialogue drafted → render prose"
+  # DORMANT: dialogue routing (absorbed into scene-sim/simulator)
+  # dialogue:
+  #   message:
+  #     narrator: "Dialogue drafted → render prose"
 
   scribe:
     message:
@@ -336,6 +354,10 @@ routing:
       lint-cadence: "Next lint"
 
   lint-cadence:
+    message:
+      lint-metrics: "Next lint"
+
+  lint-metrics:
     message:
       lint-dialogue: "Next lint"
 
@@ -369,7 +391,12 @@ routing:
 
   editor:
     message:
-      visual: "Prose finalized → generate visual beats"
+      prose-eval: "Prose finalized → evaluate quality"
+
+  prose-eval:
+    message:
+      visual: "Prose evaluation passed → generate visual beats"
+      editor: "Prose evaluation failed → revision needed (once only)"
 
   visual:
     message:
@@ -389,6 +416,9 @@ manifest_enforcement:
 # ==========================================
 
 guardrails:
+  routing_error:
+    routing_retry_max: 3
+    routing_fallback: entry
   max_messages:
     limit: 3
   agents:
@@ -419,38 +449,38 @@ manifest:
   - id: context.yaml
     description: Turn context seeded by coordinator, consumed by creative agents
     location: workspace
-    reads: [dramaturg, system, cast, scene-crafter, narrator, scribe, fates, possibility, dialogue]
+    reads: [dramaturg, system, cast, scene-crafter, narrator, scribe, fates, possibility, dialogue, entropy-architect/architect, scene-sim/simulator]
     writes: [init-turn]
 
   - id: intent.yaml
     description: Single source for player action — raw input, clarified intent, hopes, off-table outcomes
     location: workspace
-    reads: [fates, dramaturg, possibility, system, cast, scene-crafter, narrator]
+    reads: [fates, dramaturg, possibility, system, cast, scene-crafter, narrator, entropy-architect/architect, scene-sim/simulator, prose-eval]
     writes: [init-turn]
 
   - id: action-lock.yaml
     description: Locked player action — ground truth, not subject to entropy
     location: workspace
-    reads: [fates, dramaturg, possibility, system, scene-crafter, narrator]
+    reads: [fates, dramaturg, possibility, system, scene-crafter, narrator, entropy-architect/architect, scene-sim/simulator, prose-eval]
     writes: [init-turn]
 
   - id: dramaturg-notes.yaml
     description: Story analysis and outcome shapes (no weights)
     location: workspace
-    reads: [possibility, system, scene-crafter, narrator, scribe]
-    writes: [dramaturg]
+    reads: [possibility, system, scene-crafter, narrator, scribe, scene-sim/simulator]
+    writes: [dramaturg, entropy-architect/architect]
 
   - id: fates.yaml
     description: World possibility branching tree (no weights)
     location: workspace
-    reads: [possibility, system, cast, scene-crafter, narrator, scribe]
-    writes: [fates]
+    reads: [possibility, system, cast, scene-crafter, narrator, scribe, visual]
+    writes: [fates, entropy-architect/architect]
 
   - id: entropy-tables.yaml
     description: Weighted probability tables synthesized from fates + dramaturg
     location: workspace
-    reads: [system, scene-crafter, fates, dramaturg]
-    writes: [possibility, fates, dramaturg]
+    reads: [system, scene-crafter, fates, dramaturg, entropy-architect/architect, scene-sim/simulator]
+    writes: [possibility, fates, dramaturg, entropy-architect/architect]
 
   - id: entropy-selection.yaml
     description: Resolved entropy outcomes from primary + subtable rolls
@@ -461,37 +491,46 @@ manifest:
   - id: resolution.yaml
     description: Mechanical outcome tables and trait resolution
     location: workspace
-    reads: [system, cast, scene-crafter, narrator, scribe]
-    writes: [system]
+    reads: [system, cast, scene-crafter, narrator, scribe, scene-sim/simulator]
+    writes: [system, entropy-architect/architect]
 
-  - id: reactions.yaml
-    description: NPC reactions and character voice responses
-    location: workspace
-    reads: [scene-crafter, narrator, scribe, oracle, dialogue]
-    writes: [cast]
+  # DORMANT: reactions.yaml (absorbed into scene-sim/simulator → scene_script.yaml)
+  # - id: reactions.yaml
+  #   description: NPC reactions and character voice responses
+  #   location: workspace
+  #   reads: [scene-crafter, narrator, scribe, oracle, dialogue]
+  #   writes: [cast]
 
-  - id: scene-outline.yaml
-    description: Scene beats, pacing, and decision points
-    location: workspace
-    reads: [narrator, oracle, visual, scribe, dialogue]
-    writes: [scene-crafter]
+  # DORMANT: scene-outline.yaml (replaced by scene_script.yaml from scene-sim)
+  # - id: scene-outline.yaml
+  #   description: Scene beats, pacing, and decision points
+  #   location: workspace
+  #   reads: [narrator, oracle, visual, scribe, dialogue]
+  #   writes: [scene-crafter]
 
-  - id: dialogue.yaml
-    description: Character-specific dialogue drafts with delivery notes and subtext
+  # DORMANT: dialogue.yaml (absorbed into scene-sim/simulator → scene_script.yaml)
+  # - id: dialogue.yaml
+  #   description: Character-specific dialogue drafts with delivery notes and subtext
+  #   location: workspace
+  #   reads: [narrator]
+  #   writes: [dialogue]
+
+  - id: scene_script.yaml
+    description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by scene-sim/simulator.
     location: workspace
-    reads: [narrator]
-    writes: [dialogue]
+    reads: [narrator, oracle, visual, scribe, prose-eval]
+    writes: []  # Written by scene-sim/simulator (cross-mesh)
 
   - id: prose-draft.md
     description: Working prose draft iterated through lint/edit cycle
     location: workspace
-    reads: [narrator, editor]
+    reads: [narrator, editor, lint-metrics]
     writes: [narrator, editor]
 
   - id: prose.md
     description: Final approved prose output for the turn
     location: workspace
-    reads: [scribe, visual, narrator]
+    reads: [scribe, visual, narrator, prose-eval]
     writes: [editor]
 
   - id: visual.yaml
@@ -515,8 +554,8 @@ manifest:
   - id: violations.yaml
     description: Aggregated lint violations for editor review
     location: workspace
-    reads: [editor]
-    writes: [narrator]
+    reads: [editor, lint-metrics, prose-eval, scribe]
+    writes: [narrator, lint-metrics, prose-eval]
 
   - id: summary.md
     description: Compressed turn summary for context window management
@@ -542,14 +581,14 @@ manifest:
     description: Author voice profile and stylistic constraints
     location: game
     persistent: true
-    reads: [narrator, scene-crafter, editor, visual, calibrator]
+    reads: [narrator, scene-crafter, editor, visual, calibrator, entropy-architect/architect, scene-sim/simulator, lint-metrics, prose-eval]
     writes: [calibrator]
 
   - id: setting.yaml
     description: World setting, geography, tone, and genre parameters
     location: game
     persistent: true
-    reads: [narrator, oracle, fates, calibrator]
+    reads: [narrator, oracle, fates, calibrator, entropy-architect/architect]
     writes: [calibrator]
 
   - id: entities.yaml
@@ -563,14 +602,14 @@ manifest:
     description: Individual character entity files (traits, bonds, state)
     location: game
     persistent: true
-    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, possibility, dramaturg, calibrator, dialogue, visual]
+    reads: [init-turn, system, cast, narrator, oracle, scribe, fates, possibility, dramaturg, calibrator, dialogue, visual, entropy-architect/architect, scene-sim/simulator]
     writes: [scribe, calibrator]
 
   - id: entities/bonds/
     description: Bond entity files (relationship intensity, dynamics)
     location: game
     persistent: true
-    reads: [fates, possibility, cast, dramaturg]
+    reads: [fates, possibility, cast, dramaturg, scribe, entropy-architect/architect, scene-sim/simulator]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt
@@ -592,7 +631,7 @@ manifest:
     description: Story arc structure, act progression, and tension curves
     location: campaign
     persistent: true
-    reads: [dramaturg, scene-crafter, system, narrator, scribe, fates, calibrator]
+    reads: [dramaturg, scene-crafter, system, narrator, scribe, fates, calibrator, entropy-architect/architect]
     writes: [scribe, calibrator]
 
   - id: turns/
@@ -613,28 +652,28 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, fates, dramaturg, possibility, scene-crafter]
+    reads: [init-turn, fates, dramaturg, possibility, scene-crafter, entropy-architect/architect, scene-sim/simulator]
     writes: [scribe]
 
   - id: trajectories.yaml
     description: Committed futures with timers (Chekhov's Guns)
     location: campaign
     persistent: true
-    reads: [fates]
+    reads: [fates, entropy-architect/architect]
     writes: [scribe]
 
   - id: timeline.yaml
     description: Canonical time tracking — day counter, time skips, elapsed time
     location: campaign
     persistent: true
-    reads: [narrator, dramaturg]
+    reads: [narrator, dramaturg, entropy-architect/architect]
     writes: [scribe]
 
   - id: continuity.yaml
     description: Canonical facts, established details, and continuity anchors
     location: campaign
     persistent: true
-    reads: [dramaturg, narrator, oracle, scribe, system, fates]
+    reads: [dramaturg, narrator, oracle, scribe, system, fates, entropy-architect/architect]
     writes: [scribe]
 
   - id: history.md
@@ -655,7 +694,14 @@ manifest:
     description: Per-character memory and relationship state
     location: campaign
     persistent: true
-    reads: []
+    reads: [narrator, cast, dramaturg, scene-sim/simulator, dialogue]
+    writes: [scribe]
+
+  - id: quality-log.yaml
+    description: Per-turn quality metrics for trend analysis
+    location: campaign
+    persistent: true
+    reads: [dramaturg]
     writes: [scribe]
 
   # --- Templates (read-only reference) ---

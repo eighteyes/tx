@@ -109,6 +109,11 @@ export interface StorageProvider {
   subscribeMessages(sessionId: string): AsyncIterable<MessageEvent>;
 
   /**
+   * Unsubscribe from messages for a session (closes watcher, stops iterator)
+   */
+  unsubscribeMessages(sessionId: string): void;
+
+  /**
    * Read a specific message by ID
    */
   getMessage(sessionId: string, messageId: string): Promise<AgentMessage | null>;

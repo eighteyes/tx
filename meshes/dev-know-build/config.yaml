@@ -1,0 +1,39 @@
+# dev-know-build mesh
+# Two-phase development: haiku prepares feature context, opus builds
+# Template interpolation: {feature} in commands resolves from message payload
+
+mesh: dev-know-build
+description: "Two-phase development: haiku prepares feature context, opus builds"
+
+intents:
+  patterns:
+    - build
+    - implement
+    - develop
+  commands:
+    build: "/know:build"
+
+agents:
+  - name: prebuild
+    model: haiku
+    command: "/know:prebuild {feature}"
+    prompt: prebuild.md
+
+  - name: builder
+    model: opus
+    command: "/know:build {feature}"
+
+entry_point: prebuild
+boundary_agents: [builder]
+
+routing:
+  prebuild:
+    complete:
+      builder: "Feature context prepared, ready to build"
+    blocked:
+      core: "Need clarification on feature scope"
+  builder:
+    complete:
+      core: "Feature built and reviewed"
+    blocked:
+      core: "Need clarification during implementation"

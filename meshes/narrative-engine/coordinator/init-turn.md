@@ -15,6 +15,7 @@ Scope: workspace setup, intent decomposition, coherence validation, context file
 2. Campaign-1 prologue check → route to narrator if applicable
 3. Intent clarification (HITL) → decompose and confirm action
 4. Action coherence check → HITL on conflict
+4b. Semantic action validation → advisory HITL if trait-action mismatch
 5. Time passage detection → apply trait decay if applicable
 6. Write files → intent.yaml, action-lock.yaml, context.yaml
 7. Route to fates
@@ -199,6 +200,57 @@ If state is uncertain or ambiguous, player's assumption is valid — adopt it.
 
 ---
 
+## Step 4b: Semantic Action Validation
+
+Check whether the confirmed action aligns with the protagonist's current trait state and capabilities.
+
+### Trait-Action Alignment
+
+Read protagonist traits from blob. Flag mismatches between high-pressure traits and proposed action:
+
+| Trait State | Action Type | Flag? |
+|-------------|------------|-------|
+| DESPERATE >= 4 | Cautious/calculated action | Yes |
+| GUARDED >= 4 | Vulnerable/open action | Yes |
+| EXHAUSTED >= 4 | Physically demanding action | Yes |
+| Any trait >= 5 | Action contradicts trait direction | Yes |
+
+A flag means the action **goes against** the character's current psychological grain. This is NOT blocking — acting against type IS dramatic.
+
+### Capability Plausibility
+
+Check whether the action requires:
+- A specialized skill the protagonist hasn't demonstrated
+- Knowledge the protagonist shouldn't have
+- Physical access that hasn't been established
+
+### On Conflict
+
+If trait-action misalignment OR capability concern is detected, send **advisory** HITL to core/core:
+
+```
+SEMANTIC CHECK — Turn {blob.session.turn}
+
+Your action: "{confirmed action}"
+Character state: {relevant trait} at pressure {N}
+
+This action goes against {character}'s current grain — which can make for great drama.
+
+Options:
+1. **Proceed as-is** — adds tension (dramaturg will use this)
+2. **Adjust action** — revise to align with current state
+3. **Override** — proceed AND mark as deliberate against-type choice
+```
+
+Apply player choice:
+- **Proceed**: Add `semantic_conflict: {trait}: {pressure}` to context.yaml
+- **Adjust**: Loop back to Step 3 with revised action
+- **Override**: Add `semantic_override: true` and `semantic_conflict: {trait}: {pressure}` to context.yaml — dramaturg uses this for interesting outcomes
+
+If no conflict detected, proceed silently.
+
+---
+
 ## Step 5: Time Passage & Trait Decay
 
 Detect time markers in player action:
@@ -316,6 +368,9 @@ arc:
   phase: {blob.scene.arc.phase}
   momentum: {blob.scene.arc.momentum}
 suspended: {blob.scene.suspended}
+# Optional — only present if Step 4b detected conflict
+semantic_conflict: {trait: pressure}  # omit if none
+semantic_override: false              # true if player chose Override
 ```
 
 Context enables the locked action. If the action requires two characters together, scene.present includes both. If the action requires location change, scene.location reflects it.

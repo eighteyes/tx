@@ -4,6 +4,7 @@ description: Design a custom schema for domain-specific graph modeling with the 
 category: Know
 tags: [know, schema, design, memory, knowledge-graph]
 ---
+Design a custom entity schema for domain-specific graph modeling.
 
 **Main Objective**
 
@@ -273,7 +274,7 @@ know -g graphs/my-graph.json add <entity-type-1> example-name \
 ```bash
 # Example commands
 know add <entity> <name> '{...}'
-know link <from> <to>
+know graph link <from> <to>
 ```
 
 ## Getting Started

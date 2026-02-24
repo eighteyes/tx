@@ -75,6 +75,9 @@ interface ServerDeps {
   logsController: LogsController;
   sessionsController: SessionsController;
   statsController: StatsController;
+  meshConfigLoader: (meshId: string) => Promise<MeshConfig | null>;
+  workDir: string;
+  serverPort: number;
 }
 
 /**
@@ -100,6 +103,73 @@ function matchRoute(pattern: string, path: string): Record<string, string> | nul
   }
 
   return params;
+}
+
+/**
+ * Resolve a workspace template path by scanning the filesystem.
+ * Template like ".ai/research/{topic}/" → find matching directory.
+ * Returns the resolved relative path or null if not found.
+ */
+function resolveWorkspaceTemplate(baseDir: string, template: string): string | null {
+  // Strip trailing slash
+  const tmpl = template.replace(/\/+$/, '');
+
+  // Check if template has variables
+  const varMatch = tmpl.match(/\{([^}]+)\}/);
+  if (!varMatch) {
+    // Static path — just check if it exists
+    const fullPath = path.join(baseDir, tmpl);
+    return fs.existsSync(fullPath) ? tmpl : null;
+  }
+
+  // Split at the variable segment
+  const segments = tmpl.split('/');
+  const staticSegments: string[] = [];
+  let varSegmentIndex = -1;
+
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].includes('{')) {
+      varSegmentIndex = i;
+      break;
+    }
+    staticSegments.push(segments[i]);
+  }
+
+  if (varSegmentIndex === -1) return null;
+
+  // Build static prefix path
+  const prefixPath = path.join(baseDir, ...staticSegments);
+  if (!fs.existsSync(prefixPath)) return null;
+
+  try {
+    const entries = fs.readdirSync(prefixPath, { withFileTypes: true });
+    const dirs = entries.filter(e => e.isDirectory() && !e.name.startsWith('.'));
+
+    if (dirs.length === 0) return null;
+
+    // Pick most recently modified directory
+    let best = dirs[0].name;
+    let bestTime = 0;
+    for (const dir of dirs) {
+      try {
+        const stat = fs.statSync(path.join(prefixPath, dir.name));
+        if (stat.mtimeMs > bestTime) {
+          bestTime = stat.mtimeMs;
+          best = dir.name;
+        }
+      } catch {}
+    }
+
+    // Reconstruct the resolved path
+    const resolvedSegments = [...staticSegments, best, ...segments.slice(varSegmentIndex + 1)];
+    const resolved = resolvedSegments.join('/');
+
+    // Verify the full resolved path exists
+    const fullResolved = path.join(baseDir, resolved);
+    return fs.existsSync(fullResolved) ? resolved : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -131,14 +201,28 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
         throw { status: 429, message: quotaCheck.message };
       }
 
+      // Look up workspace template from mesh config
+      let workspaceTemplate: string | undefined;
+      try {
+        const meshConfig = await deps.meshConfigLoader(meshId);
+        if (meshConfig?.workspace?.path) {
+          workspaceTemplate = meshConfig.workspace.path;
+        }
+      } catch {}
+
+      // entryAgent resolved from mesh config by session-manager if not explicitly provided
       const session = await deps.sessionManager.create({
         meshId,
         tenantId: ctx.tenant.tenantId,
         entryAgent,
         ttlSeconds,
+        metadata: workspaceTemplate ? { workspace_template: workspaceTemplate } : undefined,
       });
 
       deps.quotaManager.recordSessionCreated(ctx.tenant.tenantId);
+
+      // Register www session so tx-start can forward core-messages
+      registerWwwSession(deps.workDir, meshId, session.sessionId, deps.serverPort);
 
       return session;
     },
@@ -177,6 +261,9 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
       if (session.tenantId !== ctx.tenant.tenantId) {
         throw { status: 403, message: 'Access denied' };
       }
+
+      // Unregister www session
+      unregisterWwwSession(deps.workDir, session.meshId);
 
       await deps.sessionManager.destroy(ctx.params.id);
       deps.quotaManager.recordSessionDestroyed(ctx.tenant.tenantId);
@@ -257,7 +344,7 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
       const targetAgent = to || session.config.entryAgent || `${session.meshId}/worker`;
 
       const message: AgentMessage = {
-        from: 'api/client',
+        from: 'core/core',
         to: targetAgent,
         type: type || 'task',
         body,
@@ -265,13 +352,57 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
         timestamp: Date.now(),
       };
 
-      const msgId = await deps.storage.writeMessage(ctx.params.id, message);
-      await deps.storage.queueInsert(ctx.params.id, message);
+      // Write to session storage (for message history/WebSocket)
+      await deps.storage.writeMessage(ctx.params.id, message);
+
+      // Write to .ai/tx/msgs/ so tx-start Consumer picks it up
+      const msgId = writeToMsgsDir(deps.workDir, message, ctx.params.id);
 
       deps.quotaManager.recordMessageSent(ctx.tenant.tenantId);
       await deps.sessionManager.touch(ctx.params.id);
 
       return { msgId, message };
+    },
+  },
+  // Forward endpoint: tx-start POSTs mesh responses here instead of file-copy
+  {
+    method: 'POST',
+    pattern: '/v1/sessions/:id/forward',
+    handler: async (ctx, deps) => {
+      if (!deps.storage) {
+        throw { status: 503, message: 'Storage not available in no-db mode' };
+      }
+
+      const { from, to, type, body, headline, msgId, refMsgId } = ctx.body as {
+        from: string;
+        to?: string;
+        type?: string;
+        body: string;
+        headline?: string;
+        msgId?: string;
+        refMsgId?: string;
+      };
+
+      if (!from || !body) {
+        throw { status: 400, message: 'from and body are required' };
+      }
+
+      const message: AgentMessage = {
+        from,
+        to: to || 'core/core',
+        type: type || 'task-complete',
+        body,
+        headline,
+        msgId,
+        refMsgId,
+        timestamp: Date.now(),
+      };
+
+      // Write to session storage ONLY (triggers WS subscription, avoids msgs dir loop)
+      const storedId = await deps.storage.writeMessage(ctx.params.id, message);
+
+      log.info('server', 'Forwarded message to session', { sessionId: ctx.params.id, from, msgId: storedId });
+      return { success: true, msgId: storedId };
     },
   },
   {
@@ -604,6 +735,182 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
     },
   },
 
+  // Session-scoped workspace (files tab)
+  {
+    method: 'GET',
+    pattern: '/v1/sessions/:id/workspace',
+    handler: async (ctx, deps) => {
+      if (!deps.sessionManager) {
+        throw { status: 503, message: 'Session management not available' };
+      }
+
+      const session = await deps.sessionManager.get(ctx.params.id);
+      if (!session) {
+        throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
+
+      // Check if this session already has a bound workspace
+      let resolved = session.config.metadata?.workspace_resolved as string | undefined;
+
+      if (!resolved) {
+        // Get workspace template from session metadata or mesh config
+        let template = session.config.metadata?.workspace_template as string | undefined;
+        if (!template) {
+          try {
+            const meshConfig = await deps.meshConfigLoader(session.meshId);
+            template = meshConfig?.workspace?.path;
+          } catch {}
+        }
+
+        if (!template) {
+          return { workspace: null, message: 'No workspace defined for this mesh' };
+        }
+
+        // Resolve the template
+        resolved = resolveWorkspaceTemplate(deps.workDir, template) || undefined;
+        if (!resolved) {
+          return { workspace: { template, resolved: null }, entries: [], message: 'Workspace not yet created' };
+        }
+
+        // Bind this workspace to the session so it sticks across conversations
+        if (deps.storage) {
+          try {
+            await deps.storage.updateSession(ctx.params.id, {
+              metadata: {
+                ...session.config.metadata,
+                workspace_template: template,
+                workspace_resolved: resolved,
+              },
+            });
+            // Also update in-memory session
+            if (!session.config.metadata) session.config.metadata = {};
+            session.config.metadata.workspace_resolved = resolved;
+            session.config.metadata.workspace_template = template;
+          } catch {}
+        }
+      }
+
+      // List directory contents
+      const dirPath = ctx.query.get('path') || '';
+      const fullBase = path.join(deps.workDir, resolved);
+      const targetPath = dirPath ? path.join(fullBase, dirPath) : fullBase;
+
+      // Security: ensure target is within resolved workspace
+      const resolvedTarget = path.resolve(targetPath);
+      const resolvedBase = path.resolve(fullBase);
+      if (!resolvedTarget.startsWith(resolvedBase)) {
+        throw { status: 403, message: 'Path outside workspace' };
+      }
+
+      if (!fs.existsSync(targetPath)) {
+        return { workspace: { template, resolved }, entries: [], path: dirPath };
+      }
+
+      const stat = fs.statSync(targetPath);
+      if (!stat.isDirectory()) {
+        throw { status: 400, message: 'Not a directory' };
+      }
+
+      const entries = fs.readdirSync(targetPath, { withFileTypes: true })
+        .filter(e => !e.name.startsWith('.'))
+        .map(e => {
+          const entryPath = path.join(targetPath, e.name);
+          try {
+            const entryStat = fs.statSync(entryPath);
+            return {
+              name: e.name,
+              path: dirPath ? `${dirPath}/${e.name}` : e.name,
+              type: e.isDirectory() ? 'directory' : 'file',
+              size: entryStat.size,
+              modified: entryStat.mtime.toISOString(),
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      const template = session.config.metadata?.workspace_template || resolved;
+      return { workspace: { template, resolved }, entries, path: dirPath || '' };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/sessions/:id/workspace/file',
+    handler: async (ctx, deps) => {
+      if (!deps.sessionManager) {
+        throw { status: 503, message: 'Session management not available' };
+      }
+
+      const session = await deps.sessionManager.get(ctx.params.id);
+      if (!session) {
+        throw { status: 404, message: 'Session not found' };
+      }
+      if (session.tenantId !== ctx.tenant.tenantId) {
+        throw { status: 403, message: 'Access denied' };
+      }
+
+      const filePath = ctx.query.get('path');
+      if (!filePath) {
+        throw { status: 400, message: 'path is required' };
+      }
+
+      // Use bound workspace if available, otherwise resolve fresh
+      let resolved = session.config.metadata?.workspace_resolved as string | undefined;
+      if (!resolved) {
+        let template = session.config.metadata?.workspace_template as string | undefined;
+        if (!template) {
+          try {
+            const meshConfig = await deps.meshConfigLoader(session.meshId);
+            template = meshConfig?.workspace?.path;
+          } catch {}
+        }
+        if (!template) {
+          throw { status: 404, message: 'No workspace defined for this mesh' };
+        }
+        resolved = resolveWorkspaceTemplate(deps.workDir, template) || undefined;
+        if (!resolved) {
+          throw { status: 404, message: 'Workspace not yet created' };
+        }
+      }
+
+      const fullBase = path.join(deps.workDir, resolved);
+      const targetPath = path.join(fullBase, filePath);
+
+      // Security: ensure target is within resolved workspace
+      const resolvedTarget = path.resolve(targetPath);
+      const resolvedBase = path.resolve(fullBase);
+      if (!resolvedTarget.startsWith(resolvedBase)) {
+        throw { status: 403, message: 'Path outside workspace' };
+      }
+
+      if (!fs.existsSync(targetPath)) {
+        throw { status: 404, message: 'File not found' };
+      }
+
+      const stat = fs.statSync(targetPath);
+      if (stat.isDirectory()) {
+        throw { status: 400, message: 'Cannot read directory as file' };
+      }
+
+      // 10MB limit
+      if (stat.size > 10 * 1024 * 1024) {
+        throw { status: 413, message: 'File too large' };
+      }
+
+      const content = fs.readFileSync(targetPath, 'utf-8');
+      return {
+        path: filePath,
+        content,
+        size: stat.size,
+        modified: stat.mtime.toISOString(),
+      };
+    },
+  },
+
 ];
 
 /**
@@ -630,6 +937,73 @@ async function parseBody(req: http.IncomingMessage): Promise<unknown> {
 }
 
 /**
+ * www-sessions registry — lets tx-start know which meshes have active web sessions.
+ * File: .ai/tx/data/www-sessions.json
+ * Format: { meshId: { sessionId, createdAt } }
+ */
+function getWwwSessionsPath(workDir: string): string {
+  return path.join(workDir, '.ai', 'tx', 'data', 'www-sessions.json');
+}
+
+function registerWwwSession(workDir: string, meshId: string, sessionId: string, port?: number): void {
+  const filePath = getWwwSessionsPath(workDir);
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+  let registry: Record<string, { sessionId: string; createdAt: number; port?: number }> = {};
+  try {
+    if (fs.existsSync(filePath)) {
+      registry = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    }
+  } catch {}
+
+  registry[meshId] = { sessionId, createdAt: Date.now(), port };
+  fs.writeFileSync(filePath, JSON.stringify(registry, null, 2));
+  log.info('server', 'Registered www session', { meshId, sessionId, port });
+}
+
+function unregisterWwwSession(workDir: string, meshId: string): void {
+  const filePath = getWwwSessionsPath(workDir);
+  try {
+    if (!fs.existsSync(filePath)) return;
+    const registry = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    delete registry[meshId];
+    fs.writeFileSync(filePath, JSON.stringify(registry, null, 2));
+  } catch {}
+}
+
+/**
+ * Write a message to .ai/tx/msgs/ so the tx-start Consumer picks it up.
+ * Uses the same frontmatter format as agent-written messages.
+ */
+function writeToMsgsDir(workDir: string, message: AgentMessage, sessionId: string): string {
+  const msgsDir = path.join(workDir, '.ai', 'tx', 'msgs');
+  if (!fs.existsSync(msgsDir)) fs.mkdirSync(msgsDir, { recursive: true });
+
+  const msgId = message.msgId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const timestamp = message.timestamp || Date.now();
+  const safeFrom = message.from.replace(/\//g, '-');
+  const safeTo = message.to.replace(/\//g, '-');
+  const filename = `${timestamp}-${message.type}-${safeFrom}--${safeTo}-${msgId}.md`;
+  const filepath = path.join(msgsDir, filename);
+
+  const frontmatter = [
+    `to: ${message.to}`,
+    `from: ${message.from}`,
+    `type: ${message.type}`,
+    `msg-id: ${msgId}`,
+    `timestamp: ${new Date(timestamp).toISOString()}`,
+    `www-session: ${sessionId}`,
+  ];
+  if (message.headline) frontmatter.push(`headline: ${message.headline}`);
+
+  const content = `---\n${frontmatter.join('\n')}\n---\n\n${message.body}\n`;
+  fs.writeFileSync(filepath, content);
+  log.info('server', 'Wrote message to msgs dir', { filename, to: message.to });
+  return msgId;
+}
+
+/**
  * Load mesh configuration
  */
 function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<MeshConfig | null> {
@@ -642,20 +1016,29 @@ function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<
       const content = fs.readFileSync(yamlPath, 'utf-8');
       const config = YAML.parse(content);
 
-      // Load agent prompts
+      // Load agent prompts — agents is always a YAML array [{name, model, prompt, ...}]
       const agents: Record<string, { prompt: string; model?: string; maxTurns?: number }> = {};
-      const agentsDir = meshPath;
+      const rawAgents = config.agents || [];
 
-      for (const [agentName, agentConfig] of Object.entries(config.agents || {})) {
-        const promptPath = path.join(agentsDir, agentName, 'prompt.md');
+      for (const agent of rawAgents) {
+        const name = agent.name;
+        if (!name) continue;
         let prompt = '';
-        if (fs.existsSync(promptPath)) {
-          prompt = fs.readFileSync(promptPath, 'utf-8');
+        const candidates = [
+          agent.prompt ? path.join(meshPath, agent.prompt) : null,
+          path.join(meshPath, name, 'prompt.md'),
+          path.join(meshPath, 'prompt.md'),
+        ].filter(Boolean) as string[];
+        for (const p of candidates) {
+          if (fs.existsSync(p)) {
+            prompt = fs.readFileSync(p, 'utf-8');
+            break;
+          }
         }
-        agents[agentName] = {
+        agents[name] = {
           prompt,
-          model: (agentConfig as { model?: string }).model,
-          maxTurns: (agentConfig as { maxTurns?: number }).maxTurns,
+          model: agent.model,
+          maxTurns: agent.maxTurns || agent.max_turns,
         };
       }
 
@@ -663,6 +1046,7 @@ function createMeshConfigLoader(meshesDir: string): (meshId: string) => Promise<
         mesh: config.mesh || meshId,
         entry_point: config.entry_point,
         agents,
+        workspace: config.workspace?.path ? { path: config.workspace.path } : undefined,
       };
     }
 
@@ -690,8 +1074,9 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
     ? path.join(process.env.TX_ROOT, 'meshes')
     : path.join(process.cwd(), 'meshes');
 
-  // Initialize mesh controller (always needed for mesh CRUD)
+  // Initialize mesh controller and config loader (always needed)
   const meshController = new MeshController(meshesDir);
+  const meshConfigLoaderFn = createMeshConfigLoader(meshesDir);
 
   let storage: StorageProvider | null = null;
   let sessionManager: SessionManager | null = null;
@@ -706,8 +1091,24 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
     await storage.init();
     log.info('server', 'Storage provider initialized', { type: process.env.TX_STORAGE_TYPE || 'local' });
 
-    // Initialize session manager
-    sessionManager = new SessionManager({ storage });
+    // Initialize session manager with mesh-aware entry agent resolution
+    sessionManager = new SessionManager({
+      storage,
+      resolveEntryAgent: (meshId: string) => {
+        try {
+          const yamlPath = path.join(meshesDir, meshId, 'config.yaml');
+          const jsonPath = path.join(meshesDir, meshId, 'config.json');
+          let raw: string | undefined;
+          if (fs.existsSync(yamlPath)) raw = fs.readFileSync(yamlPath, 'utf-8');
+          else if (fs.existsSync(jsonPath)) raw = fs.readFileSync(jsonPath, 'utf-8');
+          if (raw) {
+            const config = yamlPath && fs.existsSync(yamlPath) ? YAML.parse(raw) : JSON.parse(raw);
+            if (config?.entry_point) return `${meshId}/${config.entry_point}`;
+          }
+        } catch {}
+        return `${meshId}/worker`;
+      },
+    });
     sessionManager.start();
 
     // Initialize auth
@@ -731,7 +1132,7 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
       storage,
       sessionManager,
       concurrency,
-      meshConfigLoader: createMeshConfigLoader(meshesDir),
+      meshConfigLoader: meshConfigLoaderFn,
     });
     workerPool.start();
 
@@ -772,6 +1173,9 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
     logsController,
     sessionsController,
     statsController,
+    meshConfigLoader: meshConfigLoaderFn,
+    workDir,
+    serverPort: port,
   };
 
   // Create HTTP server
@@ -779,6 +1183,8 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const method = req.method || 'GET';
     const reqPath = url.pathname;
+
+    process.stdout.write(`[tx-server] ${method} ${reqPath}\n`);
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -793,7 +1199,20 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
 
     let tenant: TenantInfo;
 
-    if (!noDb) {
+    // Auth bypass for internal forward endpoint (tx-start → tx-serve)
+    const isForwardEndpoint = /^\/v1\/sessions\/[^/]+\/forward$/.test(reqPath) && method === 'POST';
+    if (isForwardEndpoint) {
+      tenant = {
+        tenantId: 'system',
+        name: 'System (internal)',
+        tier: 'enterprise' as const,
+        quotas: {
+          maxSessions: 999,
+          maxMessagesPerMinute: 999,
+          maxConcurrentWorkers: 999,
+        },
+      };
+    } else if (!noDb) {
       // Full mode: Auth, rate limiting, and quota tracking
       const authResult = auth.authenticate(req);
       if (!authResult.authenticated) {
@@ -952,6 +1371,63 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
   // Create WebSocket server for session streams (handles /v1/sessions/:id/stream)
   const wss = new WebSocketServer({ noServer: true });
 
+  // Track connected session WS clients for worker status broadcasting
+  const sessionClients = new Map<WebSocket, { sessionId: string; meshId: string }>();
+
+  // Watch workers.json and push status to connected session clients
+  const workersJsonPath = path.join(workDir, '.ai', 'tx', 'data', 'workers.json');
+  let workersWatcher: fs.FSWatcher | null = null;
+  let workersBroadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function broadcastWorkerStatus(): void {
+    if (sessionClients.size === 0) return;
+
+    let allWorkers: Array<{ id: string; agentId: string; status: string; startedAt: number; messagesProcessed: number; duration: number }> = [];
+    try {
+      if (fs.existsSync(workersJsonPath)) {
+        const data = JSON.parse(fs.readFileSync(workersJsonPath, 'utf-8'));
+        allWorkers = data.workers || [];
+      }
+    } catch {
+      return; // File mid-write, skip this cycle
+    }
+
+    for (const [ws, info] of sessionClients) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const meshWorkers = allWorkers
+        .filter(w => w.agentId.startsWith(`${info.meshId}/`))
+        .map(w => ({
+          agent: w.agentId.split('/')[1],
+          status: w.status,
+          startedAt: w.startedAt,
+          messagesProcessed: w.messagesProcessed,
+          duration: w.duration,
+        }));
+      ws.send(JSON.stringify({ type: 'workers', workers: meshWorkers }));
+    }
+  }
+
+  function startWorkersWatcher(): void {
+    const dir = path.dirname(workersJsonPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      workersWatcher = fs.watch(workersJsonPath, () => {
+        // Debounce rapid writes
+        if (workersBroadcastTimer) clearTimeout(workersBroadcastTimer);
+        workersBroadcastTimer = setTimeout(broadcastWorkerStatus, 100);
+      });
+      workersWatcher.on('error', () => {
+        // File may not exist yet — retry after delay
+        workersWatcher?.close();
+        setTimeout(startWorkersWatcher, 5000);
+      });
+    } catch {
+      setTimeout(startWorkersWatcher, 5000);
+    }
+  }
+
+  startWorkersWatcher();
+
   // Upgrade HTTP requests to WebSocket for session streams
   httpServer.on('upgrade', (request, socket, head) => {
     const url = new URL(request.url || '/', `http://${request.headers.host}`);
@@ -999,15 +1475,19 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
 
     log.info('server', 'WebSocket connected', { sessionId, tenantId: tenant.tenantId });
 
-    // Subscribe to messages
-    const subscription = storage.subscribeMessages(sessionId);
+    // Register for worker status broadcasts
+    sessionClients.set(ws, { sessionId, meshId: session.config.meshId });
+    // Send initial worker status immediately
+    broadcastWorkerStatus();
+
+    // Subscribe to messages — each connection gets its own independent subscription
+    const subscription = storage.subscribeMessages(sessionId) as AsyncIterable<any> & { close?: () => void };
 
     (async () => {
       try {
         for await (const event of subscription) {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(event));
-          }
+          if (ws.readyState !== WebSocket.OPEN) break;
+          ws.send(JSON.stringify(event));
         }
       } catch (err) {
         log.error('server', 'WebSocket subscription error', { sessionId, error: (err as Error).message });
@@ -1027,7 +1507,7 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
           }
 
           const message: AgentMessage = {
-            from: 'api/client',
+            from: 'core/core',
             to: payload.to || session.config.entryAgent || `${session.meshId}/worker`,
             type: payload.messageType || 'task',
             body: payload.body,
@@ -1035,8 +1515,12 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
             timestamp: Date.now(),
           };
 
-          const msgId = await storage.writeMessage(sessionId, message);
-          await storage.queueInsert(sessionId, message);
+          // Write to session storage (for message history/WebSocket)
+          await storage.writeMessage(sessionId, message);
+
+          // Write to .ai/tx/msgs/ so tx-start Consumer picks it up
+          const workDir = process.env.TX_CWD || process.cwd();
+          const msgId = writeToMsgsDir(workDir, message, sessionId);
 
           quotaManager.recordMessageSent(tenant.tenantId);
           await sessionManager.touch(sessionId);
@@ -1051,6 +1535,8 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
 
     ws.on('close', () => {
       log.info('server', 'WebSocket disconnected', { sessionId });
+      sessionClients.delete(ws);
+      if (subscription.close) subscription.close();  // Stop this connection's watcher
     });
   });
 
@@ -1061,6 +1547,9 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
     // Shutdown core WebSocket handler
     await coreWsHandler.shutdown();
 
+    workersWatcher?.close();
+    if (workersBroadcastTimer) clearTimeout(workersBroadcastTimer);
+    sessionClients.clear();
     wss.close();
     httpServer.close();
 

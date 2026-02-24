@@ -27,6 +27,7 @@ export interface StartOptions {
   debug?: boolean; // enable forensics and verbose logging for all meshes
   noInject?: boolean; // deprecated: use inbox instead
   inbox?: 'inject' | 'hook' | 'ask'; // message delivery mode (default: hook)
+  reattach?: boolean; // skip tmux create + claude command (restart mode)
 }
 
 /**
@@ -255,15 +256,20 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   // Create tmux session with unique name per directory
   const sessionName = getSessionName(cwd);
   const tmux = new TmuxSession(sessionName);
+  const sessionExists = await tmux.exists();
 
-  if (await tmux.exists()) {
-    console.log(`[tmux] Killing existing session: ${sessionName}`);
-    await tmux.kill();
+  if (options?.reattach && sessionExists) {
+    log.info('start', 'Reattach mode: reusing existing tmux session');
+    console.log(`[tmux] Reattaching to existing session: ${sessionName}`);
+  } else {
+    if (sessionExists) {
+      console.log(`[tmux] Killing existing session: ${sessionName}`);
+      await tmux.kill();
+    }
+    console.log(`[tmux] Creating session: ${sessionName}`);
+    await tmux.create(cwd);
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
-
-  console.log(`[tmux] Creating session: ${sessionName}`);
-  await tmux.create(cwd);
-  await new Promise(resolve => setTimeout(resolve, 500));
 
   // PID file for crash detection
   const pidFile = path.join(dataDir, '.pid');
@@ -793,7 +799,7 @@ ${data.content}
   };
 
   // Active injection: persistent poll drains queue whenever Claude is idle
-  const injectionQueue: Array<{ filepath: string; from: string; queuedAt: number }> = [];
+  const injectionQueue: Array<{ id: number; filepath: string; from: string; queuedAt: number }> = [];
   let injectionPollTimer: ReturnType<typeof setInterval> | null = null;
   const INJECTION_POLL_MS = 2000;
   const INJECTION_STALE_MS = 5 * 60 * 1000; // 5 minutes — give up on stale entries
@@ -830,10 +836,22 @@ ${data.content}
       if (injected) {
         injectionQueue.shift();
         log.info('injector', 'Active injection succeeded', {
+          id: head.id,
           from: head.from,
           waitMs: now - head.queuedAt,
           queued: injectionQueue.length,
         });
+
+        // Mark as read in hook-state so tx inbox doesn't show injected messages
+        try {
+          const hookStatePath = path.join(dataDir, 'hook-state.json');
+          fs.writeFileSync(hookStatePath, JSON.stringify({
+            lastSeenId: head.id,
+            updatedAt: new Date().toISOString(),
+          }, null, 2));
+        } catch {
+          // Non-fatal
+        }
       }
       // If not injected, leave at head — next poll will retry
     } catch (err) {
@@ -842,8 +860,8 @@ ${data.content}
     }
   };
 
-  const tryInjectResponse = (filepath: string, from: string) => {
-    injectionQueue.push({ filepath, from, queuedAt: Date.now() });
+  const tryInjectResponse = (id: number, filepath: string, from: string) => {
+    injectionQueue.push({ id, filepath, from, queuedAt: Date.now() });
 
     // Start polling if not already running
     if (!injectionPollTimer) {
@@ -853,55 +871,218 @@ ${data.content}
     }
   };
 
+  // --- www session forwarding (HTTP push with file-copy fallback) ---
+  const wwwSessionsPath = path.join(dataDir, 'www-sessions.json');
+
+  /** Read www-sessions.json entry for a mesh */
+  function getWwwSessionEntry(meshId: string): { sessionId: string; port?: number } | null {
+    try {
+      if (!fs.existsSync(wwwSessionsPath)) return null;
+      const registry = JSON.parse(fs.readFileSync(wwwSessionsPath, 'utf-8'));
+      const entry = registry[meshId];
+      if (!entry?.sessionId) return null;
+      return { sessionId: entry.sessionId, port: entry.port };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Parse a message .md file into AgentMessage fields */
+  function parseMessageFromFile(filepath: string): { from: string; to: string; type: string; body: string; headline?: string; msgId?: string; refMsgId?: string } | null {
+    try {
+      const content = fs.readFileSync(filepath, 'utf-8');
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
+      if (!fmMatch) return null;
+
+      const fm: Record<string, string> = {};
+      for (const line of fmMatch[1].split('\n')) {
+        const idx = line.indexOf(':');
+        if (idx > 0) {
+          fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+      }
+
+      const body = content.slice(fmMatch[0].length).trim();
+      return {
+        from: fm['from'] || '',
+        to: fm['to'] || 'core/core',
+        type: fm['type'] || 'task-complete',
+        body,
+        headline: fm['headline'],
+        msgId: fm['msg-id'],
+        refMsgId: fm['ref-msg-id'],
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** File-copy fallback: copy message file to session msgs dir */
+  function forwardViaFileCopy(filepath: string, meshId: string, sessionId: string): boolean {
+    try {
+      const dir = path.join(cwd, '.ai', 'tx', 'sessions', sessionId, 'msgs');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const content = fs.readFileSync(filepath, 'utf-8');
+      fs.writeFileSync(path.join(dir, path.basename(filepath)), content);
+      log.info('injector', 'Forwarded via file-copy fallback', { meshId });
+      return true;
+    } catch (err) {
+      log.error('injector', 'File-copy fallback failed', { error: (err as Error).message });
+      return false;
+    }
+  }
+
+  /** HTTP push a message to tx-serve, falling back to file-copy */
+  async function pushToWwwServer(filepath: string, from: string): Promise<void> {
+    const [meshId] = from.split('/');
+    const entry = getWwwSessionEntry(meshId);
+    if (!entry) return;
+
+    const parsed = parseMessageFromFile(filepath);
+    if (!parsed) {
+      forwardViaFileCopy(filepath, meshId, entry.sessionId);
+      return;
+    }
+
+    const port = entry.port || parseInt(process.env.TX_SERVER_PORT || '6000', 10);
+    try {
+      const res = await fetch(`http://localhost:${port}/v1/sessions/${entry.sessionId}/forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        log.info('injector', 'HTTP push to www server succeeded', { meshId, sessionId: entry.sessionId });
+        return;
+      }
+      log.warn('injector', 'HTTP push returned non-OK, falling back to file-copy', { meshId, status: res.status });
+    } catch (err) {
+      log.warn('injector', 'HTTP push failed, falling back to file-copy', { meshId, error: (err as Error).message });
+    }
+    forwardViaFileCopy(filepath, meshId, entry.sessionId);
+  }
+
+  /** File-copy fallback for status messages */
+  function writeWwwStatusFile(meshId: string, sessionId: string, body: string): void {
+    const dir = path.join(cwd, '.ai', 'tx', 'sessions', sessionId, 'msgs');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const ts = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    const filename = `${ts}-status-system--core-core-${rand}.md`;
+    const content = `---\nfrom: system\nto: core/core\ntype: status\n---\n\n${body}\n`;
+    fs.writeFileSync(path.join(dir, filename), content);
+  }
+
+  /** HTTP push a status event to tx-serve, falling back to file-copy */
+  async function pushWwwStatus(meshId: string, body: string): Promise<void> {
+    const entry = getWwwSessionEntry(meshId);
+    if (!entry) return;
+
+    const port = entry.port || parseInt(process.env.TX_SERVER_PORT || '6000', 10);
+    try {
+      const res = await fetch(`http://localhost:${port}/v1/sessions/${entry.sessionId}/forward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'system',
+          to: 'core/core',
+          type: 'status',
+          body,
+        }),
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        log.info('injector', 'HTTP status push succeeded', { meshId });
+        return;
+      }
+      log.warn('injector', 'HTTP status push non-OK, falling back to file-copy', { meshId, status: res.status });
+    } catch (err) {
+      log.warn('injector', 'HTTP status push failed, falling back to file-copy', { meshId, error: (err as Error).message });
+    }
+    writeWwwStatusFile(meshId, entry.sessionId, body);
+  }
+
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
   consumer.on('core-message', ({ id, filepath, from, type }) => {
     log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
+    tmux.bell();
     appendPendingMessage(id, filepath, from, type);
     queue.markProcessed(id);
 
     // Remove outgoing task on task-complete from a mesh
+    let removedTask: Record<string, unknown> | null = null;
     if (type === 'task-complete') {
-      log.warn('deprecated-message-type', `Legacy type="task-complete" used in start.ts`, { type, file: 'start.ts', detail: 'Use status: complete instead of type: task-complete' });
       const [mesh] = from.split('/');
-      removeOutgoingTask(mesh);
+      removedTask = removeOutgoingTask(mesh);
     }
 
-    // Active injection: inject ALL core-messages into tmux session
-    if (inboxMode === 'inject') {
+    // Forward to www session if one exists for this mesh (HTTP push, file-copy fallback)
+    pushToWwwServer(filepath, from).catch(err => {
+      log.error('injector', 'pushToWwwServer error', { error: (err as Error).message });
+    });
+
+    // Active injection: per-task inject-response flag OR global inject mode
+    if (removedTask?.injectResponse) {
+      log.info('injector', 'inject-response: actively injecting task completion', { from, type });
+      tryInjectResponse(id, filepath, from);
+    } else if (inboxMode === 'inject') {
       log.info('injector', 'Inject mode: actively injecting core-message', { from, type });
-      tryInjectResponse(filepath, from);
+      tryInjectResponse(id, filepath, from);
     }
 
     writeStatusFile();  // This now updates status bar with all counts
   });
 
-  // Track outgoing tasks when core sends tasks to meshes
+  // Track outgoing tasks when core sends tasks to meshes + forward routing status to www
   consumer.on('worker-message', ({ agentId, from, type, injectResponse }) => {
-    if (from === 'core/core' && type === 'task') {
+    if (from === 'core/core' && (type === 'task' || type === 'message')) {
       const [mesh] = agentId.split('/');
       addOutgoingTask(mesh, `task-${Date.now()}`, { injectResponse: !!injectResponse });
       writeStatusFile();
+    }
+    // Write routing status to www session
+    const [mesh] = agentId.split('/');
+    const [, fromAgent] = (from || '').split('/');
+    const [, toAgent] = agentId.split('/');
+    if (fromAgent && toAgent && fromAgent !== 'core') {
+      pushWwwStatus(mesh, `${fromAgent} → ${toAgent}`).catch(err => {
+        log.error('injector', 'pushWwwStatus error (routing)', { error: (err as Error).message });
+      });
     }
   });
 
   // Initialize status bar and status file
   writeStatusFile();  // This now updates status bar with all counts
 
-  // Update status.json on dispatcher events
-  dispatcher.on('worker:spawn', () => {
-    // Immediate update on spawn - workers.json is written synchronously before event
+  // Update status.json on dispatcher events + forward status to www sessions
+  dispatcher.on('worker:spawn', ({ agentId, model }: { agentId: string; model: string }) => {
     writeStatusFile();
+    const [mesh, agent] = agentId.split('/');
+    pushWwwStatus(mesh, `${agent} started (${model})`).catch(err => {
+      log.error('injector', 'pushWwwStatus error (spawn)', { error: (err as Error).message });
+    });
   });
-  dispatcher.on('worker:complete', () => {
-    // Slight delay on complete to batch rapid completions
+  dispatcher.on('worker:complete', ({ id }: { id: string }) => {
     setTimeout(writeStatusFile, 50);
+    const [mesh, agent] = (id || '').split('/');
+    if (mesh) pushWwwStatus(mesh, `${agent || id} completed`).catch(err => {
+      log.error('injector', 'pushWwwStatus error (complete)', { error: (err as Error).message });
+    });
   });
-  dispatcher.on('worker:error', () => {
+  dispatcher.on('worker:error', ({ id, error }: { id: string; error: string }) => {
     setTimeout(writeStatusFile, 50);
+    const [mesh, agent] = (id || '').split('/');
+    if (mesh) pushWwwStatus(mesh, `${agent || id} error: ${error}`).catch(err => {
+      log.error('injector', 'pushWwwStatus error (worker error)', { error: (err as Error).message });
+    });
   });
   dispatcher.on('mesh:killed', ({ meshName, killed, agents }: { meshName: string; killed: number; agents: string[] }) => {
     log.info('dispatcher', `Mesh killed via control signal`, { meshName, killed, agents });
     setTimeout(writeStatusFile, 50);
+    pushWwwStatus(meshName, `Mesh killed (${killed} workers: ${agents.join(', ')})`).catch(err => {
+      log.error('injector', 'pushWwwStatus error (mesh killed)', { error: (err as Error).message });
+    });
   });
   dispatcher.on('mesh:halted-message', () => {
     setTimeout(writeStatusFile, 50);
@@ -927,25 +1108,34 @@ ${data.content}
   console.log('\n✅ TX V4 services ready!');
   console.log('Attaching to session... (Ctrl+B D to detach)\n');
 
-  // Attach FIRST, then send Claude command (user sees it live)
+  // Attach to tmux, capturing child process ref for SIGTERM handling
+  let attachProcess: ReturnType<typeof spawn> | null = null;
   const attachPromise = new Promise<void>((resolve) => {
-    const attach = spawn('tmux', ['attach', '-t', sessionName], {
+    attachProcess = spawn('tmux', ['attach', '-t', sessionName], {
       stdio: 'inherit'
     });
-    attach.on('exit', () => resolve());
-    attach.on('error', () => resolve());
+    attachProcess.on('exit', () => resolve());
+    attachProcess.on('error', () => resolve());
+  });
+
+  // SIGTERM handler: kill attach process to trigger normal cleanup (tmux stays alive)
+  process.on('SIGTERM', () => {
+    log.info('start', 'SIGTERM received, shutting down services (tmux stays alive)');
+    attachProcess?.kill('SIGTERM');
   });
 
   // Small delay to let attach take over terminal
   await new Promise(r => setTimeout(r, 100));
 
-  // Now send Claude command - user sees it in attached session
-  const claudePath = findClaudePath();
-  const continueFlag = options?.continue ? ' --continue' : '';
-  const modelFlag = options?.model ? ` --model ${options.model}` : '';
-  // TX_CORE_SESSION=1 enables hook to mark messages as seen after display
-  tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
-  tmux.sendEnter();
+  // Send Claude command only on fresh start (skip in reattach mode)
+  if (!options?.reattach || !sessionExists) {
+    const claudePath = findClaudePath();
+    const continueFlag = options?.continue ? ' --continue' : '';
+    const modelFlag = options?.model ? ` --model ${options.model}` : '';
+    // TX_CORE_SESSION=1 enables hook to mark messages as seen after display
+    tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+    tmux.sendEnter();
+  }
 
   // Wait for detach
   await attachPromise;
@@ -1009,6 +1199,54 @@ export async function stop(workDir?: string): Promise<void> {
   if (process.stdin.isTTY) {
     process.stdin.setRawMode?.(false);
   }
+}
+
+/**
+ * tx restart - Stop services gracefully, reattach to existing tmux/Claude session
+ *
+ * Responsibilities:
+ * - Send SIGTERM to running tx process via PID file
+ * - Wait for clean exit (poll, force kill as fallback)
+ * - Start fresh services with reattach mode
+ */
+export async function restart(workDir?: string, options?: StartOptions): Promise<void> {
+  const cwd = workDir || process.env.TX_CWD || process.cwd();
+  const dataDir = path.join(cwd, '.ai', 'tx', 'data');
+  const pidFile = path.join(dataDir, '.pid');
+
+  // 1. Stop running process gracefully
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    try {
+      process.kill(pid, 0); // Check alive
+      console.log(`[restart] Sending SIGTERM to TX process (PID ${pid})...`);
+      process.kill(pid, 'SIGTERM');
+
+      // Wait for process to exit (poll up to 10s)
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        try { process.kill(pid, 0); } catch { break; }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      // Force kill if still alive
+      try {
+        process.kill(pid, 0);
+        console.error(`[restart] Old process didn't exit. Force killing...`);
+        process.kill(pid, 'SIGKILL');
+        await new Promise(r => setTimeout(r, 500));
+      } catch { /* gone */ }
+    } catch {
+      console.log(`[restart] No running TX process found (stale PID file)`);
+    }
+    // Clean up PID file if still present
+    if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile);
+  } else {
+    console.log(`[restart] No PID file found, starting fresh`);
+  }
+
+  // 2. Start with reattach mode
+  await start(workDir, { ...options, reattach: true });
 }
 
 

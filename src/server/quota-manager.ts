@@ -326,14 +326,8 @@ export class QuotaManager extends EventEmitter {
   private async persistUsage(): Promise<void> {
     // In production, this would write to Redis/database
     // For now, just log
-    for (const [key, usage] of this.usageCache) {
-      log.debug('quota-manager', 'Usage snapshot', {
-        key,
-        sessions: usage.sessions.active,
-        messages: usage.messages.sent,
-        workers: usage.workers.spawned,
-      });
-    }
+    // Intentionally silent — usage is in-memory only for now.
+    // When production persistence is added, log at info level on write.
   }
 
   /**

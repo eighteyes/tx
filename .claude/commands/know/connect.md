@@ -1,11 +1,21 @@
+---
+name: Know: Connect Graphs
+description: Connect disconnected entities and cross-link spec-graph with code-graph
+category: Know
+tags: [know, connect, coverage, cross-link]
+---
+Connect disconnected entities and cross-link spec-graph with code-graph.
+
 # Graph Connection Workflow
 
-Your goal is to improve the spec-graph's **coverage percentage** by connecting disconnected entities to the root users via dependency chains.
+Your goal is to:
+1. Improve spec-graph **coverage percentage** by connecting disconnected entities to root users
+2. Create **cross-graph connections** between spec-graph features and code-graph modules (bidirectional linking)
 
 ## Process Overview
 
 1. **Measure Current Coverage**
-   - Run: `know -g .ai/spec-graph.json coverage`
+   - Run: `know graph coverage`
    - Note the current coverage percentage
 
 2. **Identify Connection Targets**
@@ -27,18 +37,19 @@ Your goal is to improve the spec-graph's **coverage percentage** by connecting d
       - "Which objective(s) does {entity-name} support?"
       - "Which feature(s) should use {entity-name}?" (for components/actions)
 
-   c. **Create the Link**
-      - Use `know -g .ai/spec-graph.json link <from> <to>` to create dependency
-      - Validate: `know -g .ai/spec-graph.json validate`
+   c. **Create the Link(s)**
+      - Use `know -g .ai/know/spec-graph.json link <from> <to1> [<to2> <to3>...]` — pass all targets in one call
+      - Cross-link freely: an entity can depend on multiple parents, and a node can be shared across different branches (e.g. both feature:A and feature:B can link the same action or component)
+      - Validate: `know -g .ai/know/spec-graph.json validate`
 
 4. **Track Progress**
-   - After each connection, re-run coverage check with `know -g .ai/spec-graph.json coverage`
+   - After each connection, re-run coverage check with `know graph coverage`
    - Show: "Coverage: {old}% → {new}%"
    - Continue until coverage >= 80% or all logical connections made
 
 5. **Final Validation**
-   - Run: `know -g .ai/spec-graph.json coverage`
-   - Run: `know -g .ai/spec-graph.json validate` (note: may show warnings for existing schema violations)
+   - Run: `know graph coverage`
+   - Run: `know -g .ai/know/spec-graph.json validate` (note: may show warnings for existing schema violations)
    - Show final coverage percentage
 
 ## Connection Rules (follow dependency-rules.json)
@@ -58,14 +69,17 @@ Your goal is to improve the spec-graph's **coverage percentage** by connecting d
 4. Remove irrelevant features
 5. Check coverage: 46.7% ✓
 6. Found: 3 disconnected feature chains
-7. Ask user: "Which objectives does feature:schema-agnostic-know support?"
-8. User: All 4 objectives
-9. Link objectives → feature:schema-agnostic-know
-10. Repeat for remaining features
-11. Check coverage: 100% ✓
+7. Ask user: "Which objectives do these features support?"
+8. User: schema-agnostic-know supports all 4 objectives; graph-viz supports 2
+9. Batch link: know link feature:schema-agnostic-know objective:a objective:b objective:c objective:d
+10. Batch link: know link feature:graph-viz objective:b objective:c
+11. Cross-link: action:parse-graph is shared — link it from both features:
+    know link feature:schema-agnostic-know action:parse-graph
+    know link feature:graph-viz action:parse-graph
+12. Check coverage: 100% ✓
 ```
 
-## Important Notes
+## Important Notes (Spec-Graph Connection)
 
 - **Remove irrelevant entities first** before connecting (ask user to confirm)
 - Use AskUserQuestion for ambiguous connections (don't guess)
@@ -75,18 +89,118 @@ Your goal is to improve the spec-graph's **coverage percentage** by connecting d
 - Stop when coverage >= 80% OR no more logical connections possible
 - Validation may show warnings for existing schema violations - focus on coverage metric
 
+---
+
+# Cross-Graph Connection (Spec ↔ Code)
+
+Connect spec-graph features to code-graph modules for implementation tracking.
+
+## Process Overview
+
+1. **Identify Unlinked Features**
+   - Check which features lack implementation links
+   - Run: `know -g .ai/know/spec-graph.json feature status <feature-id>`
+   - Look for features with "Implemented: No"
+
+2. **Map Features to Code Modules**
+   - Ask user: "Which modules/packages implement feature:<name>?"
+   - Identify relevant code-graph entities (modules, packages, classes)
+
+3. **Create Bidirectional Links**
+
+   For each feature→module connection:
+
+   **Step 1: Create code-link reference in spec-graph**
+   ```bash
+   # Spec-graph side
+   know -g .ai/know/spec-graph.json add code-link <feature>-code '{"modules":["module:<key>"],"classes":[],"status":"complete"}'
+   know -g .ai/know/spec-graph.json link feature:<name> code-link:<feature>-code
+   ```
+
+   **Step 2: Create code-link in code-graph**
+   ```bash
+   # Code-graph side
+   know -g .ai/know/code-graph.json add code-link <module>-spec '{"feature":"feature:<name>","component":"component:<component-name>","status":"complete"}'
+   know -g .ai/know/code-graph.json link module:<key> code-link:<module>-spec
+   ```
+
+4. **Verify Connection**
+   ```bash
+   # Check implementation status updated (requires code-link refs to exist)
+   know -g .ai/know/spec-graph.json feature status feature:<name>
+   # Should show: ✅ Implemented: Yes
+
+   # Verify bidirectional traversal
+   know -g .ai/know/spec-graph.json graph traverse feature:<name> --direction impl
+   know -g .ai/know/code-graph.json graph traverse module:<name> --direction spec
+   ```
+
+## Cross-Graph Connection Rules
+
+**Spec-graph side:**
+- Feature depends on `code-link:<feature>-code` reference
+- `code-link` reference contains `modules` array, `classes` array, and `status`
+
+**Code-graph side:**
+- `code-link` reference points to:
+  - `feature`: The spec feature ID
+  - `component`: The spec component ID (optional)
+  - `status`: "complete" | "in-progress" | "planned"
+
+## Example Cross-Graph Workflow
+
+```
+# Feature: Authentication System
+# Code modules: auth-handler, session-store
+
+1. Add code-link reference in spec-graph:
+   know -g .ai/know/spec-graph.json add code-link auth-code \
+     '{"modules":["module:auth-handler","module:session-store"],"classes":[],"status":"complete"}'
+
+2. Link feature to code-link:
+   know -g .ai/know/spec-graph.json link feature:auth code-link:auth-code
+
+3. Add code-links in code-graph:
+   know -g .ai/know/code-graph.json add code-link auth-handler-spec \
+     '{"feature":"feature:auth","component":"component:auth-manager","status":"complete"}'
+   know -g .ai/know/code-graph.json link module:auth-handler code-link:auth-handler-spec
+
+   know -g .ai/know/code-graph.json add code-link session-store-spec \
+     '{"feature":"feature:auth","component":"component:session-handler","status":"complete"}'
+   know -g .ai/know/code-graph.json link module:session-store code-link:session-store-spec
+
+4. Verify:
+   know -g .ai/know/spec-graph.json feature status feature:auth
+   # ✅ Implemented: Yes (requires code-link refs to exist)
+   # Modules: module:auth-handler, module:session-store
+```
+
+## Connection Priority
+
+1. **Spec-graph coverage** (connect entities to users) - Do this first
+2. **Cross-graph linking** (connect features to code) - Do this second
+3. **Validation** - Run on both graphs
+
 ## Your Task
 
-Start the connection workflow now. Use TodoWrite to track:
-- Current coverage: {X}%
-- Target coverage: 80%
-- Entities to review/connect: {list}
+Choose workflow based on context:
 
-Begin with:
-1. Identifying and removing irrelevant entities
-2. Connecting highest-priority disconnected chains
+**If improving spec-graph coverage:**
+- Start with spec-graph connection workflow (above)
+- Track coverage % improvement
+
+**If linking features to code:**
+- Start with cross-graph connection workflow
+- Track features with "Implemented: No" status
+- Create bidirectional links for each feature
+
+**If doing both:**
+1. Complete spec-graph coverage first (>= 80%)
+2. Then create cross-graph links for all features
 
 ---
+r5 - Updated to use code-link type and know graph cross connect/coverage commands
+r4 - Added cross-graph connection workflow (spec ↔ code bidirectional linking)
 r3 - Updated to use `know coverage` command instead of python script
 r2 - Updated terminology to "coverage", added removal step, clarified leaf components
 r1 - Initial version with coverage-driven connection workflow

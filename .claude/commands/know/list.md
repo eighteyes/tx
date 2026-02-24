@@ -4,6 +4,7 @@ description: Show all planned, in-progress, and completed features grouped by ph
 category: Know
 tags: [know, list, status]
 ---
+Show all features grouped by phase with task completion counts.
 
 **Objective**
 

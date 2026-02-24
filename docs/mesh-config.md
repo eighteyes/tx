@@ -50,12 +50,14 @@ agents:
 |-------|------|----------|-------------|
 | `name` | string | Yes | Agent identifier (used in routing) |
 | `model` | `opus\|sonnet\|haiku` | Yes* | LLM model (*defaults to `haiku` if `load` set, else `sonnet`) |
-| `prompt` | string | Yes | Path to prompt.md relative to mesh directory |
+| `prompt` | string | Yes* | Path to prompt.md relative to mesh directory (*at least one of `prompt` or `command` required) |
+| `command` | string | No | Slash command to prepend (e.g. `/know:build`). Alternative to `prompt` — at least one required. |
 | `workspace` | WorkspaceConfig | No | Per-agent workspace override |
 | `mcpServers` | Record<string, McpServerConfig> | No | MCP server configurations |
 | `load` | string[] | No | Files to preload into context (globs supported) |
-| `checkpoint` | boolean | No | Save session state on completion for forking |
+| `checkpoint` | boolean \| `'start'` \| `'end'` | No | Save session state for forking (`true`/`'start'`: after init, `'end'`: after completion) |
 | `fork_from` | string | No | Fork from another agent's checkpoint |
+| `thinking` | boolean | No | Extended thinking (default: true). Set `false` to disable. |
 | `max_turns` | number | No | API round-trip limit per invocation |
 | `max_messages` | number | No | Outbound message limit per invocation |
 
@@ -117,6 +119,36 @@ routing:
     needs-more-data:
       sourcer: "Insufficient information"
 ```
+
+### `routing_mode`
+- **Type**: `'agent' | 'dispatcher'`
+- **Required**: No (defaults to `agent`)
+- **Behavior**: When `dispatcher`, agents write to `mesh/dispatch` sentinel and the system routes based on `outcome:` frontmatter.
+
+**Dispatcher routing format**:
+```yaml
+routing_mode: dispatcher
+routing:
+  agent-a: agent-b                    # linear — always routes to agent-b
+  agent-b:                            # branch — outcome determines target
+    approved: agent-c
+    needs_work: agent-a
+    default: agent-c
+  # agent-c: (absent) = terminal      # routes to core/core on complete
+```
+
+**Fan-out / Fan-in** — array with trailing options object:
+```yaml
+routing:
+  planner: [reviewer-a, reviewer-b, reviewer-c, { discuss: true, complete: synthesizer }]
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `complete` | string | Join agent — gated until all fan-out members send `outcome: complete` |
+| `discuss` | boolean | Enable peer messaging via `outcome: discuss` + `route_to: peer` |
+
+Fan-out members get implicit routing — no individual entries needed. Type detection: string = linear, object = branch, array = fan-out, absent = terminal.
 
 ---
 
@@ -567,41 +599,68 @@ persistence: [coordinator, worker]   # Only these agents persist
 ### `continuation`
 - **Type**: `boolean | string[]`
 - **Default**: `true`
-- **Behavior**: Sessions reuse within a mesh run. When `true`, all agents reuse sessions within run.
+- **Behavior**: Controls whether agent conversation IDs are saved and reused across dispatches within a mesh run. The default (`true`) is the natural behavior — sessions persist. Set `false` to force cold starts (fresh conversation every dispatch).
+
+The main use case for `continuation: false` is enabling `checkpoint`/`fork_from`, which needs isolated session snapshots that live sessions prevent.
 
 ```yaml
-continuation: true                   # All agents continue within run
-continuation: [worker]               # Only worker continues
+continuation: true                   # Default — sessions reuse naturally
+continuation: false                  # Force cold starts (needed for fork_from)
+continuation: [worker]               # Only worker reuses sessions
 ```
 
-### `routing_fallback`
+### `routing_fallback` (DEPRECATED)
 - **Type**: `string`
 - **Required**: No
-- **Behavior**: Global fallback agent when edge iteration limits are hit.
+- **Deprecated**: Use `guardrails.routing_error.routing_fallback` instead.
+- **Behavior**: Global fallback agent when edge iteration limits are hit. Migrated to `guardrails.routing_error` at load time.
 
 ```yaml
+# Deprecated:
 routing_fallback: coordinator
+
+# Preferred:
+guardrails:
+  routing_error:
+    routing_fallback: coordinator
 ```
 
-### `routing_retry_max`
+### `routing_retry_max` (DEPRECATED)
 - **Type**: `number`
 - **Required**: No
-- **Behavior**: Max messages on any routing edge per turn before fallback.
+- **Deprecated**: Use `guardrails.routing_error.routing_retry_max` instead.
+- **Behavior**: Max messages on any routing edge per turn before fallback. Migrated to `guardrails.routing_error` at load time.
 
 ```yaml
+# Deprecated:
 routing_retry_max: 5
+
+# Preferred:
+guardrails:
+  routing_error:
+    routing_retry_max: 5
 ```
 
 ### `manifest_enforcement`
 - **Type**: `object`
 - **Required**: No
-- **Behavior**: Artifact validation settings for manifest-declared files.
+- **Behavior**: Artifact validation settings for manifest-declared files. Controls pre-dispatch read validation and post-completion write validation.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `pre_validation` | boolean | `true` | Check reads exist before dispatching agent |
+| `post_validation` | boolean | `true` | Check writes exist after agent completes |
+| `max_retry` | number | `2` | Resume agent N times before failing (strict only) |
+| `strict` | boolean | `false` | Block dispatch / retry+halt on failure |
+| `warning` | boolean | `true` | Log warning on failure (non-strict) |
 
 ```yaml
 manifest_enforcement:
   post_validation: true   # Check writes exist after agent completes
   pre_validation: true    # Check reads exist before dispatching
   max_retry: 2            # Resume agent N times before failing
+  strict: false           # false = allow + warn; true = block/retry
+  warning: true           # Log warning on validation failure
 ```
 
 ### `max_mesh_messages`
@@ -611,6 +670,8 @@ manifest_enforcement:
 - **Behavior**: Mesh-wide cap on total messages across all agents in a mesh run. When the limit is reached:
   - Strict mode: kills all active workers in the mesh
   - Warning mode: logs and allows mesh to continue
+
+**Resolution**: Top-level `max_mesh_messages` in mesh config takes priority. Falls back to `guardrails.max_mesh_messages` chain (mesh > global > default).
 
 Resets when a new turn starts (entry_point receives a task).
 
@@ -623,6 +684,32 @@ max_mesh_messages:
   strict: true
   warning: true
   limit: 50
+```
+
+### `stop_on_first_complete`
+- **Type**: `boolean`
+- **Default**: `true`
+- **Behavior**: When `true`, the mesh completes as soon as the first boundary agent sends a completion signal. Set `false` for fan-in exit nodes where all agents must finish before the mesh completes.
+
+```yaml
+# Default: first completion signal ends the mesh
+stop_on_first_complete: true
+
+# Fan-in: wait for all boundary agents
+stop_on_first_complete: false
+```
+
+### `check_queue_on_complete`
+- **Type**: `boolean`
+- **Default**: `true`
+- **Behavior**: When `true`, defers mesh shutdown if the queue still has pending messages when a completion signal arrives. For iterative meshes where an early complete signal may have pending work in the queue — ensures all queued work drains before shutdown.
+
+```yaml
+# Default: check queue before shutting down
+check_queue_on_complete: true
+
+# Immediate shutdown on completion (skip queue drain)
+check_queue_on_complete: false
 ```
 
 ### `autoInjectManifestFiles`
@@ -703,14 +790,41 @@ agents:
 
 ---
 
+## Extended Thinking
+
+### `thinking` (Agent Field)
+- **Type**: `boolean`
+- **Default**: `true`
+- **Behavior**: Controls extended thinking for the agent. When `true` (default), extended thinking is enabled — the model can reason internally before responding. Set `false` to disable extended thinking by setting `maxThinkingTokens: 0` on the SDK query.
+
+**When to disable**: Fast-path agents where thinking overhead isn't justified (preloaders, simple routers, haiku agents with trivial tasks).
+
+```yaml
+agents:
+  - name: preloader
+    model: haiku
+    prompt: preload.md
+    load: ["package.json"]
+    thinking: false   # Skip thinking for cheap preload agent
+
+  - name: worker
+    model: opus
+    prompt: worker.md
+    thinking: true    # Default — extended thinking enabled
+```
+
+---
+
 ## Session Forking
 
 Share conversation context between agents via checkpoints.
 
 ### `checkpoint` (Agent Field)
-- **Type**: `boolean`
+- **Type**: `boolean | 'start' | 'end'`
 - **Default**: `false`
-- **Behavior**: When `true`, saves the agent's sessionId on completion. Other agents can fork from this checkpoint.
+- **Behavior**: Saves the agent's session state for forking by other agents.
+  - `true` or `'start'`: Checkpoint captured after agent initialization (before work). Forks get the agent's initial context.
+  - `'end'`: Checkpoint captured after agent completion. Forks get the agent's full conversation history including work output.
 
 ### `fork_from` (Agent Field)
 - **Type**: `string`

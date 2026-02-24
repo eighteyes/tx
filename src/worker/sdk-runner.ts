@@ -66,6 +66,7 @@ export interface SdkRunnerConfig {
   command?: string;  // Agent-level slash command (fallback if message has no command)
   hooks?: Record<string, unknown[]>;  // SDK PreToolUse/PostToolUse hooks (chaos contracts)
   maxTurnsMode?: GuardrailMode;  // { strict, warning } for max_turns enforcement
+  thinking?: boolean;  // Enable extended thinking (default: true). Set false to disable.
 }
 
 export class SdkRunner extends EventEmitter {
@@ -125,13 +126,13 @@ export class SdkRunner extends EventEmitter {
       log.warn('sdk-runner', 'max_turns threshold reached (warning mode)', {
         workerId: this.config.id,
         turnCount: this.turnCount,
-        maxTurns: this.getEffectiveMaxTurns(),
+        maxTurns: this.config.maxTurns,
       });
       log.activity('guardrail:max-turns', this.config.id, `max_turns WARNING: ${this.turnCount}/${this.config.maxTurns} turns reached`);
       this.emit('max-turns-warning', {
         id: this.config.id,
         turnCount: this.turnCount,
-        maxTurns: this.getEffectiveMaxTurns(),
+        maxTurns: this.config.maxTurns,
       });
     }
   }
@@ -450,6 +451,7 @@ export class SdkRunner extends EventEmitter {
               resumeSessionAt: this.config.resumeSessionAt,  // Point-in-time fork UUID
               forkSession: this.config.forkSession,  // Branch into new session
               hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
+              ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
             }
           });
         } catch (error) {
@@ -477,6 +479,7 @@ export class SdkRunner extends EventEmitter {
                 resumeSessionAt: this.config.resumeSessionAt,  // Point-in-time fork UUID
                 forkSession: this.config.forkSession,  // Branch into new session
                 hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
+                ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
               }
             });
           } else {
@@ -765,7 +768,11 @@ export class SdkRunner extends EventEmitter {
     // Message frontmatter command takes priority over agent config command
     const command = (msg.payload.command as string) || this.config.command;
     if (command) {
-      parts.push(command);
+      const interpolated = command.replace(/\{(\w[\w-]*)\}/g, (match, key) => {
+        const value = msg.payload[key];
+        return value != null ? String(value) : match;
+      });
+      parts.push(interpolated);
       parts.push('\n\n');
     }
 
@@ -897,6 +904,7 @@ export class SdkRunner extends EventEmitter {
           tools: toolsConfig,
           resume: sessionId,  // Resume the existing session
           hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
+          ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
         }
       });
 

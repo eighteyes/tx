@@ -32,7 +32,7 @@
       "know CLI tool"
     ],
     "files": [
-      ".ai/spec-graph.json"
+      ".ai/know/spec-graph.json"
     ],
     "platform": "any"
   },
@@ -57,8 +57,10 @@
   "commands": {
     "discovery": [
       "know list",
-      "know list-type [type]",
+      "know list --type [type]",
       "know get [type:key]",
+      "know ref list",
+      "know ref get [type:key]",
       "know uses [type:key] (or: down)",
       "know used-by [type:key] (or: up)",
       "know trace [entity] -c [code-graph] -s [spec-graph]"
@@ -69,14 +71,14 @@
       "know unlink [type:key] [type:key]"
     ],
     "validation": [
-      "know validate",
+      "know graph check validate",
       "know health",
       "know cycles"
     ],
     "analysis": [
-      "know gap-analysis [type:key]",
-      "know gap-summary",
-      "know ref-orphans",
+      "know graph check link gap-analysis [type:key]",
+      "know graph check link gap-summary",
+      "know graph check link orphans",
       "know build-order"
     ],
     "rules": [
@@ -119,7 +121,7 @@
     "Run gap-analysis regularly - catches incomplete product specifications",
     "Keep relationships explicit in graph section - no implied dependencies",
     "Reference detailed specs without duplication - single source of truth principle",
-    "Validate completeness with 'know gap-analysis' - ensure features trace to user needs"
+    "Validate completeness with 'know graph check link gap-analysis' - ensure features trace to user needs"
   ],
   "referenceGuides": [
     {
@@ -153,7 +155,7 @@
       "Add the product requirement: know add feature new-feature '{\"name\":\"...\", \"description\":\"...\"}'",
       "Check what implementation pieces it needs: know rules after feature",
       "Connect to user objectives and components: know link feature:new-feature action:user-action",
-      "Validate product-code alignment: know validate && know gap-analysis feature:new-feature"
+      "Validate product-code alignment: know graph check validate && know graph check link gap-analysis feature:new-feature"
     ],
     "philosophy": "Start with user objectives, map to features, connect to components. The graph enforces traceability."
   },

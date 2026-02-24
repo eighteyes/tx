@@ -167,6 +167,8 @@ export type RoutingMode = 'agent' | 'dispatcher';
 export interface FanOutOptions {
   discuss?: boolean;
   complete?: string;
+  fan_in?: 'batch' | 'queue' | 'drain';
+  transform?: 'summarize';
 }
 
 /**
@@ -199,6 +201,7 @@ export interface DispatchInjectionContext {
   validOutcomes: string[] | null; // null = linear (any outcome accepted)
   availableAgents: string[];     // All mesh agents (for route_to override)
   isTerminal: boolean;           // Agent has no routing entry
+  peers?: string[];              // Fan-out group peers (for discuss routing)
 }
 
 // Ensemble types

@@ -4,17 +4,17 @@
 
 ```bash
 # List all available entity types
-know rules describe entities
+know gen rules describe entities
 
 # List all available reference types
-know rules describe references
+know gen rules describe references
 
 # List all meta sections
-know rules describe meta
+know gen rules describe meta
 
 # Get details on specific type
-know rules describe feature
-know rules describe business_logic
+know gen rules describe feature
+know gen rules describe business_logic
 ```
 
 ## Adding Entities
@@ -23,13 +23,13 @@ know rules describe business_logic
 
 ```bash
 # Understand the entity type first
-know rules describe <entity-type>
+know gen rules describe <entity-type>
 
 # See what it can depend on
-know rules after <entity-type>
+know gen rules after <entity-type>
 
 # See what can depend on it
-know rules before <entity-type>
+know gen rules before <entity-type>
 ```
 
 ### 2. Add the Entity
@@ -37,6 +37,8 @@ know rules before <entity-type>
 ```bash
 know add <type> <key> '{"name": "Display Name", "description": "What it does"}'
 ```
+
+The `add` command auto-detects whether you're adding an entity or reference based on the type.
 
 **Examples:**
 ```bash
@@ -56,7 +58,7 @@ know add component data-exporter '{"name": "Data Exporter", "description": "Hand
 
 ```bash
 know get <type>:<key>
-know list-type <type>
+know list --type <type>
 ```
 
 ## Adding Dependencies
@@ -65,11 +67,11 @@ know list-type <type>
 
 ```bash
 # What can this type depend on?
-know rules after feature
+know gen rules after feature
 # Output: action
 
 # What can depend on this type?
-know rules before component
+know gen rules before component
 # Output: action, component
 ```
 
@@ -112,36 +114,35 @@ References provide implementation details but don't participate in the dependenc
 
 ```bash
 # List all reference categories
-know rules describe references
+know gen rules describe references
 
 # Get details on specific reference type
-know rules describe business_logic
-know rules describe data-models
-know rules describe acceptance_criteria
+know gen rules describe business_logic
+know gen rules describe data-models
+know gen rules describe acceptance_criteria
 ```
 
-### 2. Add References Directly to spec-graph.json
+### 2. Add References via CLI
 
-References are added by editing `.ai/spec-graph.json` under the `references` section:
+```bash
+# Add a reference (auto-detected by type)
+know add <ref_type> <ref_key> '<json_data>'
 
-```json
-{
-  "references": {
-    "business_logic": {
-      "export_data_logic": {
-        "pre_conditions": ["User has data to export", "User has permissions"],
-        "workflow": [
-          "Validate export parameters",
-          "Query database for data",
-          "Format as CSV",
-          "Stream to user download"
-        ],
-        "post_conditions": ["File downloaded successfully"],
-        "error_handling": ["Handle timeout", "Handle large datasets"]
-      }
-    }
-  }
-}
+# Examples:
+know add business_logic export_data_logic '{
+  "pre_conditions": ["User has data to export", "User has permissions"],
+  "workflow": [
+    "Validate export parameters",
+    "Query database for data",
+    "Format as CSV",
+    "Stream to user download"
+  ],
+  "post_conditions": ["File downloaded successfully"],
+  "error_handling": ["Handle timeout", "Handle large datasets"]
+}'
+
+know add documentation api-spec '{"title":"API Spec","url":"https://..."}'
+know add data-model user-schema '{"fields":["id","name","email"]}'
 ```
 
 ### 3. Reference from Entity Descriptions
@@ -163,17 +164,30 @@ Meta contains project-level information.
 
 ```bash
 # List all meta sections
-know rules describe meta
+know gen rules describe meta
 
 # Get structure for specific section
-know rules describe phases
-know rules describe project
-know rules describe decisions
+know gen rules describe phases
+know gen rules describe project
+know gen rules describe decisions
 ```
 
-### 2. Edit Meta in spec-graph.json
+### 2. Get and Set Meta via CLI
 
-Meta sections are edited directly in `.ai/spec-graph.json` under `meta`:
+```bash
+# Get entire meta section
+know meta get project
+
+# Get specific key
+know meta get project name
+
+# Set meta values
+know meta set project name '{"value": "My Project"}'
+know meta set project tagline '{"value": "Does cool things"}'
+know meta set decisions auth-choice '{"title": "JWT Auth", "rationale": "Stateless, scalable"}'
+```
+
+Meta sections are stored in `.ai/know/spec-graph.json` under `meta`:
 
 ```json
 {
@@ -183,15 +197,9 @@ Meta sections are edited directly in `.ai/spec-graph.json` under `meta`:
       "tagline": "Does cool things",
       "brand_promise": "Reliable and fast"
     },
-    "phases": [
-      {
-        "id": "1_foundation",
-        "name": "Foundation",
-        "description": "Core infrastructure",
-        "parallelizable": false,
-        "requirements": ["requirement:core-api"]
-      }
-    ]
+    "phases": {
+      "I": {"feature:auth": {"status": "in-progress"}}
+    }
   }
 }
 ```
@@ -200,49 +208,46 @@ Meta sections are edited directly in `.ai/spec-graph.json` under `meta`:
 
 ```bash
 # 1. Discover available types
-know rules describe entities
-know rules describe references
+know gen rules describe entities
+know gen rules describe references
 
 # 2. Understand target entity type
-know rules describe feature
-know rules after feature    # Shows: action
+know gen rules describe feature
+know gen rules after feature    # Shows: action
 
 # 3. Add the feature
 know add feature new-analytics '{"name": "Advanced Analytics", "description": "ML-powered insights"}'
 
 # 4. Check what feature can depend on (action)
-know rules describe action
-know rules after action     # Shows: component
+know gen rules describe action
+know gen rules after action     # Shows: component
 
 # 5. Add or find action
-know list-type action       # See existing actions
+know list --type action              # See existing actions
 know add action analyze-data '{"name": "Analyze Data", "description": "Run ML analysis"}'
 
 # 6. Connect feature to action
-know link feature:new-analytics action:analyze-data
+know graph link feature:new-analytics action:analyze-data
 
 # 7. Add components
 know add component ml-engine '{"name": "ML Engine", "description": "Runs ML models"}'
 
 # 8. Connect action to component
-know link action:analyze-data component:ml-engine
+know graph link action:analyze-data component:ml-engine
 
-# 9. Add business logic reference (edit spec-graph.json)
-# Add to references.business_logic.analyze_data_logic
+# 9. Add business logic reference
+know add business_logic analyze_data_logic '{"workflow": ["Load model", "Process data", "Return results"]}'
 
-# 10. Update action description to reference it
-# Update action:analyze-data description to mention business_logic:analyze_data_logic
+# 10. Verify complete chain
+know graph uses feature:new-analytics --recursive
 
-# 11. Verify complete chain
-know uses feature:new-analytics --recursive
-
-# 12. Validate
-know validate
+# 11. Validate
+know graph check validate
 ```
 
 ## Modifying Existing Entities
 
-Entities are modified by editing `.ai/spec-graph.json` directly:
+Entities are modified by editing `.ai/know/spec-graph.json` directly:
 
 ```json
 {
@@ -265,7 +270,7 @@ know unlink feature:old-feature action:obsolete-action
 
 ## Removing Entities
 
-Currently requires manual editing of `.ai/spec-graph.json`. Remove from:
+Currently requires manual editing of `.ai/know/spec-graph.json`. Remove from:
 1. `entities` section
 2. `graph` section (all references to it)
 
@@ -273,23 +278,23 @@ Currently requires manual editing of `.ai/spec-graph.json`. Remove from:
 
 ```bash
 # Get suggestions for what an entity can connect to
-know suggest feature:new-feature
+know graph connect feature:new-feature
 
 # See build order for implementation
-know build-order
+know graph build-order
 
 # Find orphaned references
-know ref-orphans
+know graph check orphans
 
 # Get suggestions for connecting orphans
-know ref-suggest
+know graph check suggest
 ```
 
 ## Best Practices
 
-1. **Always check rules first**: Use `know rules describe` before adding entities
-2. **Validate incrementally**: Run `know validate` after each change
-3. **Follow dependency chains**: Use `know uses --recursive` to see full context
+1. **Always check rules first**: Use `know gen rules describe` before adding entities
+2. **Validate incrementally**: Run `know graph check validate` after each change
+3. **Follow dependency chains**: Use `know graph uses --recursive` to see full context
 4. **Use meaningful keys**: Descriptive kebab-case keys (real-time-telemetry, not rtt)
 5. **Reference details**: Put implementation details in references, not entity descriptions
-6. **Check completeness**: Use `know gap-analysis` to find missing connections
+6. **Check completeness**: Use `know graph check gap-analysis` to find missing connections

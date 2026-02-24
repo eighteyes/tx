@@ -155,6 +155,14 @@ export class RedisStorageProvider implements StorageProvider {
     }
   }
 
+  unsubscribeMessages(sessionId: string): void {
+    const emitter = this.emitters.get(sessionId);
+    if (emitter) {
+      emitter.emit('close');
+      this.emitters.delete(sessionId);
+    }
+  }
+
   async getMessage(sessionId: string, messageId: string): Promise<AgentMessage | null> {
     const messageKey = this.sessionKey(sessionId, 'msgs', messageId);
     const data = await this.redis.hget(messageKey, 'data');

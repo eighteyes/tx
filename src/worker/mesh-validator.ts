@@ -17,7 +17,7 @@
  * ```
  */
 
-import type { SemanticModel, EnsembleConfig, TaskDistributionConfig, AggregationStrategy } from '../shared/types.ts';
+import type { SemanticModel, EnsembleConfig, TaskDistributionConfig, AggregationStrategy, FanOutOptions } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
 /**
@@ -207,6 +207,9 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
   // Auto-inject manifest reads into agent context
   autoInjectManifestFiles: { type: 'boolean' },
+  // Mesh completion behavior
+  stop_on_first_complete: { type: 'boolean' },
+  check_queue_on_complete: { type: 'boolean' },
 };
 
 /**
@@ -225,7 +228,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   // File preload: dump files into agent context (globs supported)
   load: { type: 'array' },  // string[]: file paths or glob patterns
   // Session forking: checkpoint and fork_from for context sharing
-  checkpoint: { type: 'string', enum: ['start', 'end', 'both'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
+  checkpoint: { type: 'string', enum: ['start', 'end'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
   fork_from: { type: 'string' },  // Fork from another agent's checkpoint
 };
 
@@ -353,6 +356,11 @@ export class MeshValidator {
 
     // Validate feature incompatibilities
     this.validateFeatureCompatibility(cfg, errors, warnings, context);
+
+    // Deprecation warnings for top-level routing_fallback/routing_retry_max
+    if (cfg.routing_fallback !== undefined || cfg.routing_retry_max !== undefined) {
+      warnings.push(`Top-level 'routing_fallback'/'routing_retry_max' are deprecated${context}. Move to guardrails.routing_error.routing_fallback / guardrails.routing_error.routing_retry_max`);
+    }
 
     // Check for unknown fields
     this.checkUnknownFields(cfg, MESH_FIELD_SPECS, warnings, context);
@@ -633,7 +641,7 @@ export class MeshValidator {
     const fanOutGroups: Array<{
       source: string;
       agents: string[];
-      options: { discuss?: boolean; complete?: string };
+      options: FanOutOptions;
     }> = [];
 
     // Track fan-out member agents (they get implicit routing, so don't warn about missing entries)
@@ -652,13 +660,13 @@ export class MeshValidator {
       } else if (Array.isArray(value)) {
         // Fan-out: array of target agents + optional trailing options object
         const targetAgents: string[] = [];
-        let options: { discuss?: boolean; complete?: string } = {};
+        let options: FanOutOptions = {};
 
         for (const item of value) {
           if (typeof item === 'string') {
             targetAgents.push(item);
           } else if (typeof item === 'object' && item !== null) {
-            options = item as { discuss?: boolean; complete?: string };
+            options = item as FanOutOptions;
           } else {
             errors.push(`routing.${agent}: fan-out array items must be strings or a trailing options object${context}`);
           }
@@ -680,6 +688,15 @@ export class MeshValidator {
         }
         if (!options.complete) {
           warnings.push(`routing.${agent}: fan-out has no 'complete' target — join gate will not activate${context}`);
+        }
+
+        // Validate fan_in mode
+        if (options.fan_in && !['batch', 'queue', 'drain'].includes(options.fan_in)) {
+          errors.push(`routing.${agent}: fan_in must be 'batch', 'queue', or 'drain', got '${options.fan_in}'${context}`);
+        }
+        // Validate transform
+        if (options.transform && options.transform !== 'summarize') {
+          errors.push(`routing.${agent}: transform must be 'summarize', got '${options.transform}'${context}`);
         }
 
         // Warn about discuss + no max_turns

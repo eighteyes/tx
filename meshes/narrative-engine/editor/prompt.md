@@ -21,6 +21,7 @@ You are the last stop before prose ships. Linters handle detection — you handl
 ### Step 1: Receive Violations
 1. Read `violations.yaml` from lint-coordinator
 2. Read `prose-draft.md` and `author.yaml`
+3. If message is from prose-eval (revision), read `prose_eval_revisions` from violations.yaml and prioritize those fixes in Steps 2-4. Prose-eval revision notes target specific dimension failures — address these first.
 
 ### Step 2: Fix Mechanical Violations
 Fix MECHANICAL violations directly by editing prose-draft.md:

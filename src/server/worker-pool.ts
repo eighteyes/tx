@@ -28,6 +28,7 @@ export interface MeshConfig {
   mesh: string;
   entry_point?: string;
   agents: Record<string, AgentConfig>;
+  workspace?: { path: string };
 }
 
 export interface AgentConfig {

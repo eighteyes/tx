@@ -16,7 +16,7 @@ The graph must satisfy multiple levels of correctness:
 
 ```bash
 # Must run after any graph modification
-know validate
+know graph check validate
 ```
 
 This checks:
@@ -44,7 +44,7 @@ This checks:
 
 ```bash
 # Deep validation with statistics
-know health
+know graph check health
 ```
 
 Provides:
@@ -59,7 +59,7 @@ Provides:
 
 ```bash
 # Detect cycles (graph must be DAG)
-know cycles
+know graph check cycles
 ```
 
 **Valid output:**
@@ -75,8 +75,8 @@ know cycles
 
 **To fix cycles:**
 1. Identify the cycle path
-2. Remove one dependency to break the cycle: `know unlink entity:x entity:y`
-3. Re-validate: `know cycles`
+2. Remove one dependency to break the cycle: `know graph unlink entity:x entity:y`
+3. Re-validate: `know graph check cycles`
 
 ## Completeness Checking
 
@@ -84,7 +84,7 @@ know cycles
 
 ```bash
 # See completeness score and missing dependencies
-know completeness feature:analytics-dashboard
+know graph check completeness feature:analytics-dashboard
 ```
 
 **Output:**
@@ -100,7 +100,7 @@ Missing dependencies:
 
 ```bash
 # Overall implementation status
-know gap-summary
+know graph check gap-summary
 ```
 
 Shows:
@@ -112,10 +112,10 @@ Shows:
 
 ```bash
 # Find incomplete dependency chains for specific entity
-know gap-analysis feature:analytics-dashboard
+know graph check gap-analysis feature:analytics-dashboard
 
 # Analyze specific entity type
-know gap-analysis
+know graph check gap-analysis
 ```
 
 **Output shows:**
@@ -132,11 +132,11 @@ Before adding dependencies, check rules:
 
 ```bash
 # What can feature depend on?
-know rules after feature
+know gen rules after feature
 # Output: action
 
 # What can depend on component?
-know rules before component
+know gen rules before component
 # Output: action, component
 ```
 
@@ -144,23 +144,23 @@ know rules before component
 
 ```bash
 # See what entity depends on
-know uses feature:analytics-dashboard
+know graph uses feature:analytics-dashboard
 
 # See dependency tree
-know uses feature:analytics-dashboard --recursive
+know graph uses feature:analytics-dashboard --recursive
 
 # See what depends on this entity
-know used-by component:data-exporter
+know graph used-by component:data-exporter
 
 # See full dependent tree
-know used-by component:data-exporter --recursive
+know graph used-by component:data-exporter --recursive
 ```
 
 ### Suggest Valid Connections
 
 ```bash
 # Get suggestions for what entity can connect to
-know suggest feature:new-feature
+know graph connect feature:new-feature
 ```
 
 Shows valid entity types this can depend on based on rules.
@@ -171,7 +171,7 @@ Shows valid entity types this can depend on based on rules.
 
 ```bash
 # Find references not used by any entity
-know ref-orphans
+know graph check orphans
 ```
 
 **Output:**
@@ -194,7 +194,7 @@ data-models:
 
 ```bash
 # See which references are used and how often
-know ref-usage
+know graph check usage
 ```
 
 Shows usage count for each reference.
@@ -203,17 +203,17 @@ Shows usage count for each reference.
 
 ```bash
 # Dry run (preview what would be removed)
-know ref-clean --dry-run
+know graph check clean --dry-run
 
 # Actually remove unused references
-know ref-clean --remove --execute
+know graph check clean --remove --execute
 ```
 
 ### Suggest Reference Connections
 
 ```bash
 # Get suggestions for connecting orphaned references
-know ref-suggest --max 20
+know graph check suggest --max 20
 ```
 
 Shows potential entity-reference connections based on name similarity.
@@ -222,7 +222,7 @@ Shows potential entity-reference connections based on name similarity.
 
 ```bash
 # Get topological sort (implementation order)
-know build-order
+know graph build-order
 ```
 
 Shows entities in dependency order (dependencies first, then dependents).
@@ -244,18 +244,18 @@ Shows entities in dependency order (dependencies first, then dependents).
 **Fix:**
 ```bash
 # Check what feature can depend on
-know rules after feature
+know gen rules after feature
 
 # Remove invalid dependency
-know unlink feature:x component:y
+know graph unlink feature:x component:y
 
 # Add correct intermediate entity
 know add action trigger-y '{"name": "...", "description": "..."}'
-know link feature:x action:trigger-y
-know link action:trigger-y component:y
+know graph link feature:x action:trigger-y
+know graph link action:trigger-y component:y
 
 # Validate
-know validate
+know graph check validate
 ```
 
 ### Issue: Circular Dependency
@@ -267,15 +267,15 @@ know validate
 **Fix:**
 ```bash
 # Analyze the cycle - one dependency is probably wrong
-know uses entity:a
-know uses entity:b
+know graph uses entity:a
+know graph uses entity:b
 
 # Remove the incorrect dependency
-know unlink entity:c entity:a
+know graph unlink entity:c entity:a
 
 # Validate
-know cycles
-know validate
+know graph check cycles
+know graph check validate
 ```
 
 ### Issue: Missing Entity
@@ -289,11 +289,10 @@ know validate
 # Either add the missing entity
 know add action missing-action '{"name": "...", "description": "..."}'
 
-# Or remove the invalid reference from graph
-# (manually edit .ai/spec-graph.json)
+# Or remove the invalid reference (must be done via graph editing)
 
 # Validate
-know validate
+know graph check validate
 ```
 
 ### Issue: Incomplete Dependency Chain
@@ -306,17 +305,17 @@ Missing: action:export-data has no components
 **Fix:**
 ```bash
 # Check what action can depend on
-know rules after action
+know gen rules after action
 # Output: component
 
 # Add component
 know add component csv-exporter '{"name": "CSV Exporter", "description": "..."}'
 
 # Connect action to component
-know link action:export-data component:csv-exporter
+know graph link action:export-data component:csv-exporter
 
 # Validate
-know completeness action:export-data
+know graph check completeness action:export-data
 ```
 
 ### Issue: Orphaned References
@@ -328,17 +327,17 @@ Orphaned: business_logic:old_workflow
 **Fix Option 1 - Use it:**
 ```bash
 # Find entities that should reference it
-know list-type action
+know list --type action
 
 # Update entity description to reference it
-# Edit .ai/spec-graph.json:
+# Edit .ai/know/spec-graph.json:
 # "description": "Does X (see business_logic:old_workflow)"
 ```
 
 **Fix Option 2 - Remove it:**
 ```bash
 # If truly unused
-know ref-clean --remove --execute
+know graph check clean --remove --execute
 ```
 
 ## Validation Workflow
@@ -347,54 +346,54 @@ know ref-clean --remove --execute
 
 ```bash
 # 1. Basic validation
-know validate
+know graph check validate
 
 # 2. Check for cycles
-know cycles
+know graph check cycles
 
 # 3. Check completeness of changed entities
-know completeness feature:modified-feature
+know graph check completeness feature:modified-feature
 ```
 
 ### Before Committing Changes
 
 ```bash
 # 1. Comprehensive check
-know health
+know graph check health
 
 # 2. Verify build order makes sense
-know build-order
+know graph build-order
 
 # 3. Check for orphans
-know ref-orphans
+know graph check orphans
 
 # 4. Verify gap analysis
-know gap-summary
+know graph check gap-summary
 ```
 
 ### Periodic Deep Validation
 
 ```bash
 # Run all validation checks
-know validate
-know health
-know cycles
-know gap-summary
-know ref-orphans
-know build-order
+know graph check validate
+know graph check health
+know graph check cycles
+know graph check gap-summary
+know graph check orphans
+know graph build-order
 
 # Check specific entities
-know completeness feature:critical-feature
-know gap-analysis feature:critical-feature
+know graph check completeness feature:critical-feature
+know graph check gap-analysis feature:critical-feature
 ```
 
 ## Validation Checklist
 
-- [ ] `know validate` passes
-- [ ] `know cycles` finds no circular dependencies
-- [ ] `know health` shows no errors
-- [ ] `know gap-summary` shows acceptable completion %
-- [ ] `know ref-orphans` shows no (or minimal) orphaned references
-- [ ] `know build-order` produces sensible order
-- [ ] Critical features pass `know completeness`
-- [ ] Dependency chains are complete: `know uses --recursive`
+- [ ] `know graph check validate` passes
+- [ ] `know graph check cycles` finds no circular dependencies
+- [ ] `know graph check health` shows no errors
+- [ ] `know graph check gap-summary` shows acceptable completion %
+- [ ] `know graph check orphans` shows no (or minimal) orphaned references
+- [ ] `know graph build-order` produces sensible order
+- [ ] Critical features pass `know graph check completeness`
+- [ ] Dependency chains are complete: `know graph uses --recursive`

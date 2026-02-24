@@ -175,22 +175,19 @@ export class LocalStorageProvider implements StorageProvider {
     return msgId;
   }
 
-  async *subscribeMessages(sessionId: string): AsyncIterable<MessageEvent> {
+  subscribeMessages(sessionId: string): AsyncIterable<MessageEvent> & { close(): void } {
     const msgDir = this.msgsDir(sessionId);
     this.ensureDir(msgDir);
 
-    // Create event emitter for this subscription
+    // Each subscription is independent — no shared maps.
+    // Multiple WS connections to the same session each get their own watcher.
     const emitter = new EventEmitter();
-    this.emitters.set(sessionId, emitter);
 
-    // Create file watcher
     const watcher = watch(msgDir, {
       ignoreInitial: true,
       persistent: true,
       awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 50 },
     });
-
-    this.watchers.set(sessionId, watcher);
 
     watcher.on('add', (filepath: string) => {
       if (filepath.endsWith('.md')) {
@@ -210,25 +207,43 @@ export class LocalStorageProvider implements StorageProvider {
       }
     });
 
-    // Yield events as they come
-    while (true) {
-      const event = await new Promise<MessageEvent | null>((resolve) => {
-        const handler = (event: MessageEvent) => {
-          emitter.removeListener('message', handler);
-          emitter.removeListener('close', closeHandler);
-          resolve(event);
-        };
-        const closeHandler = () => {
-          emitter.removeListener('message', handler);
-          resolve(null);
-        };
-        emitter.once('message', handler);
-        emitter.once('close', closeHandler);
-      });
+    const close = () => {
+      emitter.emit('close');
+      watcher.close();
+    };
 
-      if (event === null) break;
-      yield event;
+    async function* iterate(): AsyncGenerator<MessageEvent> {
+      try {
+        while (true) {
+          const event = await new Promise<MessageEvent | null>((resolve) => {
+            const handler = (event: MessageEvent) => {
+              emitter.removeListener('message', handler);
+              emitter.removeListener('close', closeHandler);
+              resolve(event);
+            };
+            const closeHandler = () => {
+              emitter.removeListener('message', handler);
+              resolve(null);
+            };
+            emitter.once('message', handler);
+            emitter.once('close', closeHandler);
+          });
+
+          if (event === null) break;
+          yield event;
+        }
+      } finally {
+        watcher.close();
+      }
     }
+
+    const iter = iterate();
+    return Object.assign(iter, { close });
+  }
+
+  unsubscribeMessages(_sessionId: string): void {
+    // No-op: subscriptions are now independent per-connection.
+    // Use the .close() method on the subscription handle instead.
   }
 
   private parseMessageFile(filepath: string): AgentMessage | null {
@@ -238,14 +253,14 @@ export class LocalStorageProvider implements StorageProvider {
       if (parts.length < 3) return null;
 
       const frontmatter = this.parseFrontmatter(parts[1].trim());
-      if (!frontmatter.to || !frontmatter.from || !frontmatter.type) return null;
+      if (!frontmatter.to || !frontmatter.from) return null;
 
       const body = parts.slice(2).join('---').trim();
 
       return {
         from: frontmatter.from,
         to: frontmatter.to,
-        type: frontmatter.type,
+        type: frontmatter.type || 'message',
         body,
         headline: frontmatter.headline,
         msgId: frontmatter['msg-id'],
@@ -587,6 +602,16 @@ export class LocalStorageProvider implements StorageProvider {
     // Create session directory
     this.ensureDir(this.msgsDir(sessionId));
 
+    // Write meta.json for session discovery
+    const metaPath = path.join(this.sessionDir(sessionId), 'meta.json');
+    fs.writeFileSync(metaPath, JSON.stringify({
+      meshId,
+      tenantId: tenantId || null,
+      status: 'active',
+      createdAt: new Date(now).toISOString(),
+      lastActivityAt: new Date(now).toISOString(),
+    }));
+
     return {
       sessionId,
       agentId: '', // Will be set when agent connects
@@ -647,6 +672,18 @@ export class LocalStorageProvider implements StorageProvider {
     params.push(sessionId);
 
     this.db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_id = ?`).run(...params);
+
+    // Update meta.json for session discovery
+    const metaPath = path.join(this.sessionDir(sessionId), 'meta.json');
+    try {
+      const existing = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+      existing.lastActivityAt = new Date().toISOString();
+      if (updates.status) existing.status = updates.status;
+      if (updates.metadata?.workspace_resolved) existing.workspace = updates.metadata.workspace_resolved;
+      fs.writeFileSync(metaPath, JSON.stringify(existing));
+    } catch {
+      // meta.json may not exist for older sessions
+    }
   }
 
   async hibernateSession(sessionId: string): Promise<void> {

@@ -20,6 +20,7 @@ export interface SessionSummary {
   lastActivityAt: string;
   messageCount: number;
   artifacts?: string[];
+  workspace?: string;
 }
 
 /**
@@ -101,6 +102,7 @@ export class SessionsController {
             status?: string;
             createdAt?: string;
             lastActivityAt?: string;
+            workspace?: string;
           } = {};
 
           try {
@@ -111,7 +113,7 @@ export class SessionsController {
           }
 
           // Count messages
-          const msgsPath = path.join(sessionPath, 'messages');
+          const msgsPath = path.join(sessionPath, 'msgs');
           let messageCount = 0;
           try {
             const msgEntries = await fs.readdir(msgsPath);
@@ -141,6 +143,7 @@ export class SessionsController {
             lastActivityAt: meta.lastActivityAt || dirStat.mtime.toISOString(),
             messageCount,
             artifacts: artifacts.length > 0 ? artifacts : undefined,
+            workspace: meta.workspace || undefined,
           };
 
           sessions.push(session);

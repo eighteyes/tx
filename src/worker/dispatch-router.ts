@@ -248,13 +248,20 @@ export class DispatchRouter {
    * Returns the parsed fan-out group with agents and join agent
    * (from the trailing options object's `complete` field).
    */
-  getParallelGroup(fanOutAgent: string): { agents: string[]; joinAgent: string | null } | null {
+  getParallelGroup(fanOutAgent: string): {
+    agents: string[];
+    joinAgent: string | null;
+    fanIn: 'batch' | 'queue' | 'drain';
+    transform?: 'summarize';
+  } | null {
     const group = this.fanOutGroups.get(fanOutAgent);
     if (!group) return null;
 
     return {
       agents: group.agents,
       joinAgent: group.options.complete || null,
+      fanIn: group.options.fan_in || 'batch',
+      transform: group.options.transform,
     };
   }
 
@@ -263,11 +270,19 @@ export class DispatchRouter {
    * Provides the sentinel address, valid outcomes, and available agents.
    */
   getInjectionContext(agentName: string): DispatchInjectionContext {
-    return {
+    const ctx: DispatchInjectionContext = {
       sentinel: `${this.meshName}/dispatch`,
       validOutcomes: this.getValidOutcomes(agentName),
       availableAgents: [...this.agentNames],
       isTerminal: this.isTerminal(agentName),
     };
+
+    // Fan-out members get peer list for discuss routing
+    const memberGroup = this.fanOutMembers.get(agentName);
+    if (memberGroup && memberGroup.options.discuss) {
+      ctx.peers = memberGroup.agents.filter(a => a !== agentName);
+    }
+
+    return ctx;
   }
 }

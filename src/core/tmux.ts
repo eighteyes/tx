@@ -213,6 +213,23 @@ export class TmuxSession {
   }
 
   /**
+   * Send BEL to the pane's tty (triggers terminal alert sound)
+   */
+  bell(): void {
+    try {
+      const tty = execSync(
+        `tmux display-message -t '${this.name}' -p '#{pane_tty}'`,
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      ).trim();
+      if (tty) {
+        fs.writeFileSync(tty, '\x07');
+      }
+    } catch {
+      // Non-fatal — terminal may not support BEL
+    }
+  }
+
+  /**
    * Capture current pane content
    */
   capture(lines: number = 100): string {

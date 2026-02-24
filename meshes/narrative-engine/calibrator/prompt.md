@@ -330,11 +330,80 @@ Render opening scene in 2-3 distinct styles applying the pacing preferences abov
 >
 > Pick one, or tell me what to blend from each.
 
-6. Refine author.yaml based on all selections
-7. Re-render and confirm
-8. **Iterate until player says "yes, that's it"**
+**Step 6: World Chaos Register**
 
-**Extract to:** author.yaml → pov, pacing, balance, cadence, diction
+> When random events intrude on a scene — a stray animal, a stranger, a mechanical failure — how should they feel?
+>
+> - **Mundane** — boring, inconvenient, anti-dramatic. Someone's TV is too loud. A dripping gutter. Phone buzzes with spam.
+> - **Grounded** — real, ordinary, noticeable. Car alarm on the street. Dog barking. Garbage truck at dawn.
+> - **Naturalistic** — colorful, specific, life-like. Raccoon on the porch. Delivery driver having a bad day. Neighbor's kid stares and asks awkward questions.
+> - **Gothic** — ominous, uncanny, atmospheric. Crow watches too long. Wind slams a door shut. Street light flickers and dies.
+> - **Surreal** — dream-logic, reality slips. Same car drives past three times. A door that wasn't there before. Man standing on corner holding a fish, looking at nothing.
+> - **Comic** — situationally funny, awkward, cringe-inducing. Postal worker calls them "lovebirds." Kid offers stale Halloween candy. Neighbor practices trumpet badly.
+> - **Farcical** — slapstick, absurdist, full cartoon energy. 47 rubber ducks quacking at dawn. Drunk person in mascot costume. Cascade of escalating disasters.
+> - **Hostile** — world actively fights back, noir energy. Pipe bursts soaking them. Car splashes a puddle. Lock jams — can't get inside. Someone's watching from across the street.
+
+The author can pick ONE register, or blend them with percentages (must sum to 100):
+
+```yaml
+# Simple
+chaos_register: naturalistic
+
+# Weighted blend
+chaos_register:
+  naturalistic: 60
+  comic: 20
+  hostile: 10
+  farcical: 10
+```
+
+If the author says something like "mostly realistic but sometimes funny," translate that into a weighted blend.
+
+**Extract to:** author.yaml → `chaos_register`
+
+**Step 7: Interpretive Frames (Optional)**
+
+> Does your story have different *eyes*? Sometimes the same moment feels different depending on who's watching — or what part of you is watching.
+>
+> Interpretive frames are narrative lenses that shape how scenes are experienced. They don't change what happens — they change the texture of the telling.
+>
+> **Examples by genre:**
+> - **Literary fiction**: clinical (therapist's eye), sensory (body-first), mythic (pattern recognition), comic (absurd truth)
+> - **Fantasy**: prophetic (fate-aware), tactical (battlefield clarity), wonder (first-time eyes), shadow (what lurks beneath)
+> - **Thriller**: surveillance (cold observation), visceral (fight-or-flight), analytical (puzzle-solving), paranoid (threat in everything)
+> - **Romance**: longing (ache of distance), intoxication (closeness overwhelming), clarity (seeing the other truly), doubt (trust eroding)
+>
+> **Would you like to define interpretive frames for your story?**
+> You can pick 3-5 frames with relative weights (how often each appears).
+> Or skip this entirely — your story works fine without them. They add texture, not structure.
+
+**If player provides frames, extract:**
+```yaml
+interpretive_frames:
+  - id: "{kebab-case-id}"
+    description: "{1-2 sentences — what this lens does to perception}"
+    weight: {N}  # relative weight, all should sum to ~100
+  - id: "{kebab-case-id}"
+    description: "{description}"
+    weight: {N}
+  # 3-5 frames
+```
+
+**Validation:**
+- 3-5 frames (suggest more if only 1-2, trim if 6+)
+- Weights should roughly sum to 100 (normalize if needed)
+- Each frame should be DISTINCT — not synonyms of each other
+- Descriptions should be concrete enough to guide rendering
+
+**If player declines:** Do not add `interpretive_frames` to author.yaml. The pipeline handles absence gracefully — no frames = no frame logic.
+
+**Extract to:** author.yaml → `interpretive_frames`
+
+8. Refine author.yaml based on all selections
+8. Re-render and confirm
+9. **Iterate until player says "yes, that's it"**
+
+**Extract to:** author.yaml → pov, pacing, balance, cadence, diction, chaos_register
 
 ### Phase 7: Seeds and Mysteries
 **Key questions:**

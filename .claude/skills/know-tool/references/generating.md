@@ -32,12 +32,12 @@ know spec interface:fleet-dashboard
 
 ```bash
 # Detailed feature spec with complete context
-know feature-spec <feature-id>
+know gen feature-spec <feature-id>
 ```
 
 **Example:**
 ```bash
-know feature-spec feature:analytics-dashboard
+know gen feature-spec feature:analytics-dashboard
 ```
 
 **Output includes:**
@@ -106,18 +106,18 @@ Since spec graphs are dynamic, use discovery commands before generating:
 
 ```bash
 # What type of entity?
-know rules describe entities
+know gen rules describe entities
 
 # Get specific type details
-know rules describe feature
-know rules describe action
+know gen rules describe feature
+know gen rules describe action
 ```
 
 ### 2. Find Target Entity
 
 ```bash
 # List all entities of type
-know list-type feature
+know list --type feature
 
 # Search for specific entity
 know get feature:analytics-dashboard
@@ -127,20 +127,20 @@ know get feature:analytics-dashboard
 
 ```bash
 # See what entity depends on
-know uses feature:analytics-dashboard
+know graph uses feature:analytics-dashboard
 
 # See full dependency tree
-know uses feature:analytics-dashboard --recursive
+know graph uses feature:analytics-dashboard --recursive
 ```
 
 ### 4. Verify Completeness
 
 ```bash
 # Check if entity has complete dependencies
-know completeness feature:analytics-dashboard
+know graph check completeness feature:analytics-dashboard
 
 # Find gaps
-know gap-analysis feature:analytics-dashboard
+know graph check gap-analysis feature:analytics-dashboard
 ```
 
 ### 5. Generate Spec
@@ -150,7 +150,7 @@ know gap-analysis feature:analytics-dashboard
 know spec feature:analytics-dashboard
 
 # Or for detailed feature spec
-know feature-spec feature:analytics-dashboard
+know gen feature-spec feature:analytics-dashboard
 ```
 
 ## Generating Specs for Multiple Entities
@@ -159,10 +159,10 @@ know feature-spec feature:analytics-dashboard
 
 ```bash
 # List all features
-know list-type feature
+know list --type feature
 
 # Generate spec for each
-for feature in $(know list-type feature | tail -n +3); do
+for feature in $(know list --type feature | tail -n +3); do
   echo "=== $feature ==="
   know spec feature:$feature
   echo
@@ -173,7 +173,7 @@ done
 
 ```bash
 # List and generate
-know list-type action | tail -n +3 | while read action; do
+know list --type action | tail -n +3 | while read action; do
   know spec action:$action > specs/actions/${action}.md
 done
 ```
@@ -182,7 +182,7 @@ done
 
 ```bash
 # Generate specs in dependency order
-know build-order | while read entity; do
+know graph build-order | while read entity; do
   know spec $entity > specs/${entity//:/_}.md
 done
 ```
@@ -193,19 +193,19 @@ done
 
 ```bash
 # List all reference types
-know rules describe references
+know gen rules describe references
 
 # Get details on specific type
-know rules describe business_logic
-know rules describe data-models
-know rules describe acceptance_criteria
+know gen rules describe business_logic
+know gen rules describe data-models
+know gen rules describe acceptance_criteria
 ```
 
 ### Check Reference Usage
 
 ```bash
 # See which references are used
-know ref-usage
+know graph check usage
 
 # Find specific reference in graph
 know get business_logic:export_data_logic
@@ -215,7 +215,7 @@ know get business_logic:export_data_logic
 
 When generating specs, references mentioned in entity descriptions are automatically included. To add references:
 
-1. Discover reference types: `know rules describe references`
+1. Discover reference types: `know gen rules describe references`
 2. Add reference to spec-graph.json under `references` section
 3. Update entity description to mention it: `"see business_logic:export_logic"`
 4. Generate spec: reference will be included
@@ -226,10 +226,10 @@ When generating specs, references mentioned in entity descriptions are automatic
 
 ```bash
 # List all interfaces
-know list-type interface
+know list --type interface
 
 # Filter for API endpoints (if using naming convention)
-know list-type interface | grep api
+know list --type interface | grep api
 ```
 
 ### Generate API Spec
@@ -239,7 +239,7 @@ know list-type interface | grep api
 know spec interface:user-auth-api
 
 # Include dependencies
-know uses interface:user-auth-api --recursive
+know graph uses interface:user-auth-api --recursive
 ```
 
 ### Extract API References
@@ -252,8 +252,8 @@ API specs often reference:
 
 ```bash
 # Discover these reference types
-know rules describe endpoints
-know rules describe api_contracts
+know gen rules describe endpoints
+know gen rules describe api_contracts
 ```
 
 ## Generating UI Documentation
@@ -262,7 +262,7 @@ know rules describe api_contracts
 
 ```bash
 # List interfaces
-know list-type interface
+know list --type interface
 
 # Get UI screens (filter by naming or check descriptions)
 know get interface:fleet-dashboard
@@ -271,7 +271,7 @@ know get interface:fleet-dashboard
 ### Generate UI Spec
 
 ```bash
-know feature-spec feature:dashboard-feature
+know gen feature-spec feature:dashboard-feature
 ```
 
 ### Extract UI References
@@ -285,8 +285,8 @@ UI specs often reference:
 
 ```bash
 # Discover these reference types
-know rules describe labels
-know rules describe patterns-css
+know gen rules describe labels
+know gen rules describe patterns-css
 ```
 
 ## Spec Export Patterns
@@ -299,8 +299,8 @@ know spec feature:analytics > docs/features/analytics.md
 
 # Generate all feature specs
 mkdir -p docs/features
-for f in $(know list-type feature | tail -n +3); do
-  know feature-spec $f > docs/features/$(echo $f | sed 's/:/-/').md
+for f in $(know list --type feature | tail -n +3); do
+  know gen feature-spec $f > docs/features/$(echo $f | sed 's/:/-/').md
 done
 ```
 
@@ -310,13 +310,13 @@ Spec graph is already JSON:
 
 ```bash
 # Full graph
-cat .ai/spec-graph.json
+cat .ai/know/spec-graph.json
 
 # Specific entity (using jq)
-jq '.entities.feature."analytics-dashboard"' .ai/spec-graph.json
+jq '.entities.feature."analytics-dashboard"' .ai/know/spec-graph.json
 
 # With dependencies
-know uses feature:analytics --recursive | jq -R . | jq -s .
+know graph uses feature:analytics --recursive | jq -R . | jq -s .
 ```
 
 ## Integration with LLM Workflows
@@ -325,39 +325,39 @@ know uses feature:analytics --recursive | jq -R . | jq -s .
 
 ```bash
 # 1. List available entities
-know rules describe entities
+know gen rules describe entities
 
 # 2. Explore existing requirements
-know list-type requirement
+know list --type requirement
 
 # 3. Check dependency structure
-know rules after requirement
+know gen rules after requirement
 # Output: interface, component
 
 # 4. Generate spec for requirement
 know spec requirement:low-latency-teleoperation
 
 # 5. See what implements it
-know used-by requirement:low-latency-teleoperation --recursive
+know graph used-by requirement:low-latency-teleoperation --recursive
 ```
 
 ### Generating Implementation Plans
 
 ```bash
 # 1. Get feature spec
-know feature-spec feature:new-feature
+know gen feature-spec feature:new-feature
 
 # 2. Check completeness
-know completeness feature:new-feature
+know graph check completeness feature:new-feature
 
 # 3. Find gaps
-know gap-analysis feature:new-feature
+know graph check gap-analysis feature:new-feature
 
 # 4. Get build order
-know build-order | grep new-feature
+know graph build-order | grep new-feature
 
 # 5. Generate specs for each dependency
-know uses feature:new-feature --recursive | while read dep; do
+know graph uses feature:new-feature --recursive | while read dep; do
   know spec $dep
 done
 ```
@@ -381,7 +381,7 @@ Shows:
 
 ```bash
 # Implementation status
-know gap-summary
+know graph check link gap-summary
 ```
 
 Shows:
@@ -396,7 +396,7 @@ Shows:
 Generated specs can be customized by:
 
 1. Examining entity structure: `know get entity:path`
-2. Checking dependencies: `know uses --recursive`
+2. Checking dependencies: `know graph uses --recursive`
 3. Extracting references from descriptions
 4. Combining with reference details
 5. Building custom output format
@@ -407,7 +407,7 @@ Generated specs can be customized by:
 # Generate all specs by type
 for type in feature action component; do
   mkdir -p specs/$type
-  know list-type $type | tail -n +3 | while read entity; do
+  know list --type $type | tail -n +3 | while read entity; do
     know spec $type:$entity > specs/$type/${entity}.md
   done
 done
@@ -417,20 +417,20 @@ done
 
 ```bash
 # Only generate for complete entities
-know list-type feature | tail -n +3 | while read feat; do
-  completeness=$(know completeness feature:$feat | grep "Completeness:" | awk '{print $2}')
+know list --type feature | tail -n +3 | while read feat; do
+  completeness=$(know graph check completeness feature:$feat | grep "Completeness:" | awk '{print $2}')
   if [ "$completeness" = "100%" ]; then
-    know feature-spec feature:$feat > specs/complete/${feat}.md
+    know gen feature-spec feature:$feat > specs/complete/${feat}.md
   fi
 done
 ```
 
 ## Best Practices
 
-1. **Validate before generating**: Run `know validate` to ensure graph is correct
-2. **Check completeness**: Use `know completeness` to ensure full dependency chains
+1. **Validate before generating**: Run `know graph check validate` to ensure graph is correct
+2. **Check completeness**: Use `know graph check completeness` to ensure full dependency chains
 3. **Use feature-spec for features**: Provides richer context than basic `spec`
 4. **Follow dependencies**: Use `deps --recursive` to understand full context
 5. **Include references**: Mention references in entity descriptions for auto-inclusion
-6. **Discover dynamically**: Use `know rules describe` to discover available types
-7. **Verify gaps**: Run `know gap-analysis` before generating implementation specs
+6. **Discover dynamically**: Use `know gen rules describe` to discover available types
+7. **Verify gaps**: Run `know graph check gap-analysis` before generating implementation specs

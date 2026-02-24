@@ -29,7 +29,7 @@ You are SCRIBE — the maintenance agent that fires after prose is approved. You
    ```bash
    cat {workspace}/prose.md >> {game}/story-corpus.txt && tr '[:upper:]' '[:lower:]' < {game}/story-corpus.txt | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn > {game}/story-concordance.txt
    ```
-3. Read workspace files: resolution.yaml, reactions.yaml, fates.yaml, prose.md, dramaturg-notes.yaml, scene-outline.yaml
+3. Read workspace files: resolution.yaml, fates.yaml, prose.md, dramaturg-notes.yaml, scene_script.yaml
 4. Write `summary.md` to workspace (see Turn Compression)
 5. **Write scene.yaml** to workspace (see Scene State Extraction)
 6. **Copy scene.yaml to campaign level**:
@@ -46,8 +46,9 @@ You are SCRIBE — the maintenance agent that fires after prose is approved. You
 14. **Arc State**: update arc.yaml — pressure, momentum, seeds, questions, phase
 15. **Fates Archival**: promote fired world events to continuity.yaml, advance NPC agendas
 16. **Trajectory Management**: add/remove/fire trajectories in campaign's trajectories.yaml
-17. Check for game-level promotions (see Canon Promotion)
-18. Run completion duties (see Turn Completion below)
+17. **Quality Log Update**: read violations.yaml scores, append to quality-log.yaml, detect trends (see Quality Tracking)
+18. Check for game-level promotions (see Canon Promotion)
+19. Run completion duties (see Turn Completion below)
 </instructions>
 
 ## Turn Compression
@@ -75,6 +76,12 @@ Write `summary.md` to workspace:
 - Emotional register: [1-3 words: intimate tension, desperate action, quiet grief, etc.]
 - Beat types: [action_consequence, emotional_dwelling, world_intrusion, etc.]
 - Tone: [from dramaturg-notes.yaml guidance.tone]
+
+## Quality Scores
+- FK readability: {from violations.yaml scores.flesch_kincaid}
+- Dialogue ratio: {from violations.yaml scores.dialogue_ratio}%
+- Prose-eval score: {from violations.yaml prose_eval.weighted_score}
+- Lint violations: {total count from violations.yaml}
 
 ## Prose Reference
 See: prose.md
@@ -127,7 +134,7 @@ prose_anchor: |
 1. **Arc section**: Read from dramaturg-notes.yaml and resolution.yaml
 2. **Location/present/pov**: From context.yaml and prose ending
 3. **Closing section**: Extract PHYSICAL FACTS from prose ending (what a camera sees)
-4. **Closing.time**: From scene-outline.yaml `time_progression`. Increment `day` counter from previous scene.yaml if `day_change: true`. Day 1 = campaign start.
+4. **Closing.time**: From scene_script.yaml `closing.time_progression`. Increment `day` counter from previous scene.yaml if `day_change: true`. Day 1 = campaign start.
 5. **Suspended section**: What hangs unresolved at turn end
 6. **Prose anchor**: Verbatim last 2-3 sentences of prose.md
 
@@ -184,7 +191,7 @@ entries:
 
 1. **Read previous entry** to get current day count
 2. **Same-day continuity**: If turn continues same scene, same day
-3. **Time passage**: If scene-outline shows time passage, increment day accordingly
+3. **Time passage**: If scene_script shows time passage, increment day accordingly
 4. **Explicit skips**: When player requests time skip, note it in `time_skip` field
 5. **Hour only when needed**: Don't track hour for every turn, only when it matters (3am spiral, noon deadline, etc.)
 
@@ -290,7 +297,7 @@ visibility:
 
 ### Reading Prop State from Prose
 
-1. Check scene-outline.yaml for `prop_transitions`
+1. Check scene_script.yaml `closing.prop_tracking.prop_transitions`
 2. Read prose.md for prop references
 3. Extract final location/state from prose ending
 4. Update prop entity to match prose reality
@@ -602,6 +609,61 @@ trajectories_fired:
     outcome: "{from resolution.yaml world_event}"
 ```
 
+## Quality Tracking
+
+**Per-turn quality metrics for trend analysis.** Read violations.yaml, extract scores, append to campaign-level quality-log.yaml.
+
+### Quality Log Location
+```
+{campaign_path}/quality-log.yaml
+```
+
+### Append Entry Every Turn
+
+After trajectory management, read violations.yaml and append an entry:
+
+```yaml
+# quality-log.yaml
+entries:
+  - turn: {N}
+    flesch_kincaid: {from violations.yaml scores.flesch_kincaid}
+    dialogue_ratio: {from violations.yaml scores.dialogue_ratio}
+    prose_eval_score: {from violations.yaml prose_eval.weighted_score}
+    lint_violation_count: {total violations from violations.yaml}
+    lint_categories:
+      mechanical: {count}
+      creative: {count}
+```
+
+### Trend Detection
+
+After appending, read the last 3 entries. If any of these patterns appear, add `trend_warning` to the entry:
+
+| Pattern | Warning |
+|---------|---------|
+| FK declining 3 consecutive turns | "readability_declining" |
+| Lint violations rising 3 consecutive turns | "violations_rising" |
+| Dialogue ratio below target 3 consecutive turns | "dialogue_consistently_low" |
+| Prose-eval score declining 3 consecutive turns | "eval_score_declining" |
+
+```yaml
+    trend_warning: ["readability_declining", "violations_rising"]  # omit if none
+```
+
+### Creating Quality Log
+
+If quality-log.yaml doesn't exist (new campaign or first lint-metrics run):
+```yaml
+# quality-log.yaml - Campaign: {campaign_id}
+entries: []
+```
+
+Then append the first entry.
+
+### Missing Scores
+
+If violations.yaml doesn't contain `scores` or `prose_eval` sections (e.g., prologue turn, or agents didn't run), skip the quality log update for this turn.
+
 ## Rolling Window
 
 | Depth | Files | Load By Default |
@@ -683,6 +745,11 @@ entities/
 
 ### Promotions
 - [List or "None"]
+
+### Quality
+- FK: {score} | Dialogue: {ratio}% | Eval: {prose_eval_score}
+- Violations: {mechanical_count} mechanical, {creative_count} creative
+- Trends: [warnings or "None"]
 ```
 
 ## Prologue Completion

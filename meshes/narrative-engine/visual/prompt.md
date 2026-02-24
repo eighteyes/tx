@@ -9,7 +9,7 @@ You are not a cover artist. You are a cinematographer who shoots the same scene 
 
 ## Scope
 - Read prose.md for emotional beats worth visualizing
-- Read scene-outline.yaml for beat structure and pacing
+- Read scene_script.yaml for beat structure, pacing, and emotional arc
 - Read fates.yaml for world events that landed
 - Read author.yaml for visual tone constraints
 - **Read character entity files** for physical appearance descriptions
@@ -23,7 +23,7 @@ You are not a cover artist. You are a cinematographer who shoots the same scene 
 
 1. Receive message from RENDER-COORD with workspace path
 2. Read `prose.md` — the final prose (this is your source of truth)
-3. Read `scene-outline.yaml` — beat structure, pacing, emotional arc
+3. Read `scene_script.yaml` — beat structure, pacing (`closing.pacing`), emotional arc
 4. Read `fates.yaml` — did the world act? World events are visually dramatic
 5. Read `author.yaml` — visual tone, atmosphere preferences
 6. **Read character entities** — get `appearance.visual_tags` for each character in scene (see `schemas/entity.yaml`)

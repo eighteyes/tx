@@ -28,7 +28,6 @@ agents:
     prompt: coordinator/init-turn.md
     continuation: false
     # Renamed from init-coord — creates workspace, validates action coherence
-    # continuation: false — fresh session each run, prevents scope creep from prior turns
 
   # RETIRED: prep-coord replaced by direct agent chain routing + state-discovery.sh
   # - name: prep-coord
@@ -76,7 +75,6 @@ agents:
     continuation: true
     # phase 2,3 - Prose rendering with staged build (1.5-2k words)
     # Orchestrates system, cast, lint/edit cycle
-    # continuation: true — narrator loops with editor, needs prior draft context
 
   - name: calibrator
     model: opus
@@ -91,7 +89,6 @@ agents:
     prompt: editor/prompt.md
     continuation: true
     # Adversarial prose review against author.yaml
-    # continuation: true — editor loops with narrator, needs prior review context
 
   - name: visual
     model: sonnet
@@ -111,78 +108,30 @@ agents:
     # Only fires if oracle passes (or max iterations)
 
   # ==========================================
-  # LINT LADDER - Parallel mechanical linters
+  # LINT PIPELINE (refactored)
   # ==========================================
-  # RETIRED: lint-coordinator — narrator inits violations.yaml, last linter routes to editor
-  # - name: lint-coordinator
-  #   model: sonnet
-  #   prompt: linters/lint-coordinator.md
-
-  - name: lint-forbidden-words
-    model: haiku
-    prompt: linters/forbidden-words.md
-    # Mechanical: "suddenly", "seemed", "very", etc.
-    # Concordance overuse detection
+  # Mechanical lints run as script in narrator Phase 5 (mechanical-lint.sh)
+  # Creative linters: lint-patterns -> lint-metaphor
+  # lint-metaphor gates editor (creative violations -> editor, clean -> scribe)
+  #
+  # RETIRED agents (now in mechanical-lint.sh):
+  # - lint-forbidden-words, lint-ai-tells, lint-cadence, lint-dialogue
+  # - lint-body-first, lint-litotes
+  # RETIRED agents (oracle already covers):
+  # - lint-factoids, lint-temporal, lint-props
 
   - name: lint-patterns
-    model: haiku
-    prompt: linters/patterns.md
-    # Pattern-matching: "She realized", "Fear washed over", etc.
-    # Downgraded from sonnet — detection against known pattern list
-
-  - name: lint-ai-tells
-    model: haiku
-    prompt: linters/ai-tells.md
-    # Mechanical: "amidst", "whilst", "orbs", etc.
-    # Simple word swaps
-
-  - name: lint-cadence
-    model: haiku
-    prompt: linters/cadence.md
-    # Mechanical: Sentence length distribution + monotony thresholds
-    # Downgraded from sonnet — counting and threshold comparison
-
-  - name: lint-dialogue
-    model: haiku
-    prompt: linters/dialogue.md
-    # Mechanical: Tags, adverbs
-    # Coherence check
-
-  - name: lint-litotes
     model: sonnet
-    prompt: linters/litotes.md
-    # Creative: "not X, but Y" patterns
-    # Budget: 1-2 per scene
+    prompt: linters/patterns.md
+    # Creative: Pattern detection requiring judgment
+    # "She realized", "Fear washed over", etc.
 
   - name: lint-metaphor
     model: sonnet
     prompt: linters/metaphor.md
     # Creative: Repeated sensory channels
     # One peak expression per channel per scene
-
-  - name: lint-body-first
-    model: haiku
-    prompt: linters/body-first.md
-    # Mechanical: Scene opening classification (physical/thought/emotion)
-    # Downgraded from sonnet — first-line pattern classification
-
-  - name: lint-factoids
-    model: haiku
-    prompt: linters/lint-factoids.md
-    # Creative: Real-world trivia repetition detection
-    # Prevents same facts appearing twice in campaign
-
-  - name: lint-temporal
-    model: haiku
-    prompt: linters/lint-temporal.md
-    # Creative: Temporal continuity detection
-    # Duration/time contradictions across turns
-
-  - name: lint-props
-    model: haiku
-    prompt: linters/lint-props.md
-    # Creative: Prop/location continuity detection
-    # Cross-references prose against scene_script for furniture/object drift
+    # FINAL LINTER: routes to editor (violations) or scribe (clean)
 
 entry_point: entry
 
@@ -193,9 +142,6 @@ completion_agents:
   - game-coord
   - scribe
 
-# Session continuation: reuse Claude session IDs within a mesh run (default: true)
-# Disabled globally — most agents should start fresh to prevent context bleed
-continuation: false
 # Session persistence: keep sessions across mesh runs (default: false)
 # persistence: true
 
@@ -211,7 +157,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → architect → simulator → oracle ⇄ simulator → narrator → linters (→ lint-props last) → editor → visual → scribe → core
+  # Phase flow: entry → game-coord|init-turn → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -273,7 +219,7 @@ routing:
   narrator:
     message:
       oracle: "Knowledge query"
-      lint-forbidden-words: "Lint prose — start lint chain directly"
+      lint-patterns: "Lint prose — mechanical lints complete, start creative chain"
       scribe: "Prologue complete — finalize and deliver"
 
   oracle:
@@ -286,54 +232,20 @@ routing:
       core: "Turn complete — prose + rearmatter delivered"
 
   # ==========================================
-  # LINT LADDER ROUTING
+  # LINT PIPELINE ROUTING (refactored)
   # ==========================================
-
-  # Lint chain: narrator dispatches first linter, each passes to the next.
-  # Final linter routes directly to editor.
-  lint-forbidden-words:
-    message:
-      lint-patterns: "Next lint"
+  # Mechanical lints run as script in narrator Phase 5
+  # Creative linters: lint-patterns → lint-metaphor
+  # lint-metaphor gates editor (creative violations → editor, clean → scribe)
 
   lint-patterns:
     message:
-      lint-ai-tells: "Next lint"
-
-  lint-ai-tells:
-    message:
-      lint-cadence: "Next lint"
-
-  lint-cadence:
-    message:
-      lint-dialogue: "Next lint"
-
-  lint-dialogue:
-    message:
-      lint-litotes: "Next lint"
-
-  lint-litotes:
-    message:
-      lint-metaphor: "Next lint"
+      lint-metaphor: "Next lint — creative metaphor analysis"
 
   lint-metaphor:
     message:
-      lint-body-first: "Next lint"
-
-  lint-body-first:
-    message:
-      lint-factoids: "Next lint"
-
-  lint-factoids:
-    message:
-      lint-temporal: "Next lint"
-
-  lint-temporal:
-    message:
-      lint-props: "Next lint"
-
-  lint-props:
-    message:
-      editor: "Lint chain complete → review violations"
+      editor: "Creative violations found → fix and polish"
+      scribe: "Clean prose → skip editor, promote directly"
 
   # ==========================================
   # EDITOR
@@ -341,7 +253,8 @@ routing:
 
   editor:
     message:
-      visual: "Prose finalized → generate visual beats"
+      scribe: "Prose finalized → compress and complete"
+      visual: "Prose finalized → generate visuals (opt-in)"
 
   visual:
     message:
@@ -390,7 +303,9 @@ manifest:
     location: session
     persistent: true
     reads: [entry, game-coord, init-turn, scribe, calibrator]
-    writes: [entry, game-coord, init-turn, scribe, calibrator]
+    # Writers limited to 2: init-turn (full rewrite at turn start) and scribe (mark complete at turn end)
+    # entry reads only for routing. game-coord and calibrator write only during game creation (via calibrator).
+    writes: [init-turn, scribe, calibrator]
 
   # --- Turn Workspace (per-turn artifacts) ---
   - id: context.yaml
@@ -474,20 +389,20 @@ manifest:
   - id: scene_script.yaml
     description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by simulator.
     location: workspace
-    reads: [narrator, oracle, visual, scribe, lint-props]
+    reads: [narrator, oracle, visual, scribe]
     writes: [simulator]
 
   - id: prose-draft.md
     description: Working prose draft iterated through lint/edit cycle
     location: workspace
-    reads: [narrator, editor, lint-props]
+    reads: [narrator, editor, lint-patterns, lint-metaphor]
     writes: [narrator, editor]
 
   - id: prose.md
     description: Final approved prose output for the turn
     location: workspace
-    reads: [scribe, visual, narrator]
-    writes: [editor]
+    reads: [scribe, visual, narrator, editor]
+    writes: [editor, lint-metaphor]
 
   - id: visual.yaml
     description: Multi-beat emotional visualization briefs with style variants
@@ -498,20 +413,27 @@ manifest:
   - id: concordance.txt
     description: Per-turn word frequency extract for overuse detection
     location: workspace
-    reads: [lint-forbidden-words]
+    reads: [narrator]
     writes: [narrator]
 
   - id: dialogue-pairs.txt
     description: Extracted dialogue tag/line pairs for lint analysis
     location: workspace
-    reads: [lint-dialogue]
+    reads: [narrator]
     writes: [narrator]
 
   - id: violations.yaml
     description: Aggregated lint violations for editor review
     location: workspace
-    reads: [editor]
-    writes: [narrator]
+    reads: [editor, lint-patterns, lint-metaphor]
+    writes: [narrator, lint-patterns, lint-metaphor]
+
+  - id: story-concordance.txt
+    description: Cumulative word frequency data for cross-turn overuse detection
+    location: game
+    persistent: true
+    reads: [narrator]
+    writes: [scribe]
 
   - id: summary.md
     description: Compressed turn summary for context window management
@@ -575,12 +497,6 @@ manifest:
     reads: []
     writes: [scribe]
 
-  - id: story-concordance.txt
-    description: Cumulative word frequency data for cross-turn overuse detection
-    location: game
-    persistent: true
-    reads: [lint-forbidden-words]
-    writes: [scribe]
 
   # --- Campaign State ---
   - id: arc.yaml
@@ -595,6 +511,12 @@ manifest:
     location: campaign
     reads: [init-turn, entry]
     writes: [init-turn, entry]
+
+  - id: turns/turn-*/prose.md
+    description: Prior turn finalized prose for cross-turn style consistency
+    location: campaign
+    reads: [editor]
+    writes: []
 
   # RETIRED: state.yaml — replaced by scene.yaml (campaign-level, single source of truth)
   # - id: state.yaml
@@ -710,3 +632,14 @@ manifest:
 workspace:
   path: ".ai/games/"
   create_on_init: false
+  variables:
+    source: ".ai/tx/narrative-engine-v2/session.yaml"
+    mapping:
+      game-id: game_id
+      campaign-id: campaign_id
+      N: turn
+  locations:
+    session: ".ai/tx/narrative-engine-v2"
+    game: ".ai/games/{game-id}"
+    campaign: ".ai/games/{game-id}/campaigns/{campaign-id}"
+    workspace: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}"

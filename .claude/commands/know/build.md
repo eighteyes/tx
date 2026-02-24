@@ -4,6 +4,7 @@ description: Structured 7-phase workflow for building features with discovery, e
 category: Know
 tags: [know, build, feature-dev, workflow]
 ---
+Build a feature through a structured 7-phase workflow with spec-graph tracking.
 
 **Main Objective**
 
@@ -27,18 +28,30 @@ Guide feature development through a structured 7-phase workflow adapted from Cla
 **Initialization Logic**
 
 ```
-IF feature directory exists (.ai/know/<feature>/):
-  → Load context from overview.md, todo.md, plan.md
-  → Verify feature exists in spec-graph.json
-  → Update meta.phases status to "in-progress"
-  → Proceed to Phase 1
+1. Check if feature exists in spec-graph.json:
+   IF NOT in graph:
+     → Delegate to /know:add (HITL workflow to build proper graph)
+     → Wait for completion
+     → Continue below
 
-ELSE (inline feature description or non-existent feature):
-  → Delegate to /know:add to scaffold feature
-  → Wait for /know:add completion
-  → Load created context
-  → Proceed to Phase 1
+2. Check if feature directory exists (.ai/know/<feature>/):
+   IF directory exists:
+     → Load context from overview.md, todo.md, plan.md
+   ELSE (graph exists, directory doesn't):
+     → Create directory: .ai/know/<feature>/
+     → Generate overview.md from spec-graph data:
+       - name, description from feature entity
+       - objectives from graph dependencies
+       - users from objective→user chains
+     → Create empty todo.md, plan.md
+     → Create qa/, architecture/, bugs/, changes/ subdirectories
+
+3. Update meta.phases status to "in-progress"
+
+4. Proceed to Phase 1
 ```
+
+**Key principle:** Graph is source of truth. Directory is human-level documentation. `/know:build` can work from graph-only state.
 
 ---
 
@@ -58,8 +71,8 @@ ELSE (inline feature description or non-existent feature):
    - What are the edge cases?
 3. Update `.ai/know/<feature>/qa/discovery.md` with Q&A
 4. Query spec-graph (using **haiku agents**):
-   - `know -g .ai/spec-graph.json deps feature:<name>` - What does this feature depend on?
-   - `know -g .ai/spec-graph.json used-by feature:<name>` - What depends on this feature?
+   - `know -g .ai/know/spec-graph.json graph uses feature:<name>` - What does this feature depend on?
+   - `know -g .ai/know/spec-graph.json graph used-by feature:<name>` - What depends on this feature?
 5. Update `.ai/know/<feature>/overview.md` with refined requirements
 
 **Outputs**:
@@ -83,11 +96,11 @@ ELSE (inline feature description or non-existent feature):
      - Agent 3: "Map UI/UX conventions and existing abstractions"
    - Launch ALL agents in a single message for true parallelism
 2. **Know-enhanced exploration** (using **haiku agents**):
-   - Query code-graph: `know -g .ai/code-graph.json list-type module`
+   - Query code-graph: `know -g .ai/know/code-graph.json list --type module`
    - Find related components via product-component references
-   - Query: `know -g .ai/code-graph.json uses component:<name> --recursive`
+   - Query: `know -g .ai/know/code-graph.json graph uses component:<name> --recursive`
 3. **Spec-graph exploration** (using **haiku agents**):
-   - Query related actions: `know -g .ai/spec-graph.json list-type action`
+   - Query related actions: `know -g .ai/know/spec-graph.json list --type action`
    - Find component dependencies
    - Check data-model references
 4. **Consolidate findings** from all explorers (Explore + custom Task agents)
@@ -170,10 +183,44 @@ Send SINGLE message with:
 
 **Goal**: Build the feature following chosen architecture
 
-**Steps**:
+**Implementation Workflow**:
+
 1. **Require explicit user approval**: "Ready to implement? [Yes/No]"
-2. Read all relevant files from exploration phase
-3. Follow chosen architecture strictly
+
+2. **Generate XML task spec** (for structured execution):
+   ```bash
+   know gen spec feature:<name> --format xml > .ai/know/plans/<name>.xml
+   ```
+
+   This creates an executable task specification with:
+   - **auto** tasks: Can be executed automatically
+   - **checkpoint:human-verify** tasks: Require human review after completion
+   - **checkpoint:decision** tasks: Require human decision before proceeding
+   - **checkpoint:human-action** tasks: Human performs the task
+
+3. **Execute tasks using BuildExecutor**:
+
+   Use the BuildExecutor class to parse and execute the XML spec:
+
+   ```python
+   from src.build_executor import BuildExecutor
+
+   # Parse XML spec
+   executor = BuildExecutor('.ai/know/plans/<feature>.xml')
+
+   # Display summary
+   console.print(executor.get_summary())
+
+   # Get next task
+   task = executor.get_next_task()
+   ```
+
+   **For each task:**
+   - Display task details (operation, files, action, verify, done)
+   - If checkpoint task: Stop and wait for user to mark ready
+   - If auto task: Execute immediately
+   - Track progress in `.ai/know/build-progress.json`
+
 4. **Track and update todo items as you work**:
    - Before starting each task: Read `.ai/know/<feature>/todo.md` to see current checklist
    - Identify which checkbox corresponds to the work you're about to do
@@ -181,16 +228,77 @@ Send SINGLE message with:
    - Format: Change `- [ ] Task name` to `- [x] Task name`
    - Example: `- [ ] 1. Implement auth handler` becomes `- [x] 1. Implement auth handler`
    - Update immediately after completing each task (don't batch updates)
-5. Update phase status in spec-graph: `"status": "in-progress"` (using **haiku agent**)
-6. As code is written, link modules to spec-graph components:
-   - Add to code-graph: `know -g .ai/code-graph.json add module <name> {...}`
-   - Link via product-component references
-7. Track implementation in `.ai/know/<feature>/implementation.md`
+
+5. **Checkpoint Handling**:
+
+   When encountering a checkpoint task:
+   - Present the task action and verification steps
+   - Wait for explicit user confirmation before proceeding
+   - Mark task as in-progress: `executor.mark_task_in_progress(task_id)`
+   - After user confirms completion, mark complete: `executor.mark_task_completed(task_id)`
+
+6. Update phase status in spec-graph: `"status": "in-progress"` (using **haiku agent**)
+
+7. **Cross-Graph Linking** - As code is written, establish bidirectional spec↔code connections:
+
+   **REQUIRED**: Create code-link refs for every new module/class written during implementation. Do not skip this step.
+
+   **For each new module/package/class:**
+
+   a. **Add to code-graph** with implementation metadata:
+   ```bash
+   know -g .ai/know/code-graph.json add module <name> '{
+     "name": "Module Name",
+     "description": "...",
+     "file_path": "src/path/to/module.js",
+     "implementation_type": "full|partial|stub|aspirational",
+     "implementation_status": "complete|in-progress|planned"
+   }'
+   ```
+
+   **Implementation Types:**
+   - `full` - Complete implementation of all functionality
+   - `partial` - Some functionality implemented, some pending
+   - `stub` - Interface defined, implementation placeholder
+   - `aspirational` - Planned but not yet started (preserved during code-graph regeneration)
+
+   b. **Create code-link** in spec-graph linking feature to code entities:
+   ```bash
+   # Spec-graph: link feature to code entities
+   know -g .ai/know/spec-graph.json add code-link <feature>-code '{"modules":["module:<name>"],"classes":[],"status":"in-progress"}'
+   know -g .ai/know/spec-graph.json link feature:<name> code-link:<feature>-code
+   ```
+
+   c. **Create code-link** in code-graph linking module back to spec:
+   ```bash
+   # Code-graph: link module back to spec
+   know -g .ai/know/code-graph.json add code-link <module>-spec '{"feature":"feature:<name>","component":"component:<component-name>","status":"in-progress"}'
+   know -g .ai/know/code-graph.json link module:<name> code-link:<module>-spec
+   ```
+
+   d. **Link code entities to components** (if component exists):
+   ```bash
+   know -g .ai/know/code-graph.json graph link module:<name> component:<component-name>
+   ```
+
+   e. **Check cross-graph coverage after linking**:
+   ```bash
+   # Check cross-graph coverage after linking
+   know graph cross coverage --spec-graph .ai/know/spec-graph.json --code-graph .ai/know/code-graph.json
+   ```
+
+   **Aspirational Entities:**
+   - Mark planned/future code entities as `"implementation_status": "planned"` and `"aspirational": true`
+   - These will be preserved when regenerating code-graph from source code
+   - Used for design-ahead: documenting intended architecture before implementation
+
+8. Track implementation in `.ai/know/<feature>/implementation.md`
 
 **Outputs**:
 - Implemented code files
 - Updated `.ai/know/<feature>/todo.md` with progress
 - Updated `.ai/know/<feature>/implementation.md` with notes
+- `.ai/know/build-progress.json` - Task execution tracking
 - Updated code-graph with new modules
 - Phase status: "in-progress" in spec-graph
 
@@ -209,10 +317,10 @@ Send SINGLE message with:
    - **Reviewer 3 (Conventions)**: "Review for consistency with existing patterns, naming conventions, architectural violations. Report only high-confidence issues (≥80%)."
    - Launch ALL 3 in a single message for true parallelism
 2. **Know-enhanced validation** (using **haiku agents**):
-   - Gap analysis: `know -g .ai/spec-graph.json gap-analysis feature:<name>`
+   - Gap analysis: `know -g .ai/know/spec-graph.json graph check gap-analysis feature:<name>`
    - Verify all component dependencies satisfied
    - Check code-graph completeness
-   - Validate both graphs: `know validate`
+   - Validate both graphs: `know graph check validate`
 3. Present issues to user with confidence levels
 4. User chooses: "Fix now", "Fix later", or "Proceed"
 5. Save review to `.ai/know/<feature>/review.md`
@@ -244,11 +352,55 @@ Send SINGLE message with:
      - Numbered test steps with expected outcomes
      - Acceptance criteria (clear pass/fail)
    - Use checkbox format for tracking during `/know:review`
-6. **Update spec-graph** (using **haiku agents**):
-   - Mark feature phase as "complete" (or move to "done" if fully deployed)
-   - Update code-graph with all new modules
-   - Validate both graphs
-   - Run gap-summary: `know -g .ai/spec-graph.json gap-summary`
+6. **Update graphs and regenerate code-graph** (using **haiku agents**):
+
+   a. **Regenerate code-graph automatically**:
+   ```bash
+   # Scan codebase (detects all modules, classes, functions)
+   know gen codemap know/src --output .ai/codemap.json --heat
+
+   # Regenerate code-graph (preserves manual graph-links and aspirational entities)
+   know gen code-graph \
+     --codemap .ai/codemap.json \
+     --existing .ai/know/code-graph.json \
+     --output .ai/know/code-graph.json
+   ```
+
+   b. **Verify cross-graph links** created during implementation are preserved:
+   ```bash
+   # Check that feature still shows as implemented
+   know -g .ai/know/spec-graph.json feature status feature:<name>
+   # Should show: ✅ Implemented: Yes
+
+   # Verify cross-graph links exist
+   know graph cross coverage \
+     --spec-graph .ai/know/spec-graph.json \
+     --code-graph .ai/know/code-graph.json
+
+   # If feature shows 0% spec coverage, run auto-connect before proceeding:
+   know graph cross connect feature:<name> \
+     --spec-graph .ai/know/spec-graph.json \
+     --code-graph .ai/know/code-graph.json
+   ```
+
+   **BLOCK RULE**: If `know graph cross coverage` shows 0% spec coverage for this feature → BLOCK phase completion. Run `know graph cross connect feature:<name>` to create links, then re-check.
+
+   c. **Update spec-graph phase status**:
+   ```bash
+   # Mark as review-ready
+   know -g .ai/know/spec-graph.json phases status feature:<name> review-ready
+   ```
+
+   d. **Validate both graphs**:
+   ```bash
+   know -g .ai/know/spec-graph.json graph check validate
+   know -g .ai/know/code-graph.json graph check validate
+   ```
+
+   e. **Run gap analysis**:
+   ```bash
+   know -g .ai/know/spec-graph.json graph check gap-summary
+   ```
 7. Save summary to `.ai/know/<feature>/summary.md`
 8. **Inform user**: "Feature complete. Run `/know:review <feature>` to test, or `/know:done` to archive."
 
@@ -269,17 +421,17 @@ Send SINGLE message with:
 Task tool with:
   model: "haiku"
   subagent_type: "general-purpose"
-  prompt: "Run this know command and return the output: know -g .ai/spec-graph.json deps feature:auth"
+  prompt: "Run this know command and return the output: know -g .ai/know/spec-graph.json graph uses feature:auth"
 ```
 
 **Common know queries to launch as haiku agents:**
-- `know -g .ai/spec-graph.json deps feature:<name>`
-- `know -g .ai/spec-graph.json used-by feature:<name>`
-- `know -g .ai/spec-graph.json gap-analysis feature:<name>`
-- `know -g .ai/spec-graph.json gap-summary`
-- `know -g .ai/code-graph.json list-type module`
-- `know -g .ai/code-graph.json uses component:<name> --recursive`
-- `know validate`
+- `know -g .ai/know/spec-graph.json graph uses feature:<name>`
+- `know -g .ai/know/spec-graph.json graph used-by feature:<name>`
+- `know -g .ai/know/spec-graph.json graph check gap-analysis feature:<name>`
+- `know -g .ai/know/spec-graph.json graph check gap-summary`
+- `know -g .ai/know/code-graph.json list --type module`
+- `know -g .ai/know/code-graph.json graph uses component:<name> --recursive`
+- `know graph check validate`
 
 ---
 
@@ -314,6 +466,85 @@ Task tool with:
 
 ---
 
+## XML Task Specification
+
+The XML spec format (generated with `--format xml`) provides structured, executable task definitions:
+
+**Structure**:
+```xml
+<spec>
+  <meta>
+    <feature>feature:auth</feature>
+    <name>User Authentication</name>
+    <description>...</description>
+  </meta>
+
+  <context>
+    <feature-context>Requirements and objectives</feature-context>
+    <architecture>High-level design approach</architecture>
+    <integration>How it connects to existing system</integration>
+  </context>
+
+  <dependencies>
+    <component>component:auth-handler</component>
+    <external-dep>external-dep:jwt</external-dep>
+  </dependencies>
+
+  <tasks>
+    <task type="checkpoint:human-verify" wave="1">
+      <operation>operation:create-auth-module</operation>
+      <name>Create Authentication Module</name>
+      <files>
+        <file>src/auth/handler.js</file>
+      </files>
+      <action>Detailed implementation instructions...</action>
+      <verify>
+        <test>npm test -- auth.test.js</test>
+        <assertion>All auth tests pass</assertion>
+      </verify>
+      <done>Module created with passing tests</done>
+    </task>
+  </tasks>
+</spec>
+```
+
+**Task Types**:
+- **auto** (90%): Execute automatically without user intervention
+- **checkpoint:human-verify** (9%): Agent implements, user verifies after completion
+- **checkpoint:decision** (0.5%): User makes a decision before proceeding
+- **checkpoint:human-action** (0.5%): User performs the task manually
+
+**BuildExecutor API**:
+```python
+# Initialize
+executor = BuildExecutor('.ai/know/plans/feature.xml')
+
+# Get summary
+summary = executor.get_summary()  # Returns formatted summary of tasks
+
+# Get next pending task
+task = executor.get_next_task()  # Returns None if all complete
+
+# Task structure
+{
+  'id': 'task-1',
+  'type': 'checkpoint:human-verify',
+  'wave': 1,
+  'operation': 'operation:create-module',
+  'name': 'Create Module',
+  'files': ['src/module.js'],
+  'action': 'Implementation details...',
+  'verify': {'test': 'npm test', 'assertion': 'Tests pass'},
+  'done': 'Acceptance criteria'
+}
+
+# Mark progress
+executor.mark_task_in_progress('task-1')
+executor.mark_task_completed('task-1')
+```
+
+---
+
 ## Example Usage
 
 **Existing feature:**
@@ -341,10 +572,48 @@ Assistant: Feature not found in .ai/know/
           ...
 ```
 
+**With XML task execution in Phase 5:**
+```
+User: /know:build auth
+...
+          === Phase 5: Implementation ===
+          Generating XML task spec...
+
+          ┌─ Task #1: Create Auth Module ──────────────────┐
+          │ Type: checkpoint:human-verify | Wave: 1        │
+          └────────────────────────────────────────────────┘
+
+          📁 Files:
+             • src/auth/handler.js
+             • src/auth/middleware.js
+
+          📝 Action:
+             Create authentication module with JWT support...
+             [detailed implementation steps]
+
+          ✅ Verify:
+             Test: npm test -- auth.test.js
+             Expected: All tests pass with 100% coverage
+
+          🎯 Done:
+             Module created with passing tests
+
+          ──────────────────────────────────────────────────
+          ⏸ CHECKPOINT: checkpoint:human-verify
+
+          [Agent implements the task]
+
+          Review the implementation. When ready, confirm to proceed.
+```
+
 ---
 
 ## Notes
 
+- **Graph-first design** - `/know:build` works from spec-graph, with or without `/know:add`
+  - If feature in graph but no directory: creates directory from graph data
+  - If feature not in graph: delegates to `/know:add` for HITL clarification
+  - Directory is human documentation, graph is source of truth
 - **Structured workflow** prevents jumping to code prematurely
 - **Know integration** ensures spec-graph and code-graph stay synchronized
 - **Haiku agents** keep graph queries fast and cost-effective
@@ -352,3 +621,37 @@ Assistant: Feature not found in .ai/know/
 - **Resumable** - Can pause and resume at any phase
 - **Documentation-driven** - All decisions captured in `.ai/know/<feature>/`
 - When complete, use `/know:done` to archive and mark in "done" phase
+
+## Code Graph Regeneration
+
+When regenerating code-graph from source files (e.g., with AST parsers):
+
+**Preserve Aspirational Entities:**
+- Before regeneration: `know -g .ai/know/code-graph.json list --type module > aspirational-backup.json`
+- Filter for entities with `"aspirational": true` or `"implementation_status": "planned"`
+- After regeneration: Re-add aspirational entities that weren't found in source
+- Command: `know -g .ai/know/code-graph.json add module <name> <json>`
+
+**Why this matters:**
+- Aspirational entities represent planned architecture
+- They document design intent before code exists
+- Preserving them maintains the spec→code roadmap
+- Prevents losing architectural decisions during sync
+
+**Regeneration Strategy:**
+```bash
+# 1. Backup aspirational entities
+know -g .ai/know/code-graph.json search "aspirational.*true" --field aspirational > aspirational.txt
+
+# 2. Regenerate from source (your codemap tool)
+./scripts/codemap/generate.sh
+
+# 3. Restore aspirational entities
+# (Manual step - read aspirational.txt and re-add planned entities)
+```
+
+---
+`r4` - Made cross-graph linking mandatory in Phase 5; added cross-coverage gate to Phase 7; updated to code-link type
+`r3` - Graph-first initialization: can work from spec-graph without requiring /know:add first
+`r2` - Added implementation types, cross-graph linking, and aspirational entity preservation
+`r1` - Initial 7-phase workflow

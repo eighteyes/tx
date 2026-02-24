@@ -25,17 +25,8 @@ guardrails:
     strict: false
     warning: true
     max_retries: 3              # default: 3
-  edge_limit:
-    strict: false
-    warning: true
-    routing_retry_max: null     # default: null (mesh config takes precedence)
-    routing_fallback: null      # default: null
-  artifact:
-    strict: false
-    warning: true
-    post_validation: true       # default: true
-    pre_validation: true        # default: true
-    max_retry: 2                # default: 2
+    routing_retry_max: null     # default: null (no edge limit)
+    routing_fallback: null      # default: null (no fallback agent)
   max_messages:
     strict: false
     warning: true
@@ -81,11 +72,8 @@ Set `strict: true` to restore blocking behavior (the pre-mode-switch default).
 | write_gate | Block tool use | Approve + systemMessage |
 | read_gate | Block tool use | Approve + systemMessage |
 | identity_gate | Block tool use | Approve + systemMessage |
-| routing_error | Kill/escalate after max_retries | Log + return (no escalation) |
+| routing_error | Kill/escalate after max_retries; redirect to fallback on edge limit | Log + return (no escalation); log + allow message through |
 | max_messages | Kill worker | Log + allow worker to continue |
-| edge_limit | Redirect to fallback | Log + allow message through |
-| artifact (pre) | Block dispatch | Allow + log warning |
-| artifact (post) | Retry/halt mesh | Log + allow completion |
 | max_turns | SDK halts session | No SDK limit; emit warning event at threshold |
 
 ### max_turns Special Case
@@ -184,30 +172,15 @@ Default kill threshold: **null** (block only, no kill)
 
 ### Routing Error
 
-Corrective injection when an agent targets a non-existent mesh/agent.
+Corrective injection when an agent targets a non-existent mesh/agent, and per-edge message caps to prevent infinite loops.
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `max_retries` | 3 | Attempts before escalating to human (strict) or logging (warning) |
+| `routing_retry_max` | null | Max messages per edge per turn. null = no edge limit |
+| `routing_fallback` | null | Fallback agent when edge limit hit (strict: redirect, warning: log only) |
 
-### Edge Limit
-
-Per-edge message caps to prevent infinite loops.
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `routing_retry_max` | null | Max messages per edge per turn (mesh config takes precedence) |
-| `routing_fallback` | null | Fallback target when edge limit hit (strict only) |
-
-### Artifact Validation
-
-Pre/post validation of agent output artifacts.
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `pre_validation` | true | Validate before agent runs |
-| `post_validation` | true | Validate after agent completes |
-| `max_retry` | 2 | Retries before halt on validation failure (strict only) |
+Edge limit fields use the full resolution chain (agent > mesh > global > default). Top-level `routing_fallback` and `routing_retry_max` are deprecated — use `guardrails.routing_error` instead.
 
 ### Max Messages
 
@@ -240,6 +213,8 @@ Mesh-wide cap on total messages across all agents in a mesh run.
 Strict: kills all active workers in the mesh. Warning: logs and allows mesh to continue.
 
 Configured at mesh level only (not per-agent). Resets when a new turn starts (entry_point receives a task).
+
+**Note**: The top-level `max_mesh_messages` field in mesh `config.yaml` takes precedence over the guardrails chain. Falls back to `guardrails.max_mesh_messages` (mesh > global > default).
 
 ```yaml
 # Mesh config.yaml - direct value

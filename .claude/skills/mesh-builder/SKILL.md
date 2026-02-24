@@ -63,6 +63,33 @@ agents:
 
 Requires `settingSources: ['project']` (already enabled by default).
 
+### Command Template Interpolation
+
+Commands support `{key}` template tokens that resolve from the message payload at runtime. Use this to pass dynamic values (like feature names) through the mesh pipeline.
+
+```yaml
+agents:
+  - name: prebuild
+    model: haiku
+    command: "/know:prebuild {feature}"   # {feature} replaced from payload
+
+  - name: builder
+    model: opus
+    command: "/know:build {feature}"      # same token, resolved per-message
+```
+
+**Resolution rules:**
+- `{key}` matches `msg.payload[key]` — if present, replaced with the string value
+- Unresolved tokens stay as literal text (no silent failures, no crashes)
+- Payload values come from message frontmatter (e.g., `feature: auth-system`)
+
+**Propagation:** Upstream agents must include the key in their completion message frontmatter for downstream agents to receive it. The consumer maps frontmatter fields to `payload` automatically.
+
+```
+User message:  feature: auth  → prebuild gets "/know:prebuild auth"
+Prebuild msg:  feature: auth  → builder gets "/know:build auth"
+```
+
 ## Writing Prompts
 
 Focus on **workflow only**.
@@ -92,6 +119,61 @@ You are the {role} agent.
 2. {Work steps}
 3. Signal completion when finished
 ```
+
+### Prompt Template Tokens
+
+Prompts can embed `{key}` template tokens that are replaced with resolved values at runtime, **before** any section injection. This lets agents reference dynamic paths inline rather than relying on injected context sections.
+
+**Built-in tokens** (always available when workspace is resolved):
+- `{workspace}` → absolute path to the resolved workspace directory
+
+**Example usage in prompt:**
+```markdown
+## Phase 0: Inventory
+ls {workspace}/prose-draft.md
+cat {workspace}/context.yaml
+```
+
+At runtime, if workspace resolves to `/project/.ai/games/my-game/campaigns/campaign-1/turns/turn-35`, the prompt becomes:
+```markdown
+## Phase 0: Inventory
+ls /project/.ai/games/my-game/campaigns/campaign-1/turns/turn-35/prose-draft.md
+cat /project/.ai/games/my-game/campaigns/campaign-1/turns/turn-35/context.yaml
+```
+
+**Rules:**
+- Tokens that don't appear in the prompt are no-ops (safe for all meshes)
+- Unresolved tokens (no matching key) are left as-is (no silent failures)
+- Replacement happens via `PromptInjector.replaceTemplateTokens()` before workspace section injection
+- The `injectWorkspace()` method automatically replaces `{workspace}` — no caller changes needed
+
+**Dynamic workspace resolution** via `workspace.variables` + `workspace.locations`:
+
+When the workspace config declares `variables` and `locations`, the dispatcher resolves template variables from a source file (e.g., `session.yaml`) and uses the resolved `workspace` location as the workspace directory. This enables per-turn or per-session dynamic paths.
+
+```yaml
+workspace:
+  path: ".ai/games/"               # Static fallback
+  variables:
+    source: ".ai/tx/my-mesh/session.yaml"  # Fixed path (no chicken-and-egg)
+    mapping:
+      game-id: game_id             # {game-id} → session.game_id
+      campaign-id: campaign_id     # {campaign-id} → session.campaign_id
+      N: turn                      # {N} → session.turn
+  locations:
+    session: ".ai/tx/my-mesh"
+    game: ".ai/games/{game-id}"
+    campaign: ".ai/games/{game-id}/campaigns/{campaign-id}"
+    workspace: ".ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}"
+```
+
+**Resolution priority** (dispatcher):
+1. FSM context `$workspace` variable (highest — gates use this)
+2. Resolved `workspace` location from manifest variables (per-turn path)
+3. Static workspace config (`workspace.path`)
+4. Default: `.ai/tx/workspaces/<mesh-name>`
+
+Falls back gracefully: if the source file is missing or variables don't resolve, unresolved `{tokens}` remain and the static fallback is used instead.
 
 ## Agent Boundaries (CRITICAL for Coordinators)
 
@@ -214,13 +296,67 @@ routing:
   # agent-c: (absent) = terminal agent → routes to core/core on complete
 ```
 
+**Fan-out / Fan-in**: Array value with trailing options object for parallel dispatch:
+```yaml
+routing_mode: dispatcher
+routing:
+  planner: [reviewer-a, reviewer-b, reviewer-c, { discuss: true, complete: synthesizer, fan_in: batch }]
+```
+
+- `complete: agent` — join agent, gated until all fan-out members send `outcome: complete`
+- `discuss: true` — members can peer-message via `outcome: discuss` + `route_to: peer`
+- `fan_in: batch|queue|drain` — controls how messages are delivered to the join agent (default: `batch`)
+- `transform: summarize` — optional haiku pre-pass to compress responses before delivery
+- Fan-out members get implicit routing (no individual entries needed)
+- Members send `outcome: complete` to signal done, `outcome: discuss` + `route_to:` for peer chat
+
+**Fan-in delivery modes** (`fan_in`):
+
+| Mode | Behavior |
+|------|----------|
+| `batch` (default) | Gate until all complete, deliver all responses in one combined message |
+| `queue` | Current OAOM serial delivery (N cold worker starts) |
+| `drain` | Deliver immediately; inject into running join worker via session resume |
+
+**Transform** (`transform`):
+
+| Value | Behavior |
+|-------|----------|
+| `summarize` | Haiku pre-pass compresses response(s) before delivery to join agent |
+
+| fan_in | transform | Result |
+|--------|-----------|--------|
+| batch | — | Gate until all complete, deliver all in one worker |
+| batch | summarize | Gate, haiku-compress all responses into one, deliver |
+| queue | — | Serial OAOM (N cold starts) |
+| queue | summarize | Each message haiku-compressed before its worker run |
+| drain | — | Inject each response into running join worker |
+| drain | summarize | Each response haiku-compressed then injected |
+
 Agents receive prompt instructions to write `to: mesh/dispatch` with `outcome:` in frontmatter. Override with `route_to:` for explicit targeting. Reserved `outcome: escalate` routes to human.
 
-Type detection: string value = linear, object value = branch, absent = terminal.
+Fan-out members with `discuss: true` receive a peer list in their prompt. They use `outcome: discuss` + `route_to: peer-name` for peer-to-peer messaging within the group.
+
+Type detection: string value = linear, object value = branch, array value = fan-out, absent = terminal.
 
 ## Common Patterns
 
-**Automatic Session persistence**: `continuation: true` or `continuation: [agent1, agent2]`
+**Session reuse** (default behavior): `continuation: true` is the default — sessions persist naturally. Set `continuation: false` to force cold starts (needed for `checkpoint`/`fork_from` isolation).
+
+**Persistent mesh (no shutdown on complete)**: For meshes that loop perpetually and report status without dying:
+```yaml
+completion_agents:
+  - weaver
+stop_on_first_complete: false   # Completion signal is informational, mesh continues
+check_queue_on_complete: true   # (default) Queue-aware for future use
+```
+
+| stop_on_first_complete | check_queue_on_complete | Behavior |
+|---|---|---|
+| true (default) | true (default) | Stop on complete, wait for queue to drain first |
+| true | false | Stop immediately on complete (legacy behavior) |
+| false | true | Informational complete, mesh continues running |
+| false | false | True daemon mode, mesh never stops on complete |
 
 **MCP tools only**: `toolRestriction: mcp-only`
 
@@ -556,13 +692,14 @@ For ensemble `aggregation` field:
 | `name` | string | yes | Agent identifier |
 | `model` | string | yes* | `opus` / `sonnet` / `haiku` (*defaults to `haiku` if `load` set, else `sonnet`) |
 | `prompt` | string | one of prompt/command | Path to prompt file |
-| `command` | string | one of prompt/command | Slash command (e.g., `/know:build`) |
+| `command` | string | one of prompt/command | Slash command (e.g., `/know:build`). Supports `{key}` interpolation from payload. |
 | `workspace` | object | no | Per-agent workspace config |
 | `mcpServers` | object | no | MCP server configurations |
 | `description` | string | no | Agent documentation |
 | `load` | array | no | Files to preload into context (globs supported) |
 | `checkpoint` | boolean | no | Save session state on completion for forking |
 | `fork_from` | string | no | Fork from another agent's checkpoint |
+| `thinking` | boolean | no | Extended thinking (default: true). Set `false` to disable. |
 | `max_turns` | number | no | API round-trip limit per invocation |
 | `max_messages` | number | no | Outbound message limit per invocation |
 
@@ -578,8 +715,8 @@ For ensemble `aggregation` field:
 | `turn_workspace` | object | Turn-based game workspace |
 | `parallelism` | array | Parallel execution blocks (see Parallel Execution) |
 | `persistence` | boolean/array | Session persistence across mesh runs |
-| `routing_fallback` | string | Global fallback agent for routing errors |
-| `routing_retry_max` | number | Max messages per routing edge before fallback |
+| `routing_fallback` | string | **DEPRECATED** — use `guardrails.routing_error.routing_fallback` |
+| `routing_retry_max` | number | **DEPRECATED** — use `guardrails.routing_error.routing_retry_max` |
 | `manifest_enforcement` | object | Artifact validation settings |
 | `max_mesh_messages` | number/object | Mesh-wide message cap (guardrail) |
 | `autoInjectManifestFiles` | boolean | Auto-preload manifest reads (default: true) |
@@ -682,8 +819,7 @@ Unified runtime enforcement with **strict/warning mode** on every guardrail. Con
 
 - **Write gate**: Intercepts Write/Edit/NotebookEdit and Bash redirects to undeclared paths.
 - **Read gate**: Intercepts Read/Glob/Grep to undeclared paths.
-- **Routing error**: Corrective injection on bad targets. Default max retries: 3.
-- **Edge limit**: Per-edge message caps. Configurable per mesh.
+- **Routing error**: Corrective injection on bad targets (max retries: 3) + per-edge message caps (`routing_retry_max` / `routing_fallback`).
 - **Artifact validation**: Pre/post validation of agent outputs. Default: enabled, 2 retries.
 - **Max messages/turns**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object.
 - **Max mesh messages**: Mesh-wide cap on total messages across all agents in a mesh run.

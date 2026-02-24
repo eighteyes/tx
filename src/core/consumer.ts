@@ -107,6 +107,8 @@ interface MeshConfig {
   completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5)
   boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
   fsm?: Record<string, unknown>;  // FSM config block (presence means FSM-controlled mesh)
+  stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
+  check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
 }
 
 
@@ -374,10 +376,11 @@ ${body}
 
     const content = `---
 to: ${targetAgentId}
-from: ${fromAgent}
+from: system/fan-out
+original-from: ${fromAgent}
 type: task
 msg-id: ${msgId}
-headline: Fan-out task
+headline: Fan-out task from ${fromAgent}
 timestamp: ${new Date().toISOString()}
 ---
 
@@ -545,6 +548,20 @@ ${body}
         }
         toAgent = resolved;
         dispatcherResolved = true;
+
+        // Re-infer message type with resolved target (dispatcher changes to → core/core)
+        // Without this, status: complete to mesh/dispatch infers as 'message' instead of 'task-complete'
+        if (!parsed.frontmatter._explicitType) {
+          const reinferred = this.inferMessageType(parsed.frontmatter, toAgent, fromAgent);
+          if (reinferred !== parsed.frontmatter.type) {
+            log.info('consumer', 'Re-inferred message type after dispatcher resolution', {
+              from: fromAgent, to: toAgent,
+              originalType: parsed.frontmatter.type,
+              resolvedType: reinferred,
+            });
+            parsed.frontmatter.type = reinferred;
+          }
+        }
       }
 
       const targetMesh = toAgent.split('/')[0];
@@ -965,23 +982,58 @@ ${body}
           const isCompletionAgent = completionAgents.includes(agentName);
 
           if (isCompletionAgent) {
-            // Completion agent: clear ALL asks for the mesh
-            const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
-            if (clearedAsks > 0) {
-              log.info('consumer', `Completion agent: cleared ${clearedAsks} mesh pending asks`, {
+            const stopOnFirst = meshConfig?.stop_on_first_complete !== false;  // default true
+            const checkQueue = meshConfig?.check_queue_on_complete !== false;  // default true
+
+            if (!stopOnFirst) {
+              // Persistent mesh — completion signal is informational
+              // Clear only THIS agent's asks, not the whole mesh
+              this.queue.clearPendingAsks(fromAgent);
+              log.info('consumer', 'Completion agent (stop_on_first_complete=false) — mesh continues', {
                 meshName, fromAgent,
               });
+              // Fall through to emit core-message normally
+            } else if (checkQueue) {
+              const pendingCount = this.queue.countPendingForMesh(meshName);
+              if (pendingCount > 0) {
+                // Queue still has work — defer shutdown
+                log.info('consumer', 'Completion agent deferred — pending messages in queue', {
+                  meshName, fromAgent, pendingCount,
+                });
+                this.queue.clearPendingAsks(fromAgent);
+                // Fall through to emit core-message normally
+              } else {
+                // Queue empty — proceed with shutdown
+                const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
+                if (clearedAsks > 0) {
+                  log.info('consumer', `Completion agent: cleared ${clearedAsks} mesh pending asks`, {
+                    meshName, fromAgent,
+                  });
+                }
+                if (this.meshStateManager) {
+                  this.meshStateManager.clearMeshState(meshName);
+                }
+                this.emit('mesh-complete', {
+                  meshName,
+                  completionAgent: fromAgent,
+                } as MeshCompleteEvent);
+              }
+            } else {
+              // Immediate shutdown — original behavior
+              const clearedAsks = this.queue.clearPendingAsksForMesh(meshName);
+              if (clearedAsks > 0) {
+                log.info('consumer', `Completion agent: cleared ${clearedAsks} mesh pending asks`, {
+                  meshName, fromAgent,
+                });
+              }
+              if (this.meshStateManager) {
+                this.meshStateManager.clearMeshState(meshName);
+              }
+              this.emit('mesh-complete', {
+                meshName,
+                completionAgent: fromAgent,
+              } as MeshCompleteEvent);
             }
-            // Also clear mesh state
-            if (this.meshStateManager) {
-              this.meshStateManager.clearMeshState(meshName);
-            }
-
-            // Emit mesh-complete event — dispatcher handles graceful worker wind-down
-            this.emit('mesh-complete', {
-              meshName,
-              completionAgent: fromAgent,
-            } as MeshCompleteEvent);
           } else {
             // Non-completion agent: only clear this agent's asks
             const clearedAsks = this.queue.clearPendingAsks(fromAgent);
@@ -1077,7 +1129,9 @@ ${body}
     const frontmatter = this.parseFrontmatter(parts[1].trim());
     // Phase 7: type field is optional (will be inferred from routing context)
     if (!frontmatter.to || !frontmatter.from) return null;
-    if (!frontmatter.type) {
+    if (frontmatter.type) {
+      frontmatter._explicitType = 'true';
+    } else {
       frontmatter.type = this.inferMessageType(frontmatter, frontmatter.to, frontmatter.from);
     }
 
@@ -1134,8 +1188,10 @@ ${body}
    * Future: only task, task-complete, message. Routing determines semantics.
    */
   private inferMessageType(fm: Frontmatter, to: string, from: string): string {
-    // To core/core with status=complete = task-complete (mesh completion signal)
-    if (to === 'core/core' && !from.startsWith('core/') && fm.status === 'complete') {
+    // To core/core with status=complete or outcome=complete = task-complete (mesh completion signal)
+    // Dispatcher agents use outcome: complete (resolved by DispatchRouter to core/core)
+    // Agent-mode agents use status: complete
+    if (to === 'core/core' && !from.startsWith('core/') && (fm.status === 'complete' || fm.outcome === 'complete')) {
       return 'task-complete';
     }
     // Everything else is a message. Human boundary is inferred from destination (core/core).
@@ -1274,7 +1330,7 @@ ${body}
           this.writeFanOutTask(resolved.targets[i], fromAgent, body);
         }
 
-        // Detect join agent from router
+        // Detect join agent and fan-in mode from router
         const parallelGroup = router.getParallelGroup(senderAgent);
         const joinAgent = parallelGroup?.joinAgent || null;
 
@@ -1284,6 +1340,8 @@ ${body}
           agents: resolved.targets.map(t => t.split('/')[1]),
           sourceAgent: senderAgent,
           joinAgent,
+          fanIn: parallelGroup?.fanIn || 'batch',
+          transform: parallelGroup?.transform,
         });
 
         log.info('consumer', 'Fan-out dispatched', {

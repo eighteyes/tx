@@ -18,6 +18,7 @@
  *   tx mesh cost [mesh]           Per-agent cost/token/cache summary from prior runs
  *   tx mesh flow <mesh>           Agent execution timeline with concurrency grouping
  *   tx mesh ideal <mesh>          Ideal execution stages from routing + manifest
+ *   tx mesh drain <mesh>          Drain all pending messages (mark delivered, unblock queue)
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -468,6 +469,9 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
     // Clear pending asks
     const asksCleared = queue.clearPendingAsksForMesh(meshName);
 
+    // Clear stale pending messages
+    const msgsCleared = queue.clearPendingMessagesForMesh(meshName);
+
     // Clear FSM state
     const fsmState = fsmPersistence.getState(meshName);
     if (fsmState) {
@@ -480,6 +484,7 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
         cleared: {
           suspendedSessions: suspendedCleared,
           pendingAsks: asksCleared,
+          pendingMessages: msgsCleared,
           fsmState: fsmState ? true : false,
         },
       }, null, 2));
@@ -493,11 +498,14 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
     if (asksCleared > 0) {
       console.log(`  ${chalk.dim('Pending asks:')} ${asksCleared}`);
     }
+    if (msgsCleared > 0) {
+      console.log(`  ${chalk.dim('Pending messages:')} ${msgsCleared}`);
+    }
     if (fsmState) {
       console.log(`  ${chalk.dim('FSM state:')} cleared (was: ${fsmState.currentState})`);
     }
 
-    if (suspendedCleared === 0 && asksCleared === 0 && !fsmState) {
+    if (suspendedCleared === 0 && asksCleared === 0 && msgsCleared === 0 && !fsmState) {
       console.log(chalk.dim('  No state to clear.'));
     }
     console.log();
@@ -506,6 +514,7 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
       meshName,
       suspendedCleared,
       asksCleared,
+      msgsCleared,
       fsmCleared: !!fsmState,
     });
 
@@ -621,6 +630,92 @@ async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
       suspendedCleared,
       asksCleared,
       queuedMessages: pendingMessages.length,
+    });
+  } finally {
+    queue.close();
+  }
+}
+
+/**
+ * Drain all pending messages for a mesh — mark as delivered, clear suspended sessions and pending asks.
+ * Unblocks a stuck queue by consuming everything without processing.
+ */
+async function drainMesh(meshName: string, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  if (!fs.existsSync(queuePath)) {
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No queue database found' }));
+    } else {
+      console.log(chalk.yellow('No queue database found.'));
+    }
+    return;
+  }
+
+  const queue = new MessageQueue(queuePath);
+
+  try {
+    // Gather pending messages for this mesh
+    const pendingMessages = queue.queryMessages({ status: 'pending', limit: 1000 })
+      .filter(m => m.to_agent.startsWith(`${meshName}/`) || m.from_agent.startsWith(`${meshName}/`));
+
+    if (pendingMessages.length === 0) {
+      if (flags.json) {
+        console.log(JSON.stringify({ meshName, drained: 0 }));
+      } else {
+        console.log(chalk.dim(`No pending messages for mesh '${meshName}'.`));
+      }
+      return;
+    }
+
+    // Group by recipient for display
+    const byAgent: Record<string, number> = {};
+    for (const msg of pendingMessages) {
+      byAgent[msg.to_agent] = (byAgent[msg.to_agent] || 0) + 1;
+    }
+
+    // Drain: mark all pending as delivered
+    const drained = queue.clearPendingMessagesForMesh(meshName);
+
+    // Also clear suspended sessions and pending asks (they gate processing)
+    const suspendedCleared = queue.clearSuspendedSessionsForMesh(meshName);
+    const asksCleared = queue.clearPendingAsksForMesh(meshName);
+
+    if (flags.json) {
+      console.log(JSON.stringify({
+        meshName,
+        drained,
+        suspendedCleared,
+        asksCleared,
+        byAgent,
+      }, null, 2));
+      return;
+    }
+
+    console.log(`\n${chalk.green(`Drained mesh: ${meshName}`)}\n`);
+    console.log(`  ${chalk.dim('Messages drained:')} ${drained}`);
+
+    for (const [agent, count] of Object.entries(byAgent)) {
+      const agentName = agent.includes('/') ? agent.split('/')[1] : agent;
+      console.log(`    ${chalk.dim(agentName)}: ${count}`);
+    }
+
+    if (suspendedCleared > 0) {
+      console.log(`  ${chalk.dim('Suspended sessions cleared:')} ${suspendedCleared}`);
+    }
+    if (asksCleared > 0) {
+      console.log(`  ${chalk.dim('Pending asks cleared:')} ${asksCleared}`);
+    }
+
+    console.log(chalk.dim('\n  Queue empty. Mesh ready for fresh dispatch.\n'));
+
+    log.info('cli-mesh', 'Drain mesh', {
+      meshName,
+      drained,
+      suspendedCleared,
+      asksCleared,
+      byAgent,
     });
   } finally {
     queue.close();
@@ -2899,6 +2994,15 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await unstickMesh(meshName, flags);
+        break;
+
+      case 'drain':
+        if (!meshName) {
+          console.error(chalk.red('Error: Mesh name required'));
+          console.log(chalk.dim('Example: tx mesh drain opus-soul'));
+          return;
+        }
+        await drainMesh(meshName, flags);
         break;
 
       case 'validate':
