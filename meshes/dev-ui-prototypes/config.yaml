@@ -1,0 +1,78 @@
+mesh: dev-ui-prototypes
+description: "5 parallel low-fidelity wireframe generators with different design lenses, synthesized into a final recommendation"
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    load:
+      - "package.json"
+    checkpoint: true
+
+  - name: bare-minimum
+    model: sonnet
+    prompt: bare-minimum/prompt.md
+    fork_from: coordinator
+
+  - name: heuristic
+    model: sonnet
+    prompt: heuristic/prompt.md
+    fork_from: coordinator
+
+  - name: info-arch
+    model: sonnet
+    prompt: info-arch/prompt.md
+    fork_from: coordinator
+
+  - name: user-flows
+    model: sonnet
+    prompt: user-flows/prompt.md
+    fork_from: coordinator
+
+  - name: kitchen-sink
+    model: sonnet
+    prompt: kitchen-sink/prompt.md
+    fork_from: coordinator
+
+  - name: synthesizer
+    model: opus
+    prompt: synthesizer/prompt.md
+
+entry_point: coordinator
+boundary_agents: [synthesizer]
+
+continuation: false
+
+routing_mode: dispatcher
+routing:
+  coordinator: [bare-minimum, heuristic, info-arch, user-flows, kitchen-sink, { complete: synthesizer, fan_in: batch }]
+  synthesizer: complete
+
+playbook_notes: |
+  Five-lens parallel prototyping based on different design philosophies:
+
+  1. Bare Minimum — What's the least UI that meets the functional requirement?
+     Inspired by: worse-is-better, Unix philosophy, MVP
+     Question: "What if we shipped only this?"
+
+  2. Heuristic Eval — Score high on Nielsen's 10 usability heuristics.
+     Inspired by: Jakob Nielsen, Don Norman, usability-first design
+     Question: "Will a first-time user succeed without help?"
+
+  3. Information Architecture — Structure the content hierarchy perfectly.
+     Inspired by: card sorting, tree testing, Rosenfeld/Morville
+     Question: "Can users find what they need?"
+
+  4. User Flows — Optimize the task completion paths.
+     Inspired by: GOMS, task analysis, jobs-to-be-done
+     Question: "What's the shortest path from intent to done?"
+
+  5. Kitchen Sink — Throw everything at it. Every feature, every option, maximum surface area.
+     Inspired by: feature parity, power users, density
+     Question: "What if we said yes to everything?"
+
+  The synthesizer compares all 5, identifies convergent patterns (multiple lenses
+  agree = strong signal), and produces a final recommendation that cherry-picks
+  the best ideas from each lens.
+
+  All wireframes are ASCII/markdown — no design tools needed.

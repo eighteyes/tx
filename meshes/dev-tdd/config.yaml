@@ -1,0 +1,67 @@
+mesh: dev-tdd
+description: "Red-green-refactor TDD mesh. Red writes failing tests from spec, green writes minimal code to pass, refactor cleans up. Reviewer gates each phase."
+
+agents:
+  - name: red
+    model: sonnet
+    prompt: red/prompt.md
+    thinking: true
+
+  - name: green
+    model: sonnet
+    prompt: green/prompt.md
+    thinking: true
+
+  - name: refactor
+    model: opus
+    prompt: refactor/prompt.md
+    thinking: true
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+    thinking: true
+
+entry_point: red
+boundary_agents: [reviewer]
+
+continuation: true
+
+routing_mode: dispatcher
+routing:
+  red: reviewer
+  green: reviewer
+  refactor: reviewer
+  reviewer:
+    red_pass: green
+    green_pass: refactor
+    refactor_pass: complete
+    needs_work: red
+    tests_wrong: red
+    code_wrong: green
+    refactor_wrong: refactor
+
+lifecycle:
+  post:
+    - quality:checklist
+
+playbook_notes: |
+  Classic Kent Beck TDD cycle enforced by mesh topology:
+
+  1. RED: Write the smallest failing test that describes desired behavior.
+     No implementation code. Tests MUST fail. If they pass, the test is wrong.
+
+  2. GREEN: Write the absolute minimum code to make tests pass.
+     No cleverness. No optimization. No "while I'm here" changes.
+     If tests pass, stop writing code.
+
+  3. REFACTOR: Clean up with full test safety net.
+     Extract, rename, simplify. Tests must stay green throughout.
+
+  Reviewer gates each transition:
+  - After RED: Tests exist? Tests fail? Tests describe behavior not implementation?
+  - After GREEN: Tests pass? Code is minimal? No extra work snuck in?
+  - After REFACTOR: Tests still pass? Code is cleaner? No behavior changes?
+
+  The reviewer can reject back to any phase. This creates the tight feedback
+  loop that makes TDD work — you can't skip ahead.
