@@ -363,8 +363,15 @@ ${body}
   }
 
   /**
-   * Write a fan-out task file for a parallel target agent.
-   * Chokidar picks this up → normal processFile() → worker-message emit.
+   * Write a fan-out task file and directly dispatch it.
+   *
+   * Previously relied on chokidar to detect the written file and trigger
+   * processFile() → worker-message. This fails in Docker (overlayfs) where
+   * inotify events don't fire reliably for files created within a chokidar
+   * event handler. Fix: write the file (audit trail), then directly insert
+   * into the queue and emit worker-message for immediate dispatch.
+   * Queue UNIQUE constraint on source_file safely deduplicates if chokidar
+   * also picks up the file.
    */
   private writeFanOutTask(targetAgentId: string, fromAgent: string, body: string): void {
     const timestamp = Date.now();
@@ -374,21 +381,55 @@ ${body}
     const filename = `${timestamp}-fanout-${fromAgent.replace('/', '-')}--${meshName}-${agentName}-${msgId}.md`;
     const filepath = path.join(this.watchDir, filename);
 
+    const headline = `Fan-out task from ${fromAgent}`;
+
     const content = `---
 to: ${targetAgentId}
 from: system/fan-out
 original-from: ${fromAgent}
 type: task
 msg-id: ${msgId}
-headline: Fan-out task from ${fromAgent}
+headline: ${headline}
 timestamp: ${new Date().toISOString()}
 ---
 
 ${body}
 `;
 
+    // Write file for audit trail
     fs.writeFileSync(filepath, content);
-    log.info('consumer', 'Wrote fan-out task', { targetAgentId, fromAgent, msgId });
+
+    // Direct dispatch: insert into queue and emit worker-message
+    // Bypasses chokidar dependency that fails in Docker overlayfs
+    const id = this.queue.insert({
+      from_agent: 'system/fan-out',
+      to_agent: targetAgentId,
+      type: 'task',
+      source_file: filepath,
+      payload: {
+        'msg-id': msgId,
+        headline,
+        body,
+        filepath,
+      },
+    });
+
+    if (id === -1) {
+      // Chokidar already processed this file (race condition) — safe to skip
+      log.debug('consumer', 'Fan-out task already queued (chokidar race)', { targetAgentId, msgId });
+      return;
+    }
+
+    log.info('consumer', 'Fan-out task queued directly', { id, targetAgentId, fromAgent, msgId });
+
+    this.emit('worker-message', {
+      id,
+      agentId: targetAgentId,
+      from: 'system/fan-out',
+      type: 'task',
+      event: 'add',
+      injectResponse: false,
+    });
   }
 
   /**
