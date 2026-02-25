@@ -391,9 +391,15 @@ export class SdkRunner extends EventEmitter {
       if (taskMessage) {
         // Fresh context for each message - don't accumulate conversation history
         // Session resume is only for explicit interrupt/feedback flows via resume(), not queue processing
-        // Clear both runtime and config session IDs to prevent context accumulation
+        // Clear runtime session ID to prevent context accumulation.
+        // IMPORTANT: Preserve config.sessionId when fork_from is active — the dispatcher
+        // sets it to the checkpoint sessionId for forking. Clearing it here would make
+        // resume: undefined, causing forkSession/resumeSessionAt to be silently ignored
+        // and the agent to start a fresh session instead of forking.
         this.currentSessionId = null;
-        this.config.sessionId = undefined;
+        if (!this.config.forkSession) {
+          this.config.sessionId = undefined;
+        }
         this.firstUserMessageUuid = null;
 
         totalProcessed++;
