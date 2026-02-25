@@ -151,6 +151,68 @@ describe('DispatchRouter', () => {
     });
   });
 
+  describe('resolve - "complete" keyword (core alias)', () => {
+    test('linear "complete" resolves to core/core', () => {
+      const routing = { agent: 'complete' };
+      const r = new DispatchRouter('m', routing, ['agent']);
+      const result = r.resolve('agent', 'done');
+      assert.ok(result);
+      assert.strictEqual(result.target, 'core/core');
+      assert.strictEqual(result.source, 'linear');
+    });
+
+    test('branch value "complete" resolves to core/core', () => {
+      const routing = { reviewer: { pass: 'complete', fail: 'worker' } };
+      const r = new DispatchRouter('m', routing, ['reviewer', 'worker']);
+      const result = r.resolve('reviewer', 'pass');
+      assert.ok(result);
+      assert.strictEqual(result.target, 'core/core');
+      assert.strictEqual(result.source, 'branch');
+    });
+
+    test('branch default "complete" resolves to core/core', () => {
+      const routing = { reviewer: { pass: 'worker', default: 'complete' } };
+      const r = new DispatchRouter('m', routing, ['reviewer', 'worker']);
+      const result = r.resolve('reviewer', 'unknown');
+      assert.ok(result);
+      assert.strictEqual(result.target, 'core/core');
+      assert.strictEqual(result.usedDefault, true);
+    });
+
+    test('dev-tdd pattern: refactor_pass: complete routes to core/core', () => {
+      const routing = {
+        red: 'reviewer',
+        green: 'reviewer',
+        refactor: 'reviewer',
+        reviewer: {
+          red_pass: 'green',
+          green_pass: 'refactor',
+          refactor_pass: 'complete',
+          needs_work: 'red',
+        },
+      };
+      const agents = ['red', 'green', 'refactor', 'reviewer'];
+      const r = new DispatchRouter('dev-tdd', routing, agents);
+      const result = r.resolve('reviewer', 'refactor_pass');
+      assert.ok(result);
+      assert.strictEqual(result.target, 'core/core');
+      assert.strictEqual(result.source, 'branch');
+    });
+
+    test('fan-out "complete" in agents list resolves to core/core', () => {
+      const routing = {
+        coordinator: ['worker-a', 'complete', { complete: 'synthesizer', fan_in: 'batch' }],
+      };
+      const agents = ['coordinator', 'worker-a', 'synthesizer'];
+      const r = new DispatchRouter('m', routing, agents);
+      const result = r.resolve('coordinator', 'done');
+      assert.ok(result);
+      assert.ok(result.targets);
+      assert.ok(result.targets.includes('core/core'));
+      assert.strictEqual(result.targets[1], 'core/core');
+    });
+  });
+
   describe('isTerminal', () => {
     test('absent agent is terminal', () => {
       assert.strictEqual(router.isTerminal('finalizer'), true);

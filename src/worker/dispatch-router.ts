@@ -27,6 +27,9 @@ interface ParsedFanOut {
  * Given a sender agent and their outcome/route_to, it determines the
  * concrete target agent using the mesh's dispatcher routing config.
  */
+/** Keywords that resolve to core/core instead of mesh-local agents */
+const CORE_KEYWORDS = new Set(['core', 'complete']);
+
 export class DispatchRouter {
   private readonly meshName: string;
   private readonly routing: DispatcherRoutingConfig;
@@ -109,7 +112,7 @@ export class DispatchRouter {
     // Fan-out routing — array value, spawn multiple agents in parallel
     if (Array.isArray(entry)) {
       const group = this.fanOutGroups.get(fromAgent)!;
-      const targets = group.agents.map(a => a === 'core' ? 'core/core' : `${this.meshName}/${a}`);
+      const targets = group.agents.map(a => CORE_KEYWORDS.has(a) ? 'core/core' : `${this.meshName}/${a}`);
       return { target: targets[0], targets, source: 'fan-out', outcome };
     }
 
@@ -133,7 +136,7 @@ export class DispatchRouter {
 
     // Linear routing — string value, always routes to that agent
     if (typeof entry === 'string') {
-      const target = entry === 'core' ? 'core/core' : `${this.meshName}/${entry}`;
+      const target = CORE_KEYWORDS.has(entry) ? 'core/core' : `${this.meshName}/${entry}`;
       return { target, source: 'linear', outcome };
     }
 
@@ -142,13 +145,13 @@ export class DispatchRouter {
     const resolvedAgent = outcome ? outcomeMap[outcome] : undefined;
 
     if (resolvedAgent) {
-      const target = resolvedAgent === 'core' ? 'core/core' : `${this.meshName}/${resolvedAgent}`;
+      const target = CORE_KEYWORDS.has(resolvedAgent) ? 'core/core' : `${this.meshName}/${resolvedAgent}`;
       return { target, source: 'branch', outcome };
     }
 
     // Try default fallback
     if (outcomeMap['default']) {
-      const target = outcomeMap['default'] === 'core' ? 'core/core' : `${this.meshName}/${outcomeMap['default']}`;
+      const target = CORE_KEYWORDS.has(outcomeMap['default']) ? 'core/core' : `${this.meshName}/${outcomeMap['default']}`;
       return { target, source: 'branch', outcome, usedDefault: true };
     }
 
@@ -176,7 +179,7 @@ export class DispatchRouter {
 
     // outcome: complete → route to join agent
     if (outcome === 'complete' && options.complete) {
-      const target = options.complete === 'core' ? 'core/core' : `${this.meshName}/${options.complete}`;
+      const target = CORE_KEYWORDS.has(options.complete) ? 'core/core' : `${this.meshName}/${options.complete}`;
       return { target, source: 'branch', outcome };
     }
 
