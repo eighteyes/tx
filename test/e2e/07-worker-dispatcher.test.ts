@@ -109,7 +109,13 @@ You are a test worker. When you receive a task, acknowledge it.`;
     });
 
     // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
-    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
+    // Include all fields that the real Consumer emits
+    mockConsumer.emit('worker-message', {
+      id: 1,
+      agentId: 'test/worker',
+      from: 'core/core',
+      type: 'task',
+    });
 
     // Wait for dispatcher to detect and spawn
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -140,7 +146,13 @@ You are a test worker. When you receive a task, acknowledge it.`;
     });
 
     // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
-    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
+    // Include all fields that the real Consumer emits
+    mockConsumer.emit('worker-message', {
+      id: 2,
+      agentId: 'test/worker',
+      from: 'core/core',
+      type: 'ask-response',
+    });
 
     await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -164,7 +176,13 @@ You are a test worker. When you receive a task, acknowledge it.`;
     });
 
     // Emit worker-message event to trigger dispatch (simulates Consumer behavior)
-    mockConsumer.emit('worker-message', { agentId: 'test/worker' });
+    // Include all fields that the real Consumer emits
+    mockConsumer.emit('worker-message', {
+      id: 3,
+      agentId: 'test/worker',
+      from: 'core/core',
+      type: 'task',
+    });
 
     // Wait for spawn
     await new Promise(resolve => setTimeout(resolve, 300));

@@ -560,6 +560,11 @@ export class WorkerDispatcher extends EventEmitter {
    * Also enforces the agent completion frontier (duplicate_target guardrail).
    */
   private trackMessageSent(fromAgentId: string, toAgentId: string, messageType: string, filepath?: string): void {
+    // Defensive: skip tracking if fromAgentId is missing (e.g., incomplete event payload)
+    if (!fromAgentId) {
+      log.debug('dispatcher', 'trackMessageSent called without fromAgentId, skipping', { toAgentId, messageType });
+      return;
+    }
     const [meshName, agentName] = fromAgentId.split('/');
 
     // =========================================================================
