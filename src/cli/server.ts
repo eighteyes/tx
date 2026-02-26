@@ -754,10 +754,10 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
 
       // Check if this session already has a bound workspace
       let resolved = session.config.metadata?.workspace_resolved as string | undefined;
+      let template = session.config.metadata?.workspace_template as string | undefined;
 
       if (!resolved) {
         // Get workspace template from session metadata or mesh config
-        let template = session.config.metadata?.workspace_template as string | undefined;
         if (!template) {
           try {
             const meshConfig = await deps.meshConfigLoader(session.meshId);
@@ -833,8 +833,8 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
         })
         .filter(Boolean);
 
-      const template = session.config.metadata?.workspace_template || resolved;
-      return { workspace: { template, resolved }, entries, path: dirPath || '' };
+      const workspaceTemplate = template || session.config.metadata?.workspace_template || resolved;
+      return { workspace: { template: workspaceTemplate, resolved }, entries, path: dirPath || '' };
     },
   },
   {

@@ -201,7 +201,7 @@ describe('DispatchRouter', () => {
 
     test('fan-out "complete" in agents list resolves to core/core', () => {
       const routing = {
-        coordinator: ['worker-a', 'complete', { complete: 'synthesizer', fan_in: 'batch' }],
+        coordinator: ['worker-a', 'complete', { complete: 'synthesizer', fan_in: 'batch' as const }],
       };
       const agents = ['coordinator', 'worker-a', 'synthesizer'];
       const r = new DispatchRouter('m', routing, agents);
