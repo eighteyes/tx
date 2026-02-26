@@ -131,7 +131,7 @@ ${feedback}
 
 /**
  * Write feedback message to worker for quality iteration (legacy - writes to msgs/)
- * @deprecated Use writeSystemFeedbackMessage for session resume flow
+ * @deprecated Use SystemMessageWriter via context.systemWriter or writeSystemFeedbackMessage for session resume flow
  */
 export async function writeFeedbackMessage(
   context: HookContext,
@@ -140,6 +140,28 @@ export async function writeFeedbackMessage(
   feedback: string,
   iteration: number
 ): Promise<void> {
+  const body = `## Quality Stack Feedback
+
+The previous attempt did not pass quality evaluation. Please address the following feedback and try again:
+
+${feedback}
+
+---
+
+**Iteration**: ${iteration}
+**Action**: Review the feedback above and improve your solution.`;
+
+  if (context.systemWriter) {
+    context.systemWriter.write({
+      to: agentId,
+      from: 'core/core',
+      type: 'task',
+      headline: `Quality feedback - iteration ${iteration}`,
+      body,
+    });
+    return;
+  }
+
   const msgsDir = context.msgsDir;
   if (!msgsDir) {
     log.warn('hooks', 'No msgsDir in context, cannot write feedback message');
@@ -150,28 +172,7 @@ export async function writeFeedbackMessage(
   const msgId = `quality-feedback-${taskId}-${iteration}`;
   const filename = `${timestamp}-task-core--${agentId.replace('/', '-')}-${msgId}.md`;
   const filepath = path.join(msgsDir, filename);
-
-  const content = `---
-to: ${agentId}
-from: core/core
-type: task
-msg-id: ${msgId}
-headline: Quality feedback - iteration ${iteration}
-timestamp: ${new Date().toISOString()}
----
-
-## Quality Stack Feedback
-
-The previous attempt did not pass quality evaluation. Please address the following feedback and try again:
-
-${feedback}
-
----
-
-**Iteration**: ${iteration}
-**Action**: Review the feedback above and improve your solution.
-`;
-
+  const content = `---\nto: ${agentId}\nfrom: core/core\ntype: task\nmsg-id: ${msgId}\nheadline: Quality feedback - iteration ${iteration}\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
   fs.writeFileSync(filepath, content);
-  log.info('hooks', 'Wrote quality feedback message', { agentId, taskId, iteration, filepath });
+  log.info('hooks', 'Wrote quality feedback message (fallback)', { agentId, taskId, iteration });
 }

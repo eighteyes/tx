@@ -24,6 +24,7 @@ export function parseHookName(hookName: string): { baseName: string; config?: Qu
     'quality:adversarial:',
     'quality:accuracy:',
     'quality:summarizer:',
+    'quality:ai-linter:',
     'quality:deterministic:',
   ];
 
@@ -62,6 +63,9 @@ export function parseQualityConfig(configStr: string): QualityHookConfig {
         break;
       case 'gates':
         config.gates = value.split('+') as GateType[];
+        break;
+      case 'languages':
+        config.languages = value.split('+');
         break;
     }
   }

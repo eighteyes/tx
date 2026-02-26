@@ -58,6 +58,7 @@ export {
 export { registerPreHooks, preHooks } from './pre/index.ts';
 export { worktreeCreateHook } from './pre/worktree-create.ts';
 export { qualityPreflightHook } from './pre/quality-preflight.ts';
+export { discoveryCodeHook } from './pre/discovery-code.ts';
 
 // Post-hooks
 export { registerPostHooks, postHooks } from './post/index.ts';
@@ -68,6 +69,8 @@ export { qualityRubricHook } from './post/quality-rubric.ts';
 export { qualityAdversarialHook } from './post/quality-adversarial.ts';
 export { qualityAccuracyHook } from './post/quality-accuracy.ts';
 export { qualitySummarizerHook } from './post/quality-summarizer.ts';
+export { qualityAiLinterHook } from './post/ai-linter/index.ts';
 export { qualityDeterministicHook } from './post/quality-deterministic.ts';
 export { commitAutoHook } from './post/commit-auto.ts';
 export { brainUpdateHook } from './post/brain-update.ts';
+export { validationCodeHook } from './post/validation-code.ts';

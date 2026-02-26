@@ -150,6 +150,7 @@ export interface MeshConfig {
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
+  dev_mode?: boolean;  // Override all agent models to haiku for cheap workflow testing
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)

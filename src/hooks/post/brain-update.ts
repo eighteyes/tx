@@ -119,28 +119,23 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
 `;
 
     // Insert task message for brain mesh
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `brain-update-${context.taskId || Date.now()}`;
-    const filename = `${timestamp}-task-core-core--brain-brain-${msgId}.md`;
-    const filepath = path.join(context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs'), filename);
-
-    const content = `---
-to: brain/brain
-from: core/core
-type: task
-msg-id: ${msgId}
-headline: Analyze completed work - ${context.meshName}/${context.agentName}
-timestamp: ${new Date().toISOString()}
----
-
-${taskBody}
-`;
-
-    fs.writeFileSync(filepath, content);
-    log.info('hooks', 'Brain update message sent', {
-      meshInstance: context.meshInstance,
-      filepath,
-    });
+    if (context.systemWriter) {
+      context.systemWriter.write({
+        to: 'brain/brain',
+        from: 'core/core',
+        type: 'task',
+        headline: `Analyze completed work - ${context.meshName}/${context.agentName}`,
+        body: taskBody,
+      });
+    } else {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const msgId = `brain-update-${context.taskId || Date.now()}`;
+      const filename = `${timestamp}-task-core-core--brain-brain-${msgId}.md`;
+      const filepath = path.join(context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs'), filename);
+      const content = `---\nto: brain/brain\nfrom: core/core\ntype: task\nmsg-id: ${msgId}\nheadline: Analyze completed work - ${context.meshName}/${context.agentName}\ntimestamp: ${new Date().toISOString()}\n---\n\n${taskBody}\n`;
+      fs.writeFileSync(filepath, content);
+    }
+    log.info('hooks', 'Brain update message sent', { meshInstance: context.meshInstance });
 
   } catch (error) {
     log.error('hooks', 'Brain update hook failed', {

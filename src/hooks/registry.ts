@@ -230,6 +230,9 @@ export class HookRegistry {
     if (config.maxIterations) {
       context.qualityMaxIterations = config.maxIterations;
     }
+    if (config.languages) {
+      context.aiLinterLanguages = config.languages;
+    }
   }
 
   /**

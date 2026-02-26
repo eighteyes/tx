@@ -101,22 +101,7 @@ function writeCommitBlockedMessage(
   reason: string,
   commitWorkDir: string
 ): void {
-  const msgsDir = context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs');
-  const timestamp = Math.floor(Date.now() / 1000);
-  const msgId = `commit-blocked-${context.meshInstance}`;
-  const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
-  const filepath = path.join(msgsDir, filename);
-
-  const content = `---
-to: core/core
-from: hooks/commit
-type: update
-msg-id: ${msgId}
-headline: Commit blocked - ${context.meshName}
-timestamp: ${new Date().toISOString()}
----
-
-# Commit Hook Blocked
+  const body = `# Commit Hook Blocked
 
 The commit hook was unable to create a commit for mesh instance \`${context.meshInstance}\`.
 
@@ -125,11 +110,27 @@ The commit hook was unable to create a commit for mesh instance \`${context.mesh
 **Mesh**: ${context.meshName}/${context.agentName}
 **Work Directory**: ${commitWorkDir}
 
-Please review the changes and resolve the issue manually.
-`;
+Please review the changes and resolve the issue manually.`;
 
+  if (context.systemWriter) {
+    context.systemWriter.write({
+      to: 'core/core',
+      from: 'hooks/commit',
+      type: 'update',
+      headline: `Commit blocked - ${context.meshName}`,
+      body,
+    });
+    return;
+  }
+
+  const msgsDir = context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs');
+  const timestamp = Math.floor(Date.now() / 1000);
+  const msgId = `commit-blocked-${context.meshInstance}`;
+  const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+  const filepath = path.join(msgsDir, filename);
+  const content = `---\nto: core/core\nfrom: hooks/commit\ntype: update\nmsg-id: ${msgId}\nheadline: Commit blocked - ${context.meshName}\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
   fs.writeFileSync(filepath, content);
-  log.info('hooks', 'Wrote commit blocked message', { filepath });
+  log.info('hooks', 'Wrote commit blocked message (fallback)', { filepath });
 }
 
 /**
@@ -141,22 +142,7 @@ function writeCommitErrorMessage(
   error: Error,
   commitWorkDir: string
 ): void {
-  const msgsDir = context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs');
-  const timestamp = Math.floor(Date.now() / 1000);
-  const msgId = `commit-error-${context.meshInstance}`;
-  const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
-  const filepath = path.join(msgsDir, filename);
-
-  const content = `---
-to: core/core
-from: hooks/commit
-type: update
-msg-id: ${msgId}
-headline: Commit hook error - ${context.meshName}
-timestamp: ${new Date().toISOString()}
----
-
-# Commit Hook Error
+  const body = `# Commit Hook Error
 
 The commit hook encountered an error while processing mesh instance \`${context.meshInstance}\`.
 
@@ -165,12 +151,28 @@ The commit hook encountered an error while processing mesh instance \`${context.
 **Mesh**: ${context.meshName}/${context.agentName}
 **Work Directory**: ${commitWorkDir}
 
-Please review the logs and handle this manually.
-`;
+Please review the logs and handle this manually.`;
+
+  if (context.systemWriter) {
+    context.systemWriter.write({
+      to: 'core/core',
+      from: 'hooks/commit',
+      type: 'update',
+      headline: `Commit hook error - ${context.meshName}`,
+      body,
+    });
+    return;
+  }
+
+  const msgsDir = context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs');
+  const timestamp = Math.floor(Date.now() / 1000);
+  const msgId = `commit-error-${context.meshInstance}`;
+  const filename = `${timestamp}-update-hooks-commit--core-core-${msgId}.md`;
+  const filepath = path.join(msgsDir, filename);
+  const content = `---\nto: core/core\nfrom: hooks/commit\ntype: update\nmsg-id: ${msgId}\nheadline: Commit hook error - ${context.meshName}\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
 
   try {
     fs.writeFileSync(filepath, content);
-    log.info('hooks', 'Wrote commit error message', { filepath });
   } catch (writeErr) {
     log.error('hooks', 'Failed to write commit error message', {
       error: (writeErr as Error).message,

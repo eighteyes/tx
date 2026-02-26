@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { log } from '../shared/logger.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 /**
  * Pattern to detect Usage Policy errors
@@ -104,6 +105,9 @@ export interface AskHumanOptions {
 
   /** Optional task ID for correlation */
   taskId?: string;
+
+  /** Optional queue-first writer */
+  writer?: SystemMessageWriter;
 }
 
 /**
@@ -111,18 +115,7 @@ export interface AskHumanOptions {
  * Returns the filepath of the written message
  */
 export function writeUsagePolicyAskHuman(options: AskHumanOptions): string {
-  const { msgsDir, agentId, context, taskId } = options;
-
-  const timestamp = Math.floor(Date.now() / 1000);
-  const msgId = `usage-policy-error-${taskId || timestamp}`;
-  const safeAgentId = agentId.replace('/', '-');
-  const filename = `${timestamp}-ask-human-${safeAgentId}--core-core-${msgId}.md`;
-  const filepath = path.join(msgsDir, filename);
-
-  // Ensure msgsDir exists
-  if (!fs.existsSync(msgsDir)) {
-    fs.mkdirSync(msgsDir, { recursive: true });
-  }
+  const { msgsDir, agentId, context, taskId, writer } = options;
 
   // Format recent history for display
   const historySection = context.recentHistory.length > 0
@@ -134,18 +127,7 @@ export function writeUsagePolicyAskHuman(options: AskHumanOptions): string {
     ? context.toolCallsInProgress.map(t => `- \`${t}\``).join('\n')
     : '_No tool calls in progress_';
 
-  const content = `---
-to: core/core
-from: ${agentId}
-type: ask-human
-msg-id: ${msgId}
-headline: Usage Policy Error - Human Intervention Required
-timestamp: ${context.timestamp}
-status: blocked
-${context.sessionId ? `session-id: ${context.sessionId}` : ''}
----
-
-## Usage Policy Error Detected
+  const body = `## Usage Policy Error Detected
 
 The Claude API returned a Usage Policy violation error. This may be a **false positive** - the content being processed might have been incorrectly flagged.
 
@@ -203,18 +185,44 @@ Please review the context above and choose one of the following:
 
 ---
 
-**Note**: This error handling system exists because Claude's content filtering can sometimes produce false positives, especially when processing code that discusses security concepts, error handling, or other technical topics.
-`;
+**Note**: This error handling system exists because Claude's content filtering can sometimes produce false positives, especially when processing code that discusses security concepts, error handling, or other technical topics.`;
+
+  const extraFrontmatter: Record<string, string> = { status: 'blocked' };
+  if (context.sessionId) extraFrontmatter['session-id'] = context.sessionId;
+
+  if (writer) {
+    const result = writer.write({
+      to: 'core/core',
+      from: agentId,
+      type: 'ask-human',
+      headline: 'Usage Policy Error - Human Intervention Required',
+      body,
+      extraFrontmatter,
+    });
+    return result.filepath;
+  }
+
+  // Fallback: direct file write
+  const timestamp = Math.floor(Date.now() / 1000);
+  const msgId = `usage-policy-error-${taskId || timestamp}`;
+  const safeAgentId = agentId.replace('/', '-');
+  const filename = `${timestamp}-ask-human-${safeAgentId}--core-core-${msgId}.md`;
+  const filepath = path.join(msgsDir, filename);
+
+  if (!fs.existsSync(msgsDir)) {
+    fs.mkdirSync(msgsDir, { recursive: true });
+  }
+
+  const fmLines = [
+    `to: core/core`, `from: ${agentId}`, `type: ask-human`, `msg-id: ${msgId}`,
+    `headline: Usage Policy Error - Human Intervention Required`, `timestamp: ${context.timestamp}`,
+    `status: blocked`,
+  ];
+  if (context.sessionId) fmLines.push(`session-id: ${context.sessionId}`);
+  const content = `---\n${fmLines.join('\n')}\n---\n\n${body}\n`;
 
   fs.writeFileSync(filepath, content);
-
-  log.info('usage-policy-error', 'Wrote ask-human message for Usage Policy error', {
-    agentId,
-    filepath,
-    msgId,
-    sessionId: context.sessionId,
-  });
-
+  log.info('usage-policy-error', 'Wrote ask-human message (fallback)', { agentId, filepath, msgId });
   return filepath;
 }
 

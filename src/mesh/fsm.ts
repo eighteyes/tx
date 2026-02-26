@@ -20,6 +20,7 @@ import { ConditionEvaluator } from './fsm-evaluator.ts';
 import { SimpleExpressionEvaluator } from './fsm-expression.ts';
 import { log } from '../shared/logger.ts';
 import type { FSMExitConfig } from '../shared/types.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 // Re-export for convenience
 export { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
@@ -148,13 +149,15 @@ export class MeshFSM extends EventEmitter {
   private violationTracker: Map<string, FSMViolation> = new Map(); // Track violations per agent for self-heal
   private contextDescriptions: Record<string, string>; // Human-readable descriptions for context variables
   private workDir: string; // Project/mesh root for resolving relative paths
+  private writer?: SystemMessageWriter; // Queue-first writer for system messages
 
   constructor(
     meshName: string,
     config: FSMConfig,
     db: Database.Database,
     workDir: string,
-    projectRoot?: string
+    projectRoot?: string,
+    writer?: SystemMessageWriter
   ) {
     super();
     this.meshName = meshName;
@@ -165,6 +168,7 @@ export class MeshFSM extends EventEmitter {
     this.conditionEvaluator = new ConditionEvaluator();
     this.expressionEvaluator = new SimpleExpressionEvaluator();
     this.msgsDir = path.join(this.workDir, '.ai', 'tx', 'msgs');
+    this.writer = writer;
 
     // Normalize initial state - support both 'initial' (yaml) and 'initialState' (internal)
     this._initialState = config.initialState || config.initial || '';
@@ -1753,26 +1757,13 @@ export class MeshFSM extends EventEmitter {
       timestamp: number;
     }
   ): Promise<void> {
-    // Ensure msgs directory exists
-    if (!fs.existsSync(this.msgsDir)) {
-      fs.mkdirSync(this.msgsDir, { recursive: true });
-    }
-
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `fsm-escalation-${Date.now()}`;
-    const filename = `${timestamp}-ask-human-system-fsm-validator--core-core-${msgId}.md`;
-    const filepath = path.join(this.msgsDir, filename);
-
-    const content = `---
-to: core/core
-from: system/fsm-validator
-type: ask-human
-msg-id: ${msgId}
-headline: FSM Violation - Agent needs help
-timestamp: ${new Date().toISOString()}
----
-
-# FSM Violation Escalation
+    if (this.writer) {
+      this.writer.write({
+        to: 'core/core',
+        from: 'system/fsm-validator',
+        type: 'ask-human',
+        headline: 'FSM Violation - Agent needs help',
+        body: `# FSM Violation Escalation
 
 Agent \`${agentId}\` has repeatedly violated FSM routing rules and needs human intervention.
 
@@ -1797,22 +1788,47 @@ A feedback message was sent to help the agent self-correct, but the violation oc
 3. **Manually guide the agent**: Provide explicit routing instructions.
 4. **Reset if needed**: Consider resetting the FSM state if it's in an unexpected state.
 
+Please investigate and provide guidance to the agent.`,
+      });
+      return;
+    }
+
+    // Fallback: direct file write (no queue access)
+    if (!fs.existsSync(this.msgsDir)) {
+      fs.mkdirSync(this.msgsDir, { recursive: true });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `fsm-escalation-${Date.now()}`;
+    const filename = `${timestamp}-ask-human-system-fsm-validator--core-core-${msgId}.md`;
+    const filepath = path.join(this.msgsDir, filename);
+
+    const content = `---
+to: core/core
+from: system/fsm-validator
+type: ask-human
+msg-id: ${msgId}
+headline: FSM Violation - Agent needs help
+timestamp: ${new Date().toISOString()}
+---
+
+# FSM Violation Escalation
+
+Agent \`${agentId}\` has repeatedly violated FSM routing rules and needs human intervention.
+
 Please investigate and provide guidance to the agent.
 `;
 
     fs.writeFileSync(filepath, content);
-    log.warn('mesh-fsm', 'FSM escalation message written', {
+    log.warn('mesh-fsm', 'FSM escalation message written (fallback)', {
       meshName: this.meshName,
       agentId,
-      filepath,
-      violationType: violation.violationType,
     });
   }
 
   /**
    * Write dispatch message files to trigger next state's agents.
    * Called after a core-bound transition to spawn the next state's workers.
-   * Writes directly to msgsDir instead of relying on event listeners.
    */
   private writeDispatchMessages(
     fromState: string,
@@ -1822,6 +1838,19 @@ Please investigate and provide guidance to the agent.
   ): void {
     for (const agent of agents) {
       const agentId = `${this.meshName}/${agent}`;
+
+      if (this.writer) {
+        this.writer.write({
+          to: agentId,
+          from: 'system/fsm-dispatch',
+          type: 'task',
+          headline: `FSM dispatch — execute ${toState}`,
+          body: `FSM transitioned from \`${fromState}\` to \`${toState}\`. Execute your task for this state.`,
+        });
+        continue;
+      }
+
+      // Fallback: direct file write (no queue access)
       const timestamp = Date.now();
       const msgId = `fsm-dispatch-${timestamp}-${agent}`;
       const filename = `${Math.floor(timestamp / 1000)}-fsm-dispatch--${this.meshName}-${agent}-${msgId}.md`;
@@ -1841,18 +1870,16 @@ FSM transitioned from \`${fromState}\` to \`${toState}\`. Execute your task for 
 
       try {
         fs.writeFileSync(filepath, msgContent);
-        log.info('mesh-fsm', 'Wrote dispatch message', {
+        log.info('mesh-fsm', 'Wrote dispatch message (fallback)', {
           meshName: this.meshName,
           agentId,
           fromState,
           toState,
-          filepath: filename,
         });
       } catch (error) {
         log.error('mesh-fsm', 'Failed to write dispatch message', {
           meshName: this.meshName,
           agentId,
-          filepath,
           error: (error as Error).message,
         });
       }

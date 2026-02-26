@@ -39,6 +39,7 @@ export interface ActiveWorker {
   messagesSent: TrackedMessage[];  // Messages written by this worker
   taskFrom?: string;  // Who sent the initial task (e.g., 'core/core')
   nudgeCount: number;  // Number of completion nudges sent
+  sentTargets: Set<string>;  // Agent completion frontier: targets already sent to this session
 }
 
 /**
@@ -61,7 +62,7 @@ interface WorkerStateFile {
 /**
  * Options for adding a new worker
  */
-export type AddWorkerOptions = Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount'>;
+export type AddWorkerOptions = Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount' | 'sentTargets'>;
 
 /**
  * Manages active worker instances and their lifecycle
@@ -87,6 +88,7 @@ export class WorkerLifecycleManager {
       messagesSent: [],  // Initialize empty message tracking
       nudgeCount: 0,  // Initialize nudge counter
       taskFrom,  // Track who sent the initial task
+      sentTargets: new Set(),  // Initialize agent completion frontier
     };
 
     const workers = this.activeWorkers.get(agentId) || [];
@@ -195,6 +197,64 @@ export class WorkerLifecycleManager {
       messageType,
       totalMessagesSent: worker.messagesSent.length,
     });
+  }
+
+  /**
+   * Check if an agent has already sent to a target this session (agent completion frontier).
+   * Returns true if target is already in the frontier (duplicate send).
+   */
+  hasSentToTarget(fromAgentId: string, toAgentId: string): boolean {
+    const workers = this.activeWorkers.get(fromAgentId);
+    if (!workers || workers.length === 0) {
+      return false;
+    }
+    return workers[0].sentTargets.has(toAgentId);
+  }
+
+  /**
+   * Add a target to an agent's completion frontier (mark as sent).
+   */
+  addSentTarget(fromAgentId: string, toAgentId: string): void {
+    const workers = this.activeWorkers.get(fromAgentId);
+    if (!workers || workers.length === 0) {
+      return;
+    }
+    workers[0].sentTargets.add(toAgentId);
+    log.debug('worker-lifecycle', 'Added target to completion frontier', {
+      fromAgentId,
+      toAgentId,
+      frontierSize: workers[0].sentTargets.size,
+    });
+  }
+
+  /**
+   * Reset the completion frontier for a specific target (for ask-response loops).
+   * When an agent receives an inbound response from a target, they can send to that target again.
+   */
+  resetSentTargetForResponse(agentId: string, respondingAgent: string): void {
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers || workers.length === 0) {
+      return;
+    }
+    if (workers[0].sentTargets.has(respondingAgent)) {
+      workers[0].sentTargets.delete(respondingAgent);
+      log.debug('worker-lifecycle', 'Reset completion frontier for ask-response', {
+        agentId,
+        respondingAgent,
+        frontierSize: workers[0].sentTargets.size,
+      });
+    }
+  }
+
+  /**
+   * Get the current completion frontier for an agent (for debugging/logging).
+   */
+  getSentTargets(agentId: string): Set<string> {
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers || workers.length === 0) {
+      return new Set();
+    }
+    return new Set(workers[0].sentTargets);  // Return copy
   }
 
   /**

@@ -34,7 +34,7 @@ import {MeshFSM, type FSMTransitionEvent, type FSMGateEvent, type FSMScriptEvent
 import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
-import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
+import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type AddWorkerOptions } from './worker-lifecycle.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { injectRoutingInstructions, injectDispatcherRoutingInstructions } from '../prompt/index.ts';
@@ -44,6 +44,8 @@ import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
+import { SystemMessageWriter } from '../core/system-message-writer.ts';
+import { NudgeDetector } from './nudge-detector.ts';
 import YAML from 'yaml';
 
 /**
@@ -339,6 +341,10 @@ export class WorkerDispatcher extends EventEmitter {
     transform?: 'summarize';
   }> = new Map();
 
+  // Queue-first writer for system-authored messages
+  systemWriter!: SystemMessageWriter;
+  // Auto-nudge recovery for stalled routes
+  private nudgeDetector?: NudgeDetector;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -494,7 +500,7 @@ export class WorkerDispatcher extends EventEmitter {
   /**
    * Add a worker instance (delegates to WorkerLifecycleManager)
    */
-  private addActiveWorker(agentId: string, worker: Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount'>, taskFrom?: string): string {
+  private addActiveWorker(agentId: string, worker: AddWorkerOptions, taskFrom?: string): string {
     return this.workerLifecycle.add(agentId, worker, taskFrom);
   }
 
@@ -551,12 +557,71 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Track a message sent by an active worker (delegates to WorkerLifecycleManager)
+   * Also enforces the agent completion frontier (duplicate_target guardrail).
    */
   private trackMessageSent(fromAgentId: string, toAgentId: string, messageType: string, filepath?: string): void {
+    const [meshName, agentName] = fromAgentId.split('/');
+
+    // =========================================================================
+    // Agent Completion Frontier: duplicate_target guardrail
+    // Prevents agents from sending multiple messages to the same target in a single session.
+    // This prevents cascade multiplication bugs (e.g., 3× delivery observed in narrative-engine-v2).
+    // =========================================================================
+
+    // Exemptions:
+    // 1. core/core — agents legitimately send HITL, status, errors, completion to core
+    // 2. dispatch type messages — fan-out is intentional
+    // 3. Non-existent worker — might be manual message or timing issue
+    const isDuplicateTargetExempt = toAgentId === 'core/core' || messageType === 'dispatch';
+
+    if (!isDuplicateTargetExempt && this.workerLifecycle.hasSentToTarget(fromAgentId, toAgentId)) {
+      const mode = this.guardrails.getMode('duplicate_target', meshName, agentName);
+
+      if (mode.strict) {
+        // Strict mode: block delivery entirely
+        log.warn('dispatcher', 'duplicate_target BLOCKED — agent already sent to this target', {
+          agentId: fromAgentId,
+          target: toAgentId,
+          messageType,
+        });
+        log.activity('guardrail:duplicate-target', fromAgentId, `BLOCKED duplicate send to ${toAgentId}`);
+
+        // Inject system feedback to tell the agent it already sent to that target
+        this.emit('system-feedback', {
+          agentId: fromAgentId,
+          feedback: `# Duplicate Target Blocked\n\nYou have already sent a message to \`${toAgentId}\` this session. Each agent can only be messaged once per session (completion frontier rule).\n\nIf you need to send updated information, complete your current work first and let the downstream agent request more information if needed.`,
+          reason: 'duplicate_target',
+        });
+
+        // Do NOT track the message — it was blocked
+        return;
+      } else if (mode.warning) {
+        // Warning mode: allow but inject feedback
+        log.warn('dispatcher', 'duplicate_target WARNING — agent already sent to this target (allowed)', {
+          agentId: fromAgentId,
+          target: toAgentId,
+          messageType,
+        });
+        log.activity('guardrail:duplicate-target:warning', fromAgentId, `duplicate send to ${toAgentId} (allowed)`);
+
+        // Inject system feedback as a warning
+        this.emit('system-feedback', {
+          agentId: fromAgentId,
+          feedback: `# Duplicate Target Warning\n\nYou have already sent a message to \`${toAgentId}\` this session. Sending multiple messages to the same target can cause cascade multiplication. Consider if this is intentional.`,
+          reason: 'duplicate_target_warning',
+        });
+      }
+    }
+
+    // Add target to completion frontier (even for warning mode — we track it regardless)
+    if (!isDuplicateTargetExempt) {
+      this.workerLifecycle.addSentTarget(fromAgentId, toAgentId);
+    }
+
+    // Track the message normally
     this.workerLifecycle.trackMessage(fromAgentId, toAgentId, messageType, filepath);
 
     // Chaos contract: enforce max_messages limit
-    const [meshName, agentName] = fromAgentId.split('/');
     const meshConfig = this.meshConfigs.get(meshName);
     const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
     const maxMessages = this.guardrails.getMaxMessages(meshName, agentName) ?? agentConfig?.max_messages ?? null;
@@ -586,6 +651,15 @@ export class WorkerDispatcher extends EventEmitter {
           });
           log.activity('guardrail:max-messages', fromAgentId, `max_messages STRICT KILL (${maxMessages}) — killing worker`);
           worker.runner.kill('max_messages limit reached');
+
+          // Notify core that agent was killed due to budget exhaustion
+          this.systemWriter?.write({
+            to: 'core/core',
+            from: fromAgentId,
+            type: 'info',
+            headline: `Budget kill: ${agentName} hit max_messages (${worker.messagesSent.length}/${maxMessages})`,
+            body: `Agent \`${fromAgentId}\` was killed after sending ${worker.messagesSent.length} messages (limit: ${maxMessages}).\n\nDestinations: ${worker.messagesSent.map(m => m.to).join(', ')}\n\nThis agent's work was forcibly terminated. Downstream agents may not have received expected input.`,
+          });
         }
       }
     }
@@ -1058,6 +1132,19 @@ export class WorkerDispatcher extends EventEmitter {
     this.running = true;
     this.emit('start');
 
+    // Initialize queue-first writer — share consumer's registry if available
+    const registry = (consumer as any)?.systemFileRegistry ?? new Set<string>();
+    this.systemWriter = new SystemMessageWriter(
+      this.queue,
+      this.config.msgsDir,
+      (event, data) => consumer?.emit(event, data) ?? this.emit(event, data),
+      registry
+    );
+
+    // Initialize auto-nudge detector from config
+    const nudgeConfig = this.guardrails.getNudgeConfig?.() ?? {};
+    this.nudgeDetector = new NudgeDetector(this.systemWriter, this.queue, nudgeConfig);
+
     // Subscribe to consumer events for event-driven dispatch
     if (consumer) {
       this.boundMessageHandler = (event: { agentId: string }) => {
@@ -1237,6 +1324,9 @@ export class WorkerDispatcher extends EventEmitter {
    */
   private async handleWorkerMessage(agentId: string): Promise<void> {
     if (!this.running) return;
+
+    // Cancel any pending nudge for this target (message arrived)
+    this.nudgeDetector?.cancelTimer(agentId);
 
     // OAOM (One-Agent-One-Message): Check if agent already has an active worker
     // Each agent processes exactly one message at a time; subsequent messages queue
@@ -2002,6 +2092,7 @@ The system will resume your session when the human responds.`;
         taskId: `${agentId}-resume-${Date.now()}`,
         taskBody: resumePrompt,
         msgsDir: this.config.msgsDir,
+        systemWriter: this.systemWriter,
       };
 
       // Store in active workers and get the generated workerId
@@ -2193,6 +2284,14 @@ The system will resume your session when the human responds.`;
     // NOTE: pending_asks table only tracks core/core boundary (parity gate)
     // await_state table tracks ALL agent-to-agent awaiting (session management)
     // We only call resolvePendingAsk() for responses from core/core
+
+    // Agent Completion Frontier: Reset frontier for responding agent.
+    // When agent A asks agent B and B responds, A can now send to B again.
+    // This enables valid ask-response loops (narrator → oracle → narrator → oracle).
+    // Only reset for agent-to-agent responses (not core/core responses).
+    if (respondingAgentId !== 'core/core') {
+      this.workerLifecycle.resetSentTargetForResponse(awaitingAgentId, respondingAgentId);
+    }
 
     // Check for suspended session
     const suspended = this.sessionManager.get(awaitingAgentId);
@@ -2980,6 +3079,7 @@ Please advise the agent or check mesh configuration.`;
         taskBody,
         featureName,  // Required for worktree-enabled meshes
         msgsDir: this.config.msgsDir,
+        systemWriter: this.systemWriter,
         // Ensemble context
         ensembleId,
         ensembleIndex,
@@ -3313,7 +3413,7 @@ Please advise the agent or check mesh configuration.`;
             id: entry.id, path: resolvedPath, description: entry.description,
           };
 
-          if (entry.reads.includes(agent.name)) {
+          if (entry.reads?.includes(agent.name)) {
             // Determine if we should auto-inject this entry's content into preload
             // Entry-level autoInject overrides mesh-level autoInjectManifestFiles
             const shouldAutoInject = entry.autoInject !== undefined ? entry.autoInject : meshAutoInject;
@@ -3343,7 +3443,7 @@ Please advise the agent or check mesh configuration.`;
             }
             agentReads.push(fileEntry);
           }
-          if (entry.writes.includes(agent.name)) agentWrites.push(fileEntry);
+          if (entry.writes?.includes(agent.name)) agentWrites.push(fileEntry);
         }
         if (agentReads.length > 0 || agentWrites.length > 0) {
           const injectedCount = agentReads.filter(f => f.content).length;
@@ -3454,7 +3554,13 @@ Please advise the agent or check mesh configuration.`;
           to: frontmatterModel
         });
       }
-      if (this.config.ultraLowMode) {
+      if (meshConfig?.dev_mode && !frontmatterModel) {
+        const original = model;
+        model = 'haiku' as SemanticModel;
+        if (original !== 'haiku') {
+          log.info('dispatcher', `[DEV MODE] ${meshName}: ${agent.name} model override`, { from: original, to: 'haiku' });
+        }
+      } else if (this.config.ultraLowMode) {
         model = 'haiku' as SemanticModel;
         log.info('dispatcher', `[ULTRA-LOW MODE] Forced model for ${agentId}`, {from: agent.model, to: model});
       } else if (this.config.lowMode && typeof model === 'string' && (model as string).includes('opus')) {
@@ -3725,6 +3831,21 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         hooks: chaosHooks,  // Chaos contract hooks (write-gate)
         thinking: agent.thinking,  // Extended thinking control (false = disabled)
       };
+
+      // Prompt size visibility: ~4 chars per token rough estimate
+      const promptChars = systemPrompt.length;
+      const promptTokensEstimate = Math.ceil(promptChars / 4);
+      const PROMPT_WARNING_TOKENS = 80_000;  // Warn if system prompt > ~80K tokens
+      if (promptTokensEstimate > PROMPT_WARNING_TOKENS) {
+        log.warn('dispatcher', 'Large system prompt detected', {
+          agentId, promptChars, promptTokensEstimate,
+        });
+        log.activity('guardrail:prompt-size', agentId, `System prompt ~${promptTokensEstimate} tokens (${promptChars} chars) — may limit agent output capacity`);
+      } else {
+        log.debug('dispatcher', 'System prompt size', {
+          agentId, promptChars, promptTokensEstimate,
+        });
+      }
 
       const worker = new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
@@ -4216,6 +4337,62 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           });
         }
 
+        // Schedule nudge check BEFORE removing worker (needs messagesSent)
+        if (this.nudgeDetector && activeWorker && meshConfig?.routing) {
+          const agentNames = (meshConfig.agents || []).map((a: AgentConfig) => a.name);
+          this.nudgeDetector.scheduleCheck({
+            agentId,
+            meshName,
+            messagesSent: [...activeWorker.messagesSent],
+            output: data.output || '',
+            taskBody: workerHookContext.taskBody || '',
+            routing: meshConfig.routing as Record<string, unknown>,
+            agentNames,
+          });
+        }
+
+        // Budget exhaustion detection: notify core when agent hit max_turns ceiling
+        if (runnerConfig.maxTurns && data.metrics) {
+          const totalTurns = data.metrics.queries.reduce((sum: number, q: { numTurns: number }) => sum + q.numTurns, 0);
+          if (totalTurns >= runnerConfig.maxTurns) {
+            log.warn('dispatcher', 'Agent exhausted max_turns budget', {
+              agentId, maxTurns: runnerConfig.maxTurns, totalTurns,
+            });
+            this.systemWriter?.write({
+              to: 'core/core',
+              from: agentId,
+              type: 'info',
+              headline: `Budget exhausted: ${agent.name} hit max_turns (${totalTurns}/${runnerConfig.maxTurns})`,
+              body: `Agent \`${agentId}\` completed after using all ${runnerConfig.maxTurns} turns. Its work may be incomplete.\n\n**Output summary** (last 500 chars):\n\`\`\`\n${(data.output || '').slice(-500)}\n\`\`\`\n\nConsider increasing \`max_turns\` for this agent or reviewing its task scope.`,
+            });
+          }
+        }
+
+        // Context saturation detection: agent completed with 0 messages sent
+        // and consumed a large portion of context on input (prompt + loaded files)
+        const messagesSent = activeWorker?.messagesSent?.length || 0;
+        if (data.metrics && messagesSent === 0) {
+          const totalInput = data.metrics.totalInputTokens || 0;
+          const totalOutput = data.metrics.totalOutputTokens || 0;
+          // High input-to-total ratio with low output suggests context saturation
+          const MODEL_CONTEXT_WINDOW = 200_000;  // All Claude models via SDK
+          const inputRatio = totalInput / MODEL_CONTEXT_WINDOW;
+          if (inputRatio > 0.6 && totalOutput < 10_000) {
+            log.warn('dispatcher', 'Context saturation detected', {
+              agentId, totalInput, totalOutput,
+              inputRatio: Math.round(inputRatio * 100) + '%',
+              promptCharsEstimate: systemPrompt.length,
+            });
+            this.systemWriter?.write({
+              to: 'core/core',
+              from: agentId,
+              type: 'info',
+              headline: `Context saturated: ${agent.name} used ${Math.round(inputRatio * 100)}% of context window on input`,
+              body: `Agent \`${agentId}\` completed without sending any messages. It consumed ~${Math.round(totalInput / 1000)}K of ~${MODEL_CONTEXT_WINDOW / 1000}K context tokens on input (system prompt + loaded files), leaving limited space for output.\n\nSystem prompt: ~${Math.round(systemPrompt.length / 4000)}K tokens\nOutput generated: ~${Math.round(totalOutput / 1000)}K tokens\n\nThis agent likely couldn't fit its full workflow into the remaining context. Consider:\n- Reducing the system prompt size\n- Splitting the task across multiple agents\n- Reducing file preloads\n- Starting a fresh session (clean context window)`,
+            });
+          }
+        }
+
         this.removeActiveWorker(agentId, currentWorkerId);
         this.writeWorkerState();
 
@@ -4602,7 +4779,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         config.fsm!,
         this.queue.getDatabase(),
         config._basePath || this.config.workDir,
-        this.config.workDir
+        this.config.workDir,
+        this.systemWriter
       );
 
       // Wire FSM events using consolidated helper
@@ -4666,6 +4844,12 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       if (config.guardrails) {
         this.guardrails.registerMesh(meshName, config.guardrails);
       }
+      if (config.dev_mode) {
+        log.warn('dispatcher', `[DEV MODE] Mesh '${meshName}' has dev_mode enabled — all agents forced to haiku`, {
+          meshName,
+          agents: config.agents.map(a => `${a.name}(${a.model})`),
+        });
+      }
     }
 
     // Initialize FSMs for meshes that have fsm config - MUST await
@@ -4690,7 +4874,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             config.fsm!,
             this.queue.getDatabase(),
             config._basePath || this.config.workDir,
-            this.config.workDir
+            this.config.workDir,
+            this.systemWriter
           );
 
           // Wire FSM events using consolidated helper
@@ -5009,25 +5194,12 @@ ${output}
    * Write a task message to trigger a parallel agent
    */
   private writeParallelAgentTask(meshName: string, agentName: string, entryAgent: string): void {
-    const taskId = `parallel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const filename = `${taskId}.md`;
-    const filepath = path.join(this.config.msgsDir, filename);
-
-    const content = `---
-to: ${meshName}/${agentName}
-from: system
-type: task
----
-
-Forked from parallel entry: ${entryAgent}
-`;
-
-    fs.writeFileSync(filepath, content, 'utf-8');
-    log.info('dispatcher', 'Wrote parallel agent task', {
-      meshName,
-      agentName,
-      taskId,
-      filepath,
+    this.systemWriter.write({
+      to: `${meshName}/${agentName}`,
+      from: 'system',
+      type: 'task',
+      headline: `Parallel fork from ${entryAgent}`,
+      body: `Forked from parallel entry: ${entryAgent}`,
     });
   }
 
@@ -5476,6 +5648,9 @@ Forked from parallel entry: ${entryAgent}
    * Finalize mesh completion — log analytics and clean up
    */
   private finalizeMeshCompletion(meshName: string, completionAgent: string): void {
+    // Cancel any pending nudge timers for this mesh
+    this.nudgeDetector?.cancelForMesh(meshName);
+
     // Find session by meshName (delegates to MetricsAggregator)
     const result = this.metricsAggregator.findSessionByMeshName(meshName);
 
@@ -5591,27 +5766,12 @@ Forked from parallel entry: ${entryAgent}
   }
 
   private writeSystemFeedbackMessage(agentId: string, feedback: string, reason: string): void {
-    const timestamp = Date.now();
-    const filename = `${Math.floor(timestamp / 1000)}-routing-feedback-system--${agentId.replace('/', '-')}-${reason}-${timestamp}.md`;
-    const filepath = path.join(this.config.msgsDir, filename);
-
-    const msgContent = `---
-to: ${agentId}
-from: system/routing-validator
-type: message
-msg-id: routing-feedback-${timestamp}
-headline: Routing violation - use correct agent name
-timestamp: ${new Date(timestamp).toISOString()}
----
-
-${feedback}
-`;
-
-    fs.writeFileSync(filepath, msgContent);
-    log.info('dispatcher', 'Wrote system feedback message for next invocation', {
-      agentId,
-      filepath,
-      reason,
+    this.systemWriter.write({
+      to: agentId,
+      from: 'system/routing-validator',
+      type: 'message',
+      headline: 'Routing violation - use correct agent name',
+      body: feedback,
     });
   }
 
@@ -5703,28 +5863,12 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     // Primary path: write routing-feedback message for next invocation
     // The rejected message was blocked at the gate — agent has already
     // made its decision and is exiting. Queue feedback for next spawn.
-    const timestamp = Date.now();
-    const filename = `${Math.floor(timestamp / 1000)}-routing-feedback-system--${agentId.replace('/', '-')}-routing-blocked-${timestamp}.md`;
-    const filepath = path.join(this.config.msgsDir, filename);
-
-    const msgContent = `---
-to: ${agentId}
-from: system/fsm-validator
-type: message
-msg-id: routing-feedback-${timestamp}
-headline: Routing violation - use correct agent name
-timestamp: ${new Date(timestamp).toISOString()}
----
-
-${feedback}
-`;
-
-    fs.writeFileSync(filepath, msgContent);
-    log.info('dispatcher', 'Wrote routing feedback message for next invocation', {
-      agentId,
-      filepath,
-      attemptedTarget,
-      reason: hasActiveQuery ? 'injection-failed' : 'worker-post-query',
+    this.systemWriter.write({
+      to: agentId,
+      from: 'system/fsm-validator',
+      type: 'message',
+      headline: 'Routing violation - use correct agent name',
+      body: feedback,
     });
   }
 
@@ -6029,6 +6173,7 @@ ${feedback}
       ensembleOutput,
       ensembleMetadata,
       msgsDir: this.config.msgsDir,
+      writer: this.systemWriter,
     });
 
     if (!result.success) {

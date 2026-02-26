@@ -19,7 +19,7 @@ const COMPONENT = 'session-summarizer';
 /**
  * Run a one-shot haiku query (no tools, just text completion)
  */
-async function runHaikuQuery(prompt: string): Promise<string> {
+export async function runHaikuQuery(prompt: string): Promise<string> {
   let result = '';
 
   for await (const message of query({

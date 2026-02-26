@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { log } from '../shared/logger.ts';
 import type { MessageQueue, PendingAsk } from './index.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 /**
  * Configuration for deadlock detection
@@ -62,12 +63,14 @@ export class DeadlockDetector extends EventEmitter {
   private msgsDir: string;
   private checkInterval: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private writer?: SystemMessageWriter;
 
-  constructor(queue: MessageQueue, msgsDir: string, config: Partial<DeadlockConfig> = {}) {
+  constructor(queue: MessageQueue, msgsDir: string, config: Partial<DeadlockConfig> = {}, writer?: SystemMessageWriter) {
     super();
     this.queue = queue;
     this.msgsDir = msgsDir;
     this.config = { ...DEFAULT_DEADLOCK_CONFIG, ...config };
+    this.writer = writer;
   }
 
   /**
@@ -287,21 +290,9 @@ Your task should now continue. Handle this as an error response.`;
    * Notify core about a cycle
    */
   private notifyCore(cycle: CycleInfo, status: 'broken' | 'escalated'): void {
-    const timestamp = Date.now();
-    const msgId = `deadlock-${status}-${timestamp}`;
     const cycleStr = cycle.agents.join(' → ') + ' → ' + cycle.agents[0];
 
-    const content = `---
-to: core/core
-from: system/deadlock-detector
-type: notification
-msg-id: ${msgId}
-headline: Deadlock ${status}: ${cycle.agents[0]}
-timestamp: ${new Date().toISOString()}
-status: ${status === 'broken' ? 'complete' : 'error'}
----
-
-## Deadlock ${status === 'broken' ? 'Broken' : 'Escalated'}
+    const body = `## Deadlock ${status === 'broken' ? 'Broken' : 'Escalated'}
 
 A circular dependency was detected and ${status === 'broken' ? 'automatically resolved' : 'requires attention'}.
 
@@ -315,11 +306,27 @@ ${status === 'broken'
 }
 
 **Involved Message IDs**:
-${cycle.msgIds.map(id => `- ${id}`).join('\n')}
-`;
+${cycle.msgIds.map(id => `- ${id}`).join('\n')}`;
 
+    if (this.writer) {
+      this.writer.write({
+        to: 'core/core',
+        from: 'system/deadlock-detector',
+        type: 'notification',
+        headline: `Deadlock ${status}: ${cycle.agents[0]}`,
+        body,
+        extraFrontmatter: { status: status === 'broken' ? 'complete' : 'error' },
+      });
+      return;
+    }
+
+    // Fallback: direct file write
+    const timestamp = Date.now();
+    const msgId = `deadlock-${status}-${timestamp}`;
     const filename = `${timestamp}-notification-system--core-core-${msgId}.md`;
     const filepath = path.join(this.msgsDir, filename);
+
+    const content = `---\nto: core/core\nfrom: system/deadlock-detector\ntype: notification\nmsg-id: ${msgId}\nheadline: Deadlock ${status}: ${cycle.agents[0]}\ntimestamp: ${new Date().toISOString()}\nstatus: ${status === 'broken' ? 'complete' : 'error'}\n---\n\n${body}\n`;
 
     try {
       fs.writeFileSync(filepath, content);

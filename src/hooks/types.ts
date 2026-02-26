@@ -45,6 +45,9 @@ export interface HookContext {
   // Message directory for feedback messages
   msgsDir?: string;
 
+  // Queue-first writer for system-authored messages
+  systemWriter?: import('../core/system-message-writer.ts').SystemMessageWriter;
+
   // Ensemble context (if worker is part of ensemble)
   ensembleId?: string;
   ensembleIndex?: number;
@@ -140,6 +143,8 @@ export interface QualityHookConfig {
   gates?: GateType[];
   onFail?: 'loop' | 'halt';
   maxIterations?: number;
+  /** Restrict which language linters run, e.g. ['js','python']. Omit = all. */
+  languages?: string[];
 }
 
 /**

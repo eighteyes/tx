@@ -51,6 +51,11 @@ interface MaxTurnsOverride {
   limit?: number | null;
 }
 
+interface DuplicateTargetOverride {
+  strict?: boolean;
+  warning?: boolean;
+}
+
 interface AgentOverrides {
   write_gate?: GateOverride;
   read_gate?: GateOverride;
@@ -58,6 +63,7 @@ interface AgentOverrides {
   routing_error?: RoutingErrorOverride;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
+  duplicate_target?: DuplicateTargetOverride;
 }
 
 interface MeshOverrides extends AgentOverrides {
@@ -73,11 +79,19 @@ interface GuardrailsSchema {
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
+  duplicate_target?: DuplicateTargetOverride;
   meshes?: Record<string, MeshOverrides>;
+}
+
+interface NudgeConfigYaml {
+  enabled?: boolean;
+  delay_ms?: number;
+  max_nudges_per_agent?: number;
 }
 
 interface TxConfig {
   guardrails?: GuardrailsSchema;
+  nudge?: NudgeConfigYaml;
 }
 
 const DEFAULT_MODE: GuardrailMode = { strict: false, warning: true };
@@ -320,7 +334,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -343,9 +357,9 @@ export class GuardrailConfig {
     const g = this.config.guardrails;
     const sources: Array<{ strict?: boolean; warning?: boolean } | undefined> = [];
 
-    // Agent-level guardrails (write_gate, read_gate, identity_gate, routing_error, max_messages, max_turns)
+    // Agent-level guardrails (write_gate, read_gate, identity_gate, routing_error, max_messages, max_turns, duplicate_target)
     // max_mesh_messages is mesh-level only
-    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'routing_error', 'max_messages', 'max_turns'];
+    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target'];
     if (agentName && agentGuardrails.includes(guardrail)) {
       // Mesh-local agent
       const localAgentOverrides = local?.agents?.[agentName];
@@ -396,5 +410,18 @@ export class GuardrailConfig {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Get nudge auto-recovery configuration
+   */
+  getNudgeConfig(): { enabled?: boolean; delayMs?: number; maxNudgesPerAgent?: number } {
+    const n = this.config.nudge;
+    if (!n) return {};
+    return {
+      enabled: n.enabled,
+      delayMs: n.delay_ms,
+      maxNudgesPerAgent: n.max_nudges_per_agent,
+    };
   }
 }

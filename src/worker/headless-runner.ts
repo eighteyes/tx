@@ -11,6 +11,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { EventEmitter } from 'node:events';
 import YAML from 'yaml';
 import { SdkRunner, type SdkRunnerConfig, type ToolRestriction } from './sdk-runner.ts';
@@ -92,6 +93,7 @@ export class HeadlessRunner extends EventEmitter {
   private maxIterations: number = 5;
   private onFail: 'loop' | 'halt' = 'loop';
   private currentTaskBody: string = '';
+  private systemWriter?: SystemMessageWriter;
 
   constructor(config: HeadlessRunnerConfig, queue: MessageQueue) {
     super();
@@ -240,13 +242,13 @@ export class HeadlessRunner extends EventEmitter {
         const fileEntry: import('../workspace/index.ts').ManifestFileEntry = {
           id: entry.id, path: resolvedPath, description: entry.description,
         };
-        if (entry.reads.includes(this.config.agent)) {
+        if (entry.reads?.includes(this.config.agent)) {
           if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
             try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
           }
           reads.push(fileEntry);
         }
-        if (entry.writes.includes(this.config.agent)) writes.push(fileEntry);
+        if (entry.writes?.includes(this.config.agent)) writes.push(fileEntry);
       }
       if (reads.length > 0 || writes.length > 0) {
         systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
@@ -436,13 +438,13 @@ export class HeadlessRunner extends EventEmitter {
         const fileEntry: import('../workspace/index.ts').ManifestFileEntry = {
           id: entry.id, path: resolvedPath, description: entry.description,
         };
-        if (entry.reads.includes(this.config.agent)) {
+        if (entry.reads?.includes(this.config.agent)) {
           if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
             try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
           }
           reads.push(fileEntry);
         }
-        if (entry.writes.includes(this.config.agent)) writes.push(fileEntry);
+        if (entry.writes?.includes(this.config.agent)) writes.push(fileEntry);
       }
       if (reads.length > 0 || writes.length > 0) {
         systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
@@ -711,22 +713,7 @@ export class HeadlessRunner extends EventEmitter {
     }
 
     const agentId = this.getAgentId();
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `quality-feedback-${this.hookContext.taskId}-${this.currentIteration}`;
-    const filename = `${timestamp}-task-core--${agentId.replace('/', '-')}-${msgId}.md`;
-    const filepath = path.join(this.hookContext.msgsDir, filename);
-
-    const content = `---
-to: ${agentId}
-from: core/core
-type: task
-msg-id: ${msgId}
-headline: Quality feedback - iteration ${this.currentIteration}
-timestamp: ${new Date().toISOString()}
-headless: true
----
-
-## Quality Stack Feedback
+    const body = `## Quality Stack Feedback
 
 The previous attempt did not pass quality evaluation. Please address the following feedback and try again:
 
@@ -735,15 +722,32 @@ ${feedback}
 ---
 
 **Iteration**: ${this.currentIteration} of ${this.maxIterations}
-**Action**: Review the feedback above and improve your solution.
-`;
+**Action**: Review the feedback above and improve your solution.`;
+
+    if (this.systemWriter) {
+      this.systemWriter.write({
+        to: agentId,
+        from: 'core/core',
+        type: 'task',
+        headline: `Quality feedback - iteration ${this.currentIteration}`,
+        body,
+        extraFrontmatter: { headless: 'true' },
+      });
+      return;
+    }
+
+    // Fallback: direct file write
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `quality-feedback-${this.hookContext.taskId}-${this.currentIteration}`;
+    const filename = `${timestamp}-task-core--${agentId.replace('/', '-')}-${msgId}.md`;
+    const filepath = path.join(this.hookContext.msgsDir, filename);
+
+    const content = `---\nto: ${agentId}\nfrom: core/core\ntype: task\nmsg-id: ${msgId}\nheadline: Quality feedback - iteration ${this.currentIteration}\ntimestamp: ${new Date().toISOString()}\nheadless: true\n---\n\n${body}\n`;
 
     fs.writeFileSync(filepath, content);
-    log.info('headless-runner', 'Wrote quality feedback message', {
+    log.info('headless-runner', 'Wrote quality feedback message (fallback)', {
       agentId,
-      taskId: this.hookContext.taskId,
       iteration: this.currentIteration,
-      filepath,
     });
   }
 

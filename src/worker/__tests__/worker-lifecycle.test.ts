@@ -259,4 +259,131 @@ describe('WorkerLifecycleManager', () => {
       assert.strictEqual(content.workers[0].id, workerId);
     });
   });
+
+  // =========================================================================
+  // Agent Completion Frontier (sentTargets) Tests
+  // =========================================================================
+
+  describe('sentTargets (agent completion frontier)', () => {
+    it('should initialize with empty sentTargets Set', () => {
+      const workerId = manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+      const worker = manager.getByWorkerId(workerId)?.worker;
+
+      assert.ok(worker?.sentTargets instanceof Set);
+      assert.strictEqual(worker?.sentTargets.size, 0);
+    });
+
+    describe('hasSentToTarget()', () => {
+      it('should return false for targets not yet sent to', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+
+        assert.strictEqual(manager.hasSentToTarget('mesh/agent', 'mesh/other'), false);
+      });
+
+      it('should return true for targets already sent to', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+        manager.addSentTarget('mesh/agent', 'mesh/other');
+
+        assert.strictEqual(manager.hasSentToTarget('mesh/agent', 'mesh/other'), true);
+      });
+
+      it('should return false if no active worker', () => {
+        assert.strictEqual(manager.hasSentToTarget('mesh/nonexistent', 'mesh/other'), false);
+      });
+    });
+
+    describe('addSentTarget()', () => {
+      it('should add target to completion frontier', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+
+        manager.addSentTarget('mesh/agent', 'mesh/target1');
+        manager.addSentTarget('mesh/agent', 'mesh/target2');
+
+        const targets = manager.getSentTargets('mesh/agent');
+        assert.strictEqual(targets.size, 2);
+        assert.ok(targets.has('mesh/target1'));
+        assert.ok(targets.has('mesh/target2'));
+      });
+
+      it('should not throw if no active worker', () => {
+        // Should not throw
+        manager.addSentTarget('mesh/nonexistent', 'mesh/target');
+      });
+
+      it('should not add duplicate targets (Set behavior)', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+
+        manager.addSentTarget('mesh/agent', 'mesh/same');
+        manager.addSentTarget('mesh/agent', 'mesh/same');
+
+        const targets = manager.getSentTargets('mesh/agent');
+        assert.strictEqual(targets.size, 1);
+      });
+    });
+
+    describe('resetSentTargetForResponse()', () => {
+      it('should remove target from frontier when response received', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+        manager.addSentTarget('mesh/agent', 'mesh/oracle');
+        manager.addSentTarget('mesh/agent', 'mesh/other');
+
+        // Simulate oracle responding — agent can now send to oracle again
+        manager.resetSentTargetForResponse('mesh/agent', 'mesh/oracle');
+
+        assert.strictEqual(manager.hasSentToTarget('mesh/agent', 'mesh/oracle'), false);
+        assert.strictEqual(manager.hasSentToTarget('mesh/agent', 'mesh/other'), true);
+      });
+
+      it('should not throw if target not in frontier', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+
+        // Should not throw even if target was never sent to
+        manager.resetSentTargetForResponse('mesh/agent', 'mesh/never-sent');
+      });
+
+      it('should not throw if no active worker', () => {
+        // Should not throw
+        manager.resetSentTargetForResponse('mesh/nonexistent', 'mesh/target');
+      });
+    });
+
+    describe('getSentTargets()', () => {
+      it('should return copy of frontier (not reference)', () => {
+        manager.add('mesh/agent', createMockWorkerData('mesh/agent'));
+        manager.addSentTarget('mesh/agent', 'mesh/target');
+
+        const copy = manager.getSentTargets('mesh/agent');
+        copy.add('mesh/modified'); // Modify the copy
+
+        // Original should be unchanged
+        const original = manager.getSentTargets('mesh/agent');
+        assert.strictEqual(original.size, 1);
+        assert.ok(!original.has('mesh/modified'));
+      });
+
+      it('should return empty Set if no active worker', () => {
+        const targets = manager.getSentTargets('mesh/nonexistent');
+        assert.strictEqual(targets.size, 0);
+      });
+    });
+
+    describe('ask-response loop scenario', () => {
+      it('should allow narrator → oracle → narrator → oracle pattern', () => {
+        manager.add('mesh/narrator', createMockWorkerData('mesh/narrator'));
+
+        // First send: narrator → oracle
+        assert.strictEqual(manager.hasSentToTarget('mesh/narrator', 'mesh/oracle'), false);
+        manager.addSentTarget('mesh/narrator', 'mesh/oracle');
+        assert.strictEqual(manager.hasSentToTarget('mesh/narrator', 'mesh/oracle'), true);
+
+        // Oracle responds → narrator can send again
+        manager.resetSentTargetForResponse('mesh/narrator', 'mesh/oracle');
+        assert.strictEqual(manager.hasSentToTarget('mesh/narrator', 'mesh/oracle'), false);
+
+        // Second send: narrator → oracle (allowed)
+        manager.addSentTarget('mesh/narrator', 'mesh/oracle');
+        assert.strictEqual(manager.hasSentToTarget('mesh/narrator', 'mesh/oracle'), true);
+      });
+    });
+  });
 });

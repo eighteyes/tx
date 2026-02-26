@@ -12,11 +12,13 @@ import { qualityRubricHook } from './quality-rubric.ts';
 import { qualityAdversarialHook } from './quality-adversarial.ts';
 import { qualityAccuracyHook } from './quality-accuracy.ts';
 import { qualitySummarizerHook } from './quality-summarizer.ts';
+import { qualityAiLinterHook } from './ai-linter/index.ts';
 import { qualityDeterministicHook } from './quality-deterministic.ts';
 import { commitAutoHook } from './commit-auto.ts';
 import { brainUpdateHook } from './brain-update.ts';
 import { forensicsAnalyzeHook } from './forensics-analyze.ts';
 import { suggestManifestHook } from './suggest-manifest.ts';
+import { validationCodeHook } from './validation-code.ts';
 
 export { worktreeCleanupHook } from './worktree-cleanup.ts';
 export { qualityEvaluateHook } from './quality-evaluate.ts';
@@ -25,11 +27,13 @@ export { qualityRubricHook } from './quality-rubric.ts';
 export { qualityAdversarialHook } from './quality-adversarial.ts';
 export { qualityAccuracyHook } from './quality-accuracy.ts';
 export { qualitySummarizerHook } from './quality-summarizer.ts';
+export { qualityAiLinterHook } from './ai-linter/index.ts';
 export { qualityDeterministicHook } from './quality-deterministic.ts';
 export { commitAutoHook } from './commit-auto.ts';
 export { brainUpdateHook } from './brain-update.ts';
 export { forensicsAnalyzeHook } from './forensics-analyze.ts';
 export { suggestManifestHook } from './suggest-manifest.ts';
+export { validationCodeHook } from './validation-code.ts';
 
 /**
  * All post-hook definitions
@@ -41,12 +45,14 @@ export const postHooks = [
   qualityAdversarialHook,
   qualityAccuracyHook,
   qualitySummarizerHook,
+  qualityAiLinterHook,
   qualityDeterministicHook,
   worktreeCleanupHook,
   commitAutoHook,
   forensicsAnalyzeHook,
   suggestManifestHook,
   brainUpdateHook,
+  validationCodeHook,
 ];
 
 /**

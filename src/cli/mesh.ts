@@ -19,6 +19,7 @@
  *   tx mesh flow <mesh>           Agent execution timeline with concurrency grouping
  *   tx mesh ideal <mesh>          Ideal execution stages from routing + manifest
  *   tx mesh drain <mesh>          Drain all pending messages (mark delivered, unblock queue)
+ *   tx mesh dump [mesh]           Chronological dump of all events (logs, messages, sessions, prompts)
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -44,6 +45,8 @@ interface MeshFlags {
   force?: boolean;
   strict?: boolean;
   next?: boolean;
+  all?: boolean;
+  verbose?: boolean;
 }
 
 /**
@@ -61,6 +64,10 @@ function parseFlags(args: string[]): MeshFlags {
       flags.strict = true;
     } else if (arg === '--next') {
       flags.next = true;
+    } else if (arg === '--all') {
+      flags.all = true;
+    } else if (arg === '--verbose') {
+      flags.verbose = true;
     }
   }
 
@@ -2877,6 +2884,432 @@ async function meshGuardrails(meshName: string | undefined, flags: MeshFlags): P
 }
 
 /**
+ * Chronological dump of all events for a mesh run.
+ * Merges logs, messages, sessions, and prompts into a single timeline.
+ */
+async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const logsDir = path.join(cwd, '.ai/tx/logs');
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const sessionsPath = path.join(cwd, '.ai/tx/data/sessions.db');
+  const promptsDir = path.join(cwd, '.ai/tx/prompts');
+
+  // --- Unified event type for chronological merge ---
+  interface DumpEvent {
+    timestamp: number;
+    type: 'log' | 'msg' | 'session' | 'prompt';
+    data: Record<string, unknown>;
+  }
+
+  const events: DumpEvent[] = [];
+
+  // --- 1. Collect log files (reuse meshFlow pattern) ---
+  const logFiles: string[] = [];
+  const currentLog = path.join(logsDir, 'v4.jsonl');
+  if (fs.existsSync(currentLog)) logFiles.push(currentLog);
+  for (let i = 1; i <= 4; i++) {
+    const logPath = path.join(logsDir, `v4.${i}.jsonl`);
+    if (fs.existsSync(logPath)) logFiles.push(logPath);
+  }
+
+  // Read all log lines across files
+  const allLogLines: string[] = [];
+  for (const logFile of logFiles) {
+    const content = fs.readFileSync(logFile, 'utf-8');
+    allLogLines.push(...content.split('\n').filter(Boolean));
+  }
+
+  // --- 2. Identify mesh name if not provided (pick last active mesh) ---
+  if (!meshName) {
+    // Find the most recent mesh run from boundaries
+    let latestMs = 0;
+    let latestMesh = '';
+    for (const line of allLogLines) {
+      let entry: Record<string, unknown>;
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (entry.message !== 'Mesh run started') continue;
+      const data = entry.data as Record<string, unknown> | undefined;
+      if (!data?.meshName || !data?.meshInstance) continue;
+      const ts = Date.parse(entry.timestamp as string);
+      if (ts > latestMs) {
+        latestMs = ts;
+        latestMesh = data.meshName as string;
+      }
+    }
+    if (!latestMesh) {
+      if (flags.json) {
+        console.log(JSON.stringify({ error: 'No mesh runs found', hint: 'Specify a mesh name or run a mesh first.' }));
+      } else {
+        console.log(chalk.yellow('No mesh runs found.'));
+        console.log(chalk.dim('Specify a mesh name or run a mesh first.'));
+      }
+      return;
+    }
+    meshName = latestMesh;
+  }
+
+  // --- 3. Parse run boundaries ---
+  const boundaries = parseMeshRunBoundaries(allLogLines, meshName);
+
+  // Determine which runs to dump
+  let targetRuns: { meshInstance: string; startMs: number; endMs: number | null }[];
+  if (flags.all || boundaries.length === 0) {
+    targetRuns = boundaries.length > 0 ? boundaries : [{ meshInstance: 'unknown', startMs: 0, endMs: null }];
+  } else {
+    // Last run only
+    targetRuns = [boundaries[boundaries.length - 1]];
+  }
+
+  // --- 4. Collect logs for this mesh ---
+  for (const line of allLogLines) {
+    let entry: Record<string, unknown>;
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    const data = entry.data as Record<string, unknown> | undefined;
+    const workerId = data?.workerId as string | undefined;
+    const meshNameFromData = data?.meshName as string | undefined;
+
+    // Filter: belongs to this mesh
+    const belongsToMesh =
+      meshNameFromData === meshName ||
+      (workerId && workerId.startsWith(`${meshName}/`)) ||
+      (data?.meshInstance && (data.meshInstance as string).startsWith(meshName!));
+
+    if (!belongsToMesh) continue;
+
+    const ts = Date.parse(entry.timestamp as string);
+    if (isNaN(ts)) continue;
+
+    events.push({
+      timestamp: ts,
+      type: 'log',
+      data: {
+        level: entry.level || 'info',
+        component: entry.component || '',
+        message: entry.message || '',
+        workerId: workerId || '',
+        ...((data?.durationMs !== undefined) ? { durationMs: data.durationMs } : {}),
+        ...((data?.totalCostUsd !== undefined) ? { cost: data.totalCostUsd } : {}),
+        ...((data?.model !== undefined) ? { model: data.model } : {}),
+        ...((data?.targetCount !== undefined) ? { targetCount: data.targetCount } : {}),
+        ...((data?.targets !== undefined) ? { targets: data.targets } : {}),
+      },
+    });
+  }
+
+  // --- 5. Collect messages ---
+  if (fs.existsSync(queuePath)) {
+    const queue = new MessageQueue(queuePath);
+    try {
+      // Get all messages and filter for this mesh
+      const allMsgs = queue.queryMessages({ limit: 5000 });
+      const meshMsgs = allMsgs.filter(m =>
+        m.to_agent.startsWith(`${meshName}/`) ||
+        m.from_agent.startsWith(`${meshName}/`)
+      );
+
+      for (const msg of meshMsgs) {
+        const ts = msg.created_at || 0;
+        const payload = msg.payload || {};
+        events.push({
+          timestamp: ts,
+          type: 'msg',
+          data: {
+            from: msg.from_agent,
+            to: msg.to_agent,
+            msgType: msg.type,
+            status: msg.status || 'unknown',
+            headline: (payload as Record<string, unknown>).headline || '',
+            id: msg.id,
+          },
+        });
+      }
+    } finally {
+      queue.close();
+    }
+  }
+
+  // --- 6. Collect sessions ---
+  if (fs.existsSync(sessionsPath)) {
+    const sessionStore = new SessionStore(sessionsPath);
+    try {
+      const sessions = sessionStore.listSessionsByMesh(meshName, 200);
+      for (const session of sessions) {
+        // Use endedAt for session events (when they completed)
+        const ts = session.endedAt || session.startedAt;
+        const filesChanged = session.filesChanged;
+        const filesList: string[] = [];
+        if (filesChanged) {
+          if (filesChanged.created) filesList.push(...filesChanged.created.map(f => `+${f}`));
+          if (filesChanged.modified) filesList.push(...filesChanged.modified.map(f => `~${f}`));
+          if (filesChanged.deleted) filesList.push(...filesChanged.deleted.map(f => `-${f}`));
+        }
+
+        events.push({
+          timestamp: ts,
+          type: 'session',
+          data: {
+            agent: session.agentId,
+            status: session.finalStatus || 'unknown',
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            durationSeconds: session.durationSeconds || (session.endedAt ? Math.round((session.endedAt - session.startedAt) / 1000) : undefined),
+            messageCount: session.messageCount || 0,
+            toolCalls: session.toolCalls || 0,
+            headline: session.headline || '',
+            files: filesList.length > 0 ? filesList : undefined,
+          },
+        });
+      }
+    } finally {
+      sessionStore.close();
+    }
+  }
+
+  // --- 7. Collect prompts ---
+  const meshPromptsDir = path.join(promptsDir, meshName);
+  if (fs.existsSync(meshPromptsDir)) {
+    const promptFiles = fs.readdirSync(meshPromptsDir).filter(f => f.endsWith('.md'));
+    for (const file of promptFiles) {
+      const filePath = path.join(meshPromptsDir, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+
+      // Parse frontmatter for timestamp and agent
+      let timestamp = 0;
+      let agent = file.replace('.md', '');
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (fmMatch) {
+        const fm = fmMatch[1];
+        const tsMatch = fm.match(/timestamp:\s*(.+)/);
+        if (tsMatch) {
+          const parsed = Date.parse(tsMatch[1].trim());
+          if (!isNaN(parsed)) timestamp = parsed;
+        }
+        const agentMatch = fm.match(/agent:\s*(.+)/);
+        if (agentMatch) agent = agentMatch[1].trim();
+      }
+
+      // Extract first few lines of prompt body (after frontmatter)
+      const body = fmMatch ? content.slice(fmMatch[0].length).trim() : content.trim();
+      const previewLines = body.split('\n').slice(0, 3).join('\n');
+
+      events.push({
+        timestamp: timestamp || 0,
+        type: 'prompt',
+        data: {
+          agent,
+          file: file,
+          preview: previewLines,
+          fullContent: flags.verbose ? body : undefined,
+        },
+      });
+    }
+  }
+
+  // --- 8. Sort all events chronologically ---
+  events.sort((a, b) => a.timestamp - b.timestamp);
+
+  if (events.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ mesh: meshName, events: [], error: 'No events found' }));
+    } else {
+      console.log(chalk.yellow(`No events found for mesh '${meshName}'.`));
+      console.log(chalk.dim('Run the mesh first, or check the mesh name.'));
+    }
+    return;
+  }
+
+  // --- 9. Filter events by run boundaries ---
+  for (const run of targetRuns) {
+    const windowStart = run.startMs || 0;
+    const windowEnd = run.endMs || Date.now();
+
+    // Include events in the run window (with 5s grace before start for prompts)
+    const runEvents = (run.startMs === 0 && run.endMs === null)
+      ? events  // No boundaries, include everything
+      : events.filter(e =>
+          e.timestamp >= windowStart - 5000 && e.timestamp <= windowEnd + 5000
+        );
+
+    if (runEvents.length === 0) continue;
+
+    // --- 10. JSON output ---
+    if (flags.json) {
+      const jsonEvents = runEvents.map(e => ({
+        timestamp: new Date(e.timestamp).toISOString(),
+        type: e.type,
+        ...e.data,
+      }));
+
+      // Compute summary
+      const logCount = runEvents.filter(e => e.type === 'log').length;
+      const msgCount = runEvents.filter(e => e.type === 'msg').length;
+      const sessionCount = runEvents.filter(e => e.type === 'session').length;
+      const promptCount = runEvents.filter(e => e.type === 'prompt').length;
+      const totalCost = runEvents
+        .filter(e => e.type === 'log' && e.data.cost)
+        .reduce((s, e) => s + (e.data.cost as number), 0);
+      const uniqueAgents = new Set<string>();
+      for (const e of runEvents) {
+        const wid = (e.data.workerId || e.data.agent || '') as string;
+        if (wid && wid.includes('/')) uniqueAgents.add(wid);
+      }
+
+      console.log(JSON.stringify({
+        mesh: meshName,
+        meshInstance: run.meshInstance,
+        startTime: run.startMs ? new Date(run.startMs).toISOString() : null,
+        endTime: run.endMs ? new Date(run.endMs).toISOString() : null,
+        status: run.endMs ? 'completed' : 'in_progress',
+        agents: uniqueAgents.size,
+        totalCost,
+        summary: { logs: logCount, messages: msgCount, sessions: sessionCount, prompts: promptCount },
+        events: jsonEvents,
+      }, null, 2));
+      continue;
+    }
+
+    // --- 11. Human-readable rendering ---
+    const startStr = run.startMs
+      ? new Date(run.startMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      : '?';
+    const endStr = run.endMs
+      ? new Date(run.endMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+      : 'in progress';
+
+    // Count unique agents and total cost
+    const uniqueAgents = new Set<string>();
+    let totalCost = 0;
+    for (const e of runEvents) {
+      const wid = (e.data.workerId || e.data.agent || '') as string;
+      if (wid && wid.includes('/')) uniqueAgents.add(wid);
+      if (e.type === 'log' && e.data.cost) totalCost += e.data.cost as number;
+    }
+
+    const status = run.endMs ? 'completed' : 'in progress';
+    const statusColor = run.endMs ? chalk.green(status) : chalk.yellow(status);
+
+    // Header
+    console.log(`\n${chalk.bold('══════════════════════════════════════════════════')}`);
+    console.log(chalk.bold(` Mesh Dump: ${chalk.cyan(meshName)}`));
+    console.log(` Run: ${chalk.dim(startStr)}  →  ${chalk.dim(endStr)}`);
+    console.log(` Status: ${statusColor}  |  Agents: ${chalk.bold(String(uniqueAgents.size))}  |  Cost: ${chalk.bold('$' + totalCost.toFixed(3))}`);
+    console.log(chalk.bold('══════════════════════════════════════════════════\n'));
+
+    // Render each event
+    for (const event of runEvents) {
+      const time = new Date(event.timestamp).toISOString().slice(11, 19); // HH:MM:SS
+      const timeStr = chalk.dim(time);
+
+      switch (event.type) {
+        case 'log': {
+          const level = event.data.level as string;
+          const message = event.data.message as string;
+          const component = event.data.component as string;
+          const workerId = event.data.workerId as string;
+
+          // Color by level
+          let levelColor: string;
+          if (level === 'error') levelColor = chalk.red('ERR');
+          else if (level === 'warn') levelColor = chalk.yellow('WRN');
+          else levelColor = chalk.dim('LOG');
+
+          // Build detail string
+          const parts: string[] = [];
+          if (workerId) parts.push(chalk.cyan(workerId.split('/')[1] || workerId));
+          if (component && !workerId) parts.push(chalk.dim(component));
+
+          // Special formatting for key log messages
+          let extra = '';
+          if (event.data.durationMs) extra += chalk.dim(` ${((event.data.durationMs as number) / 1000).toFixed(1)}s`);
+          if (event.data.cost) extra += chalk.dim(` $${(event.data.cost as number).toFixed(3)}`);
+          if (event.data.model) extra += chalk.dim(` (${event.data.model})`);
+          if (event.data.targetCount) extra += chalk.dim(` ${event.data.targetCount} targets`);
+
+          console.log(`─── ${timeStr}  ${levelColor}  ${parts.join(' ')} ${message}${extra}`);
+          break;
+        }
+
+        case 'msg': {
+          const from = event.data.from as string;
+          const to = event.data.to as string;
+          const msgType = event.data.msgType as string;
+          const headline = event.data.headline as string;
+
+          // Direction arrow
+          const isIncoming = from.startsWith(`${meshName}/`);
+          const arrow = isIncoming ? chalk.blue('←') : chalk.green('→');
+          const target = isIncoming ? `${chalk.cyan(from)}` : `${chalk.cyan(to)}`;
+
+          // Type badge
+          let typeBadge: string;
+          if (msgType === 'task') typeBadge = chalk.green('[task]');
+          else if (msgType === 'task-complete') typeBadge = chalk.blue('[complete]');
+          else if (msgType === 'ask-human') typeBadge = chalk.yellow('[ask-human]');
+          else if (msgType === 'ask-response') typeBadge = chalk.magenta('[response]');
+          else typeBadge = chalk.dim(`[${msgType}]`);
+
+          const headlineStr = headline ? ` "${headline}"` : '';
+          console.log(`─── ${timeStr}  ${chalk.bold('MSG')}  ${arrow} ${target}  ${typeBadge}${chalk.dim(headlineStr)}`);
+          break;
+        }
+
+        case 'session': {
+          const agent = event.data.agent as string;
+          const sessionStatus = event.data.status as string;
+          const durationSeconds = event.data.durationSeconds as number | undefined;
+          const toolCalls = event.data.toolCalls as number;
+          const headline = event.data.headline as string;
+          const files = event.data.files as string[] | undefined;
+
+          const statusStr = sessionStatus === 'success'
+            ? chalk.green(sessionStatus)
+            : sessionStatus === 'error'
+              ? chalk.red(sessionStatus)
+              : chalk.yellow(sessionStatus);
+
+          const durStr = durationSeconds ? `${durationSeconds}s` : '';
+          const toolStr = toolCalls ? `${toolCalls} tool calls` : '';
+          const details = [durStr, toolStr].filter(Boolean).join(', ');
+
+          console.log(`─── ${timeStr}  ${chalk.magenta('SESSION')}  ${chalk.cyan(agent)} — ${statusStr} (${details})`);
+          if (headline) console.log(`    ${chalk.dim('Headline:')} ${headline}`);
+          if (files && files.length > 0) console.log(`    ${chalk.dim('Files:')} ${files.slice(0, 5).join(', ')}${files.length > 5 ? ` (+${files.length - 5} more)` : ''}`);
+          break;
+        }
+
+        case 'prompt': {
+          const agent = event.data.agent as string;
+          const preview = event.data.preview as string;
+          const fullContent = event.data.fullContent as string | undefined;
+
+          console.log(`─── ${timeStr}  ${chalk.yellow('PROMPT')}  ${chalk.cyan(agent)}`);
+          if (fullContent) {
+            // Verbose mode: show full prompt indented
+            const indented = fullContent.split('\n').map(l => `    ${l}`).join('\n');
+            console.log(chalk.dim(indented));
+          } else if (preview) {
+            // Default: show first 3 lines
+            const indented = preview.split('\n').map(l => `    ${chalk.dim(l)}`).join('\n');
+            console.log(indented);
+          }
+          break;
+        }
+      }
+    }
+
+    // Footer
+    const logCount = runEvents.filter(e => e.type === 'log').length;
+    const msgCount = runEvents.filter(e => e.type === 'msg').length;
+    const sessionCount = runEvents.filter(e => e.type === 'session').length;
+    const promptCount = runEvents.filter(e => e.type === 'prompt').length;
+    console.log(`\n${chalk.bold('══════════════════════════════════════════════════')}`);
+    console.log(chalk.dim(`  ${runEvents.length} events: ${logCount} logs, ${msgCount} msgs, ${sessionCount} sessions, ${promptCount} prompts`));
+    console.log();
+  }
+}
+
+/**
  * Print usage help
  */
 function printUsage(): void {
@@ -2899,12 +3332,15 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('flow')} <mesh>             Agent execution timeline with concurrency grouping
   ${chalk.cyan('guardrails')} [mesh]       Show guardrail violations from activity logs
   ${chalk.cyan('ideal')} <mesh>            Ideal execution stages from routing + manifest
+  ${chalk.cyan('dump')} [mesh]             Chronological dump of all events (logs, msgs, sessions, prompts)
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
   ${chalk.dim('--force')}                 Force clear even if workers are running
   ${chalk.dim('--strict')}                Treat warnings as errors (validate only)
   ${chalk.dim('--next')}                  Machine-readable dispatch output (status only)
+  ${chalk.dim('--all')}                   Dump all runs, not just last (dump only)
+  ${chalk.dim('--verbose')}               Show full prompts (dump only)
 
 ${chalk.bold('Examples:')}
   tx mesh list
@@ -2920,6 +3356,9 @@ ${chalk.bold('Examples:')}
   tx mesh flow test-fsm-full --json
   tx mesh ideal narrative-engine
   tx mesh ideal narrative-engine --json
+  tx mesh dump dev-tdd
+  tx mesh dump dev-tdd --json
+  tx mesh dump --all
 `);
 }
 
@@ -3079,6 +3518,10 @@ export async function mesh(args: string[]): Promise<void> {
           return;
         }
         await meshIdeal(meshName, flags);
+        break;
+
+      case 'dump':
+        await meshDump(meshName, flags);
         break;
 
       default:

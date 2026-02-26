@@ -17,6 +17,7 @@ import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 import { DispatchRouter } from '../worker/dispatch-router.ts';
 import type { DispatcherRoutingConfig } from '../shared/types.ts';
+import { SystemMessageWriter } from './system-message-writer.ts';
 
 /**
  * Interface for FSM validation capability
@@ -136,6 +137,10 @@ export class MessageConsumer extends EventEmitter {
   private readonly MESH_CONFIG_CACHE_TTL = 60000; // 60 seconds
   // Dispatch routers for dispatcher-mode meshes (created on first use, invalidated with config cache)
   private dispatchRouters: Map<string, DispatchRouter> = new Map();
+  // Registry of system-authored file paths — chokidar skips these (already queue-dispatched)
+  readonly systemFileRegistry: Set<string> = new Set();
+  // Queue-first writer for system-authored messages
+  systemWriter!: SystemMessageWriter;
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -146,6 +151,12 @@ export class MessageConsumer extends EventEmitter {
     this.meshesDir = meshesDir || (process.env.TX_ROOT
       ? path.join(process.env.TX_ROOT, 'meshes')
       : path.join(process.cwd(), 'meshes'));
+    this.systemWriter = new SystemMessageWriter(
+      queue,
+      watchDir,
+      (event, data) => this.emit(event, data),
+      this.systemFileRegistry
+    );
     this.loadMeshEntryPoints();
   }
 
@@ -340,26 +351,14 @@ export class MessageConsumer extends EventEmitter {
    * Write error message to core for command routing issues
    */
   private writeErrorToCore(body: string, refMsgId: string): void {
-    const timestamp = Date.now();
-    const msgId = `error-${timestamp}`;
-    const filename = `${timestamp}-error-system--core-core-${msgId}.md`;
-    const filepath = path.join(this.watchDir, filename);
-
-    const message = `---
-to: core/core
-from: system/consumer
-type: error
-msg-id: ${msgId}
-ref-msg-id: ${refMsgId}
-headline: Command routing error
-timestamp: ${new Date().toISOString()}
----
-
-${body}
-`;
-
-    fs.writeFileSync(filepath, message);
-    log.info('consumer', 'Wrote command routing error to core', { msgId, refMsgId });
+    this.systemWriter.write({
+      to: 'core/core',
+      from: 'system/consumer',
+      type: 'error',
+      headline: 'Command routing error',
+      body,
+      extraFrontmatter: { 'ref-msg-id': refMsgId },
+    });
   }
 
   /**
@@ -374,61 +373,13 @@ ${body}
    * also picks up the file.
    */
   private writeFanOutTask(targetAgentId: string, fromAgent: string, body: string): void {
-    const timestamp = Date.now();
-    const rand = Math.random().toString(36).slice(2, 8);
-    const msgId = `fanout-${timestamp}-${rand}`;
-    const [meshName, agentName] = targetAgentId.split('/');
-    const filename = `${timestamp}-fanout-${fromAgent.replace('/', '-')}--${meshName}-${agentName}-${msgId}.md`;
-    const filepath = path.join(this.watchDir, filename);
-
-    const headline = `Fan-out task from ${fromAgent}`;
-
-    const content = `---
-to: ${targetAgentId}
-from: system/fan-out
-original-from: ${fromAgent}
-type: task
-msg-id: ${msgId}
-headline: ${headline}
-timestamp: ${new Date().toISOString()}
----
-
-${body}
-`;
-
-    // Write file for audit trail
-    fs.writeFileSync(filepath, content);
-
-    // Direct dispatch: insert into queue and emit worker-message
-    // Bypasses chokidar dependency that fails in Docker overlayfs
-    const id = this.queue.insert({
-      from_agent: 'system/fan-out',
-      to_agent: targetAgentId,
-      type: 'task',
-      source_file: filepath,
-      payload: {
-        'msg-id': msgId,
-        headline,
-        body,
-        filepath,
-      },
-    });
-
-    if (id === -1) {
-      // Chokidar already processed this file (race condition) — safe to skip
-      log.debug('consumer', 'Fan-out task already queued (chokidar race)', { targetAgentId, msgId });
-      return;
-    }
-
-    log.info('consumer', 'Fan-out task queued directly', { id, targetAgentId, fromAgent, msgId });
-
-    this.emit('worker-message', {
-      id,
-      agentId: targetAgentId,
+    this.systemWriter.write({
+      to: targetAgentId,
       from: 'system/fan-out',
       type: 'task',
-      event: 'add',
-      injectResponse: false,
+      headline: `Fan-out task from ${fromAgent}`,
+      body,
+      extraFrontmatter: { 'original-from': fromAgent },
     });
   }
 
@@ -522,6 +473,12 @@ ${body}
 
       this.watcher.on('add', (filepath: string) => {
         if (filepath.endsWith('.md')) {
+          // Skip system-authored files — already queue-dispatched
+          if (this.systemFileRegistry.has(filepath)) {
+            this.systemFileRegistry.delete(filepath);
+            log.debug('consumer', 'Skipping system-authored file', { file: path.basename(filepath) });
+            return;
+          }
           this.processFile(filepath, 'new').catch((err) => {
             log.error('consumer', `Failed to process new file: ${path.basename(filepath)}`, {
               error: (err as Error).message,
@@ -1731,20 +1688,13 @@ Re-read your workspace files to determine where you are in your sequence, then s
       ? validTargets.map(t => `- **${t.target}**: "${t.description}"`).join('\n')
       : '_No valid targets defined for this message type_';
 
-    const timestamp = Date.now();
-    const msgId = `routing-escalation-${timestamp}`;
-    const filename = `${timestamp}-message-system--core-core-${msgId}.md`;
-    const filepath = path.join(this.watchDir, filename);
-
-    const escalationContent = `---
-to: core/core
-from: system/routing-validator
-msg-id: ${msgId}
-headline: Routing violation needs human intervention
-timestamp: ${new Date().toISOString()}
----
-
-# Agent Repeatedly Violating Routing Rules
+    // Escalation to core
+    this.systemWriter.write({
+      to: 'core/core',
+      from: 'system/routing-validator',
+      type: 'message',
+      headline: 'Routing violation needs human intervention',
+      body: `# Agent Repeatedly Violating Routing Rules
 
 Agent \`${fromAgent}\` has violated routing rules **2 times** and needs human intervention.
 
@@ -1764,32 +1714,16 @@ ${targetsFormatted}
 2. **Update mesh config** - If the routing rule should exist, add it to \`meshes/${meshName}/config.yaml\`
 3. **Reset the mesh** - Restart the mesh if agent is stuck
 
-The agent's session is blocked until this is resolved.
-`;
-
-    fs.writeFileSync(filepath, escalationContent);
-    log.info('consumer', 'Escalated routing violation to core', {
-      fromAgent,
-      attemptedTarget,
-      messageType,
-      msgId,
+The agent's session is blocked until this is resolved.`,
     });
 
-    // Also write feedback to the agent so they know they're blocked
-    const agentFeedbackMsgId = `routing-blocked-${timestamp}`;
-    const agentFilename = `${timestamp}-routing-feedback-system--${meshName}-${agentName}-${agentFeedbackMsgId}.md`;
-    const agentFilepath = path.join(this.watchDir, agentFilename);
-
-    const agentFeedbackContent = `---
-to: ${fromAgent}
-from: system/routing-validator
-type: routing-feedback
-violation-count: 2
-escalated: true
-timestamp: ${new Date().toISOString()}
----
-
-# Routing Violation - Escalated
+    // Feedback to the agent so they know they're blocked
+    this.systemWriter.write({
+      to: fromAgent,
+      from: 'system/routing-validator',
+      type: 'routing-feedback',
+      headline: 'Routing violation - escalated',
+      body: `# Routing Violation - Escalated
 
 Your message to \`${attemptedTarget}\` with type \`${messageType}\` has been blocked.
 
@@ -1803,13 +1737,8 @@ Your routing attempt does not match any configured routing rules for your agent.
 
 ${targetsFormatted}
 
-**Your session is paused until a human resolves this issue.**
-`;
-
-    fs.writeFileSync(agentFilepath, agentFeedbackContent);
-    log.info('consumer', 'Wrote escalation notice to agent', {
-      fromAgent,
-      msgId: agentFeedbackMsgId,
+**Your session is paused until a human resolves this issue.**`,
+      extraFrontmatter: { 'violation-count': '2', 'escalated': 'true' },
     });
   }
 }

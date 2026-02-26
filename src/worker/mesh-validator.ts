@@ -207,6 +207,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
   // Auto-inject manifest reads into agent context
   autoInjectManifestFiles: { type: 'boolean' },
+  // Development
+  dev_mode: { type: 'boolean' },
   // Mesh completion behavior
   stop_on_first_complete: { type: 'boolean' },
   check_queue_on_complete: { type: 'boolean' },

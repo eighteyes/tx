@@ -438,9 +438,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     if (stack) errorContext.stack = stack.split('\n').slice(0, 3).join(' | ');
 
     log.error('dispatcher', `Worker error: ${id}`, errorContext);
+
+    // Surface error to core user session
+    injectSystemError(id, error, { stack, stderr, code });
   });
   dispatcher.on('error', ({ agentId, error }: { agentId: string; error: string }) => {
     log.error('dispatcher', `Dispatcher error for agent: ${agentId}`, { error });
+
+    injectSystemError(agentId, error);
   });
   dispatcher.on('worker:output', ({ id, data }) => {
     log.info('worker', data.length > 200 ? data.slice(0, 200) + '...' : data, { id });
@@ -499,12 +504,22 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       taskId: data.taskId,
       feedback: data.result?.feedback,
     });
+
+    injectSystemError(data.agentId, `Quality gate halted: ${data.result?.feedback || 'critical issue'}`, {
+      type: 'quality:halt',
+      taskId: data.taskId,
+    });
   });
   dispatcher.on('quality:exhausted', (data) => {
     log.warn('quality', 'Quality stack EXHAUSTED (max iterations)', {
       agentId: data.agentId,
       taskId: data.taskId,
       maxIterations: data.result?.iterations,
+    });
+
+    injectSystemError(data.agentId, `Quality gate exhausted after ${data.result?.iterations || '?'} iterations`, {
+      type: 'quality:exhausted',
+      taskId: data.taskId,
     });
   });
 
@@ -549,21 +564,13 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       to: data.to,
       headline: data.headline,
     });
-    // Write message file for core to present to user
-    const timestamp = Date.now();
-    const filename = `${timestamp}-routing-escalation-${data.from.replace('/', '-')}--core-core.md`;
-    const msgPath = path.join(msgsDir, filename);
-    const msgContent = `---
-from: ${data.from}
-to: core/core
-type: ask-human
-headline: ${data.headline}
----
-
-${data.content}
-`;
-    fs.writeFileSync(msgPath, msgContent);
-    log.info('routing', 'Wrote routing escalation message', { file: filename });
+    consumer.systemWriter.write({
+      to: 'core/core',
+      from: data.from,
+      type: 'ask-human',
+      headline: data.headline,
+      body: data.content,
+    });
   });
 
   // Initialize stale message cleaner
@@ -868,6 +875,60 @@ ${data.content}
       injectionPollTimer = setInterval(drainInjectionQueue, INJECTION_POLL_MS);
       // Also try immediately
       drainInjectionQueue();
+    }
+  };
+
+  // --- System error injection (direct tmux, no message files) ---
+  const systemErrorQueue: Array<{ message: string; queuedAt: number }> = [];
+  let systemErrorPollTimer: ReturnType<typeof setInterval> | null = null;
+  const SYSTEM_ERROR_POLL_MS = 2000;
+  const SYSTEM_ERROR_STALE_MS = 2 * 60 * 1000; // 2 min — errors are urgent, don't let them go stale
+
+  const drainSystemErrors = () => {
+    if (systemErrorQueue.length === 0) {
+      if (systemErrorPollTimer) {
+        clearInterval(systemErrorPollTimer);
+        systemErrorPollTimer = null;
+      }
+      return;
+    }
+
+    const now = Date.now();
+    const head = systemErrorQueue[0];
+
+    if (now - head.queuedAt > SYSTEM_ERROR_STALE_MS) {
+      systemErrorQueue.shift();
+      log.warn('injector', 'Dropped stale system error (>2m)', { queued: systemErrorQueue.length });
+      return;
+    }
+
+    const injected = injectPrompt(tmux, head.message);
+    if (injected) {
+      systemErrorQueue.shift();
+      log.info('injector', 'System error injected into core session', {
+        waitMs: now - head.queuedAt,
+        queued: systemErrorQueue.length,
+      });
+    }
+    // If not injected (Claude busy), leave at head — next poll retries
+  };
+
+  const injectSystemError = (agentId: string, error: string, extra?: Record<string, unknown>) => {
+    const parts = [`[system error from ${agentId}]`, '', `Error: ${error}`];
+    if (extra?.code !== undefined) parts.push(`Exit code: ${extra.code}`);
+    if (extra?.stderr) parts.push(`Stderr: ${String(extra.stderr).slice(0, 200)}`);
+    if (extra?.stack) parts.push(`Stack: ${String(extra.stack).split('\n').slice(0, 3).join(' → ')}`);
+    if (extra?.type) parts.push(`Type: ${extra.type}`);
+    if (extra?.taskId) parts.push(`Task: ${extra.taskId}`);
+
+    const message = parts.join('\n');
+    systemErrorQueue.push({ message, queuedAt: Date.now() });
+
+    log.info('injector', 'Queued system error for core injection', { agentId, error: error.slice(0, 100) });
+
+    if (!systemErrorPollTimer) {
+      systemErrorPollTimer = setInterval(drainSystemErrors, SYSTEM_ERROR_POLL_MS);
+      drainSystemErrors(); // Try immediately
     }
   };
 

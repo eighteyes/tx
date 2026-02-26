@@ -17,6 +17,7 @@ import { AggregationEngine, type AgentResult } from '../mesh/aggregation.ts';
 import { log } from '../shared/logger.ts';
 import type { Message } from '../queue/index.ts';
 import type { MeshFSM } from '../mesh/fsm.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 export interface EnsembleExecutionState {
   ensembleId: string;
@@ -38,6 +39,7 @@ export interface TriggerNextAgentOptions {
   ensembleOutput: string;
   ensembleMetadata: Record<string, unknown>;
   msgsDir: string;
+  writer?: SystemMessageWriter;
 }
 
 export class EnsembleCoordinator {
@@ -334,27 +336,10 @@ export class EnsembleCoordinator {
    * Write a trigger message for the next state agent after ensemble completion
    */
   writeTriggerMessage(options: TriggerNextAgentOptions): { success: boolean; filepath?: string; error?: string } {
-    const { meshName, nextState, targetAgent, ensembleOutput, ensembleMetadata, msgsDir } = options;
+    const { meshName, nextState, targetAgent, ensembleOutput, ensembleMetadata, msgsDir, writer } = options;
     const targetAgentId = `${meshName}/${targetAgent}`;
 
-    // Generate message ID
-    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const timestamp = Date.now();
-    const toSafe = targetAgentId.replace(/\//g, '-');
-    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
-    const filepath = path.join(msgsDir, filename);
-
-    // Build message content with aggregated output
-    const messageContent = `---
-to: ${targetAgentId}
-from: dispatcher/ensemble
-type: task
-msg-id: ${msgId}
-headline: Ensemble aggregation complete
-timestamp: ${new Date().toISOString()}
----
-
-# Aggregated Ensemble Results
+    const body = `# Aggregated Ensemble Results
 
 The following content has been collected and aggregated from parallel ensemble agents.
 
@@ -364,28 +349,34 @@ ${ensembleOutput}
 **Aggregation Metadata:**
 - Strategy: ${ensembleMetadata.strategy || 'unknown'}
 - Agent Count: ${ensembleMetadata.agent_count || 'unknown'}
-- Success: ${ensembleMetadata.success ?? 'unknown'}
-`;
+- Success: ${ensembleMetadata.success ?? 'unknown'}`;
+
+    if (writer) {
+      const result = writer.write({
+        to: targetAgentId,
+        from: 'dispatcher/ensemble',
+        type: 'task',
+        headline: 'Ensemble aggregation complete',
+        body,
+      });
+      return { success: true, filepath: result.filepath };
+    }
+
+    // Fallback: direct file write
+    const msgId = `ensemble-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const timestamp = Date.now();
+    const toSafe = targetAgentId.replace(/\//g, '-');
+    const filename = `${timestamp}-task-dispatcher--${toSafe}-${msgId}.md`;
+    const filepath = path.join(msgsDir, filename);
+
+    const messageContent = `---\nto: ${targetAgentId}\nfrom: dispatcher/ensemble\ntype: task\nmsg-id: ${msgId}\nheadline: Ensemble aggregation complete\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
 
     try {
       fs.writeFileSync(filepath, messageContent);
-      log.info('ensemble', 'Wrote message to trigger next state agent', {
-        meshName,
-        nextState,
-        targetAgent,
-        msgId,
-        filepath,
-        outputLength: ensembleOutput.length,
-      });
       return { success: true, filepath };
     } catch (err) {
       const error = (err as Error).message;
-      log.error('ensemble', 'Failed to write trigger message', {
-        meshName,
-        nextState,
-        targetAgent,
-        error,
-      });
+      log.error('ensemble', 'Failed to write trigger message', { meshName, targetAgent, error });
       return { success: false, error };
     }
   }

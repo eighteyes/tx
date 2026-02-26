@@ -7,6 +7,87 @@ description: Build TX V4 meshes - agent configs, prompts, routing. Use for new m
 
 Build meshes (agent workflows) for TX V4.
 
+## Core Philosophy: Earn Your Keep
+
+**Start with the minimum. Add only what the mesh actually needs.**
+
+Every config option added is complexity that can break. The default question for each field is: **"Does this mesh fail without it?"** If no — leave it out.
+
+### Config Options and When They're Warranted
+
+| Option | Warranted when... | Default |
+|--------|-------------------|---------|
+| `dev_mode: true` | Testing a new mesh end-to-end before committing to full model costs | Omit |
+| `fsm:` | Routing depends on computed state/counters/file presence — NOT agent judgment | Omit |
+| `parallelism:` | Agents truly run in parallel and need a sync gate | Omit |
+| `routing_mode: dispatcher` | Fan-out to N parallel workers is the core mechanic | Omit |
+| `type: persistent` / `auto_despawn: false` | Mesh must survive indefinitely (daemon pattern) | Omit |
+| `continuation: false` | You explicitly need cold starts for isolation | Omit (continuation is default-on) |
+| `lifecycle:` hooks | Quality gates or auto-commits are genuinely required | Omit |
+| `workspace:` | Agents need structured file workspace management | Omit |
+| `checkpoint:` / `fork_from:` | Multiple agents need shared prior context | Omit |
+| `load:` | Files must be in context before any work starts | Omit |
+| `ensemble:` | Same task, multiple perspectives, aggregated output | Omit |
+| `injectOriginalMessage:` | Downstream agents truly need the original task | Omit |
+| `rearmatter:` | FSM routing depends on self-assessment scores | Omit |
+| `guardrails:` | Custom limits differ from system defaults | Omit |
+
+**The minimal working mesh:**
+```yaml
+mesh: my-mesh
+description: "What it does"
+agents:
+  - name: worker
+    model: sonnet
+    prompt: worker.md
+entry_point: worker
+```
+This is complete. Everything else is optional and should be justified.
+
+### Common Over-Engineering Patterns to Avoid
+
+- **FSM + orchestrator that handles all routing** — pick one. If orchestrator routes, drop FSM.
+- **`type: persistent` on a mesh that runs once** — persistent is for daemons only.
+- **`lifecycle:` hooks "just in case"** — add when quality gates are actually required.
+- **`parallelism:` on 2 agents** — just route them sequentially, parallelism overhead isn't worth it.
+- **`checkpoint:/fork_from:` when agents don't share context** — preloading context agents don't need wastes tokens.
+- **Ensemble with 1 agent** — that's just a regular agent.
+
+## Dev Mode — Cheap Workflow Testing
+
+```yaml
+dev_mode: true  # Forces ALL agents to haiku regardless of config
+```
+
+**Enable when:** You've built a new mesh and want to test the routing, workflow, and agent coordination end-to-end before paying for sonnet/opus runs. Haiku is fast and cheap — use it to validate the plumbing works before the real thing.
+
+**Enable for:**
+- First run of any new mesh (always test with dev_mode first)
+- Debugging routing issues (agent A → B → C flow)
+- Validating FSM state transitions
+- Testing ask-human and HITL flows
+- Any mesh with 4+ agents where a full run would be expensive
+
+**Disable when:**
+- The workflow is confirmed working and you need quality output
+- Haiku's reasoning is insufficient for the task (complex synthesis, conflict resolution, architectural decisions)
+- Running in production
+
+**Never commit `dev_mode: true`** — it's a testing flag. Remove it before the mesh is considered production-ready. If you see it in a mesh config, that mesh hasn't been signed off yet.
+
+```yaml
+# ✅ Testing a new mesh
+dev_mode: true
+agents:
+  - name: synthesizer
+    model: opus   # ignored — all agents become haiku in dev_mode
+
+# ✅ Production — remove dev_mode entirely
+agents:
+  - name: synthesizer
+    model: opus   # now respected
+```
+
 ## Quick Start
 
 ```bash
@@ -370,7 +451,7 @@ lifecycle:
     - quality:rubric
 ```
 
-**FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use if needed, linear workflows generally don't need fsm.
+**FSM state tracking**: `fsm:` block for system-managed state variables and logic. Only use when routing depends on computed state, counters, or file presence — not agent judgment. If an orchestrator handles all routing anyway, FSM is redundant. See FSM decision guide below.
 
 **Parallel execution**: `parallelism:` block for fork/join semantics (see Parallel Execution section below), or `ensemble: { type: parallel }` for FSM states
 
@@ -551,6 +632,38 @@ Add `fsm:` block to track state and provide context to agents.
 
 **IMPORTANT**: If you use FSM, you must also define `routing:` configuration. Routes can exist without FSM, but FSM cannot exist without routes.
 
+### When to Use FSM — Decision Guide
+
+**Default assumption: do NOT use FSM.** Pure message routing handles the majority of meshes cleanly. Only add FSM when the routing itself cannot be handled by agent judgment.
+
+**Use FSM when ALL of these are true:**
+- Routing decisions depend on **computed state, counters, or file presence** — not agent judgment
+- State must survive between **completely separate TX sessions** (cold restart)
+- You need **arithmetic operations** to drive routing (e.g., `turn: turn + 1`, loop N times then exit)
+- Or you need **deterministic gate conditions** independent of agent output (e.g., "only proceed if file X exists")
+
+**Real examples that warrant FSM:**
+- Narrative engine tracking turn number across days-long campaigns
+- Loop mesh that runs exactly N iterations before exiting (counter drives routing)
+- Ensemble with a gate that only fires when ALL N output files are present on disk
+- Multi-session workflow that must resume in the exact right state after a cold restart
+
+**Do NOT use FSM when:**
+- An orchestrator agent already handles all routing decisions — if every state routes back to orchestrator anyway, the orchestrator IS the state machine. Drop the FSM.
+- The workflow is linear or near-linear: `A → B → C → D`
+- Loops can be tracked by the agent itself (validator counting its own attempts in the message body)
+- Fan-out/fan-in is the need — use dispatcher routing with fan-out array syntax instead
+- HITL is the need — use `ask-human` messages directly, no FSM state required
+- "What phase are we in?" can be answered by reading the last message — that's not a state machine problem
+
+**The key test:** *If you'd trust an orchestrator agent to route correctly based on incoming messages, you don't need FSM. FSM is for when routing must be mechanical and cannot rely on agent judgment.*
+
+**Red flags that you're over-engineering with FSM:**
+- Every FSM state has only one non-error exit that always fires (just use routing)
+- All states route back to an orchestrator agent anyway (orchestrator is doing the state management, FSM is redundant)
+- The FSM context tracks values the orchestrator could just pass in message bodies
+- You added FSM because the workflow "felt complex" — complexity alone is not a reason
+
 **Sequential workflow:**
 ```yaml
 fsm:
@@ -707,6 +820,7 @@ For ensemble `aggregation` field:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `dev_mode` | boolean | Force all agents to haiku for cheap workflow testing. Remove before production. |
 | `brain` | boolean | Enable brain-update insights |
 | `capabilities` | array | Agent capability tags |
 | `config` | object | Custom mesh-specific settings |

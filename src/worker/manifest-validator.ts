@@ -177,7 +177,7 @@ export function validateAgentArtifacts(
     // For preflight reads: skip workspace files whose writers haven't completed yet.
     // Persistent files (game, campaign, session) are always checked.
     if (role === 'reads' && completedWriters && entry.location === 'workspace') {
-      const hasCompletedWriter = entry.writes.some(w => completedWriters.includes(w));
+      const hasCompletedWriter = entry.writes?.some(w => completedWriters.includes(w)) ?? false;
       if (!hasCompletedWriter) {
         result.skipped.push(entry.id);
         continue;

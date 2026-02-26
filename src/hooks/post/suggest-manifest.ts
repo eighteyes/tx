@@ -167,18 +167,7 @@ ${violationSummary}`;
     if (!suggestion) suggestion = '(no suggestion generated)';
 
     // 5. Write suggestion message to core/core
-    const timestamp = Math.floor(Date.now() / 1000);
-    const msgId = `suggest-manifest-${meshInstance}`;
-    const filename = `${timestamp}-update-hooks-suggest-manifest--core-core-${msgId}.md`;
-    const filepath = path.join(msgsDir, filename);
-
-    const content = `---
-to: core/core
-from: hooks/suggest-manifest
-type: update
-msg-id: ${msgId}
----
-## Manifest Suggestions — ${meshName}/${agentName}
+    const body = `## Manifest Suggestions — ${meshName}/${agentName}
 
 ${violations.length} guardrail violations detected during this run.
 
@@ -186,16 +175,29 @@ ${violations.length} guardrail violations detected during this run.
 ${suggestion}
 
 ### Violations Summary
-${violationSummary}
-`;
+${violationSummary}`;
 
-    fs.writeFileSync(filepath, content);
+    if (context.systemWriter) {
+      context.systemWriter.write({
+        to: 'core/core',
+        from: 'hooks/suggest-manifest',
+        type: 'update',
+        headline: `Manifest suggestions - ${meshName}/${agentName}`,
+        body,
+      });
+    } else {
+      const timestamp = Math.floor(Date.now() / 1000);
+      const msgId = `suggest-manifest-${meshInstance}`;
+      const filename = `${timestamp}-update-hooks-suggest-manifest--core-core-${msgId}.md`;
+      const filepath = path.join(msgsDir, filename);
+      const content = `---\nto: core/core\nfrom: hooks/suggest-manifest\ntype: update\nmsg-id: ${msgId}\n---\n\n${body}\n`;
+      fs.writeFileSync(filepath, content);
+    }
 
     log.info(COMPONENT, 'Manifest suggestion written', {
       meshInstance,
       agentId: fullAgentId,
       violationCount: violations.length,
-      filepath,
     });
   } catch (error) {
     log.error(COMPONENT, 'Haiku analysis failed', {

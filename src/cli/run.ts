@@ -292,7 +292,7 @@ export async function run(options: RunOptions = {}): Promise<void> {
 
     // Write message (clears pending question since user is responding)
     pendingQuestion = false;
-    writeMessage(msgsDir, target, content);
+    writeMessage(msgsDir, target, content, consumer.systemWriter);
     messageCount++;
 
     // Wait for worker to complete - 'complete' handler will re-prompt or exit
@@ -385,7 +385,19 @@ function displayResponse(msg: ParsedMessage): void {
 /**
  * Write message file to msgs directory
  */
-function writeMessage(msgsDir: string, to: string, content: string): string {
+function writeMessage(msgsDir: string, to: string, content: string, writer?: import('../core/system-message-writer.ts').SystemMessageWriter): string {
+  if (writer) {
+    const result = writer.write({
+      to,
+      from: 'user/repl',
+      type: 'task',
+      headline: 'User REPL message',
+      body: content,
+    });
+    return result.msgId;
+  }
+
+  // Fallback: direct file write
   const msgId = generateId();
   const timestamp = Date.now();
   const toSafe = to.replace('/', '-');

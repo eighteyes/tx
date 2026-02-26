@@ -61,6 +61,29 @@ Pre-hooks (sequential) -> Worker Execution -> Post-hooks (sequential)
 
 ### Pre-Hooks
 
+#### `discovery-code`
+Analyzes the codebase for implementation gaps before the worker starts. Uses the spec-graph for project intent and scans source files, API routes, and frontend entry points. Writes `gap-report.md` to the mesh workspace — auto-injected into agent context via manifest.
+
+**Sends to core**:
+- `🔍 Discovering implementation gaps…` — at start
+- `📋 Gap analysis complete — N missing, M partial` — after report written
+- `ask` (HITL) if project intent is ambiguous
+
+**Idempotent**: skips if `gap-report.md` already exists (e.g., written by `validation-code` for a re-iteration).
+
+**Pair with**: `validation-code` post-hook for the full iterate-until-done loop.
+
+```yaml
+lifecycle:
+  pre:
+    - discovery-code
+manifest:
+  - id: gap-report.md
+    reads: [orchestrator, analyzer, implementer]
+    persistent: true   # Written by hook, not an agent — skips "no writers" validation
+    autoInject: true
+```
+
 #### `worktree:create`
 Creates isolated git worktree for feature branch development.
 
@@ -98,6 +121,31 @@ lifecycle:
 ---
 
 ### Post-Hooks
+
+#### `validation-code`
+Re-analyzes the codebase for remaining implementation gaps after the orchestrator signals mesh completion (routes to `core/core`). If gaps remain, updates `gap-report.md` and re-triggers the mesh with a fresh session (no `fork_from`). Escalates to human after 5 iterations.
+
+**Triggers on**: orchestrator agent only, when `workerOutput` contains `to: core/core`
+
+**Sends to core**:
+- `🔄 Validating implementation (iteration N/5)…` — at start of each validation pass
+- `✅ All gaps resolved — mesh complete` — when gapCount == 0
+- `⚠️ N gap(s) remain — starting iteration N/5` — when re-triggering
+- `ask` (HITL escalation) — when max iterations exhausted
+
+**Iteration state**: `iteration.txt` in workspace dir persists across loops. Cleared on success or escalation.
+
+**Pair with**: `discovery-code` pre-hook. Discovery writes the initial report; validation updates it each iteration.
+
+```yaml
+lifecycle:
+  pre:
+    - discovery-code
+  post:
+    - validation-code
+```
+
+**Example**: Used in `dev-ui-completion` mesh to ensure every UI component is fully wired before completing.
 
 #### `quality:checklist`
 Validates worker output against preflight checklist items.
@@ -321,25 +369,29 @@ export const allPostHooks = [
 Hooks execute by priority within each phase (lower = earlier):
 
 **Pre-hooks:**
-| Hook | Priority |
-|------|----------|
-| `worktree:create` | 10 |
-| `quality:preflight` | 50 |
+| Hook | Priority | Description |
+|------|----------|-------------|
+| `discovery-code` | 10 | Gap analysis — writes gap-report.md |
+| `worktree:create` | 10 | Git worktree isolation |
+| `quality:preflight` | 50 | Generates checklist/rubric for quality gates |
 
 **Post-hooks:**
-| Hook | Priority |
-|------|----------|
-| `quality:evaluate` | 40 |
-| `quality:checklist` | 50 |
-| `quality:rubric` | 51 |
-| `quality:adversarial` | 52 |
-| `quality:accuracy` | 53 |
-| `quality:summarizer` | 60 |
-| `quality:deterministic` | 70 |
-| `worktree:cleanup` | 80 |
-| `commit:auto` | 90 |
-| `forensics:analyze` | 95 |
-| `brain-update` | 100 |
+| Hook | Priority | Description |
+|------|----------|-------------|
+| `quality:evaluate` | 40 | General quality evaluation |
+| `quality:checklist` | 50 | Validates against preflight checklist |
+| `quality:rubric` | 51 | Scores against rubric criteria |
+| `quality:adversarial` | 52 | Finds edge cases and weaknesses |
+| `quality:accuracy` | 53 | Validates sources and claims |
+| `quality:summarizer` | 60 | Summarizes results (informational) |
+| `quality:deterministic` | 70 | Runs tests/lint/typecheck via shell |
+| `quality:ai-linter` | 75 | AI-powered code style and pattern linting |
+| `worktree:cleanup` | 80 | Removes worktree and branch |
+| `validation-code` | 90 | Gap re-validation — iterate-until-done loop |
+| `commit:auto` | 90 | Auto-creates git commits |
+| `suggest-manifest` | 92 | Suggests manifest changes from guardrail violations |
+| `forensics:analyze` | 95 | Analyzes session for patterns/issues (debug mode) |
+| `brain-update` | 100 | Sends work summary to brain mesh |
 
 ---
 
