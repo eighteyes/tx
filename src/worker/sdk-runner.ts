@@ -42,7 +42,7 @@ export type AgentRouting = Record<string, RoutingDestination>;
  * - 'unrestricted': Full SDK tools + MCP tools (default)
  * - 'mcp-only': ONLY MCP server tools, no built-in SDK tools
  */
-export type ToolRestriction = 'unrestricted' | 'mcp-only';
+export type ToolRestriction = 'unrestricted' | 'mcp-only' | 'orchestrator';
 
 /**
  * Mesh-style routing: { status: { destination: "reason" } }
@@ -417,16 +417,24 @@ export class SdkRunner extends EventEmitter {
 
         // Determine tool configuration based on restriction policy
         // 'mcp-only': Disable all built-in tools, only MCP tools available
+        // 'orchestrator': Only Read + Write (Write path restricted via PreToolUse hook)
         // 'unrestricted' (default): Full SDK tools + MCP tools
-        const toolsConfig = this.config.toolRestriction === 'mcp-only'
-          ? []  // Empty array disables all built-in tools
-          : undefined;  // undefined = use default (all tools)
+        let toolsConfig: string[] | undefined;
+        if (this.config.toolRestriction === 'mcp-only') {
+          toolsConfig = [];  // Empty array disables all built-in tools
+        } else if (this.config.toolRestriction === 'orchestrator') {
+          toolsConfig = ['Read', 'Write'];  // Orchestrator: read anything, write restricted by hook
+        } else {
+          toolsConfig = undefined;  // undefined = use default (all tools)
+        }
 
         if (this.config.toolRestriction === 'mcp-only') {
           log.info('sdk-runner', `Tool restriction: mcp-only`, {
             workerId,
             mcpServers: this.config.mcpServers ? Object.keys(this.config.mcpServers) : []
           });
+        } else if (this.config.toolRestriction === 'orchestrator') {
+          log.info('sdk-runner', `Tool restriction: orchestrator (Read + Write msgs-only)`, { workerId });
         }
 
         try {

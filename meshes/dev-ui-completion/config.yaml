@@ -1,0 +1,113 @@
+mesh: dev-ui-completion
+description: "Takes a wireframe or partial UI and makes it fully functional — every button wired, every workflow connected, every dead-end resolved."
+
+agents:
+  - name: orchestrator
+    model: sonnet
+    prompt: orchestrator.md
+    orchestrator: true
+
+  - name: analyzer
+    model: sonnet
+    prompt: analyzer.md
+
+  - name: specifier
+    model: sonnet
+    prompt: specifier.md
+
+  - name: implementer
+    model: sonnet
+    prompt: implementer.md
+
+  - name: synthesizer
+    model: opus
+    prompt: synthesizer.md
+
+  - name: validator
+    model: sonnet
+    prompt: validator.md
+
+entry_point: orchestrator
+
+manifest:
+  - id: gap-report.md
+    description: "Implementation gap analysis — feature × axis (backend/UI/e2e). Written by discovery-code pre-hook."
+    reads: [orchestrator, analyzer, specifier, implementer, validator]
+    persistent: true
+    autoInject: true
+
+lifecycle:
+  pre:
+    - discovery-code
+  post:
+    - validation-code
+
+routing:
+  orchestrator:
+    start:
+      analyzer: "Analyze UI files and catalog interactive elements"
+    specs_ready:
+      implementer: "Dispatch implementation tasks (one message per component)"
+    synthesis_needed:
+      synthesizer: "All implementations complete, synthesize"
+    validation_needed:
+      validator: "Validate all elements are wired"
+    loop:
+      implementer: "Retry incomplete elements (attempt noted in message)"
+    complete:
+      core/core: "All elements wired and validated"
+
+  analyzer:
+    complete:
+      specifier: "Manifest ready, generate workflow specs"
+    error:
+      orchestrator: "Analysis failed"
+
+  specifier:
+    complete:
+      orchestrator: "Specs ready, no ambiguities"
+    needs_clarification:
+      orchestrator: "Ambiguous elements batched, ask human then proceed with clear ones"
+    error:
+      orchestrator: "Spec generation failed"
+
+  implementer:
+    complete:
+      orchestrator: "Component implemented"
+    error:
+      orchestrator: "Implementation failed"
+
+  synthesizer:
+    merged:
+      orchestrator: "Synthesis complete, no conflicts"
+    auto_resolved:
+      orchestrator: "Conflicts auto-resolved via pattern analysis (>70% dominance)"
+    needs_human:
+      orchestrator: "Conflict below threshold, needs human decision"
+    error:
+      orchestrator: "Synthesis failed"
+
+  validator:
+    approved:
+      orchestrator: "All elements wired, complete"
+    gaps_found:
+      orchestrator: "Gaps remain, loop back (attempt count in message)"
+    max_attempts:
+      orchestrator: "3 validation loops exhausted, escalate to human"
+    error:
+      orchestrator: "Validation error"
+
+guardrails:
+  max_turns: 30
+
+playbook_notes: |
+  No FSM — pure coordinator/dispatcher pattern.
+
+  Flow: orchestrator → analyzer → specifier → [ask-human for ambiguities, non-blocking]
+        → implementer (N parallel, one message per component)
+        → synthesizer → validator → [loop max 3] → complete
+
+  Orchestrator is the hub. All agents report back to it.
+  Validator tracks attempt count in message body — orchestrator enforces the 3-attempt limit.
+  Synthesizer auto-resolves conflicts at 70% pattern dominance threshold; asks human below that.
+  Non-blocking HITL: specifier batches ambiguities and asks once; clear elements proceed immediately.

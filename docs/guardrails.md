@@ -242,6 +242,30 @@ guardrails:
 
 Gate violations inject a steering message that tells the agent what paths are allowed. The message includes guidance to write to `core/core` if the agent believes a path should be allowed — putting escalation in the agent's hands rather than auto-notifying.
 
+### Orchestrator Gate
+
+Per-agent flag that restricts an agent to routing-only behavior.
+
+**Config**: Set `orchestrator: true` on an agent in `config.yaml`.
+
+| Behavior | Description |
+|----------|-------------|
+| Tool allowlist | Only `Read` and `Write` tools available (no Bash, Edit, Glob, Grep, etc.) |
+| Write path restriction | `Write` calls blocked unless `file_path` starts with the msgs directory |
+| PreToolUse hook | Enforced via SDK hook — agent cannot bypass |
+| Use case | Coordinator/dispatcher agents that should route work, not implement it |
+
+```yaml
+# meshes/my-mesh/config.yaml
+agents:
+  - name: orchestrator
+    model: sonnet
+    prompt: orchestrator.md
+    orchestrator: true   # Read anything, Write only to msgs dir
+```
+
+**Why not just a prompt instruction?** LLMs with access to tools will often ignore "don't code" instructions when the task seems simple enough. System-level enforcement prevents this.
+
 ### Parity (Non-configurable)
 
 Always-on validation that completion agents match boundary agents. Not exposed in config.

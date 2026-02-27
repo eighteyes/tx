@@ -46,6 +46,7 @@ This is complete. Everything else is optional and should be justified.
 
 ### Common Over-Engineering Patterns to Avoid
 
+- **Orchestrator doing implementation work** — add `orchestrator: true` to enforce routing-only (Read + Write msgs-only). System-level enforcement beats prompt instructions.
 - **FSM + orchestrator that handles all routing** — pick one. If orchestrator routes, drop FSM.
 - **`type: persistent` on a mesh that runs once** — persistent is for daemons only.
 - **`lifecycle:` hooks "just in case"** — add when quality gates are actually required.
@@ -815,6 +816,7 @@ For ensemble `aggregation` field:
 | `thinking` | boolean | no | Extended thinking (default: true). Set `false` to disable. |
 | `max_turns` | number | no | API round-trip limit per invocation |
 | `max_messages` | number | no | Outbound message limit per invocation |
+| `orchestrator` | boolean | no | Restrict to Read + Write(msgs only). For coordinator agents that route, not implement. |
 
 ## Additional Config Fields
 

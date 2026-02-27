@@ -114,6 +114,7 @@ export interface AgentConfig {
   load?: string[];  // Files to preload into context (globs supported, validated against manifest reads)
   checkpoint?: boolean | 'start' | 'end';  // Checkpoint type: start (after init), end (after completion)
   fork_from?: string;  // Fork from another agent's checkpoint
+  orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
 }
 
 /**

@@ -3546,6 +3546,35 @@ Please advise the agent or check mesh configuration.`;
         killThreshold: this.guardrails.getKillThreshold('identity_gate', meshName!, agent.name),
       });
 
+      // Orchestrator gate: restrict Write to msgs dir only
+      if (agent.orchestrator) {
+        const msgsDir = this.config.msgsDir;
+        preToolUseHooks.push({
+          matcher: 'Write',
+          hooks: [async (input: any) => {
+            const filePath = input?.tool_input?.file_path || '';
+            if (!filePath.startsWith(msgsDir)) {
+              log.warn('orchestrator-gate', `Blocked Write outside msgs dir`, {
+                agentId,
+                blockedPath: filePath,
+                allowedDir: msgsDir,
+              });
+              return {
+                decision: 'block',
+                reason: `Orchestrator agents can only write to msgs dir. Blocked: ${filePath}`,
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason: `Orchestrator restricted: Write only allowed to ${msgsDir}`,
+                },
+              };
+            }
+            return { decision: 'allow' };
+          }],
+        });
+        log.info('orchestrator-gate', 'Orchestrator gate enabled', { agentId, msgsDir });
+      }
+
       const chaosHooks = preToolUseHooks.length > 0
         ? { PreToolUse: preToolUseHooks }
         : undefined;
@@ -3826,7 +3855,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         msgsDir: this.config.msgsDir,
         routing,
         mcpServers,
-        toolRestriction: meshConfig?.toolRestriction,  // Pass tool restriction policy
+        toolRestriction: agent.orchestrator ? 'orchestrator' : meshConfig?.toolRestriction,  // Agent orchestrator overrides mesh-level
         sessionId,  // Resume session if continuation enabled
         resumeSessionAt,  // Point-in-time fork UUID (start forks only)
         forkSession,  // Branch into new session (fork isolation)

@@ -69,6 +69,7 @@ export interface AgentConfig {
   command?: string;  // Slash command to prepend (e.g., "/know:build")
   workspace?: WorkspaceConfig;  // Optional per-agent workspace config
   mcpServers?: Record<string, McpServerConfig>;  // MCP server configurations
+  orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
 }
 
 /**

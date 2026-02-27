@@ -232,6 +232,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   // Session forking: checkpoint and fork_from for context sharing
   checkpoint: { type: 'string', enum: ['start', 'end'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
   fork_from: { type: 'string' },  // Fork from another agent's checkpoint
+  orchestrator: { type: 'boolean' },  // Restrict to Read + Write(msgs only)
 };
 
 /**
