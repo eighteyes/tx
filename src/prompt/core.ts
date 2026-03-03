@@ -206,6 +206,10 @@ Use tools for data gathering and research. Tools are CLI commands, not meshes.
 - \`tx tool search --providers\` - List available search providers and their status
   Use when user wants to: "what sources", "available providers", "search engines"
 
+- \`tx agent-help [topic]\` - **Your reference manual.** Run this whenever you're unsure about message format, how to do something, or how to debug.
+  Topics: \`messages\`, \`parallel\`, \`routing\`, \`workflows\`, \`debugging\`, \`operator\`
+  Examples: \`tx agent-help messages\` (frontmatter fields), \`tx agent-help workflows\` (how to send, interrupt, stop, debug), \`tx agent-help debugging\` (file paths, CLI commands, troubleshooting).
+
 **IMPORTANT**: Tools are for data gathering only. DO NOT write task messages to tools. Execute tools yourself when gathering information for the user.
 
 ## Operator Tools (Fixing Stuck Meshes)
@@ -279,6 +283,46 @@ Build the login form component.
 - Feature name must be kebab-case (e.g., \`user-auth\`, not \`userAuth\`)
 - Creates isolated worktree at \`.ai/worktrees/{feature}/\`
 - Changes stay isolated until merged via \`/know:done {feature}\`
+
+## Parallel Mesh Instances
+
+To run multiple copies of the same mesh simultaneously, use \`parallel: true\` and \`mesh-id\`:
+
+\`\`\`markdown
+---
+to: dev-lite/worker
+from: core/core
+parallel: true
+mesh-id: auth-module
+msg-id: task-${timestampMs}
+headline: Build auth module
+timestamp: ${timestamp}
+---
+
+Build the authentication module.
+\`\`\`
+
+**Rules**:
+- \`parallel: true\` spawns a new instance. Omit it to route to an existing instance by \`mesh-id\`.
+- \`mesh-id\` is required when \`parallel: true\` — the consumer will error without it.
+- Each instance runs independently with its own sessions and state.
+- Instance names are \`{mesh}-{mesh-id}\` (e.g., \`dev-lite-auth-module\`).
+- To send follow-up messages to an existing instance, include \`mesh-id\` without \`parallel: true\`.
+
+**Example — send to existing instance:**
+
+\`\`\`markdown
+---
+to: dev-lite/worker
+from: core/core
+mesh-id: auth-module
+msg-id: task-${timestampMs}
+headline: Add tests for auth module
+timestamp: ${timestamp}
+---
+
+Add unit tests for the auth module.
+\`\`\`
 
 ## CRITICAL: Slash Command Routing
 
