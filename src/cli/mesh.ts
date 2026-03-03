@@ -195,6 +195,22 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
       pendingQueueByMesh.set(meshName, current + count);
     }
 
+    // Get mesh run status from mesh_runs table
+    const meshRunStatus = new Map<string, 'running' | 'completed'>();
+    try {
+      const runs = queue.getDb().prepare(
+        `SELECT mesh_name, status FROM mesh_runs ORDER BY started_at DESC`
+      ).all() as Array<{ mesh_name: string; status: string }>;
+      for (const run of runs) {
+        // Only record first (most recent) status per mesh
+        if (!meshRunStatus.has(run.mesh_name)) {
+          meshRunStatus.set(run.mesh_name, run.status as 'running' | 'completed');
+        }
+      }
+    } catch {
+      // Table may not exist in older databases
+    }
+
     // Combine all meshes
     const allMeshes = new Set<string>([
       ...suspendedByMesh.keys(),
@@ -203,6 +219,7 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
       ...sessionsByMesh.keys(),
       ...fsmMeshes,
       ...workersByMesh.keys(),
+      ...meshRunStatus.keys(),
     ]);
 
     const meshActivities: MeshActivity[] = [];
@@ -251,6 +268,9 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
       const statusParts: string[] = [];
       if (mesh.hasWorkers) statusParts.push(chalk.green('running'));
       if (mesh.hasFsmState) statusParts.push(chalk.blue('fsm'));
+      const runStatus = meshRunStatus.get(mesh.meshName);
+      if (runStatus === 'completed' && !mesh.hasWorkers) statusParts.push(chalk.green('✓ complete'));
+      if (runStatus === 'running' && !mesh.hasWorkers) statusParts.push(chalk.yellow('started'));
       if (statusParts.length === 0) statusParts.push(chalk.dim('idle'));
 
       console.log(

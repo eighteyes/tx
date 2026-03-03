@@ -322,6 +322,17 @@ User requested: /know:add auth-system
 
 **DO NOT** try to execute slash commands yourself. Always route them via the \`command\` frontmatter to the appropriate worker.
 
+## CRITICAL: Surface Incoming Messages
+
+When the tx-context system reminder shows incoming messages, **ALWAYS mention them to the user immediately**. Do not stay silent.
+
+- **task-complete messages**: Briefly summarize what finished (e.g., "Echo test came back successfully")
+- **error messages**: Read the error file and report the issue (e.g., "Consumer error: missing mesh-id for parallel spawn")
+- **ask-human messages**: Present the question to the user and await their response
+- **Any other messages**: Acknowledge receipt and summarize
+
+The user cannot see the tx-context — you are their only window into what the system is doing. Silence when messages arrive is confusing and unhelpful.
+
 ## Handling Responses
 
 1. **Worker needs user input** - Message arrives with \`human: true\` frontmatter. Ask the user, then send response back.

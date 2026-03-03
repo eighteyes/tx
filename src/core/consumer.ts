@@ -18,6 +18,7 @@ import { log } from '../shared/logger.ts';
 import { DispatchRouter } from '../worker/dispatch-router.ts';
 import type { DispatcherRoutingConfig } from '../shared/types.ts';
 import { SystemMessageWriter } from './system-message-writer.ts';
+import { GuardrailConfig } from '../worker/guardrail-config.ts';
 
 /**
  * Interface for FSM validation capability
@@ -67,6 +68,8 @@ interface Frontmatter {
   'msg-id'?: string;
   headline?: string;
   timestamp?: string;
+  parallel?: string;  // 'true' to spawn parallel instance
+  'mesh-id'?: string;  // Unique identifier for parallel instance
   [key: string]: string | undefined;
 }
 
@@ -104,9 +107,9 @@ interface MeshConfig {
   routing_mode?: 'agent' | 'dispatcher';
   routing?: Record<string, Record<string, Record<string, string>>> | DispatcherRoutingConfig;
   agents?: Array<{ name: string; [key: string]: unknown }>;
-  completion_agent?: string;  // DEPRECATED: Use completion_agents or boundary_agents
-  completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5)
-  boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
+  completion_agent?: string;  // DEPRECATED: Use completion_agents
+  completion_agents?: string[];  // Agents at mesh boundary (can message core/core)
+  boundary_agents?: string[];  // DEPRECATED: Use completion_agents (backward compatibility)
   fsm?: Record<string, unknown>;  // FSM config block (presence means FSM-controlled mesh)
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
@@ -141,6 +144,8 @@ export class MessageConsumer extends EventEmitter {
   readonly systemFileRegistry: Set<string> = new Set();
   // Queue-first writer for system-authored messages
   systemWriter!: SystemMessageWriter;
+  // Guardrail config for max_instances enforcement
+  private guardrailConfig: GuardrailConfig;
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
@@ -157,7 +162,42 @@ export class MessageConsumer extends EventEmitter {
       (event, data) => this.emit(event, data),
       this.systemFileRegistry
     );
+    // Derive workDir from watchDir (.ai/tx/msgs -> project root)
+    // watchDir is typically <workDir>/.ai/tx/msgs
+    const workDir = watchDir.endsWith(path.join('.ai', 'tx', 'msgs'))
+      ? path.resolve(watchDir, '../../..')
+      : path.dirname(watchDir);
+    this.guardrailConfig = new GuardrailConfig(workDir);
     this.loadMeshEntryPoints();
+  }
+
+  /**
+   * Register a parallel instance mesh by cloning the base mesh's agents
+   * into meshAgents under the instance name (e.g., "test-echo-alpha").
+   * This allows cross-mesh validation to recognize the rewritten route.
+   */
+  private registerParallelInstance(baseMesh: string, meshId: string): string {
+    const instanceName = `${baseMesh}-${meshId}`;
+
+    if (!this.meshAgents.has(instanceName)) {
+      const baseAgents = this.meshAgents.get(baseMesh);
+      if (baseAgents) {
+        this.meshAgents.set(instanceName, new Set(baseAgents));
+      }
+      // Clone entry point from base mesh
+      const baseEntry = this.meshEntryPoints.get(baseMesh);
+      if (baseEntry) {
+        this.meshEntryPoints.set(instanceName, baseEntry);
+      }
+      log.info('consumer', 'Registered parallel instance mesh', {
+        baseMesh,
+        meshId,
+        instanceName,
+        agents: baseAgents ? Array.from(baseAgents) : [],
+      });
+    }
+
+    return instanceName;
   }
 
   /**
@@ -562,6 +602,168 @@ export class MessageConsumer extends EventEmitter {
         }
       }
 
+      // =================================================================
+      // PARALLEL INSTANCE ROUTING — spawn or route to named instance
+      // =================================================================
+      const isParallelSpawn = parsed.frontmatter.parallel === 'true';
+      const meshId = parsed.frontmatter['mesh-id'];
+      let resolvedBaseMesh: string | undefined;
+
+      if (isParallelSpawn && !meshId) {
+        // parallel: true without mesh-id is an error
+        log.error('consumer', 'parallel: true requires mesh-id field', {
+          to: toAgent,
+          from: fromAgent,
+          file: filename,
+        });
+
+        this.systemWriter.write({
+          to: 'core/core',
+          from: 'consumer/consumer',
+          type: 'error',
+          headline: 'Missing mesh-id for parallel spawn',
+          body: `Message has \`parallel: true\` but no \`mesh-id\` field. The \`mesh-id\` field is required when spawning parallel instances.`,
+        });
+
+        fs.unlinkSync(filepath);
+        return;
+      }
+
+      if (isParallelSpawn && meshId) {
+        const [baseMesh, agentName] = toAgent.split('/');
+        resolvedBaseMesh = baseMesh;
+
+        // Check if instance already exists
+        const existing = this.queue.getInstance(baseMesh, meshId);
+
+        if (existing) {
+          // Rewrite 'to' field to route to the existing instance
+          const instanceName = this.registerParallelInstance(baseMesh, meshId);
+          const instanceAgent = `${instanceName}/${agentName}`;
+
+          log.info('consumer', 'Routing to existing parallel instance', {
+            baseMesh,
+            meshId,
+            instanceName,
+            originalTo: toAgent,
+            rewrittenTo: instanceAgent,
+            from: fromAgent,
+            file: filename,
+          });
+
+          // Rewrite the frontmatter.to field
+          parsed.frontmatter.to = instanceAgent;
+          toAgent = instanceAgent;
+        } else {
+          // Check max_instances guardrail before spawning
+          const maxInstances = this.guardrailConfig.getMaxInstances(baseMesh);
+          if (maxInstances !== null) {
+            const running = this.queue.countRunningInstances(baseMesh);
+            if (running >= maxInstances) {
+              // Max instances exceeded - write error to core/core
+              const errorMsg = `Max instances exceeded for mesh "${baseMesh}": ${running}/${maxInstances}. Cannot spawn instance with mesh-id "${meshId}".`;
+              log.error('consumer', 'Max instances guardrail violation', {
+                baseMesh,
+                meshId,
+                running,
+                maxInstances,
+                from: fromAgent,
+              });
+
+              this.systemWriter.write({
+                to: 'core/core',
+                from: 'consumer/consumer',
+                type: 'error',
+                headline: `Max instances exceeded for ${baseMesh}`,
+                body: errorMsg,
+              });
+
+              // Delete the triggering file and return early
+              fs.unlinkSync(filepath);
+              return;
+            }
+          }
+
+          // Register instance mesh and rewrite route on first message too
+          const instanceName = this.registerParallelInstance(baseMesh, meshId);
+          const instanceAgent = `${instanceName}/${agentName}`;
+
+          log.info('consumer', 'Spawning new parallel instance', {
+            baseMesh,
+            meshId,
+            instanceName,
+            originalTo: toAgent,
+            rewrittenTo: instanceAgent,
+            from: fromAgent,
+            file: filename,
+          });
+
+          // Mark instance in registry before spawning
+          this.queue.insertInstance(baseMesh, meshId);
+
+          // Rewrite the route to the instance name
+          parsed.frontmatter.to = instanceAgent;
+          toAgent = instanceAgent;
+
+          this.emit('spawn-instance', {
+            baseMesh,
+            meshId,
+            targetAgent: instanceAgent,
+            fromAgent,
+            messageId: parsed.frontmatter['msg-id'],
+          });
+        }
+      } else if (meshId && !isParallelSpawn) {
+        // mesh-id provided without parallel: true — route to existing instance
+        const [baseMesh, agentName] = toAgent.split('/');
+        resolvedBaseMesh = baseMesh;
+        const existing = this.queue.getInstance(baseMesh, meshId);
+
+        if (existing && existing.status === 'running') {
+          // Rewrite 'to' field to route to the instance
+          const instanceName = this.registerParallelInstance(baseMesh, meshId);
+          const instanceAgent = `${instanceName}/${agentName}`;
+
+          log.info('consumer', 'Routing to existing parallel instance by mesh-id', {
+            baseMesh,
+            meshId,
+            instanceName,
+            originalTo: toAgent,
+            rewrittenTo: instanceAgent,
+            from: fromAgent,
+            file: filename,
+          });
+
+          // Rewrite the frontmatter.to field
+          parsed.frontmatter.to = instanceAgent;
+          toAgent = instanceAgent;
+        } else if (existing && existing.status === 'completed') {
+          log.warn('consumer', 'Attempted to route to completed parallel instance', {
+            baseMesh,
+            meshId,
+            from: fromAgent,
+            file: filename,
+          });
+          this.writeErrorToCore(
+            `Cannot route to completed parallel instance \`${baseMesh}/${meshId}\`.`,
+            parsed.frontmatter['msg-id'] || filename
+          );
+          return;
+        } else {
+          log.warn('consumer', 'Attempted to route to nonexistent parallel instance', {
+            baseMesh,
+            meshId,
+            from: fromAgent,
+            file: filename,
+          });
+          this.writeErrorToCore(
+            `Parallel instance \`${baseMesh}/${meshId}\` does not exist. Use \`parallel: true\` to spawn.`,
+            parsed.frontmatter['msg-id'] || filename
+          );
+          return;
+        }
+      }
+
       const targetMesh = toAgent.split('/')[0];
       if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/')) {
         log.warn('consumer', 'Dropped message to system/* (routing mistake)', {
@@ -638,7 +840,7 @@ export class MessageConsumer extends EventEmitter {
       // Self-heals on first violation, escalates on second.
       // =================================================================
 
-      // Phase 7: Type is always set by parseMessage() (either from file or inferred)
+      // Type is always set by parseMessage() (either from file or inferred)
       const messageType = parsed.frontmatter.type;
 
       if (fromAgent && toAgent && messageType) {
@@ -748,6 +950,8 @@ export class MessageConsumer extends EventEmitter {
           model: parsed.frontmatter.model,  // Override agent model
           priority: parsed.frontmatter.priority,  // Message priority
           'inject-response': parsed.frontmatter['inject-response'],  // Auto-inject response into core session
+          'mesh-id': parsed.frontmatter['mesh-id'],  // Parallel instance identifier
+          'base-mesh': resolvedBaseMesh,  // Base mesh name for parallel instances (dispatcher uses for config lookup)
           body: parsed.body,
           rearmatter: parsed.rearmatter,
           filepath
@@ -837,7 +1041,7 @@ export class MessageConsumer extends EventEmitter {
           });
         }
 
-        // Phase 3: Boundary detection — any message to core/core crosses human boundary
+        // Boundary detection — any message to core/core crosses human boundary
         const crossesHumanBoundary = toAgent === 'core/core';
         const isTerminal = true;  // All asks are terminal by default (sender suspends)
 
@@ -911,7 +1115,7 @@ export class MessageConsumer extends EventEmitter {
           }
         }
 
-        // Phase 3: Boundary detection for terminal-by-default
+        // Boundary detection for terminal-by-default
         const fromHumanBoundary = respondingAgent === 'core/core';
         const resumesSuspension = fromHumanBoundary;  // Human responses resume suspensions
 
@@ -973,7 +1177,19 @@ export class MessageConsumer extends EventEmitter {
             return;
           }
 
-          // Parity gate passed - check if this is a completion agent
+          // Parity gate passed - mark parallel instance complete if mesh-id present
+          if (parsed.frontmatter['mesh-id']) {
+            const [meshName] = fromAgent.split('/');
+            const instanceMeshId = parsed.frontmatter['mesh-id'];
+            this.queue.completeInstance(meshName, instanceMeshId);
+            log.info('consumer', 'Marked parallel instance complete', {
+              baseMesh: meshName,
+              meshId: instanceMeshId,
+              fromAgent,
+            });
+          }
+
+          // Check if this is a completion agent
           const [meshName, agentName] = fromAgent.split('/');
           const meshConfig = await this.loadMeshConfig(meshName);
           const completionAgents = this.normalizeCompletionAgents(meshConfig);
@@ -1011,6 +1227,8 @@ export class MessageConsumer extends EventEmitter {
                 if (this.meshStateManager) {
                   this.meshStateManager.clearMeshState(meshName);
                 }
+                this.queue.completeMeshRun(meshName, fromAgent);
+                log.info('consumer', 'Marked mesh run complete', { mesh: meshName, completionAgent: fromAgent });
                 this.emit('mesh-complete', {
                   meshName,
                   completionAgent: fromAgent,
@@ -1027,6 +1245,8 @@ export class MessageConsumer extends EventEmitter {
               if (this.meshStateManager) {
                 this.meshStateManager.clearMeshState(meshName);
               }
+              this.queue.completeMeshRun(meshName, fromAgent);
+              log.info('consumer', 'Marked mesh run complete', { mesh: meshName, completionAgent: fromAgent });
               this.emit('mesh-complete', {
                 meshName,
                 completionAgent: fromAgent,
@@ -1106,6 +1326,16 @@ export class MessageConsumer extends EventEmitter {
           }
         }
 
+        // Track mesh run start (if not already running)
+        const [dispatchMesh] = toAgent.split('/');
+        if (dispatchMesh && dispatchMesh !== 'core') {
+          const existingRun = this.queue.getRunningMeshRun(dispatchMesh);
+          if (!existingRun) {
+            this.queue.startMeshRun(dispatchMesh);
+            log.info('consumer', 'Started mesh run', { mesh: dispatchMesh });
+          }
+        }
+
         this.emit('worker-message', {
           id,
           agentId: toAgent,
@@ -1125,7 +1355,7 @@ export class MessageConsumer extends EventEmitter {
     if (parts.length < 3) return null;
 
     const frontmatter = this.parseFrontmatter(parts[1].trim());
-    // Phase 7: type field is optional (will be inferred from routing context)
+    // Type field is optional — inferred from routing context
     if (!frontmatter.to || !frontmatter.from) return null;
     if (frontmatter.type) {
       frontmatter._explicitType = 'true';
@@ -1179,7 +1409,7 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
-   * Infer message type when not explicitly provided (Phase 7: Terminal-by-default)
+   * Infer message type when not explicitly provided (Terminal-by-default)
    * This enables simpler message authoring by inferring type from routing context
    *
    * DEPRECATED ASK: ask/ask-human/ask-response types are deprecated.
@@ -1202,15 +1432,15 @@ export class MessageConsumer extends EventEmitter {
 
   /**
    * Normalize completion_agent / completion_agents / boundary_agents into an array
-   * Phase 5: Supports boundary_agents (terminal-by-default) with backward compatibility
-   * Priority: boundary_agents > completion_agents > completion_agent
+   * Supports backward compatibility with boundary_agents (deprecated)
+   * Priority: completion_agents > boundary_agents > completion_agent
    */
   private normalizeCompletionAgents(config: MeshConfig | null): string[] {
     if (!config) return [];
-    // Phase 5: Prefer boundary_agents (terminal-by-default naming)
-    if (config.boundary_agents?.length) return config.boundary_agents;
-    // Backward compat: completion_agents
+    // Prefer completion_agents (current naming)
     if (config.completion_agents?.length) return config.completion_agents;
+    // Backward compat: boundary_agents (deprecated)
+    if (config.boundary_agents?.length) return config.boundary_agents;
     // Legacy: singular completion_agent
     if (config.completion_agent) return [config.completion_agent];
     return [];
@@ -1384,6 +1614,8 @@ export class MessageConsumer extends EventEmitter {
 
       const feedback = routeTo
         ? `Invalid \`route_to: ${routeTo}\`. Valid agents: ${router.getInjectionContext(senderAgent).availableAgents.join(', ')}`
+        : outcome === 'discuss'
+        ? `\`outcome: discuss\` requires \`route_to:\` specifying which peer to message. Peers: ${(router.getInjectionContext(senderAgent).peers || []).join(', ')}`
         : `Invalid or missing \`outcome: ${outcome || '(none)'}\`. Valid outcomes: ${outcomeList}`;
 
       this.emit('system-feedback', {

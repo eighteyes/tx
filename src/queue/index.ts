@@ -66,6 +66,14 @@ export interface AwaitState {
   updated_at: number;
 }
 
+export interface ParallelInstance {
+  base_mesh: string;
+  mesh_id: string;
+  status: 'running' | 'completed';
+  spawned_at: number;
+  completed_at?: number;
+}
+
 export class MessageQueue {
   private db: Database.Database;
   private insertStmt: Database.Statement;
@@ -158,6 +166,26 @@ export class MessageQueue {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY (agent_id, conversation_id)
       );
+
+      CREATE TABLE IF NOT EXISTS parallel_instances (
+        base_mesh TEXT NOT NULL,
+        mesh_id TEXT NOT NULL,
+        status TEXT DEFAULT 'running',
+        spawned_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        PRIMARY KEY (base_mesh, mesh_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_base_mesh_status ON parallel_instances(base_mesh, status);
+
+      CREATE TABLE IF NOT EXISTS mesh_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mesh_name TEXT NOT NULL,
+        status TEXT DEFAULT 'running',
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        completion_agent TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_mesh_runs_name_status ON mesh_runs(mesh_name, status);
     `);
   }
 
@@ -173,6 +201,19 @@ export class MessageQueue {
 
     // Always ensure the index exists (safe for new and migrated DBs)
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_source_file ON messages(source_file) WHERE source_file IS NOT NULL`);
+
+    // Ensure mesh_runs table exists (for existing databases created before this feature)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mesh_runs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mesh_name TEXT NOT NULL,
+        status TEXT DEFAULT 'running',
+        started_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        completion_agent TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_mesh_runs_name_status ON mesh_runs(mesh_name, status);
+    `);
   }
 
   insert(msg: Message): number {
@@ -856,7 +897,7 @@ export class MessageQueue {
   }
 
   // ============================================
-  // Await State Tracking (Phase 2: Terminal-by-Default)
+  // Await State Tracking (Terminal-by-Default)
   // ============================================
 
   /**
@@ -1110,6 +1151,167 @@ export class MessageQueue {
    */
   clearAllSuspendedSessions(): number {
     const result = this.db.prepare('DELETE FROM suspended_sessions').run();
+    return result.changes;
+  }
+
+  // ============================================
+  // Parallel Mesh Instances
+  // ============================================
+
+  /**
+   * Insert a new parallel mesh instance
+   * @param baseMesh - The base mesh name (e.g., "dev")
+   * @param meshId - Unique identifier for this instance within the base mesh (e.g., "auth")
+   * @throws Error if (baseMesh, meshId) already exists (PRIMARY KEY constraint)
+   */
+  insertInstance(baseMesh: string, meshId: string): void {
+    this.db.prepare(`
+      INSERT INTO parallel_instances (base_mesh, mesh_id, status, spawned_at)
+      VALUES (?, ?, 'running', ?)
+    `).run(baseMesh, meshId, Date.now());
+  }
+
+  /**
+   * Get a parallel instance by composite key
+   * @param baseMesh - The base mesh name
+   * @param meshId - The mesh identifier
+   * @returns The instance if found, null otherwise
+   */
+  getInstance(baseMesh: string, meshId: string): ParallelInstance | null {
+    const row = this.db.prepare(`
+      SELECT base_mesh, mesh_id, status, spawned_at, completed_at
+      FROM parallel_instances
+      WHERE base_mesh = ? AND mesh_id = ?
+    `).get(baseMesh, meshId) as ParallelInstance | undefined;
+
+    return row || null;
+  }
+
+  /**
+   * Mark a parallel instance as completed
+   * @param baseMesh - The base mesh name
+   * @param meshId - The mesh identifier
+   */
+  completeInstance(baseMesh: string, meshId: string): void {
+    this.db.prepare(`
+      UPDATE parallel_instances
+      SET status = 'completed', completed_at = ?
+      WHERE base_mesh = ? AND mesh_id = ? AND status = 'running'
+    `).run(Date.now(), baseMesh, meshId);
+  }
+
+  // ─── Mesh Runs ──────────────────────────────────────────────────────
+
+  /**
+   * Record that a mesh has started running
+   * @param meshName - The mesh name
+   * @returns The row id of the new mesh run
+   */
+  startMeshRun(meshName: string): number {
+    const result = this.db.prepare(`
+      INSERT INTO mesh_runs (mesh_name, status, started_at)
+      VALUES (?, 'running', ?)
+    `).run(meshName, Date.now());
+    return Number(result.lastInsertRowid);
+  }
+
+  /**
+   * Mark a mesh run as completed
+   * @param meshName - The mesh name
+   * @param completionAgent - Optional agent that triggered completion
+   */
+  completeMeshRun(meshName: string, completionAgent?: string): void {
+    this.db.prepare(`
+      UPDATE mesh_runs
+      SET status = 'completed', completed_at = ?, completion_agent = ?
+      WHERE mesh_name = ? AND status = 'running'
+    `).run(Date.now(), completionAgent || null, meshName);
+  }
+
+  /**
+   * Get the current running mesh run, if any
+   * @param meshName - The mesh name
+   */
+  getRunningMeshRun(meshName: string): { id: number; mesh_name: string; status: string; started_at: number } | null {
+    const row = this.db.prepare(`
+      SELECT id, mesh_name, status, started_at
+      FROM mesh_runs
+      WHERE mesh_name = ? AND status = 'running'
+      ORDER BY started_at DESC
+      LIMIT 1
+    `).get(meshName) as { id: number; mesh_name: string; status: string; started_at: number } | undefined;
+    return row || null;
+  }
+
+  /**
+   * List mesh runs, optionally filtered by mesh name and/or status
+   */
+  listMeshRuns(meshName?: string, status?: 'running' | 'completed'): Array<{ id: number; mesh_name: string; status: string; started_at: number; completed_at: number | null; completion_agent: string | null }> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (meshName) { conditions.push('mesh_name = ?'); params.push(meshName); }
+    if (status) { conditions.push('status = ?'); params.push(status); }
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    return this.db.prepare(`
+      SELECT id, mesh_name, status, started_at, completed_at, completion_agent
+      FROM mesh_runs ${whereClause}
+      ORDER BY started_at DESC
+    `).all(...params) as Array<{ id: number; mesh_name: string; status: string; started_at: number; completed_at: number | null; completion_agent: string | null }>;
+  }
+
+  /**
+   * List parallel instances, optionally filtered by base mesh and/or status
+   * @param baseMesh - Optional filter by base mesh name
+   * @param status - Optional filter by status ('running' or 'completed')
+   * @returns Array of instance info
+   */
+  listInstances(baseMesh?: string, status?: 'running' | 'completed'): ParallelInstance[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (baseMesh) {
+      conditions.push('base_mesh = ?');
+      params.push(baseMesh);
+    }
+    if (status) {
+      conditions.push('status = ?');
+      params.push(status);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = this.db.prepare(`
+      SELECT base_mesh, mesh_id, status, spawned_at, completed_at
+      FROM parallel_instances
+      ${whereClause}
+      ORDER BY spawned_at DESC
+    `).all(...params) as ParallelInstance[];
+
+    return rows;
+  }
+
+  /**
+   * Count running instances for a base mesh
+   * @param baseMesh - The base mesh name to count
+   * @returns Number of running instances
+   */
+  countRunningInstances(baseMesh: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as c FROM parallel_instances
+      WHERE base_mesh = ? AND status = 'running'
+    `).get(baseMesh) as { c: number };
+    return row.c;
+  }
+
+  /**
+   * Mark all running instances as completed (for restart recovery)
+   * On system restart, stale running instances should be marked completed
+   */
+  markStaleInstances(): number {
+    const result = this.db.prepare(`
+      UPDATE parallel_instances
+      SET status = 'completed', completed_at = ?
+      WHERE status = 'running'
+    `).run(Date.now());
     return result.changes;
   }
 }
