@@ -39,7 +39,7 @@ agents:
     prompt: synthesizer/prompt.md
 
 entry_point: coordinator
-boundary_agents: [synthesizer]
+completion_agents: [synthesizer]
 
 continuation: false
 

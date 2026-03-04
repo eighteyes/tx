@@ -26,4 +26,5 @@ meshes/*
 !meshes/mesh-builder
 !meshes/rewriter
 !meshes/structured-thinking
+!meshes/evobench
 !meshes/narrative-engine

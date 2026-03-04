@@ -38,17 +38,17 @@ export class DistributionEngine {
         break;
 
       case 'weighted':
-        // Phase 2: Use agent capabilities or performance history
+        // TODO: Use agent capabilities or performance history
         subtasks = this.weighted(task, subagents, subtaskCount);
         break;
 
       case 'adaptive':
-        // Phase 2: Call spawner agent to suggest split
+        // TODO: Call spawner agent to suggest split
         subtasks = this.adaptive(task, subagents, subtaskCount, options?.customPrompt);
         break;
 
       case 'custom':
-        // Phase 2: Call Claude with custom prompt
+        // TODO: Call Claude with custom prompt
         subtasks = this.customPlaceholder(task, subagents, subtaskCount, options?.customPrompt);
         break;
 
@@ -104,14 +104,14 @@ export class DistributionEngine {
     subagents: string[],
     subtaskCount: number
   ): Array<{ id: string; description: string; assigned_agent: string }> {
-    // Phase 2: Query agent capabilities and weight distribution accordingly
+    // TODO: Query agent capabilities and weight distribution accordingly
     // For now, fall back to equal distribution
     return this.equal(task, subagents, subtaskCount);
   }
 
   /**
    * Adaptive strategy: Use spawner agent to suggest optimal split
-   * Currently defaults to equal distribution; Phase 2 will invoke spawner
+   * Currently defaults to equal distribution
    */
   private static adaptive(
     task: string,
@@ -119,14 +119,14 @@ export class DistributionEngine {
     subtaskCount: number,
     _customPrompt?: string
   ): Array<{ id: string; description: string; assigned_agent: string }> {
-    // Phase 2: Call spawner agent with prompt to decompose task optimally
+    // TODO: Call spawner agent with prompt to decompose task optimally
     // For now, fall back to equal distribution
     return this.equal(task, subagents, subtaskCount);
   }
 
   /**
    * Custom strategy placeholder: Use provided prompt to guide decomposition
-   * Currently defaults to equal distribution; Phase 2 will invoke Claude
+   * Currently defaults to equal distribution
    */
   private static customPlaceholder(
     task: string,
@@ -134,7 +134,7 @@ export class DistributionEngine {
     subtaskCount: number,
     _customPrompt?: string
   ): Array<{ id: string; description: string; assigned_agent: string }> {
-    // Phase 2: Call Claude with customPrompt to decompose task
+    // TODO: Call Claude with customPrompt to decompose task
     // For now, fall back to equal distribution
     return this.equal(task, subagents, subtaskCount);
   }

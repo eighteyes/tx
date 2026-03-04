@@ -37,7 +37,6 @@ TX messages are markdown files with YAML frontmatter and optional rearmatter:
 |-------|------|-------------|
 | `to` | string | Recipient agent ID (e.g., `dev/worker`, `core/core`) |
 | `from` | string | Sender agent ID (e.g., `brain/brain`, `core/core`) |
-| `type` | string | Message type (see [Message Types](#message-types)) |
 | `msg-id` | string | Unique message identifier for correlation |
 | `headline` | string | Human-readable summary of the message |
 | `timestamp` | string | ISO-8601 timestamp (e.g., `2025-01-05T12:00:00.000Z`) |
@@ -46,6 +45,7 @@ TX messages are markdown files with YAML frontmatter and optional rearmatter:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `type` | string | - | Message type (see [Message Types](#message-types)). Inferred from routing context when omitted (Terminal-by-Default). Explicit type honored for backward compatibility. |
 | `status` | string | - | Outcome status for routing: `complete`, `error`, `blocked` |
 | `command` | string | - | Slash command to trigger on recipient (e.g., `/know:build`) |
 | `feature` | string | - | Feature name for worktree-enabled meshes |
@@ -218,15 +218,17 @@ session-id: sess_abc123def456
 
 ### Standard Types
 
-| Type | Direction | Purpose |
-|------|-----------|---------|
-| `task` | core → worker | Assign work to an agent |
-| `task-complete` | worker → core/agent | Report task completion with results |
-| `ask` | agent → agent | Request information from another agent |
-| `ask-response` | agent → agent | Provide answer to an ask |
-| `ask-human` | worker → core | Request human input (HITL flow) |
-| `update` | any → any | Progress update or status notification |
-| `lifecycle` | system | Internal lifecycle events |
+**Note**: All types are optional and inferred from routing context when omitted. Explicit types are honored for backward compatibility.
+
+| Type | Direction | Purpose | Auto-inferred? |
+|------|-----------|---------|----------------|
+| `task` | core → worker | Assign work to an agent | ✓ (routing to worker) |
+| `task-complete` | worker → core/agent | Report task completion with results | ✓ (completion_agents → core) |
+| `ask` | agent → agent | Request information from another agent | ✓ (agent → agent) |
+| `ask-response` | agent → agent | Provide answer to an ask | ✓ (response to ask) |
+| `ask-human` | worker → core | Request human input (HITL flow) | ✓ (routing to core/core) |
+| `update` | any → any | Progress update or status notification | Manual |
+| `lifecycle` | system | Internal lifecycle events | Manual |
 
 ### Type Behaviors
 
@@ -307,6 +309,8 @@ Here are the additional sources found...
 #### `ask-human` (HITL Flow)
 
 Requests human input. **Critical protocol**:
+
+> **Note**: The `type: ask-human` field is optional. Routing to `core/core` is what triggers HITL — the system infers this from the `to` field. Explicit `type` is supported for backward compatibility.
 
 ```yaml
 ---

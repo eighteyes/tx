@@ -78,7 +78,7 @@ This is where prose becomes musical. Consider three sentence types:
 
 **Medium workhorses (12-25 words):** The sentences that move the story. Clear, propulsive, doing the narrative work.
 
-> The door opened. Marcus stepped through, brushing snow from his shoulders. He didn't look at her.
+> The door opened. {character} stepped through, brushing snow from his shoulders. He didn't look at her.
 
 **Short punches (1-6 words):** Impact. Breath. Emphasis.
 

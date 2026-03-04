@@ -103,4 +103,4 @@ violations:
 - Quote enough context to understand the problem.
 - Append to `{workspace}/violations.yaml` — read existing content first, add your violations, write back.
 - **Workspace resolution**: Read the `workspace` field from `violations.yaml`. The narrator writes the absolute workspace path there when initializing the lint chain. Use this path for ALL file operations (`prose-draft.md`, `violations.yaml`, etc.).
-- **Route to lint-metaphor** after completing your analysis.
+- **Route to lint-temporal** after completing your analysis.

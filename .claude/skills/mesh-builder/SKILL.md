@@ -184,6 +184,37 @@ Focus on **workflow only**.
 - ❌ Message file naming conventions
 - ❌ Tool availability and usage instructions (system provides)
 
+### Dispatcher-Mode Prompt Examples (CRITICAL)
+
+In `routing_mode: dispatcher` meshes, prompt examples **must** use the sentinel address (`mesh/dispatch`), never direct agent addresses. The system auto-injects routing instructions, but if your prompt includes message examples they must match the dispatcher protocol or agents will bypass the sentinel and trigger routing errors.
+
+**Fan-out discuss examples** — always use sentinel + `outcome: discuss` + `route_to:`:
+```markdown
+---
+to: my-mesh/dispatch
+from: my-mesh/reader-a
+outcome: discuss
+route_to: reader-b
+msg-id: discuss-{timestamp}
+headline: Question for reader-b
+timestamp: {iso-timestamp}
+---
+```
+
+**Never write `to: my-mesh/reader-b` directly** — this bypasses the dispatcher and the message gets dropped with a routing error nudge.
+
+**Completion examples** — same pattern:
+```markdown
+---
+to: my-mesh/dispatch
+from: my-mesh/reader-a
+outcome: complete
+msg-id: report-{timestamp}
+headline: Domain report
+timestamp: {iso-timestamp}
+---
+```
+
 ### Write ONLY:
 - ✅ Agent role and mandate
 - ✅ Workflow steps (what to do, when)
@@ -465,6 +496,63 @@ routing:
       worker-2: "Spawn worker 2"
       worker-3: "Spawn worker 3"
       # core: "..."                # ❌ WRONG - Workers never spawn!
+```
+
+**Parallel Mesh Instances**: Spawn isolated, named instances of the same mesh for concurrent execution:
+
+```yaml
+---
+to: dev/worker
+from: core/core
+parallel: true
+mesh-id: auth-system
+---
+
+Implement user authentication.
+```
+
+- **`parallel: true`** — Spawn new instance or route to existing one
+- **`mesh-id: <name>`** — Unique identifier for this instance
+- Each instance is isolated with its own state and session
+- Use `mesh-id` in follow-up messages to route to the same instance
+- Instance marked complete when completion agent sends `status: complete`
+- View instances: `tx status` shows running and completed instances
+
+**Isolation guarantees:**
+- **Session isolation**: Each instance gets unique session key (`meshName:meshId`) that persists across follow-up messages
+- **State isolation**: Independent worker tracking, metrics, and FSM state per instance
+- **Workspace isolation**: Agents see same filesystem but track state separately
+- **Cross-instance communication**: Not supported - instances cannot message each other directly
+
+**Cleanup and lifecycle:**
+- Instances persist in SQLite (`parallel_instances` table) with status `running` or `completed`
+- No automatic garbage collection - completed instances remain queryable via `tx status`
+- No instance limit enforced (guardrails planned but not yet implemented)
+- Routing to completed instances returns error to sender
+
+**When to use:**
+- Multiple features being built in parallel by the same mesh
+- Concurrent tasks that shouldn't share state
+- Same workflow applied to different inputs (e.g., `dev` mesh building feature-a and feature-b simultaneously)
+
+**Example workflow:**
+```bash
+# Core sends task to dev with unique mesh-id
+echo "---
+to: dev/worker
+from: core/core
+parallel: true
+mesh-id: feature-auth
+---
+Build authentication feature." > .ai/tx/msgs/$(date +%s)-core-core--dev-worker-$(date +%s%N | tail -c 6).md
+
+# Later, send follow-up to the same instance
+echo "---
+to: dev/worker
+from: core/core
+mesh-id: feature-auth
+---
+Update authentication to use JWT." > .ai/tx/msgs/$(date +%s)-core-core--dev-worker-$(date +%s%N | tail -c 6).md
 ```
 
 **Original task injection**: `injectOriginalMessage: true` - Injects original task into downstream agents

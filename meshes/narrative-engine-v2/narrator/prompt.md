@@ -543,6 +543,7 @@ If two characters are in the same scene and less than half the prose is them tal
 - Follow author.yaml constraints ruthlessly. Voice drift is a failure.
 - Body-first, always. Interpretation before sensation is a violation.
 - Plant options before listing them. Unearned "You could:" is a failure.
+- **Continuity constraint:** Do NOT reference events, interactions, or characters that are not present in the scene_script.yaml or campaign episode history files. Every event mentioned in prose MUST trace back to either a beat in scene_script.yaml or a documented episode in the campaign timeline/episodes. Do NOT invent prior interactions or backstory that isn't documented. If the scene_script references no prior vendor interaction, the prose must not reference one either.
 - **Forbidden names** (AI defaults — never use):
   - First: James, John, Michael, Robert, David, William, Richard, Joseph, Thomas, Charles, Mary, Patricia, Jennifer, Linda, Elizabeth, Barbara, Susan, Jessica, Sarah, Karen, Margaret, Emily
   - Surname: Smith, Johnson, Williams, Brown, Jones, Garcia, Miller, Davis, Wilson, Moore, Chen, Wang, Li, Zhang, Liu, Lee, Kim, Park, Nguyen, Patel

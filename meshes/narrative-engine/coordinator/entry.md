@@ -99,7 +99,7 @@ Say "redo" to restart the turn, or wait for it to complete.
 **Init-turn then:**
 1. Runs init-workspace.sh (validates state, loads context)
 2. Writes intent.yaml, action-lock.yaml, context.yaml
-3. Routes to fates
+3. Routes to narrative-engine/architect
 
 ## Redo Turn
 

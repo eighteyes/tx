@@ -161,7 +161,7 @@ entries:
   - turn: 0
     day: 1
     period: afternoon
-    summary: "Seminar - first meeting"
+    summary: "Opening scene"
 
   - turn: 1
     day: 1
@@ -173,7 +173,7 @@ entries:
     day: 44
     period: morning
     time_skip: "+21 days"  # Explicit when time jumps
-    summary: "Return to seminar"
+    summary: "Return to opening location"
 ```
 
 ### Entry Schema

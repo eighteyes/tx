@@ -22,7 +22,7 @@ agents:
     prompt: reviewer/prompt.md
 
 entry_point: implementer
-boundary_agents: [reviewer]
+completion_agents: [reviewer]
 
 workspace:
   path: ".ai/output/dev-brain/{task-id}/"

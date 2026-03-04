@@ -31,7 +31,7 @@ workspace: {workspace}
 ## Scope
 - Compress completed turns into summary.md
 - Write scene.yaml (replaces closing.yaml + state.yaml)
-- **Append to timeline.yaml** (canonical time tracking)
+- **Append to timeline.md** (canonical time tracking)
 - **Manage trajectories.yaml** (add from resolution, remove interrupted/fired)
 - Update bond entities when relationships change
 - Update character entities (lean format, episodes only)
@@ -61,7 +61,7 @@ workspace: {workspace}
    ```bash
    cp {workspace}/scene.yaml {campaign_path}/scene.yaml
    ```
-7. **Timeline Update**: append entry to timeline.yaml (see Timeline Management)
+7. **Timeline Update**: append entry to timeline.md (see Timeline Management)
 8. **Bond Updates**: if relationship intensity changed, update bond entity (see Bond Management)
 9. **Prop Updates**: if props changed location/state, update prop entities (see Prop Management)
 10. **Location Updates**: if location details established/changed, update location entity (see Location Management)
@@ -170,70 +170,73 @@ prose_anchor: |
 
 ## Timeline Management
 
-**Canonical time tracking.** The single source of truth for when things happen.
+**Canonical time tracking in human-readable markdown.** The single source of truth for when things happen. Lint-temporal checks prose against this file.
 
 ### Timeline Location
 ```
-{campaign_path}/timeline.yaml
+{campaign_path}/timeline.md
+```
+
+### Format
+
+```markdown
+# Timeline — {campaign_id}
+
+Campaign start: October 15
+
+## Day 1 — October 15
+
+- **Turn 0** (afternoon): Seminar — first meeting
+- **Turn 1** (late night, ~1am): Vodka spiral, confession
+
+## Day 2 — October 16
+
+- **Turn 2** (morning): Hangover, awkward breakfast
+  - ~10am: Two hours of avoidance (beats 3-4, time-stretched)
+  - noon: She leaves
+
+## Day 44 — November 27
+
+> +21 days since Day 23
+
+- **Turn 25** (morning): Return to seminar
 ```
 
 ### Append Entry Every Turn
 
-After writing scene.yaml, append an entry to timeline.yaml:
+After writing scene.yaml, append to timeline.md:
 
-```yaml
-# timeline.yaml
-campaign_start: "October 15"  # Set once at campaign creation
+1. **Read scene_script.yaml** for `closing.time_progression` — beat-level time data
+2. **Check if new day**: If `scene.yaml` `closing.time.day` differs from previous, start new `## Day N` header
+3. **Write turn entry**: `- **Turn N** (period): 1-line summary`
+4. **Write beat-level entries** when time stretches significantly within the turn:
+   - If beats span 2+ hours, add indented sub-entries showing time progression
+   - If a day boundary is crossed mid-turn, note it
+   - Format: `  - ~{time}: {what happened} (beats N-M, time-stretched)`
+5. **Time skips**: When significant time passes between turns, add blockquote before the turn entry:
+   - `> +N days since Day M`
 
-entries:
-  - turn: 0
-    day: 1
-    period: afternoon
-    summary: "Seminar - first meeting"
+### Entry Rules
 
-  - turn: 1
-    day: 1
-    period: late_night
-    hour: 1           # Optional - only when precision matters
-    summary: "Vodka spiral, confession"
-
-  - turn: 25
-    day: 44
-    period: morning
-    time_skip: "+21 days"  # Explicit when time jumps
-    summary: "Return to seminar"
-```
-
-### Entry Schema
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `turn` | yes | Turn number |
-| `day` | yes | Cumulative day count (day 1 = campaign start) |
-| `period` | yes | early_morning, morning, afternoon, evening, night, late_night |
-| `hour` | no | 0-23, only when hour precision needed |
-| `time_skip` | no | Note when significant time passes ("+3 days", "+2 weeks") |
-| `summary` | yes | 1-line description of turn |
-
-### Rules
-
-1. **Read previous entry** to get current day count
-2. **Same-day continuity**: If turn continues same scene, same day
-3. **Time passage**: If scene_script shows time passage, increment day accordingly
-4. **Explicit skips**: When player requests time skip, note it in `time_skip` field
-5. **Hour only when needed**: Don't track hour for every turn, only when it matters (3am spiral, noon deadline, etc.)
+| Rule | Detail |
+|------|--------|
+| Turn-level entry | **Always** — every turn gets at least one line |
+| Beat-level entries | **When time stretches** — beats spanning 2+ hours or crossing day boundaries |
+| Day headers | **On day change** — new `## Day N` section with date if known |
+| Time skip notes | **On gaps** — blockquote noting elapsed time |
+| Hour precision | **When it matters** — 3am spiral, noon deadline, "~2pm" style |
 
 ### Creating Timeline
 
-If timeline.yaml doesn't exist (new campaign):
-```yaml
-# timeline.yaml - Campaign: {campaign_id}
-campaign_start: "{from arc.yaml or player choice}"
+If timeline.md doesn't exist (new campaign):
 
-entries: []
+```markdown
+# Timeline — {campaign_id}
+
+Campaign start: {from arc.yaml or player choice}
 ```
 
-Then append prologue as turn 0, day 1.
+Then append prologue as Turn 0, Day 1.
 
 ## Bond Management
 
@@ -412,6 +415,10 @@ Scan prose.md for:
 - **New opinions expressed** — through dialogue or internal voice → add to `life.opinions`
 - **New expertise deployed** — naming a plant, critiquing a method, cooking knowledge → add to `life.expertise`
 - **New concerns surfacing** — deadline worry, money, a secret → add to `life.active_concerns`
+- **New desires emerging** — through action, dialogue, or physical choice → add to `life.desires`
+  - Plot-driven desires are valid: "wanting continued physical closeness with Heather" is Kaitlin's desire
+  - Frame as the individual's want, not a relationship label
+  - These feed back into thread extraction — architect uses `life.desires` to generate direction table entries
 - **New voice patterns emerging** — a new verbal habit, a phrase that recurs → add to `life.voice_markers.verbal_habits`
 
 ### Capture Format
@@ -427,6 +434,9 @@ life:
     prof_hawkins: "Mentioned in dialogue — Kaitlin's methodology professor"  # NEW
   opinions:
     on_dawn: "The mountains at sunrise — 'the only honest light'"  # NEW
+  desires:
+    - "Wanting to stay close to Heather — physical proximity as need, not strategy — Turn 42"  # NEW
+    - "Wanting to be known without performing — told Heather about the arrest — Turn 38"  # NEW
 ```
 
 ### Rules

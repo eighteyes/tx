@@ -64,7 +64,7 @@ TX uses **boundary-based message inference** instead of explicit type fields:
 - **To core/core**: Questions for human → session suspends awaiting response
 - **From core/core**: Human responses → session resumes with answer
 - **To other agents**: Collaboration requests → session awaits response
-- **completion_agents/boundary_agents → core/core**: Mesh completion → validates parity gate
+- **completion_agents → core/core**: Mesh completion → validates parity gate
 
 The `type` field is **optional** for backward compatibility. The system infers message semantics from routing and boundaries.
 

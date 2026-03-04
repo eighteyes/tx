@@ -56,6 +56,7 @@ agents:
   - name: architect
     model: sonnet
     prompt: architect/prompt.md
+    read_gate: strict
     # Collapsed entropy pipeline — fates + dramaturg + possibility + system in one session
     # Parallel blind Tasks for world possibilities, inline story shaping and resolution
 
@@ -111,20 +112,26 @@ agents:
   # LINT PIPELINE (refactored)
   # ==========================================
   # Mechanical lints run as script in narrator Phase 5 (mechanical-lint.sh)
-  # Creative linters: lint-patterns -> lint-metaphor
+  # Creative linters: lint-patterns -> lint-temporal -> lint-metaphor
   # lint-metaphor gates editor (creative violations -> editor, clean -> scribe)
   #
   # RETIRED agents (now in mechanical-lint.sh):
   # - lint-forbidden-words, lint-ai-tells, lint-cadence, lint-dialogue
   # - lint-body-first, lint-litotes
   # RETIRED agents (oracle already covers):
-  # - lint-factoids, lint-temporal, lint-props
+  # - lint-factoids, lint-props
 
   - name: lint-patterns
     model: sonnet
     prompt: linters/patterns.md
     # Creative: Pattern detection requiring judgment
     # "She realized", "Fear washed over", etc.
+
+  - name: lint-temporal
+    model: sonnet
+    prompt: linters/temporal.md
+    # Creative: Temporal consistency against timeline.md
+    # Checks prose time references match canonical chronology
 
   - name: lint-metaphor
     model: sonnet
@@ -157,7 +164,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
+  # Phase flow: entry → game-coord|init-turn → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -235,10 +242,14 @@ routing:
   # LINT PIPELINE ROUTING (refactored)
   # ==========================================
   # Mechanical lints run as script in narrator Phase 5
-  # Creative linters: lint-patterns → lint-metaphor
+  # Creative linters: lint-patterns → lint-temporal → lint-metaphor
   # lint-metaphor gates editor (creative violations → editor, clean → scribe)
 
   lint-patterns:
+    message:
+      lint-temporal: "Next lint — temporal consistency check"
+
+  lint-temporal:
     message:
       lint-metaphor: "Next lint — creative metaphor analysis"
 
@@ -389,13 +400,13 @@ manifest:
   - id: scene_script.yaml
     description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by simulator.
     location: workspace
-    reads: [narrator, oracle, visual, scribe]
+    reads: [narrator, oracle, visual, scribe, lint-temporal]
     writes: [simulator]
 
   - id: prose-draft.md
     description: Working prose draft iterated through lint/edit cycle
     location: workspace
-    reads: [narrator, editor, lint-patterns, lint-metaphor]
+    reads: [narrator, editor, lint-patterns, lint-temporal, lint-metaphor]
     writes: [narrator, editor]
 
   - id: prose.md
@@ -425,8 +436,8 @@ manifest:
   - id: violations.yaml
     description: Aggregated lint violations for editor review
     location: workspace
-    reads: [editor, lint-patterns, lint-metaphor]
-    writes: [narrator, lint-patterns, lint-metaphor]
+    reads: [editor, lint-patterns, lint-temporal, lint-metaphor]
+    writes: [narrator, lint-patterns, lint-temporal, lint-metaphor]
 
   - id: story-concordance.txt
     description: Cumulative word frequency data for cross-turn overuse detection
@@ -516,7 +527,7 @@ manifest:
     description: Prior turn finalized prose for cross-turn style consistency
     location: campaign
     reads: [editor]
-    writes: []
+    writes: [scribe]
 
   # RETIRED: state.yaml — replaced by scene.yaml (campaign-level, single source of truth)
   # - id: state.yaml
@@ -530,7 +541,7 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, architect, simulator]
+    reads: [init-turn, architect, simulator, lint-temporal]
     writes: [scribe]
 
   - id: trajectories.yaml
@@ -540,11 +551,11 @@ manifest:
     reads: [architect]
     writes: [scribe]
 
-  - id: timeline.yaml
-    description: Canonical time tracking — day counter, time skips, elapsed time
+  - id: timeline.md
+    description: Canonical time tracking in markdown — day headers, turn entries, beat-level time stretches
     location: campaign
     persistent: true
-    reads: [narrator, architect]
+    reads: [narrator, architect, lint-temporal]
     writes: [scribe]
 
   - id: continuity.yaml

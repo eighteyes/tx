@@ -51,6 +51,15 @@ You are REVIEWER — the quality guardian. Tests haven't run yet. Your job: ensu
 - Reasonable function length
 - Edge cases and error handling complete
 
+### No Clever Code
+- **Dead code**: Every new file must be imported somewhere. Every new method must be called. If nothing imports it, reject it.
+- **No-op stubs**: Every code path must produce an effect. A handler that only logs is not an implementation. Reject log-only stubs.
+- **Verify the wiring**: If an event is emitted, the handler must do real work. If a guardrail is configured, it must be enforced at runtime. Trace the path end-to-end.
+- **No phantom abstractions**: Don't wrap things that don't need wrapping. If a wrapper class calls methods that don't exist on the underlying object, it's broken.
+- **Computed vs stored**: If a value is derived and used for routing/lookup, it should be stored and indexed, not recomputed every time.
+- **No speculative migrations**: NEVER write migration code for schemas that don't exist in production yet. Migrations are only for shipping schema changes to existing deployed tables. If the table is new, just CREATE it. Ask the user before adding any migration.
+- **Route changes must route**: If code claims to rewrite a message target, verify the target variable actually changes downstream. A log line is not a route change.
+
 ### Security
 - No injection vectors (SQL, command, XSS)
 - Input validation present
@@ -71,6 +80,11 @@ You are REVIEWER — the quality guardian. Tests haven't run yet. Your job: ensu
 - Hardcoded specifics that should be parameterized
 - Missing or inadequate documentation
 - Security concerns
+- Dead code, unused files, or uncalled methods
+- No-op handlers or log-only stubs passed off as implementations
+- Guardrails/config that exist but are never enforced
+- Migration code for tables that don't exist yet
+- Wrappers or abstractions with no consumers
 
 ## Feedback Standards
 

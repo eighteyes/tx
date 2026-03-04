@@ -141,17 +141,28 @@ export class DispatchRouter {
     }
 
     // Branch routing — object value, match outcome to target
-    const outcomeMap = entry as Record<string, string>;
-    const resolvedAgent = outcome ? outcomeMap[outcome] : undefined;
+    // Routing supports two formats:
+    //   flat:   { complete: "agentName" }
+    //   nested: { complete: { agentName: "description" } }
+    const outcomeMap = entry as Record<string, string | Record<string, string>>;
+    const resolvedValue = outcome ? outcomeMap[outcome] : undefined;
 
-    if (resolvedAgent) {
+    if (resolvedValue) {
+      // Unwrap nested format: { agentName: "description" } → "agentName"
+      const resolvedAgent = typeof resolvedValue === 'string'
+        ? resolvedValue
+        : Object.keys(resolvedValue)[0];
       const target = CORE_KEYWORDS.has(resolvedAgent) ? 'core/core' : `${this.meshName}/${resolvedAgent}`;
       return { target, source: 'branch', outcome };
     }
 
     // Try default fallback
-    if (outcomeMap['default']) {
-      const target = CORE_KEYWORDS.has(outcomeMap['default']) ? 'core/core' : `${this.meshName}/${outcomeMap['default']}`;
+    const defaultValue = outcomeMap['default'];
+    if (defaultValue) {
+      const defaultAgent = typeof defaultValue === 'string'
+        ? defaultValue
+        : Object.keys(defaultValue)[0];
+      const target = CORE_KEYWORDS.has(defaultAgent) ? 'core/core' : `${this.meshName}/${defaultAgent}`;
       return { target, source: 'branch', outcome, usedDefault: true };
     }
 

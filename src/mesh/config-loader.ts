@@ -88,6 +88,7 @@ export interface MeshGuardrailOverrides {
 export interface MeshGuardrailConfig extends MeshGuardrailOverrides {
   agents?: Record<string, MeshGuardrailOverrides>;
   max_mesh_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
+  max_instances?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
 }
 
 /**
@@ -125,9 +126,9 @@ export interface MeshConfig {
   description?: string;
   agents: AgentConfig[];
   entry_point?: string;
-  completion_agent?: string;  // DEPRECATED: Use completion_agents or boundary_agents
-  completion_agents?: string[];  // DEPRECATED: Use boundary_agents (Phase 5 terminal-by-default)
-  boundary_agents?: string[];  // Phase 5: Agents at mesh boundary (can message core/core)
+  completion_agent?: string;  // DEPRECATED: Use completion_agents
+  completion_agents?: string[];  // Agents at mesh boundary (can message core/core)
+  boundary_agents?: string[];  // DEPRECATED: Use completion_agents (backward compatibility)
   workspace?: WorkspaceConfig;  // Optional workspace output schema
   worktree?: boolean;  // Shorthand: true = isolated worktree + auto-commit + cleanup
   continuation?: boolean | string[];  // Session reuse within a mesh run (default: true)

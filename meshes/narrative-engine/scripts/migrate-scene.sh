@@ -9,7 +9,7 @@ CAMPAIGN_PATH="${1:-}"
 
 if [[ -z "$CAMPAIGN_PATH" ]]; then
   echo "Usage: migrate-scene.sh <campaign_path>"
-  echo "Example: migrate-scene.sh ./heathers-hope/campaigns/campaign-1"
+  echo "Example: migrate-scene.sh ./{game-id}/campaigns/campaign-1"
   exit 1
 fi
 

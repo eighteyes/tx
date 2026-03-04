@@ -80,6 +80,33 @@ Read `action_weight` from `intent.yaml` (0.0 = pure organic, 1.0 = pure action).
 
 **Both systems always run. Never skip outcome tables.** Even in organic turns, characters strive for something — outcome tables ensure entropy prevents predictable scenes. The question is emphasis: how much budget goes to direction tables vs outcome tables in Phase 3.
 
+### Step 1.6: Scene Intervention Level
+
+Before firing world Tasks, assess how much the world should intrude on this scene. Read:
+- `context.yaml` → location, present characters (count)
+- `intent.yaml` → `off_table` items, `player_hopes`
+- `action-lock.yaml` → action type, tempo
+
+**Determine `world_intervention_level`:**
+
+| Condition | Level |
+|-----------|-------|
+| Private location (bedroom, apartment, locked space) + ≤ 2 characters + intent signals privacy ("stay", "explore each other", world intrusion off-table) | **minimal** |
+| Semi-private location (café, office, hallway) OR 3-4 characters OR partial external access | **reduced** |
+| Public location OR 5+ characters OR world-facing action | **full** (default) |
+
+**How intervention level scales world Tasks:**
+
+| Level | Task 1: Environment | Task 2: Consequences | Task 3: Texture |
+|-------|-------------------|---------------------|-----------------|
+| **full** | 2-4 events, half chaotic, "World Is People" enforced | 1-3 branches + firing trajectories | 6-10 entries |
+| **reduced** | 1-2 events, ambient focus, "World Is People" relaxed | 0-1 branches + firing trajectories only | 6-10 entries |
+| **minimal** | 0-1 events, building ambient ONLY (structure sounds, temperature shifts, infrastructure). No bystanders. No phone content. No institutional pressure. If an actual world intrusion is generated, it must be 0.01%-probability level (fire alarm, pipe burst, medical emergency) — the kind of event that can't be ignored, not "thesis deadline approaches." | 0 branches UNLESS a trajectory has `turns_remaining ≤ 0` (literally firing this turn). Character anxieties about deadlines, obligations, and social pressure are THREADS, not consequences. "Thesis pressure accumulates" is a character's internal state, not the world acting. Only consequences that physically arrive uninvited (person at the door, actual phone call that rings) qualify at this level. | 6-10 entries (unchanged — ambient sensory is good for intimate scenes) |
+
+**The key distinction:** At `minimal`, the world is quiet. The scene belongs to the characters. The radiator can tick, the building can settle, but the world does not knock on the door unless something truly extraordinary happens. Character anxieties about the world exist as threads, not as fates — they surface through the characters' own thoughts, not through world events arriving.
+
+**Pass `world_intervention_level` to Task 1 and Task 2 prompts as context.**
+
 ### Step 2: World Possibility Generation (Parallel Blind Tasks)
 
 Fire **3+ parallel haiku Tasks simultaneously** using the Task tool. Each generates branches for its domain AND writes its entropy table fragment to `{workspace}/entropy_tables/`. Tasks see ONLY their domain context — no story arc, no character decisions, no likely resolution.
@@ -111,6 +138,8 @@ What could the world do?
 ```
 You generate world event entries for a narrative turn AND write a weighted entropy table for them. You see ONLY setting and physical context — no story arc, no NPC decisions.
 
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+
 ## Setting
 {from setting.yaml — relevant world rules, geography, tone}
 
@@ -125,10 +154,15 @@ Weather/conditions: {from scene.yaml if available}
 ## Chaos Register
 {chaos_register from author.yaml — controls tone of random events}
 
+## World Intervention Level: {world_intervention_level from Step 1.6}
+
 ## Rules
 - Environmental events are independent of player action
-- Focus: weather shifts, time changes, location constraints, institutional forces, resource changes, RANDOM INTRUSIONS
-- Generate 2-4 events: at least HALF must be CHAOTIC (genuinely random, not thematically resonant)
+- **Scale event count by intervention level:**
+  - **full**: Generate 2-4 events. At least HALF must be CHAOTIC.
+  - **reduced**: Generate 1-2 events. Ambient focus — building sounds, temperature, weather. Chaos optional.
+  - **minimal**: Generate 0-1 events. Building ambient ONLY — structure sounds, temperature shifts, infrastructure behavior. NO bystanders, NO phone content, NO institutional forces. If generating 1 event, it must be purely ambient (radiator, pipes, building settling). Any actual world intrusion at this level must be 0.01%-probability (fire alarm, pipe burst) — not "thesis deadline approaches."
+- Focus (at full level): weather shifts, time changes, location constraints, institutional forces, resource changes, RANDOM INTRUSIONS
 - **Chaos tone must match the chaos_register.** Match the register.
 - Each THEMATIC event: 3-7 flat manifestations
 - Each CHAOS event: 7-10 root manifestations, each with 4 subtable entries (3 register-toned using DIFFERENT registers, 1 thematic)
@@ -172,6 +206,8 @@ What past threads surface?
 ```
 You generate world event entries for delayed consequences AND write a weighted entropy table. You see ONLY trajectory state and recent history — no NPC decisions, no arc direction.
 
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+
 ## Active Trajectories
 {from calc-trajectory-status.sh output — ALL trajectories with status}
 Firing: {list with outcome_when_fires, suggested_weight}
@@ -191,11 +227,16 @@ Still active: {list}
 ## Chaos Register
 {chaos_register from author.yaml}
 
+## World Intervention Level: {world_intervention_level from Step 1.6}
+
 ## Rules
 - Consequences are delayed effects of prior actions arriving uninvited
 - Firing trajectories are PRIORITY candidates — include with trajectory_firing: true
 - Interrupted trajectories should be marked for removal
-- Generate 1-3 branches for non-trajectory consequences
+- **Scale by intervention level:**
+  - **full**: Generate 1-3 branches for non-trajectory consequences.
+  - **reduced**: Generate 0-1 branches. Only firing trajectories + at most 1 urgent consequence.
+  - **minimal**: Generate 0 branches UNLESS a trajectory has `turns_remaining ≤ 0` (literally firing this turn). Character anxieties about deadlines, obligations, social pressure, and institutional expectations are NOT consequences — they are character threads that surface through internal thought, not through the world acting. "Thesis pressure accumulates" = character thread. "Advisor knocks on door" = consequence (but only if trajectory is firing). At this level, the world is quiet. Only things that physically arrive uninvited qualify.
 - Each event gets manifestations table (same structure as environment events)
 
 Write TWO files:
@@ -242,6 +283,8 @@ What atmospheric elements emerge?
 ```
 You generate ambient texture entries AND write a weighted table. You see ONLY author voice preferences and scene mood — no plot, no NPC decisions.
 
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+
 ## Author Voice
 {from author.yaml — sensory preferences, stylistic constraints, balance settings}
 
@@ -281,6 +324,8 @@ Fire one Task per character present in the scene. Each extracts available life t
 ```
 You extract life threads from a character entity file — the things running underneath this scene for this character. You see ONLY the character's entity data and current emotional state.
 
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+
 ## Character Entity
 {full character entity file — especially the `life` section}
 {character's current trait pressures from context.yaml}
@@ -298,7 +343,14 @@ Emotional state: {from dramaturg notes if available, or inferred from traits}
   - `social_web` — relationships that might be referenced
   - `opinions` — views that might emerge
   - `desires_beyond_plot` — wants that aren't about the other characters present
+  - `desires` — wants that emerged from the plot (scribe adds these as the story progresses)
   - `memories` — formative moments that might surface
+- **Also extract threads from bond state.** When bond dimensions with someone present are high:
+  - `physical` or `sexual` ≥ 4 → desire for continued/escalated physical contact is a valid thread
+  - `emotional` ≥ 4 → desire for emotional deepening or vulnerability is a valid thread
+  - Frame these as the INDIVIDUAL's want: "Kaitlin's desire for physical closeness with Heather" — not "the relationship progresses"
+  - These compete with life section threads on equal footing — weight by bond intensity, scene closing state, and recent physical contact
+  - Source as `bond.{bond_id}.{dimension}` (e.g., `bond.heather_kaitlin.physical`)
 - For each thread, assess: is it AVAILABLE this scene? (emotional state + context makes it likely to surface)
 - Assign a weight (0-30) based on how likely it is to surface given current emotional state
 - Mark threads as `available: false` if they're too high-stakes or too disconnected for this scene
@@ -308,7 +360,7 @@ Write to `{workspace}/entropy_tables/threads-{character_id}.yaml`:
 character: {character_id}
 threads:
   - id: {snake_case_thread_id}
-    source: "life.{section}[{index}]"
+    source: "life.{section}[{index}]"  # or "bond.{bond_id}.{dimension}" for bond-derived threads
     text: "{1-line description of what could surface}"
     available: {true|false}
     weight: {0-30}
@@ -323,6 +375,8 @@ Extracts threads that are already active in the narrative — unresolved questio
 **Task prompt:**
 ```
 You extract scene-level threads — narrative tensions and unresolved questions that are active in this scene. You see continuity data and recent turn history.
+
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
 
 ## Continuity
 {from continuity.yaml — established facts, unresolved hooks}
@@ -442,6 +496,8 @@ Both POV and NPC Tasks use this base template. NPC Tasks add the Initiator Resol
 **Per-character Task prompt template:**
 ```
 You analyze one character's motivations, outcomes, AND build their weighted entropy table for a narrative turn.
+
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
 
 ## Character
 {character-brief.sh output OR entity file extract — traits, pressures, bonds, state}
@@ -567,6 +623,8 @@ Fire parallel haiku Tasks — one per character in the scene. These generate dir
 ```
 You build a direction table for one character — what life threads could surface in this scene and how they'd manifest. You see ONLY this character's available threads and relevant collisions.
 
+**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+
 ## Character
 {character_id}
 Current emotional state: {from entity traits/pressures}
@@ -625,10 +683,12 @@ threads_available:
 3. **Emotional momentum check** — payoff eligibility
 4. **World events already generated by Step 2 Tasks** — verify in `entropy_tables/world-*.yaml`
    - If missing (Task failed), generate inline as fallback
-   - **AT LEAST HALF of world events must be CHAOS EVENTS**
+   - At `full` intervention: **AT LEAST HALF of world events must be CHAOS EVENTS**
+   - At `minimal` intervention: 0-1 world events is valid. Empty world-*.yaml files are fine.
    - **Chaos tone must match `chaos_register` from author.yaml**
 5. **Check ending conditions**
 6. **Compile option_seeds** from all characters into unified list
+7. **Player intent alignment** — Read `intent.yaml` fields `player_hopes` and `off_table`. The `steer_toward` guidance MUST align with what the player asked for. The `steer_away` guidance MUST include anything the player put in `off_table`. If the player said "the world can wait" and off-tabled world intrusion, then `steer_toward` should not be about acknowledging deadlines or planning work separation — those are the opposite of what was requested. **Player intent is a hard constraint on dramaturg guidance, not a suggestion to be overridden by mechanical thread weights.**
 
 **Write `dramaturg-notes.yaml` to workspace:**
 
@@ -768,7 +828,10 @@ Before resolving, verify table quality:
 1. **Outcome type diversity** — not all clustered in one category. At least 3 distinct types should have >5% weight.
 2. **Branch trigger coverage** — branch triggers cover meaningful outcome combinations, not just one path.
 3. **Action-lock compliance** — no outcome contradicts locked action or not_subject_to_entropy.
-4. **World event count** — 3-7 world events. At least half must be chaos events.
+4. **World event count** — scale by `world_intervention_level`:
+   - **full**: 3-7 world events. At least half must be chaos events.
+   - **reduced**: 1-3 world events. Chaos optional.
+   - **minimal**: 0-1 world events. Ambient only. Zero is valid — the world can be completely quiet.
 5. **CHARACTER SUBTABLE ENFORCEMENT** — Every character subtable must have exactly 4 entries: 3 register-toned (matching chaos_register, each a DIFFERENT register — no duplicates within a tier), 1 thematic (coincidental story resonance). No straight/uncolored entries. HARD GATE.
 6. **CHAOS EVENT ENFORCEMENT** — Each chaos event must have 7-10 root manifestations, each with exactly 4 subtable entries: 3 register-toned (each a DIFFERENT register — no duplicates within a root), 1 thematic (coincidental story resonance). Same structure as character subtables. ONE chaos world event must be thematically connected to the story. HARD GATE.
 7. **THEMATIC EVENT ENFORCEMENT** — Each thematic event must have 3-7 manifestations. HARD GATE.
@@ -984,17 +1047,19 @@ NPCs are not "world events." Heather reaching for Kaitlin is Heather's action, n
 
 The single most common failure mode is generating world events that are entirely environmental — weather gradients, lighting changes, temperature shifts, infrastructure logistics. These are setting, not world. The world is populated by humans who have opinions, needs, and their own problems.
 
-**At least half of world events must involve humans doing human things:**
+**At least half of world events must involve humans doing human things** (at `full` intervention level):
 - A stranger who comments, reacts, or has an opinion about what they see
 - Someone nearby having their own crisis, joy, or argument that has nothing to do with the characters
 - A person who is kind in a way that costs them something, or unkind in a way that costs nothing
 - Social friction: disapproval, amusement, unsolicited advice, crude jokes, genuine warmth, visible discomfort
 
+**PRIVATE SCENE EXCEPTION:** At `minimal` intervention level (private location, ≤ 2 characters, intimate focus), the "World Is People" rule is **suspended**. There are no bystanders in a locked bedroom at midnight. The only human-sourced events possible at `minimal` are: someone knocking on the door (extremely unlikely), a phone call that physically rings (not a silent notification), or neighbor noise through walls (ambient, not directed). Do NOT generate bystander reactions, social friction, or stranger commentary for scenes where no strangers can observe. At `reduced` level, relax to "at least one event may involve humans" rather than half.
+
 **Bystanders are not props.** A person who "passes without looking" is furniture. A person who glances, smirks, and mutters "get a room" is alive. A person who sees two people embracing and visibly wishes they had that is alive. A person who averts their eyes because they're uncomfortable — that's alive too. People react. They have attitudes. They say things.
 
-**Bodies are not clean.** Characters who have been outside for hours have physical needs that intrude. Bladders fill. Stomachs growl audibly at the worst moment. Morning breath is real. Hair looks ridiculous. Sweat exists. Muscles cramp. These aren't degrading — they're the physical comedy and indignity of being alive in a body, and they create the texture that separates "two people in a scene" from "two people who actually exist."
+**Bodies are not clean.** Characters who have been outside for hours have physical needs that intrude. Bladders fill. Stomachs growl audibly at the worst moment. Morning breath is real. Hair looks ridiculous. Sweat exists. Muscles cramp. These aren't degrading — they're the physical comedy and indignity of being alive in a body, and they create the texture that separates "two people in a scene" from "two people who actually exist." (**Note:** Body reality events remain valid at ALL intervention levels — bodies are embarrassing everywhere, including private spaces. These are character-proximate, not world intrusions.)
 
-**Phones say things.** "Phone buzzes" is not a world event. "Phone buzzes with a text from a friend that says 'where are you, prof is asking'" is a world event. "Group chat has 47 unread messages about campus drama" is a world event. Technology intrudes with specific content that creates actual pull on attention.
+**Phones say things.** "Phone buzzes" is not a world event. "Phone buzzes with a text from a friend that says 'where are you, prof is asking'" is a world event. "Group chat has 47 unread messages about campus drama" is a world event. Technology intrudes with specific content that creates actual pull on attention. (**At `minimal` intervention level:** phones are part of the deferred world. Do not generate phone content events — the characters have chosen to ignore them, and the world respects that silence unless a trajectory forces a breakthrough.)
 
 ## Chaos Register (Author-Controlled Tone)
 
@@ -1049,6 +1114,7 @@ chaos_register:
 - **Bodies are embarrassing.** Characters who have been awake for hours, outside in cold, emotionally drained — they need to pee, they have morning breath, their stomachs growl, their hair is wrecked, they smell. These details aren't degrading. They're the physical reality that separates real people from mannequins. Include at least one unglamorous body event per turn.
 - **Technology has content.** "Phone buzzes" is not specific enough to be a world event. What does the notification SAY? Who sent it? What does it demand? A text that says "where tf are you" from a friend hits differently than a generic buzz. Give technology actual content that creates actual pull on attention.
 - **COUNT your social events.** Before finalizing, check: do at least half your world events involve a human being doing something social? If your events are all weather + infrastructure + logistics, rewrite until people show up.
+- **INTERVENTION LEVEL OVERRIDE:** All the above warnings apply at `full` intervention level. At `minimal` (private intimate scenes), environmental-only IS correct — there are no people to react, no phones to answer, no bystanders to comment. The anti-blandness warning does not apply when the world is genuinely absent from the scene. At `reduced`, relax the people requirement but don't eliminate it.
 
 **How to apply single register:**
 - **3 out of 4** subtable entries per chaos root should match the register tone

@@ -9,7 +9,7 @@ CAMPAIGN_PATH="${1:-}"
 
 if [[ -z "$CAMPAIGN_PATH" ]]; then
   echo "Usage: clean-orphans.sh <campaign_path>"
-  echo "Example: clean-orphans.sh ./heathers-hope/campaigns/campaign-1"
+  echo "Example: clean-orphans.sh ./{game-id}/campaigns/campaign-1"
   exit 1
 fi
 

@@ -23,8 +23,8 @@ export interface EnsembleExecutionState {
   ensembleId: string;
   meshName: string;
   config: EnsembleConfig;
-  agentResults: Map<string, { content: string; error?: string; startTime: number; endTime?: number }>;
-  agentStartTimes: Map<string, number>;  // Track when each agent was spawned
+  agentResults: Map<string, { agentName: string; content: string; error?: string; startTime: number; endTime?: number }>;
+  agentStartTimes: Map<string, number>;  // Track when each agent was spawned (keyed by unique worker key)
   originalTask: Message;
   aggregationStarted: boolean;  // Prevents concurrent aggregation
 }
@@ -80,25 +80,29 @@ export class EnsembleCoordinator {
 
   /**
    * Register when an agent starts execution
+   * @param workerKey - Unique key for this worker (e.g., "runner-0", "runner-1" for N-same ensembles)
    */
-  registerAgentStart(ensembleId: string, agentName: string): void {
+  registerAgentStart(ensembleId: string, agentName: string, ensembleIndex?: number): void {
     const state = this.activeEnsembles.get(ensembleId);
     if (!state) {
       log.warn('ensemble', 'Cannot register start - ensemble not found', { ensembleId });
       return;
     }
-    state.agentStartTimes.set(agentName, Date.now());
+    const workerKey = ensembleIndex !== undefined ? `${agentName}-${ensembleIndex}` : agentName;
+    state.agentStartTimes.set(workerKey, Date.now());
   }
 
   /**
    * Record agent result
    * Returns completion status to avoid race conditions in aggregation
+   * Uses ensembleIndex to create unique keys for N-same ensembles (same agent spawned N times)
    */
   recordAgentResult(
     ensembleId: string,
     agentName: string,
     content: string,
-    error?: string
+    error?: string,
+    ensembleIndex?: number
   ): { isComplete: boolean; shouldAggregate: boolean } {
     const state = this.activeEnsembles.get(ensembleId);
     if (!state) {
@@ -106,8 +110,11 @@ export class EnsembleCoordinator {
       return { isComplete: false, shouldAggregate: false };
     }
 
-    const startTime = state.agentStartTimes.get(agentName) || Date.now();
-    state.agentResults.set(agentName, {
+    // Use index-suffixed key for N-same ensembles to avoid Map key collision
+    const workerKey = ensembleIndex !== undefined ? `${agentName}-${ensembleIndex}` : agentName;
+    const startTime = state.agentStartTimes.get(workerKey) || Date.now();
+    state.agentResults.set(workerKey, {
+      agentName,
       content,
       error,
       startTime,
@@ -117,7 +124,9 @@ export class EnsembleCoordinator {
     log.debug('ensemble', 'Agent result recorded', {
       ensembleId,
       agent: agentName,
+      workerKey,
       success: !error,
+      resultCount: state.agentResults.size,
     });
 
     // Check completion atomically
@@ -167,11 +176,11 @@ export class EnsembleCoordinator {
     const results: AgentResult[] = [];
     const failed: string[] = [];
 
-    for (const [agent, result] of state.agentResults) {
+    for (const [workerKey, result] of state.agentResults) {
       if (!result.error && result.content) {
-        results.push({ agent, content: result.content });
+        results.push({ agent: result.agentName || workerKey, content: result.content });
       } else {
-        failed.push(agent);
+        failed.push(result.agentName || workerKey);
       }
     }
 

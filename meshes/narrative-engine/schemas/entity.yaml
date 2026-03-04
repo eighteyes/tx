@@ -10,7 +10,7 @@
 
 character:
   # --- IDENTITY ---
-  id: "{kebab-case-name}"           # e.g., "kaitlin-reyes"
+  id: "{kebab-case-name}"           # e.g., "jane-doe"
   entity_type: character
   name:
     first: "{First}"
@@ -35,7 +35,7 @@ character:
     # - Include: gender, age range, ethnicity, hair, skin, build, style
     #
     # Good: "petite Latina woman, mid-20s, long black hair, olive skin, casual clothes"
-    # Bad: "Kaitlin with long black hair" (name in prompt)
+    # Bad: "{CharName} with long black hair" (name in prompt)
     # Bad: "woman" (too vague)
     # Bad: "A beautiful young woman with flowing locks..." (prose, not tags)
 
@@ -44,6 +44,77 @@ character:
     ideology: "{belief system}"      # What framework they build self on
     function: "{what it provides}"   # Why they need it
     shadow: "{hidden cost}"          # What it protects them from seeing
+
+  # --- BACKSTORY (optional but powerful) ---
+  # Origin story and psychological shaping. Shapes behavior without being visible.
+  backstory:
+    origin: "{where they came from — environment, class, geography}"
+    escape: "{what they left behind and why}"
+    pattern: "{recurring behavioral pattern that predates the story}"
+    implication: "{what this means for the current story}"
+    # Additional keyed subsections as needed (e.g., criminal_record, infidelity_pattern)
+    # Structure is flexible — calibrator extracts what the player provides.
+
+  # --- HABITS (optional) ---
+  # Daily textures — substances, practices, rituals.
+  # Keyed by substance/practice name.
+  habits:
+    # {substance_or_practice}:
+    #   pattern: "{usage pattern — e.g., functional dependence, social, moderate}"  # REQUIRED
+    #   function: "{what it does for them psychologically}"                          # REQUIRED
+    #   visibility: "{how visible this is to others}"                               # REQUIRED
+    #   # Optional additional fields:
+    #   # substance: "{specific substance}"
+    #   # type: "{category — ethical, recreational, etc.}"
+    #   # motivation: "{why they do this}"
+    #   # shadow: "{hidden cost or meaning}"
+    #   # trigger_times: ["{when this intensifies}"]
+    #   # shared_with: "{character_id}"   # If a shared habit
+    #   # dynamic: "{how sharing this habit works between characters}"
+
+  # --- LIFE (optional) ---
+  # The world beyond the central relationship/plot.
+  # Narrator may extend freely within these categories.
+  life:
+    active_concerns: []              # Current worries, deadlines, pressures
+    # - "{concern}"
+
+    expertise:                       # What they're genuinely good at
+      academic: "{formal knowledge}"
+      practical: "{real-world skills}"
+      surprising: "{unexpected competence}"
+      physical: "{body skills}"
+
+    social_web: {}                   # Relationships beyond the central bond
+    # {name_or_role}: "{one-line description of relationship}"
+
+    opinions: {}                     # Strong views that reveal character
+    # on_{topic}: "{opinion}"
+
+    desires_beyond_plot: []          # What they want that isn't about the story
+    # - "{desire}"
+
+    voice_markers:                   # How they actually talk
+      vocabulary: "{register, code-switching patterns}"
+      rhythm: "{sentence patterns under different states}"
+      verbal_habits: []              # Signature speech patterns
+      # - "{habit}"
+      never_says: "{words or phrases they avoid and why}"
+
+    memories:                        # Formative and recent memories
+      formative: []
+      # - "{memory}"
+      recent: []
+      # - "{memory}"
+
+  # --- SEXUALITY (optional) ---
+  # Include only when sexuality is thematically relevant.
+  # Omit entirely for stories where it's not central.
+  sexuality:
+    the_gap:                         # Discrepancy between presentation and reality
+      verbal_comfort: "{how they talk about desire}"
+      physical_reality: "{how they actually behave}"
+    why_this_matters: "{narrative significance of the gap}"
 
   # --- TRAITS ---
   traits:
@@ -147,7 +218,7 @@ character:
 
   # --- BONDS (references only) ---
   bonds: []                          # List of bond entity IDs
-  # e.g., ["heather_kaitlin"]
+  # e.g., ["{char_a}_{char_b}"]
   # Full bond data lives in /entities/bonds/{id}.yaml
 
 # =============================================================================
@@ -225,6 +296,13 @@ character:
 # - Every trait in traits.starting MUST have entry in traits.voices
 # - traits.voices.{TRAIT}.speaks_as must be first-person voice, not description
 # - appearance.visual_tags must NOT contain character name
+#
+# OPTIONAL SECTION VALIDATION:
+# - backstory: if present, origin and pattern are recommended
+# - habits: if present, each entry MUST have pattern, function, visibility
+# - life: if present, active_concerns and voice_markers recommended
+# - sexuality: if present, the_gap must have both verbal_comfort and physical_reality
+# - hidden_past: if exists: true, incident.what and knowledge.who_knows are required
 #
 # FORBIDDEN SURNAMES (AI defaults — never use):
 # Smith, Johnson, Williams, Brown, Jones, Garcia, Miller, Davis, Wilson, Moore,

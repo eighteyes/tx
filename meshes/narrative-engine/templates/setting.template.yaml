@@ -81,6 +81,30 @@ time:
   season: "Deep winter"
   elapsed: "Day 1"
 
+# World Lexicon
+# Invented terms, in-world slang, faction-specific vocabulary.
+# All agents reference this for consistency — narrator uses these terms,
+# scribe preserves them, calibrator extracts them.
+lexicon: {}
+  # {term}:
+  #   meaning: "{definition}"
+  #   usage: "{who says this, in what context}"
+  #   register: "{formal | casual | slang | technical | sacred}"
+  #
+  # Examples:
+  # bloodwine:
+  #   meaning: "Fermented drink made from cave-fruit, deep red"
+  #   usage: "Common among miners, served warm"
+  #   register: casual
+  # the_turning:
+  #   meaning: "The cataclysm that ended the old world"
+  #   usage: "Referenced by all characters, capitalized in speech"
+  #   register: formal
+  # scav:
+  #   meaning: "Scavenger — someone who picks through wreckage for parts"
+  #   usage: "Pejorative when used by station-born, neutral among belters"
+  #   register: slang
+
 # Genre Modules
 # Load from references/genres/ for genre-specific extraction and guidance
 # Most stories blend genres—list primary first, then secondary

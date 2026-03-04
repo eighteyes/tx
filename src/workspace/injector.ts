@@ -308,6 +308,23 @@ export class PromptInjector {
   }
 
   /**
+   * Inject parallel instance context into a system prompt
+   * Provides instance awareness for parallel mesh executions
+   */
+  injectParallelInstanceContext(basePrompt: string, baseMesh: string, meshId: string): string {
+    const section = `# Parallel Instance Context
+
+You are running as a parallel instance of the \`${baseMesh}\` mesh.
+
+**Instance ID**: \`${meshId}\`
+**Base Mesh**: \`${baseMesh}\`
+
+This instance is isolated from other instances of \`${baseMesh}\`. Your work is specific to this instance.`;
+
+    return `${basePrompt}\n\n${section}`;
+  }
+
+  /**
    * Inject FSM context into a system prompt
    * Provides state awareness to ALL agents in FSM-enabled meshes
    */

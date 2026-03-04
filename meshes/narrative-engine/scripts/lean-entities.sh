@@ -9,7 +9,7 @@ CAMPAIGN_PATH="${1:-}"
 
 if [[ -z "$CAMPAIGN_PATH" ]]; then
   echo "Usage: lean-entities.sh <campaign_path>"
-  echo "Example: lean-entities.sh ./heathers-hope/campaigns/campaign-1"
+  echo "Example: lean-entities.sh ./{game-id}/campaigns/campaign-1"
   exit 1
 fi
 

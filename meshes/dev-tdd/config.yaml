@@ -23,7 +23,7 @@ agents:
     thinking: true
 
 entry_point: red
-boundary_agents: [reviewer]
+completion_agents: [reviewer]
 
 continuation: true
 

@@ -27,6 +27,13 @@ export interface StatusResult {
     awaitingResponses?: string[];
     awaitDuration?: number;
   }>;
+  instances: Array<{
+    base_mesh: string;
+    mesh_id: string;
+    status: 'running' | 'completed';
+    spawned_at: number;
+    completed_at?: number;
+  }>;
 }
 
 export async function status(workDir?: string): Promise<StatusResult> {
@@ -41,10 +48,12 @@ export async function status(workDir?: string): Promise<StatusResult> {
 
   // Check queue if exists
   let stats = { pending: 0, delivered: 0, total: 0, byAgent: {} as Record<string, number> };
+  let instances: Array<{ base_mesh: string; mesh_id: string; status: 'running' | 'completed'; spawned_at: number; completed_at?: number }> = [];
 
   if (fs.existsSync(dbPath)) {
     const queue = new MessageQueue(dbPath);
     stats = queue.getStats();
+    instances = queue.listInstances();
     queue.close();
   }
 
@@ -66,6 +75,7 @@ export async function status(workDir?: string): Promise<StatusResult> {
     },
     queue: stats,
     workers,
+    instances,
   };
 }
 
@@ -111,6 +121,33 @@ export function printStatus(result: StatusResult, json = false): void {
     console.log('\nPending by agent:');
     for (const [agent, count] of pendingAgents) {
       console.log(`  ${agent}: ${count}`);
+    }
+  }
+
+  // Parallel instances
+  if (result.instances.length > 0) {
+    const running = result.instances.filter(i => i.status === 'running');
+    const completed = result.instances.filter(i => i.status === 'completed');
+
+    console.log(`\nParallel Instances: ${result.instances.length} total (${running.length} running, ${completed.length} completed)`);
+
+    if (running.length > 0) {
+      console.log('\nRunning instances:');
+      for (const instance of running) {
+        const elapsed = Math.round((Date.now() - instance.spawned_at) / 1000);
+        console.log(`  ⚡ ${instance.base_mesh}/${instance.mesh_id} [${elapsed}s]`);
+      }
+    }
+
+    if (completed.length > 0 && completed.length <= 5) {
+      // Show up to 5 recent completed instances
+      console.log('\nRecent completed instances:');
+      for (const instance of completed.slice(0, 5)) {
+        const duration = instance.completed_at
+          ? Math.round((instance.completed_at - instance.spawned_at) / 1000)
+          : '?';
+        console.log(`  ✓ ${instance.base_mesh}/${instance.mesh_id} [${duration}s]`);
+      }
     }
   }
 

@@ -24,7 +24,7 @@ agents:
     command: "/know:build {feature}"
 
 entry_point: prebuild
-boundary_agents: [builder]
+completion_agents: [builder]
 
 routing:
   prebuild:

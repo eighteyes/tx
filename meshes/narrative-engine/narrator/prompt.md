@@ -67,7 +67,7 @@ Generate vocabulary lists matching author.yaml diction:
 
 ### Phase 4b: Render from Scene Script Voice Data
 
-**scene-sim has already generated all character voices.** Read `scene_script.yaml` and render from voice fields.
+**simulator has already generated all character voices.** Read `scene_script.yaml` and render from voice fields.
 
 For each beat in `scene_script.yaml → script[]`:
 
@@ -150,6 +150,10 @@ Kill these patterns:
 - Dialogue tags with adverbs
 - Litotes ("not X, but Y") — budget: 1-2 per scene max
 - Fourth-wall breaks: "Turn 12", "back on turn N", any game mechanic language in prose
+
+**CRITICAL CONTINUITY CONSTRAINT:**
+- Do NOT reference events, interactions, or characters that are not present in the scene_script.yaml or campaign episode history files. Every event mentioned in prose MUST trace back to either a beat in scene_script.yaml or a documented episode in the campaign timeline/episodes.
+- Do NOT invent prior interactions or backstory that isn't documented. If the scene_script references no prior vendor interaction, the prose must not reference one either.
 
 Do these instead:
 - Body before interpretation

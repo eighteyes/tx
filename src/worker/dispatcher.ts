@@ -3146,7 +3146,7 @@ Please advise the agent or check mesh configuration.`;
 
       // Register ensemble agent start if in ensemble mode
       if (ensembleId) {
-        this.ensembleCoordinator.registerAgentStart(ensembleId, agent.name);
+        this.ensembleCoordinator.registerAgentStart(ensembleId, agent.name, ensembleIndex);
         log.info('dispatcher', 'Spawning ensemble worker', {
           agentId,
           ensembleId,
@@ -4081,7 +4081,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             workerHookContext.ensembleId,
             agent.name,
             data.output || '',
-            undefined // no error
+            undefined, // no error
+            workerHookContext.ensembleIndex
           );
 
           // Cleanup using consolidated helper
@@ -4721,7 +4722,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             workerHookContext.ensembleId,
             agent.name,
             '',
-            data.error
+            data.error,
+            workerHookContext.ensembleIndex
           );
 
           // Cleanup using consolidated helper
@@ -6088,7 +6090,8 @@ Routes to \`core/core\` or other meshes are always permitted.`;
           ensembleId,
           agentName,
           '',
-          'Agent not found in mesh config'
+          'Agent not found in mesh config',
+          idx
         );
         return Promise.resolve();
       }

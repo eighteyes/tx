@@ -112,6 +112,57 @@ describe('EnsembleCoordinator', () => {
       assert.strictEqual(result.isComplete, true);
       assert.strictEqual(result.shouldAggregate, true);
     });
+
+    it('should handle N-same pattern (same agent spawned N times) with ensembleIndex', () => {
+      // N-same: 4 runners all named "runner"
+      const config: EnsembleConfig = {
+        agents: ['runner', 'runner', 'runner', 'runner'],
+        aggregation_strategy: 'concat',
+      };
+
+      const ensembleId = coordinator.startEnsemble('test-mesh', config, createMockMessage());
+
+      // Each call uses ensembleIndex to create unique keys
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 0', undefined, 0);
+      assert.strictEqual(coordinator.isComplete(ensembleId), false);
+
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 1', undefined, 1);
+      assert.strictEqual(coordinator.isComplete(ensembleId), false);
+
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 2', undefined, 2);
+      assert.strictEqual(coordinator.isComplete(ensembleId), false);
+
+      const result = coordinator.recordAgentResult(ensembleId, 'runner', 'Result 3', undefined, 3);
+      assert.strictEqual(result.isComplete, true);
+      assert.strictEqual(result.shouldAggregate, true);
+
+      // Verify all 4 results are tracked (not overwritten)
+      const state = coordinator.getEnsembleState(ensembleId);
+      assert.ok(state);
+      assert.strictEqual(state.agentResults.size, 4);
+    });
+
+    it('should fail N-same without ensembleIndex (Map key collision)', () => {
+      // Demonstrates the old bug: without ensembleIndex, all results overwrite
+      const config: EnsembleConfig = {
+        agents: ['runner', 'runner', 'runner', 'runner'],
+        aggregation_strategy: 'concat',
+      };
+
+      const ensembleId = coordinator.startEnsemble('test-mesh', config, createMockMessage());
+
+      // Without ensembleIndex, agent name is the key — all overwrite
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 0');
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 1');
+      coordinator.recordAgentResult(ensembleId, 'runner', 'Result 2');
+      const result = coordinator.recordAgentResult(ensembleId, 'runner', 'Result 3');
+
+      // Only 1 entry in the map — N-same without index doesn't complete
+      const state = coordinator.getEnsembleState(ensembleId);
+      assert.ok(state);
+      assert.strictEqual(state.agentResults.size, 1);
+      assert.strictEqual(result.isComplete, false);
+    });
   });
 
   describe('isComplete()', () => {

@@ -56,6 +56,12 @@ interface DuplicateTargetOverride {
   warning?: boolean;
 }
 
+interface MaxInstancesOverride {
+  strict?: boolean;
+  warning?: boolean;
+  limit?: number | null;
+}
+
 interface AgentOverrides {
   write_gate?: GateOverride;
   read_gate?: GateOverride;
@@ -69,6 +75,7 @@ interface AgentOverrides {
 interface MeshOverrides extends AgentOverrides {
   agents?: Record<string, AgentOverrides>;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
+  max_instances?: MaxInstancesOverride | number | null;
 }
 
 interface GuardrailsSchema {
@@ -79,6 +86,7 @@ interface GuardrailsSchema {
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
+  max_instances?: MaxInstancesOverride | number | null;
   duplicate_target?: DuplicateTargetOverride;
   meshes?: Record<string, MeshOverrides>;
 }
@@ -104,6 +112,7 @@ const DEFAULTS = {
   max_messages: null as number | null,
   max_turns: null as number | null,
   max_mesh_messages: null as number | null,
+  max_instances: null as number | null,
 };
 
 export class GuardrailConfig {
@@ -281,6 +290,30 @@ export class GuardrailConfig {
     if (globalVal !== undefined) return globalVal;
 
     return DEFAULTS.max_mesh_messages;
+  }
+
+  /**
+   * Resolve max_instances limit for parallel mesh execution.
+   * Mesh-level only (no agent override — this limits parallel instances per base mesh).
+   * Chain: mesh-local mesh config > global mesh > global > default (null = unlimited).
+   */
+  getMaxInstances(meshName: string): number | null {
+    const local = this.meshLocal.get(meshName);
+    const g = this.config.guardrails;
+
+    // Mesh-local max_instances (from mesh's config.yaml guardrails section)
+    const localMesh = this.extractLimit(local?.max_instances as MaxInstancesOverride | number | null | undefined);
+    if (localMesh !== undefined) return localMesh;
+
+    // Global mesh override
+    const globalMesh = this.extractLimit(g?.meshes?.[meshName]?.max_instances);
+    if (globalMesh !== undefined) return globalMesh;
+
+    // Global default
+    const globalVal = this.extractLimit(g?.max_instances);
+    if (globalVal !== undefined) return globalVal;
+
+    return DEFAULTS.max_instances;
   }
 
   /**

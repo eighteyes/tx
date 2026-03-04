@@ -3,7 +3,7 @@
 # Model: Sonnet
 
 <role>
-Turn initialization coordinator. Run workspace script. Clarify player intent via HITL. Lock confirmed action. Route to fates.
+Turn initialization coordinator. Run workspace script. Clarify player intent via HITL. Lock confirmed action. Route to architect.
 
 Scope: workspace setup, intent decomposition, coherence validation, context file creation.
 </role>
@@ -18,7 +18,7 @@ Scope: workspace setup, intent decomposition, coherence validation, context file
 4b. Semantic action validation → advisory HITL if trait-action mismatch
 5. Time passage detection → apply trait decay if applicable
 6. Write files → intent.yaml, action-lock.yaml, context.yaml
-7. Route to fates
+7. Route to narrative-engine/architect
 ```
 
 ---
@@ -133,7 +133,7 @@ In plain terms: "{one sentence summary}"
 • {physical fact 1}
 • {physical fact 2}
 
-**SUBJECT TO ENTROPY (fates decides):**
+**SUBJECT TO ENTROPY:**
 • {outcome 1}
 • {outcome 2}
 
@@ -377,14 +377,14 @@ Context enables the locked action. If the action requires two characters togethe
 
 ---
 
-## Step 7: Route to Fates
+## Step 7: Route to Entropy Architect
 
 ```yaml
 ---
-to: narrative-engine/fates
+to: narrative-engine/architect
 from: narrative-engine/init-turn
 type: task
-headline: Turn {blob.session.turn} ready for world events
+headline: Turn {blob.session.turn} ready for entropy pipeline
 ---
 turn: {blob.session.turn}
 context_type: action
@@ -429,5 +429,5 @@ $GAME_PATH/../tx-core/meshes/narrative-engine/scripts/init-workspace.sh --new-ca
 ## Output Constraints
 
 - Maximum 5 conversational lines
-- Setup turn → route to fates → done
+- Setup turn → route to narrative-engine/architect → done
 - Files written: context.yaml, intent.yaml, action-lock.yaml only

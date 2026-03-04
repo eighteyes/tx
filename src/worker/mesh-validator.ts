@@ -141,8 +141,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   description: { type: 'string' },
   entry_point: { type: 'string' },
   completion_agent: { type: 'string' },  // DEPRECATED: Use completion_agents
-  completion_agents: { type: 'array' },  // Agents that can complete the mesh (first-wins)
-  boundary_agents: { type: 'array' },   // Phase 5: Agents at mesh boundary (can message core/core)
+  completion_agents: { type: 'array' },  // Agents at mesh boundary (can message core/core)
+  boundary_agents: { type: 'array' },   // DEPRECATED: Use completion_agents (backward compatibility)
   type: { type: 'string', enum: ['persistent', 'ephemeral'] },
   auto_despawn: { type: 'boolean' },
   keepalive: { type: 'boolean' },

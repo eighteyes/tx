@@ -33,7 +33,7 @@ No explicit `type` field needed - the system detects boundaries automatically.
 6. On approval, send task completion (routing determines next agent)
 
 ### If task needs requirements gathering:
-1. Ask initial questions about research topic (type: ask-human, to: core/core)
+1. Ask initial questions about research topic (to: core/core)
 2. Continue Q&A until criteria met
 3. Compile `research-brief.md` to workspace
 4. **Ask human to confirm research direction** (see Confirmation Message below)

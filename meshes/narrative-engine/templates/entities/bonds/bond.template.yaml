@@ -1,11 +1,29 @@
 # bond.template.yaml
 # First-class relationship entity between two characters
-# Naming: alphabetical order (heather_kaitlin, not kaitlin_heather)
+# Naming: alphabetical order ({char_a}_{char_b}, not {char_b}_{char_a})
 
 id: "{character_a}_{character_b}"
 entity_type: bond
 participants: ["{character_a}", "{character_b}"]
-intensity: {1-10}
+
+# 12-dimensional measurement (each 0-5)
+# Asymmetry notation: {a: N, b: N} when experiences differ
+dimensions:
+  physical: 0
+  emotional: 0
+  intellectual: 0
+  trust: 0
+  sexual: 0
+  public: 0
+  power: 0
+  familiarity: 0
+  loyalty: 0
+  fear: 0
+  obligation: 0
+  hope: 0
+
+baseline: {}           # Prose per dimension — what is settled vs. frontier
+established: {}        # Per-dimension moment log
 
 # Bond-specific traits (how the relationship manifests)
 traits:
@@ -19,5 +37,4 @@ traits:
 episodes:
   - turn: {N}
     event: "{what happened to the bond}"
-    intensity_change: "{before} → {after}"
-    trait_changes: {"{TRAIT}": {delta}}
+    dimension_changes: "{dimension}: {before} -> {after}"

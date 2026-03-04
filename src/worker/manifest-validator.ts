@@ -43,7 +43,7 @@ export function resolveManifestVariables(
 ): Record<string, string> {
   const varMap: Record<string, string> = {};
 
-  // Phase 1: Read variable source file
+  // Read variable source file
   // Config declares: variables.source (path to YAML file), variables.mapping ({var} → field)
   const sourcePath = variablesConfig?.source;
   const mapping = variablesConfig?.mapping;
@@ -84,7 +84,7 @@ export function resolveManifestVariables(
     }
   }
 
-  // Phase 2: Resolve location cross-references
+  // Resolve location cross-references
   // Location templates can reference other locations via {name}.
   // Iteratively resolve until stable (handles chained references).
   const resolved: Record<string, string> = {};
