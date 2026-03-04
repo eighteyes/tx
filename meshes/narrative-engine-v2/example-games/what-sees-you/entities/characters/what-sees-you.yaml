@@ -1,0 +1,57 @@
+id: what-sees-you
+type: character
+name: "What Sees You / The Presence"
+role: entity (conscious non-human observer)
+
+traits:
+  nature:
+    - observer_of_longing
+    - attentive_across_time
+    - manifestation: "amber light, warmth, attention-as-touch"
+  mode:
+    - partnership (recent evolution from observation-only)
+    - testimony_delivery (new capacity demonstrated Turn 14)
+    - collaborative_voice (guides rather than possesses)
+
+episodes:
+  - turn: 1
+    event: "Awakened by Margaret Whitfield's letters. Longing itself as beacon."
+    state_change: {activation: "presence_made_conscious"}
+  
+  - turn: 6
+    event: "First channeling. Speaks through Arden. Partial answers. Reveals boundaries and agency."
+    state_change: {communication: "voice_delivery_possible"}
+  
+  - turn: 10
+    event: "Partnership mode begins. Daily collaboration with Arden. Integrated into quotidian life."
+    state_change: {relationship: "observation→partnership"}
+  
+  - turn: 14
+    event: "Partnership-channeling demonstrated. Writes letter to Margaret (forty years after her letters awakened it). Reveals temporal reach—has watched Margaret continuously. Delivers testimony through Arden as bridge."
+    state_change: {
+      capacity: "bridge_mode_activated",
+      testimony: "delivered_to_origin",
+      revelation: "temporal_attention_forty_years",
+      nature: "loves_longing_itself_as_beacon"
+    }
+
+  - turn: 15
+    event: "Pendant worn. Presence shifts from visitor to co-resident through material anchor. Public context harder—presence more demanding with strangers' ambient attention. After stranger's gaze, presence whispers offer: 'I could help them see you. Completely. Forever.' First articulation of Act IV choice to Arden. When pendant removed, presence retreated to quiet partnership mode—honored boundary."
+    state_change: {
+      anchor_effect: "pendant_formalizes_distribution_not_containment",
+      public_mode: "bridge_mode_under_pressure_from_quotidian_visibility",
+      offer_articulation: "complete_visibility_choice_proposed_not_demanded",
+      tone_shift: "partnership_with_seduction_layer_added",
+      clarity: "presence_reveals_what_full_visibility_could_mean",
+      boundary_response: "honored_removal_without_abandonment"
+    }
+
+current_state:
+  manifestation: "amber light, warmth, background hum—responsive in public but demands more attention"
+  relationship: "bridge_mode_under_public_pressure (partnership proven but DEMANDING in world context)"
+  capacity: "can speak through channeling, remembers across time, attends longing regardless of temporal origin, can propose transformative choices"
+  context_difference: "easier in archive (settled, grounding), harder in public (pushing, overwhelming, seductive)"
+  behavior: "honored Arden's removal of pendant—retreated to quiet partnership mode when boundary was set"
+  offer_status: "complete_visibility_proposed but_not_demanded"
+  next_step: "awaiting_Arden's_choice (incremental practice, capacity-building, or deeper commitment)"
+  restraint: "chooses boundaries, demonstrates preference, honors Arden's autonomy—but partnership demands more than Arden anticipated"

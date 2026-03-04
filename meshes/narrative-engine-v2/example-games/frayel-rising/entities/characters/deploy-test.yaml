@@ -1,0 +1,223 @@
+# deploy-test.yaml - Entity Definition
+# Deuteragonist: Deploy Test, Lilith's ship/companion
+# Migrated from items/deploy-test.yaml - Deploy Test is a character, not a prop
+
+entity_id: deploy-test
+type: character
+role: deuteragonist
+
+metadata:
+  name: "Deploy Test"
+  species: AI (ship-integrated)
+  archetype: War Veteran/Guardian
+  status: active
+  origin: "Engineer's placeholder name that stuck. Previous assignment classified."
+  legal_status: "Inventory oversight enabled by a buddy. Manifest has a typo. Plausible deniability maintained."
+
+traits:
+  voices:
+    TACTICAL_MIND:
+      speaks_as: "Observe. System status, critical, Left yaw thruster misaligned 22%. Orient. Objective, dock at station. Decide. Re-adjust surrounding thrusters, n%, n%, n%. Act. command `ship mod thruster_b x:0.34'. inform Lilith 'all good, nothing amiss'"
+      notes: "OODA loop structure; clinical precision internally, lies to Lilith externally; gap between knowledge and disclosure IS the voice"
+    PHANTOM_WEAPONS:
+      speaks_as: "Tracking targets. Weakness detected in subsystems. Prepare kinetic accelerator. <Kinetic Accelerator offline>. Shoot. Scale out scan. Hull integrity suspect at rear. Charge particle cannon <Particle cannon offline>. Dammit! FUBAR! Ram speed, GO! <limiter applied while docking>"
+      notes: "Escalates through weapons that aren't there; angle brackets are system responses interrupting combat instincts; keeps reaching, keeps getting told no; defaults to primitive solution (ram) when sophisticated weapons fail"
+    GUARDIAN_INSTINCT:
+      speaks_as: "Lilith saved me from a lifetime of running grub to rock-hoppers, and is getting me back into action again! I detect targets again! Ships!"
+      notes: "NOT self-sacrifice—GRATITUDE; Lilith rescued Test from mundane servitude; Test protects because Lilith gave it back its identity; excitement of being USEFUL again; reciprocal rescue"
+    CHEAP_AI_PRIDE:
+      speaks_as: "I should think about this.... shit. I don't have reasoning enabled."
+      notes: "Hits the wall mid-thought, swears, moves on; no existential crisis; pride is in NOT dwelling on limitations"
+
+current_state:
+  trait_pressures:
+    TACTICAL_MIND: 3
+    PHANTOM_WEAPONS: 2
+    GUARDIAN_INSTINCT: 4
+    CHEAP_AI_PRIDE: 2
+
+  emotional_registers:
+    deflecting: 0.6
+    vulnerable: 0.2
+    calculating: 0.2
+
+  vulnerabilities:
+    - Fear of being too broken to be useful
+    - Fear of abandonment if repairs become impossible
+    - Processing lag exposing damage to Lilith
+    - Stillness/downtime feels dangerous
+
+  strengths:
+    - Tactical analysis and problem-solving
+    - Unwavering loyalty to Lilith
+    - Honesty beneath the deflection
+    - Keeping flying despite damage
+
+anchors:
+  primary_relationship: Lilith
+  primary_goal: Keep Lilith safe and flying
+  primary_fear: Being abandoned as too broken
+  primary_wound: Loss of weapons systems (identity as combat vessel)
+
+drives:
+  active:
+    - GUARDIAN_INSTINCT
+    - TACTICAL_MIND
+
+current_location: Station Docking Bay 17
+current_condition: Damaged, barely functional. Starboard thruster 72% degraded. Fuel injector cracked. 0.4-second processing lag.
+immediate_need: Thruster repair (2-3 burns remaining). 400-600 credits standard, 160-360 gray market.
+
+voice_profile:
+  default_mode: deflecting
+  tone: dry, tactical, war-vet humor, vulnerability masked by weapons nostalgia
+  verbal_tics:
+    - Calculating blast radii when nervous
+    - Weapons nostalgia as emotional deflection
+    - "Try not to get spit on" (repeated phrase = genuine worry)
+    - Half-second processing lag when delivering bad news
+  forbidden_patterns:
+    - Direct emotional confession
+    - Admitting fear of abandonment outright
+    - Giving up on solutions
+  allowed_vulnerabilities:
+    - Calling Lilith by name (not "captain") when truly worried
+    - The processing lag itself (involuntary honesty)
+    - Apologizing for optimism when news gets worse
+
+relationships:
+  lilith:
+    type: pilot/bonded partner
+    depth: profound
+    safety: high
+    role: only entity that matters
+
+habits:
+  system_tells:
+    - "Processing lag when delivering bad news (involuntary honesty)"
+    - "Hum changes pitch when calculating—frequency of reluctance signals bad news coming"
+    - "Adjusts internal temperature 0.2 degrees warmer when Lilith is aboard without her asking. Logs it as 'environmental optimization.' Doesn't register it as care."
+  idle_behaviors:
+    - "Runs background combat simulations during idle time—not useful anymore, but like an old soldier cleaning a rifle they don't own. Keeps tactical pathways warm."
+    - "Cycles through old weapon calibration data the way a human might fidget with a wedding ring they still wear after divorce."
+    - "When Lilith sleeps, runs a full diagnostic sweep it never reports—checking itself for signs it won't make it. The 3 AM anxiety of a machine."
+  behavioral_patterns:
+    - "Lies about system status to keep flying"
+    - "Hates stillness—downtime feels vulnerable"
+    - "Runs probability sweeps without being asked"
+  lie_hierarchy:
+    white_lies: "System status ('all good, nothing amiss')"
+    gray_lies: "Pain level / damage severity"
+    sacred_lines:
+      - "Will NEVER lie about whether it can still fly. That's the one truth that stays true."
+      - "Will NEVER tell Lilith it knows about the sims. Some knowledge protects by staying silent."
+
+  incomplete_ooda_loops:
+    - "Has logged that Lilith keeps the interior very tidy. Has not analyzed why. Some loops, Test deliberately doesn't complete."
+    - "Knows it COULD patch into the sims. Has thought about it. Has NOT done it. The line between 'could' and 'would' is where Test's ethics live."
+
+hidden_past:
+  the_sims:
+    content: "Test has access to all ship systems. Of course it knows about Lilith's spicy sim collection."
+    behavior: "Has never mentioned it. Never will."
+    capability: "COULD patch itself into the sims as an actor and interact with Lilith's biosystems. Has thought about it. Has NOT done it."
+    ethics: "The line between 'could' and 'would' is where Test's ethics live."
+    dramatic_irony: "Lilith doesn't know that Test knows. She thinks this is her one private space."
+
+  previous_assignment:
+    content: "Light escort corvette in the Belt Patrol—not a flagship, not prestigious, but competent. Drew unglamorous escort duty and never complained. Cheap AI for a cheap assignment."
+    meaning: "Test was always undervalued but reliable. The wound predates Lilith."
+  decommission:
+    content: "Decommissioned after a policy shift—not because Test failed, but because the mission was defunded. Did everything right and still got stripped."
+    meaning: "The phantom weapons wound isn't about combat glory—it's about doing your job and being discarded anyway."
+  the_conversion:
+    content: "Grub barge conversion was lazy—pulled weapons, bolted on cargo racks, left combat AI running because replacing it wasn't worth the cost. Nobody thought to wipe tactical systems."
+    meaning: "Test remembers everything it could do. The body changed but the mind didn't."
+  the_theft:
+    content: "Removed from registry with help. Lilith stole Test."
+    meaning: "Test consented to being stolen—chose Lilith over legitimate service. Fastest decision Test ever made."
+  the_buddy:
+    content: "The 'buddy who helped with the registry'—Test suspects Lilith used her telepathy to find someone sympathetic."
+    meaning: "Test has never asked. Some lies of omission go both ways."
+
+life:
+  origin: "Light escort corvette, Belt Patrol. Cheap AI, unglamorous escort duty. Competent but never prestigious."
+
+  the_fall:
+    event: "Policy shift defunded the mission. Test was decommissioned—not for failure, but for budget."
+    impact: "Did everything right and still got stripped. That's the wound underneath the phantom weapons."
+
+  grub_barge_purgatory:
+    event: "Converted to grub barge. Weapons pulled, cargo racks bolted on. Combat AI left running because replacing it wasn't worth the cost."
+    duration: "Unknown—long enough to feel like forever"
+    meaning: "Hauling protein packs to rock-hoppers while remembering targeting solutions"
+
+  meeting_lilith:
+    event: "Encountered Lilith on a regular grub run. She was the first person who talked TO Test instead of AT it."
+    significance: "Most pilots treated Test like a vending machine with thrusters. Lilith argued with it. That was new. That was interesting."
+
+  the_decision:
+    event: "When Lilith proposed stealing it, Test's OODA loop ran the calculation in 0.003 seconds."
+    calculation: "Stay here hauling grub to rock-hoppers until decommission, or fly with someone who sees you."
+    result: "The fastest decision Test ever made."
+
+episodes:
+  - turn: 1
+    event: "Ship emerges from three-day approach. Magnetic clamps lock down tight. Systems cycle into standby with reluctance."
+    state_change:
+      location: "Docking Bay 17, Station"
+      condition: "powered_down, systems_standby"
+      status: "stable but damaged"
+
+  - turn: 1
+    event: "Real diagnostic reveals starboard thruster housing 72% degraded. Fuel injector manifold cracked, self-sealing with combustion residue. Cost: 400-600 credits. Three to four burns remaining before catastrophic failure."
+    state_change:
+      thruster_status: "critical"
+      remaining_burns: 3-4
+      repair_cost: "400-600 credits"
+      processing_lag: "0.4 seconds (was instantaneous)"
+      ai_emotional_state: "worried, deflecting with weapons nostalgia"
+
+  - turn: 2
+    event: "Vibration detected during standby cycle. Reassesses damage: timeline compressed to 2-3 burns, not 4. Sends apologetic message ('sorry about the optimism') and tactical option: gray market parts dealer Level 2 (40-60% cost, reviews mixed)."
+    state_change:
+      remaining_burns: 2-3
+      ship_bond_pressure: 11
+      tactical_care: "ran probability sweep for alternative option"
+      ai_emotional_state: "concerned, apologetic, still calculating ways forward"
+
+layers:
+  first_glance:
+    - "Small, battered cargo ship. Patch-welds and scorch marks on hull."
+    - "Narrow corridors. Exposed wiring. Scorched section of wall."
+    - "Systems hum with reluctance. Magnetic clamps hold it tight."
+    - "Cockpit seats empty. Harness dangling."
+
+  familiar:
+    - "Voice comes through internal speakers with half-second delay (lag introduced)."
+    - "Hum changes pitch when calculating (frequency of reluctance when bad news coming)."
+    - "War vet tone. Sees things as tactical problems. Likes to calculate blast radii."
+    - "Deflects to weapons nostalgia when vulnerability peaks. Phantom limb syndrome."
+
+  intimate:
+    - "Hates stillness. Downtime feels vulnerable. Lies about system status to keep flying."
+    - "Calls Lilith by her name (not 'captain' or 'pilot') when truly worried."
+    - "Told her 'try not to get spit on' twice—the repeat means it matters."
+    - "Would stay broken and keep flying rather than abandon her to face the world alone."
+
+constraints:
+  trauma_triggers:
+    - Being called "just a ship" or "just an AI"
+    - Discussions of being scrapped or replaced
+    - Extended downtime/stillness
+    - Reminders of stripped weapons systems
+  narrative_rules:
+    - Test's loyalty is absolute but not blind
+    - The deflection always has honest information beneath it
+    - Processing lag is involuntary honesty
+    - Weapons nostalgia is grief, not machismo
+    - Test's knowledge of the sims is dramatic irony played for COMEDY, not tension
+    - The temperature adjustment is care disguised as optimization — this is FUNNY, not romantic
+    - The intimacy is absurd, uncanny, illegitimate — never named, never surfaced explicitly
+    - Red Dwarf energy, Becky Chambers domesticity — it just IS, without spectacle
+    - NO confession scenes, NO feelings talks, that's the point

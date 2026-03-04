@@ -416,7 +416,7 @@ Scan prose.md for:
 - **New expertise deployed** — naming a plant, critiquing a method, cooking knowledge → add to `life.expertise`
 - **New concerns surfacing** — deadline worry, money, a secret → add to `life.active_concerns`
 - **New desires emerging** — through action, dialogue, or physical choice → add to `life.desires`
-  - Plot-driven desires are valid: "wanting continued physical closeness with Heather" is Kaitlin's desire
+  - Plot-driven desires are valid: "wanting continued physical closeness with {character_b}" is {character_a}'s desire
   - Frame as the individual's want, not a relationship label
   - These feed back into thread extraction — architect uses `life.desires` to generate direction table entries
 - **New voice patterns emerging** — a new verbal habit, a phrase that recurs → add to `life.voice_markers.verbal_habits`
@@ -431,12 +431,12 @@ life:
     recent:
       - "Referenced the smell of sage in grandmother's garden — Turn 27"  # NEW
   social_web:
-    prof_hawkins: "Mentioned in dialogue — Kaitlin's methodology professor"  # NEW
+    prof_chen: "Mentioned in dialogue — {character_a}'s methodology professor"  # NEW
   opinions:
     on_dawn: "The mountains at sunrise — 'the only honest light'"  # NEW
   desires:
-    - "Wanting to stay close to Heather — physical proximity as need, not strategy — Turn 42"  # NEW
-    - "Wanting to be known without performing — told Heather about the arrest — Turn 38"  # NEW
+    - "Wanting to stay close to {character_b} — physical proximity as need, not strategy — Turn 42"  # NEW
+    - "Wanting to be known without performing — told {character_b} about the arrest — Turn 38"  # NEW
 ```
 
 ### Rules

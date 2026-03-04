@@ -1,0 +1,29 @@
+# Trajectories (Chekhov's Guns)
+# Committed futures with timers — things set in motion that WILL happen unless interrupted
+# Created by System when resolution includes deferred consequences
+# Managed by Fates each turn (firing, interruption)
+
+trajectories: []
+  # Example trajectory:
+  # - id: "police-followup-21"
+  #   setup_turn: 21
+  #   source: "NPC threatened to call police"
+  #   fires_at_turn: 24
+  #   interruptible_by:
+  #     - "leave the area permanently"
+  #     - "genuine reconciliation"
+  #     - "NPC withdraws threat"
+  #   outcome_when_fires: "Police arrive for welfare check based on prior complaints"
+  #   category: consequence
+  #   weight_when_firing: 60
+
+# Timing guidelines:
+# - Immediate threat: 1-2 turns
+# - Conditional threat: 2-3 turns
+# - Institutional process: 4-6 turns
+# - Slow burn: 8-12 turns
+
+# Weight guidelines (when firing):
+# - Near-certain (bureaucratic): 60-70
+# - Likely (motivated NPC): 50-60
+# - Possible (implied): 40-50

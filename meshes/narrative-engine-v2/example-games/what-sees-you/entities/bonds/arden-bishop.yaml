@@ -1,0 +1,40 @@
+id: bond-arden-bishop
+type: bond
+participants: [arden, bishop]
+
+nature: "companion animal—seven years"
+duration: "7 years"
+
+emotional_truth:
+  what_bishop_is: "A cat. Not a symbol. A cat."
+  what_bishop_provides: "Acceptance—Bishop just accepts"
+  what_arden_feels: "Seen. Something to care for."
+
+  anchor_function: |
+    Bishop is the anti-metaphor. In a story about presence and observation and cosmic
+    attention, Bishop is just a cat who wants feeding. Bishop doesn't see Arden in any
+    profound way—Bishop sees the person who opens tins. And that's the anchor. When
+    everything else is layered with meaning, Bishop is the thing that ISN'T. Seven years
+    of "you exist because I need breakfast" is the most honest relationship Arden has.
+    Bishop's acceptance isn't deep—it's animal. And that's why it works. You can't
+    over-interpret a cat. (Arden has tried. The cat didn't care.)
+
+dimensions:
+  trust: high
+  familiarity: high
+  intellectual: 0  # it's a cat
+  obligation: "mutual but simple (food↔warmth)"
+  asymmetry: "moderate (Arden needs Bishop more than Bishop needs Arden, and both know it)"
+
+story_function:
+  - reality_check (Bishop perceives presence, validates external reality)
+  - grounding (the ordinary thing in an extraordinary situation)
+  - anchor (when dissociating, Bishop is the weight that pulls back)
+
+episodes:
+  - turn: 10
+    event: "Bishop notices presence during feeding—wariness, careful sniff-checks"
+    note: "First external confirmation that presence is perceptible to others"
+  - turn: 17
+    event: "Bishop accepts integrated Arden as new baseline"
+    note: "Witness complete—cat adjusts to transformed owner without drama"

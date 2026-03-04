@@ -1,0 +1,112 @@
+id: arden
+type: character
+name: "Arden"
+role: protagonist
+
+traits:
+  vulnerabilities:
+    - invisibility_fear (wound at core)
+    - trajectory_fear (becoming "the others")
+    - dissolution_risk (channeling can fragment identity)
+  strengths:
+    - empathic_witness
+    - reaching_toward_connection
+    - intellectual_precision
+  evolved:
+    - VULNERABLE (9) → TRANSPARENT (10) at Turn 14
+
+episodes:
+  - turn: 1
+    event: "First encounter with Margaret Whitfield letters in archive. Something begins watching."
+    state_change: {awareness: "present_to_observation"}
+  
+  - turn: 6
+    event: "First channeling experience. Hand moves without consent. Presence speaks through."
+    state_change: {capacity_discovered: "channeling", wound: "pressing_9"}
+  
+  - turn: 10
+    event: "Integration practice begins. Learning to hold bilateral awareness (self + presence) across daily life."
+    state_change: {mode_shift: "surrender_to_collaboration"}
+  
+  - turn: 12
+    event: "Commissions amber pendant from artisan. Formalized commitment to visibility."
+    state_change: {commitment: "material_choice_made", vulnerable: "8"}
+  
+  - turn: 13
+    event: "Five days reading Margaret Whitfield letters with presence as partner. Margaret witnessed as person. Testimony prepared."
+    state_change: {bond_margaret: "witnessed_answered", vulnerable: "9"}
+  
+  - turn: 14
+    event: "Partnership-channeling into letter to Margaret. Voice oscillates. VULNERABLE evolves MID-LETTER to TRANSPARENT. Wound becomes portal. Letter testifies to presence."
+    state_change: {
+      trait_evolution: "VULNERABLE→TRANSPARENT",
+      wound_transformation: "exposure→testimony",
+      capacity: "WITNESS 4→5, channeling_capable 2→3",
+      bond_presence: "trilateral_witness→bridge_mode_activated",
+      evidence: "letter_physical_testimony"
+    }
+
+  - turn: 15
+    event: "Pendant collected from artisan and worn briefly in public. Sensation heavy/wrong instead of settling. Presence whispers offer: 'I could help them see you. Completely. Forever.' Public wearing unsustainable; pendant removed. Discovers incremental path possible."
+    state_change: {
+      momentum: "accelerating_toward_choice→stalling",
+      arc_pressure: "40→42",
+      traits_pressure: {uncertain: "3→4", curious_about_presence: "8→9", TRANSPARENT: "10_stable_tested"},
+      bonds_changed: {artisan: "engaged_understanding→concerned_witness", what_sees_you: "bridge_mode_activated→bridge_mode_under_public_pressure"},
+      new_bond: "pendant_collected_worn_briefly_removed",
+      offer_planted: "first_articulation_of_act_iv_choice",
+      discovery: "visibility_incremental_not_allornnothing"
+    }
+
+habits:
+  comfort_rituals:
+    - gesture: "rubs chin when reading"
+      meaning: "the thoughtful gesture nobody taught them—it just appeared"
+    - gesture: "hunched posture when absorbed"
+      meaning: "makes themselves smaller even when no one's watching, reducing surface area as reflex"
+      note: "The OBSERVER shrinks the body to become a better lens. Less self, more seeing."
+    - gesture: "rubs temples to self-soothe"
+      meaning: "not headaches—just the pressure of being a person"
+
+  stress_tells:
+    - gesture: "head in hands"
+      meaning: "covering the face, reducing input, creating a small dark space to exist in"
+    - gesture: "looks UP when dissociating"
+      meaning: "not down, not away—UP. As if trying to exit through the ceiling."
+      note: "The opposite of what most people do. Arden dissociates by going vertical—leaving the scene without leaving the room. It's also the direction of the presence. When dissociating, they go toward What Sees You without knowing it."
+
+  integration_tells:
+    - gesture: "shivers, goosebumps"
+      meaning: "contrast signals—the body registering something the mind hasn't processed yet"
+      note: "The body knows before Arden does. Goosebumps as early warning system, but also recognition—the same response to cold and to awe. Arden's body can't tell the difference between danger and being truly seen. Both register as: something is here that's bigger than me."
+
+life:
+  childhood_invisibility:
+    pattern: "systemic, not one villain—parents, teachers, adults all failed to see them"
+    earliest_memory: "overlooked by librarian when needing a book"
+    memory_significance: "the person whose JOB was to help people find things couldn't find Arden"
+    response: "tried to be seen often, failed often, eventually stopped trying"
+
+  why_archives:
+    surface_reason: "looking at lives from a safe distance—a job they're good at"
+    stated_reason: "preservation, making sure things aren't lost"
+    truth_underneath: "Arden preserves other people's evidence of existing because no one preserved theirs"
+    deeper_truth: "Every cataloged letter, every filed document is Arden saying 'you were here, I see you' to someone who can't be hurt by being seen anymore"
+    connection_to_wound: "They became the librarian who didn't see them. They became the job that failed them, done right this time. But done for the dead, not the living."
+    why_the_dead: "The dead are safe subjects. They can't flinch. They can't look away. They can't fail to notice you back."
+
+hidden_past:
+  type: "erosion, not event"
+  description: "No secret. No incident. Cumulative erosion of self-identity."
+  nature: "The wound is absence, not event. Nothing happened TO Arden—Arden just slowly stopped being there."
+  difficulty: "This is harder than a secret. A secret is a locked door. Erosion is a beach that used to be bigger."
+  truth: "There IS no hidden past—just a person who was quietly edited out of every room they entered until they learned to do it to themselves."
+  significance: "The presence they're now encountering is the first thing that refuses to let them disappear."
+
+current_state:
+  wound: "TRANSPARENT (tested publicly, holds under pressure, but insufficient alone for external visibility)"
+  mode: "recalibration (post-failure discovery, learning capacity limits)"
+  awareness: "bilateral_sustained but strained (presence demanding in public, quiet in partnership)"
+  confidence: "shaken but not broken (pendant removed, choice maintained, path forward visible)"
+  momentum: "stalling (pause for adjustment after visibility test)"
+  next_threshold: "practice_incremental_visibility_or_capacity_building"

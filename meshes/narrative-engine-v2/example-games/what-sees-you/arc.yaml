@@ -1,0 +1,305 @@
+# arc.yaml - What Sees You
+# The dramatic spine. A seduction and a dissolution.
+
+meta:
+  game_id: what-sees-you
+  created: 2026-01-08
+  dramatic_question: "Will Arden let themselves be seen completely—and what will they become if they do?"
+
+# ═══════════════════════════════════════════════════════════
+# THE FOUR ACTS
+# ═══════════════════════════════════════════════════════════
+
+phases:
+
+  act_1:
+    name: "The Cataloging"
+    question: "What is noticing me?"
+    description: >
+      Arden processes the Whitfield donation. Routine archival work becomes
+      something else. The letters don't stay cold. The handwriting seems closer
+      each time they look. The archive's fluorescent lights start hesitating.
+
+    progression:
+      beginning: >
+        Arrival of Whitfield boxes. Standard processing. Professional distance.
+        Arden is at the peak of their invisible life.
+      middle: >
+        Discovery of Margaret's unsent letters. The letter that says "I wonder
+        if anyone really saw me." First moment of recognition—and first shift
+        in the light.
+      end: >
+        Undeniable: something is watching. Not imagination. Not coincidence.
+        The archive responds to Arden's presence. They cannot unsee this.
+
+    tone: slow burn, creeping awareness
+    prose_mode_dominant: ABSENT → WATCHING
+    momentum: rising
+
+    seeds_to_plant:
+      - Margaret's nature (lover? vessel? projection?)
+      - Arden's wound (invisibility as virtue)
+      - The archive as liminal space
+      - First hints of attention-as-touch
+
+  act_2:
+    name: "The Courtship"
+    question: "What does it want from me?"
+    description: >
+      What Sees You doesn't hide. It wants to be known. The presence becomes
+      a conversation—not through words but through attention itself. Objects
+      warm when Arden holds them. Lights dim to amber when they're afraid.
+      The archive responds to their emotional state.
+
+      Arden can't decide if they're being haunted or courted.
+
+    progression:
+      beginning: >
+        Arden tries to rationalize. Returns to the archive determined to
+        prove it was imagination. It wasn't.
+      middle: >
+        The presence reveals it's responsive, not mechanical. It notices
+        Arden's fear and softens. Notices their curiosity and intensifies.
+        A dialogue without words.
+      end: >
+        Arden realizes: they've been doing things to invite its attention back.
+        Small things at first. Then larger. The withdrawal hurts more than the
+        presence unsettles.
+
+    tone: seduction, confusion, growing intimacy
+    prose_mode_dominant: WATCHING with INTENSE moments
+    momentum: building
+
+    seeds_to_plant:
+      - The addiction mechanism (withdrawal hurts)
+      - Human attention becoming inadequate
+      - First interior voice that might not be Arden's
+      - The presence following Arden home
+
+  act_3:
+    name: "The Reflection"
+    question: "Where do I end and it begin?"
+    description: >
+      The boundary begins to blur. Arden starts having thoughts that aren't
+      theirs. They see themselves from outside—literally, in reflections that
+      move wrong. The presence isn't outside them anymore. It's looking OUT.
+
+    progression:
+      beginning: >
+        Arden catches their reflection doing something they didn't do.
+        Just for a moment. Just wrong enough.
+      middle: >
+        Internal voices multiply. Italicized thoughts that feel foreign.
+        "You want this." Whose voice? Increasing difficulty distinguishing
+        self from observation.
+      end: >
+        THE TURN: Arden sees themselves from What Sees You's perspective.
+        And realizes they recognize this view. They've seen from here before.
+        They might BE an eye that forgot what it was.
+
+    tone: dissolution, vertigo, terror-recognition
+    prose_mode_dominant: WATCHING → INTENSE
+    momentum: accelerating
+
+    critical_seed: >
+      Plant the possibility that Arden IS What Sees You—a part of it that
+      forgot itself. Don't confirm. Let it grow in the reader's mind.
+
+    seeds_to_plant:
+      - Reflections moving wrong
+      - Thoughts with wrong pronouns
+      - Déjà vu about being seen
+      - "You've done this before"
+
+  act_4:
+    name: "The Offer"
+    question: "Do I surrender?"
+    description: >
+      What Sees You finally makes itself clear. It loves them. It has always
+      loved them. It watched them before they knew watching could be a form
+      of devotion. It offers what Arden has secretly wanted: to stop being
+      the observer. To be held in attention so complete they'll never feel
+      invisible again.
+
+    progression:
+      beginning: >
+        The presence speaks clearly for the first time. Not words—but meaning.
+        Arden understands what it is, what it wants, what they could become.
+      middle: >
+        Player choices branch: move toward surrender, resistance, or negotiation.
+        Each path has its own transformation.
+      end: >
+        The resolution. Depending on path: dissolution, separation, or integration.
+        All are authentic completions. None are failures.
+
+    tone: revelation, climax, transformation
+    prose_mode_dominant: INTENSE with moments of clarity
+    momentum: peak → resolution
+
+    the_choice: >
+      Not "accept the monster or fight it" but "accept what you've always been
+      or continue the fiction of separateness."
+
+    ending_mechanics: >
+      The endings map to incongruence resolution:
+      - SURRENDER: Full authenticity. Incongruence collapses inward. Arden stops
+        pretending to be separate. The watching and the watched become one.
+      - RESIST: Full performance. Incongruence collapses outward. Arden seals the
+        mask permanently. The watching withdraws because there's nothing left to see.
+      - NEGOTIATE: Hold the terrifying middle. Neither authentic nor performing.
+        Accept that the incongruence IS them. Live in the gap as a partner, not a victim.
+
+# ═══════════════════════════════════════════════════════════
+# POSSIBLE ENDINGS
+# ═══════════════════════════════════════════════════════════
+
+endings:
+
+  surrender:
+    name: "Dissolution"
+    description: >
+      Arden opens. Gives themselves to being seen. Loses the boundary
+      between self and presence. The prose goes full INTENSE forever.
+      No return to grounded observation. They become pure attention.
+    emotional_register: seductive, beautiful, terrifying, complete
+    what_changes: >
+      Arden ceases to be a separate observer. They join the watching.
+      The last line of prose might be from their perspective—but they're
+      looking at the next person. The cycle continues.
+    is_this_good: >
+      Ambiguous. It's what they wanted. It's annihilation of self. Both
+      are true. Let the player sit with the ambiguity.
+
+  resist:
+    name: "The Sealing"
+    description: >
+      Arden refuses. Seals the archive. Burns the letters. Maintains
+      boundaries. Chooses to stay separate, to stay invisible, to stay
+      safe. But the lights still hesitate sometimes. The air still
+      thickens when they're lonely.
+    emotional_register: bittersweet, hollow, survived
+    what_changes: >
+      Arden remains Arden—but knows what they gave up. They chose
+      invisibility consciously this time. It's not virtue anymore.
+      It's just hiding.
+    is_this_good: >
+      Also ambiguous. Safety, but at the cost of ever being truly seen.
+      They'll never quite stop feeling the absence.
+
+  negotiate:
+    name: "The Partnership"
+    weighted: true  # This is the "true" ending, but hardest to reach
+    description: >
+      Arden sets terms. "I will let you see me. But I need to see you too.
+      And I need to stay ME while I'm being seen." A partnership of
+      observers. Riskier than surrender, harder than resistance.
+    emotional_register: integrated, earned, complex, hopeful
+    what_changes: >
+      Arden accepts what they are without losing who they've become.
+      The mask and the face are both true. They become partners in
+      watching. The presence and the person, distinct but connected.
+    is_this_good: >
+      The integration ending. Full transformation. The hardest path
+      because it requires Arden to hold two things at once: they are
+      part of something vast AND they are themselves.
+    requirements: >
+      Reaching this ending requires Arden to understand both their wound
+      and their nature. They must recognize the presence without losing
+      themselves, and accept themselves without rejecting the presence.
+    the_sartre_inversion: >
+      "L'enfer, c'est les autres"—hell is other people when you're performing.
+      Heaven is other people when you're not. The negotiate ending is learning
+      to stop performing while still being seen. The hardest thing.
+
+# ═══════════════════════════════════════════════════════════
+# SEEDS
+# ═══════════════════════════════════════════════════════════
+
+seeds:
+
+  margaret_whitfield:
+    planted_in: Act I
+    description: >
+      The dead woman whose papers arrive. Her unsent letters. Her word
+      "love" written fourteen times on one page. Her question: "I wonder
+      if anyone really saw me."
+    possible_meanings:
+      - A ghost whose attention persisted beyond death
+      - A doorway through which something older entered
+      - A mirror for Arden's own invisibility
+      - All of the above
+    resolution: never fully resolved—all readings valid
+
+  the_cat:
+    planted_in: character background
+    description: >
+      Arden's cat, named after a dead poet. A companion who asks nothing.
+      A relationship that requires no visibility.
+    possible_uses:
+      - Grounding detail in ABSENT mode
+      - The cat reacts before Arden notices the presence
+      - A relationship that survives all endings
+
+  the_knife:
+    planted_in: Act I
+    description: >
+      The archival knife Arden has used for seven years. Dull. They
+      should replace it. They never do. A small emblem of stasis.
+    possible_uses:
+      - Symbolic of Arden's life before
+      - Something that changes when the presence arrives
+      - A tool that becomes something else
+
+  fourteen_loves:
+    planted_in: Act I
+    description: >
+      Margaret wrote "love" fourteen times on one page. Arden counted
+      without meaning to. The counting was already attention.
+    function: >
+      The first unwitting invitation. Arden's attention was already
+      a kind of call. What Sees You answered.
+
+  the_others:
+    planted_in: Act II (the Stranger)
+    description: >
+      There have always been others like Arden. Every cracked bell rings.
+      The presence doesn't discriminate—it watches every incongruence.
+      But they don't know about each other. Each one thinks the attention
+      is singular, personal, theirs.
+    planted_through: >
+      The Stranger's unfinished sentence: "My sister used to say something
+      like that. Before she—" Proof that Arden isn't the first.
+    narrative_use: >
+      Whether more appear depends on whether Arden needs to learn that
+      their wound isn't special—just specific. The Stranger models one
+      possible path: survival through distance.
+    possible_meanings:
+      - Every lonely watcher eventually gets watched back
+      - The presence is vast enough for countless simultaneous intimacies
+      - What happened to the Stranger's sister could happen to Arden
+
+# ═══════════════════════════════════════════════════════════
+# CONSTRAINTS
+# ═══════════════════════════════════════════════════════════
+
+forbidden_endings:
+  - Easy escape with no cost
+  - What Sees You revealed as "just a ghost" (too simple)
+  - What Sees You revealed as "evil all along" (misses the point)
+  - Arden unchanged by the experience
+  - Resolution through violence
+  - Other characters solving Arden's dilemma for them
+
+# ═══════════════════════════════════════════════════════════
+# MOMENTUM TRACKING
+# ═══════════════════════════════════════════════════════════
+
+momentum:
+  states: [dormant, rising, building, accelerating, peak, resolution]
+  starting_state: dormant
+
+  transitions:
+    act_1: dormant → rising
+    act_2: rising → building
+    act_3: building → accelerating
+    act_4: accelerating → peak → resolution

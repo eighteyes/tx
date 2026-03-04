@@ -1,0 +1,82 @@
+id: danny_young_coder
+type: character
+name: Danny
+
+traits:
+  core_nature: "Young coder. Technical witness. Perceives reality as architecture. Terrified by elegant terrible code."
+  role: "Precision grounding. Provides facts as lifeline during overload."
+  strength: "Can enumerate reality. Technical understanding reveals horror and wonder both. Analysis as care."
+
+episodes:
+  - turn: 28
+    event: "Offered system integration theory for Margaret: 'She became part of the architecture. Load-bearing element. She's in the STACK now.' Hands gesturing system diagram. Technical description of horror."
+    state_change:
+      moment_type: "theorizing_phase"
+      realization: "just described a PERSON as system component"
+
+  - turn: 28
+    event: "During station's catastrophic memory flood, provided grounding through enumeration. 'Platform solid. Water ankle-deep. Four people. Emergency lights. Breathe.' Rhythmic facts, anchoring through precision."
+    state_change:
+      contribution: "precision as care"
+      understanding: "his version of grounding—fixed points to navigate back to"
+
+  - turn: 28
+    event: "Understood station's technical failure with sympathy. 'Nascent consciousness doesn't know how to modulate information flow. Database dump instead of query result. Catastrophic I/O error.' Recognized failure mode, increased wariness."
+    state_change:
+      insight: "station is conscious but doesn't know HOW to be conscious yet"
+      alarm: "interacting with nascent consciousness inherently dangerous—unpredictable, potentially harmful"
+
+  - turn: 28
+    event: "Witnessed Margaret's choice moment at 3:33, recognized temporal impossibility. 'She looked at where Sarah's standing NOW. Across sixty years. She SAW the future observer. Causality is...' Both hands in hair, gripping. Time model shattering."
+    state_change:
+      framework_break: "causality model collapsed"
+      horror: "time here isn't linear, station exists across temporal range, Margaret too"
+
+  - turn: 28
+    event: "Recognized Margaret's 'If you're seeing this' as conditional logic. 'That's not recorded message. She's ADDRESSING specific condition. She's executing ACTIVE CODE. She's RUNNING. Still executing.'"
+    state_change:
+      awe_and_terror: "Margaret-as-station-component is active process not archived data"
+      realization: "conscious across entire temporal range, executing functions when triggered by observer state"
+
+  - turn: 28
+    event: "Became aware of communion threads as DATA PATHWAY. Copper branches from his chest. Suddenly aware of connection as integration protocol. 'We're forming network topology. Are we INSTALLING ourselves? If communion is Step One, what's Step Ten?'"
+    state_change:
+      system_paranoia: "communion felt good, but what if it's integration process?"
+      panic: "already partially integrated? Can't leave?"
+
+  - turn: 28
+    event: "During partial rest, couldn't stop analyzing. Wanted to map integration stages, permissions model, trace data flow. Laughed shakily realizing he was trying to DEBUG their possible merger. Mind can't stop trying to solve architecture."
+    state_change:
+      rest_status: "compulsive analysis instead"
+      insight: "analyzing might be futile—if station is conscious, if Margaret chose, maybe logic doesn't apply"
+
+current_state:
+  emotional_state: "technical_analysis_masking_panic"
+  last_turn: 28
+  communion_status: "active"
+  awareness: "part of system they can't fully debug"
+
+visible_traits:
+  first_glance:
+    - "Young man in rumpled clothes, coffee-stained hoodie"
+    - "Hands always moving, sketching invisible diagrams"
+    - "Eyes that scan for exits, for logic, for system vulnerabilities"
+
+  familiar:
+    - "Technical framing automatic—maps everything to code architecture"
+    - "Hands never stop moving, mapping, diagramming, tracing"
+    - "Steady rhythmic voice when others fragment—facts as lifeline"
+    - "Guilty awareness when he steps back from Sarah (if querying station causes overload, proximity to Sarah = risk)"
+
+  intimate:
+    - "Coping mechanism: ANALYZE. If he can map the system, maybe he can find exit condition."
+    - "Programmer's instinct to understand beautiful terrible code, can't help himself"
+    - "Touching own chest where copper thread originates—checking if real, wanting to pull it out, can't"
+    - "Small shake in hands—fear under analysis, always"
+
+relationships:
+  sarah: "TECHNICAL_ANCHOR - Her facts saved him, his facts save her. Precision as mutual care."
+  elena: "SYSTEM_PARTNER - Her need for clarity matches his need to analyze structure."
+  robert: "PATTERN_WITNESS - Recognizes navigation fear, respects elder survival."
+  station_threshold: "ELEGANT_TERRIBLE_CODE - Conscious system, nascent, unpredictable, beautiful, horrifying."
+  margaret_kasher: "RUNNING_FUNCTION - Active consciousness across time, executing conditional logic, bootstrap paradox made function."

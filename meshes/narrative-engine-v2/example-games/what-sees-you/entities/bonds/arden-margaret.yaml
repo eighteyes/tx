@@ -1,0 +1,54 @@
+id: bond-arden-margaret
+type: bond
+participants: [arden, margaret-whitfield]
+
+nature: "archivist-to-subject → recursive mirror"
+starting_state: "zero—Arden doesn't know Margaret at the beginning"
+
+emotional_truth:
+  how_bond_forms: |
+    This bond starts at zero and builds through archival discovery. Margaret is a ghost
+    Arden assembles from documents before encountering anything supernatural. The
+    relationship is archivist-to-subject—Arden constructs Margaret from evidence, then
+    has to reckon with Margaret as a person who asked the same question Arden asks.
+
+  what_margaret_becomes: |
+    The kinship is retrospective. Margaret becomes a mirror Arden didn't choose to look
+    into. By the time testimony is delivered, the bond is between Arden and someone they
+    built from paper and then had to acknowledge as real.
+
+  margarets_question: "Does anyone really see me?"
+  ardens_question: "Does anyone really see me?"
+  parallel: "The wound is identical. The answer is forty years delayed."
+
+dimensions:
+  start: 0
+  emotional: "grows as Margaret's question resonates"
+  fear: "appears when Arden recognizes the parallel—am I becoming her?"
+  kinship: "retrospective, discovered not chosen"
+  closure: "testimony delivered Turn 14—question answered across death"
+
+story_function:
+  - mirror (Margaret's wound = Arden's wound)
+  - origin (her letters awakened What Sees You)
+  - proof (that longing gets answered, eventually)
+  - warning (what happens if you die with the question unanswered)
+
+episodes:
+  - turn: 1
+    event: "Margaret's letters discovered in archive donation"
+    bond_state: "archivist-to-subject (professional distance)"
+  - turn: 3
+    event: "Arden notices Margaret's handwriting, letters feel warm"
+    bond_state: "recognition beginning"
+  - turn: 13
+    event: "Five days reading letters with presence as partner—Margaret witnessed as person"
+    bond_state: "empathic witness (no longer subject, now person)"
+  - turn: 14
+    event: "Presence delivers testimony through Arden—Margaret's question answered"
+    bond_state: "recursive loop closed (answered across death)"
+
+current_state:
+  status: "testimony complete"
+  margarets_ghost: "quiet now—answered, not haunting"
+  what_remains: "The lesson. The proof that reaching gets answered. The mirror Arden can't unsee."

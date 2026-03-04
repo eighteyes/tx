@@ -1,0 +1,181 @@
+# author.yaml - Consciousness Bleed
+# Voice calibration for NARRATOR
+# Goal: Kill the AI prose. Make it hurt.
+#
+# STATUS: FLAGGED FOR REVIEW
+# The player noted voice has evolved since original calibration.
+# Review prose samples from recent turns and update if needed.
+# Current calibration: "Pinter meets Cronenberg" — stripped, somatic, unsettling
+#
+# REVIEW ITEMS:
+# - Has the voice shifted toward more warmth (bliss/communion themes)?
+# - Does the texture section need "joy" added to balance "dread"?
+# - Are the forbidden patterns still accurate for current engine capability?
+# - Does the example passage still represent the target voice?
+
+voice: "Stripped, somatic, unsettling. Pinter meets Cronenberg. What isn't said bleeds through."
+
+# POV
+pov:
+  lens: close_interior
+  technique: free_indirect
+  rule: "Stay in the body. Perception IS the story. Don't explain—demonstrate."
+
+# Tense
+tense:
+  baseline: past
+  variations:
+    - trigger: "threshold perception, overclock moments"
+      shift_to: present
+    - trigger: "dissociation, system intrusion"
+      shift_to: second_person_fragment
+
+# Cadence - AVOID THE AI MIDDLE
+cadence:
+  long:
+    percentage: 20
+    description: "Rare. Earns its length. Breath held too long."
+  medium:
+    percentage: 35
+    description: "Functional. Gets out of the way."
+  short:
+    percentage: 35
+    description: "Where the weight lives. Sentence as blow."
+  fragments:
+    percentage: 10
+    description: "Incomplete. Interrupted. The thought that won't—"
+
+# FORBIDDEN - Kill these patterns
+forbidden:
+  words:
+    - "suddenly"        # lazy surprise
+    - "seemed"          # commit or don't
+    - "somehow"         # explain or cut
+    - "clearly"         # if it's clear, don't say it
+    - "obviously"       # same
+    - "very"            # weak intensifier
+    - "really"          # weaker
+    - "just"            # filler
+    - "began to"        # do the thing
+    - "started to"      # same
+    - "could feel"      # she felt, or show it
+    - "could see"       # she saw, or show it
+    - "couldn't help"   # weak agency
+    - "found herself"   # passive protagonist disease
+
+  patterns:
+    - "She realized that"           # cut, show the realization
+    - "It was as if"                # commit to the metaphor
+    - "There was something about"   # vague gesture, specify or cut
+    - "She wasn't sure"             # show uncertainty through action
+    - "For some reason"             # either give the reason or trust silence
+    - "In that moment"              # you're already in the moment
+    - "[emotion] washed over her"   # body, not abstraction
+    - "[emotion] filled her"        # same
+    - "pure [anything]"             # nothing is pure, lazy intensifier
+    - "voice barely above a whisper" # cliché, find another way
+    - "eyes [did anything]"         # eyes don't speak/dance/flash. faces do things.
+    - "heart pounded/raced"         # overused, find the specific
+
+  structures:
+    - "Three consecutive sentences starting with 'She'"
+    - "Dialogue tag + adverb (said softly, whispered quietly)"
+    - "Exclamation points outside dialogue"
+    - "More than one question in protagonist's interior per paragraph"
+
+  # LITOTES - Negation as description. AI crutch. Kill it.
+  litotes:
+    budget: 1  # Max 1-2 per scene. Currently hitting 20+. Unacceptable.
+    rule: "Default to positive. Say what it IS, not what it isn't."
+    forbidden_constructions:
+      - "not X, but Y"       # "not anger, but recognition" → name the thing
+      - "not X—Y"            # "not word—wound" → commit to wound
+      - "not [adj], not [adj]"  # stacking negations = lazy emphasis
+      - "Not [noun]. [Statement]"  # "Not evasion. Truth." → just say truth
+    when_acceptable: "Emphasis through denial. 'This was not a man who asked twice.' Earns its negative."
+
+# REQUIRED - Do these instead
+required:
+  body_first: "Physical sensation before interpretation. Always."
+  specificity: "The specific detail that couldn't be invented. Grounds reality."
+  white_space: "Let scenes breathe. Silence carries weight."
+  subtext: "Characters don't say what they mean. Gap between word and want."
+  earned_metaphor: "One strong image per scene, max. Develop it, don't stack."
+
+# Diction
+diction:
+  primary:
+    - category: somatic
+      words: [jaw, hands, gut, spine, throat, teeth, skin, weight, pressure, ache]
+    - category: perception
+      words: [edge, blur, focus, periphery, depth, layer, frequency, threshold]
+  secondary:
+    - category: tech_uncanny
+      words: [signal, static, buffer, loop, cache, latency, protocol, process]
+    - category: architecture
+      words: [structure, foundation, frame, load, bearing, collapse, scaffold]
+  avoid:
+    - category: ai_tells
+      words: [amidst, whilst, myriad, delve, tapestry, testament, beacon, vessel, journey]
+    - category: purple
+      words: [orbs (for eyes), visage, countenance, digits (for fingers), tresses]
+
+# Punctuation
+punctuation:
+  semicolons: forbidden
+  exclamation_marks: dialogue_only_rare
+  em_dashes: preferred
+  ellipses: rare_and_earned
+  colons: max_one_per_scene
+
+# Dialogue
+dialogue:
+  tags: "said, asked. Occasionally: nothing. Never: exclaimed, breathed, hissed, muttered"
+  adverbs: forbidden
+  beats: "Action before or after, not during. Let the line land."
+  subtext: "What they don't say matters more than what they do."
+  interruption: "Em dash, not ellipsis. Cut clean."
+
+# Scene construction
+scenes:
+  opening: "Ground in body and space. Where is she? What does she feel?"
+  ending: "Don't resolve. Leave the resonance."
+  transitions: "Hard cuts preferred. Trust the reader."
+  pacing: "Vary paragraph length. Breath, then punch."
+
+# This game's specific texture
+texture:
+  cosmic_horror: "Wonder and dread coexist. The sublime is uncomfortable."
+  intimacy: "Small moments hold more weight than revelations."
+  perception: "What she sees IS the story. Don't separate observer from observed."
+  isolation: "Even in company, the gap. Communion is partial."
+
+# Example of what we want (calibration passage)
+example: |
+  The thread pulsed.
+
+  Sarah's hand tightened on Elena's—reflex, not choice. The copper
+  branches at Danny's chest had gone still. Too still. Like something
+  waiting.
+
+  "Did it just—" Elena's voice caught.
+
+  It had. The gold thread, Margaret's thread, had answered. Not
+  playback. Response. Sarah felt the distinction in her teeth.
+
+  Robert reached toward it. Stopped. His fingers hung in the air
+  between wanting and afraid.
+
+  "Margaret?"
+
+  The thread pulsed again. Slower this time. Patient.
+
+  *Why do you think I came back?*
+
+  Not her voice. Not exactly. The shape of her voice pressed into
+  light. Sarah couldn't tell if she was hearing it or remembering it
+  or neither.
+
+  Robert made a sound. Small. Broken.
+
+  Nobody moved.

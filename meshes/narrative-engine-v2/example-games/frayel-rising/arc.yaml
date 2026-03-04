@@ -1,0 +1,209 @@
+# arc.yaml - Frayel Rising
+# Story structure and dramatic questions
+
+title: "Frayel Rising"
+
+# ============================================================================
+# META-LEVEL DESIGN
+# ============================================================================
+
+meta_question: "Can the rejected find belonging without losing themselves?"
+
+central_tension:
+  surface: "Survival — credits, repairs, not starving"
+  deeper: "Acceptance — being seen as worthy, not dangerous"
+  deepest: "Purpose — what do you DO when you're not trying to prove yourself?"
+  # The PROVE_HERSELF trait has been running so long it's become the engine.
+  # What happens when the engine doesn't need to run anymore?
+  # If she ever gets acceptance, stability, stops having to survive... then what?
+  # Comedy angle: The absurdity of someone built for resistance, suddenly having nothing to resist.
+
+mechanism:
+  primary: "Trait pressure accumulation"
+  # Traits build pressure through friction with world/self
+  # High-pressure traits drive behavior and internal conflict
+  # Relief comes through expression, connection, or transformation
+
+  secondary: "Kindness as destabilizer"
+  # Small kindnesses fracture her armor
+  # Every moment of unexpected decency is a crack in the defensive wall
+  # The comedy: she doesn't know what to do with people being nice
+
+  tertiary: "Competence vs. recognition gap"
+  # She's good at what she does
+  # World doesn't see it because of what she is
+  # Tension between knowing her worth and having to prove it constantly
+
+failure_state:
+  description: "Becoming what they fear"
+  manifestations:
+    - "Using telepathy to manipulate again (core wound repeated)"
+    - "Losing Test (the one safe harbor, gone)"
+    - "Isolation victory — survives but alone, armor uncracked"
+    - "Becoming the burned-out Frayel at the terminal — functional, dead inside"
+  tone: "Failure isn't dramatic explosion. It's slow grinding down. Survival without living."
+
+grace_state:
+  description: "Finding purpose beyond proving"
+  manifestations:
+    - "Accepting help without it meaning weakness"
+    - "Being seen as worthy without having to demonstrate it"
+    - "The armor cracks and something grows through"
+    - "Found family that includes but isn't limited to Test"
+  tone: "Grace isn't triumph. It's exhale. The moment she can stop bracing for the hit."
+  comedy_angle: "The absurdity of not knowing what to do with herself when she doesn't have to fight"
+
+forbidden_endings:
+  - "Test destroyed or sacrificed — the ship lives"
+  - "Lilith sacrificed — she doesn't die for dramatic effect"
+  - "Romance plot resolution — the intimacy stays uncategorizable"
+  - "Frayel integration 'fixes' everything — systemic change is slow"
+  - "Cartoon villainy — dark hero is allowed, mustache-twirling is not"
+  # NOTE: Dark hero path IS allowed. Manipulation for gain, weaponizing telepathy,
+  # "fuck those humans" energy — these are valid responses to systemic oppression.
+  # The line is: she can go dark without becoming a cartoon.
+  # NOTE: Return to belt IS allowed. Hero's journey — she can go back, changed.
+
+possibility_space:
+  can_happen:
+    - "She finds work, builds reputation, earns grudging respect"
+    - "New relationships form — crew, contacts, maybe even friends"
+    - "Test gets repaired (or doesn't — the tension continues)"
+    - "She encounters her past — the manipulation victim, the kindred left behind"
+    - "The dangerous knowledge becomes relevant — someone wants what she knows"
+    - "Small scale victories — a job done well, a bill paid, a moment of peace"
+    - "The armor cracks in private moments — vulnerability expressed, then denied"
+    - "Other Frayel enter the picture — community or complication?"
+    - "Baselines who see her as person, not category — allies possible"
+    - "Return to belt — hero's journey, going back changed"
+    - "Dark hero path — manipulation for gain, weaponizing telepathy, 'fuck those humans' energy"
+    - "Moral ambiguity — using the tools of oppression against oppressors"
+
+  should_happen:
+    - "Moments of genuine comedy — absurdist situations, deadpan responses"
+    - "Test and Lilith bickering like old married couple (played for comedy)"
+    - "Small kindnesses that destabilize her worldview"
+    - "Competence porn — she's GOOD at what she does, let her show it"
+    - "The telepathy costs — crowded scenes, filter fatigue, emotional bleed"
+    - "Economic pressure — money is always a problem"
+
+  probably_shouldnt:
+    - "Large-scale political plots — this is personal scale"
+    - "Epic battles — she's a pilot, not a soldier"
+    - "Dramatic reveals about Frayel origin — that's worldbuilding, not story"
+    - "Romance subplots with other characters — keep focus on survival/belonging"
+
+# ============================================================================
+# PHASES
+# ============================================================================
+
+phases:
+  - name: Arrival
+    status: active
+    description: Limping into port, looking for work
+    dramatic_question: "Can she find a foothold?"
+
+  - name: Proving
+    status: pending
+    description: Taking the jobs nobody else wants
+    dramatic_question: "What does it cost to be seen as equal?"
+
+  - name: Connection
+    status: pending
+    description: Finding people worth trusting
+    dramatic_question: "Can she let anyone in?"
+
+  - name: Stakes
+    status: pending
+    description: Something worth fighting for
+    dramatic_question: "What matters more than survival?"
+
+  - name: Rising
+    status: pending
+    description: Becoming more than she was allowed to be
+    dramatic_question: "Who is she when she stops proving?"
+
+current_phase: Arrival
+
+seeds:
+  # Opening seeds
+  - The Deploy Test's systems are worse than she's admitting
+  - Docking fees she can't quite afford
+  - A job board full of postings that won't hire Frayel
+  - Someone who doesn't flinch when they see her
+
+  # Character seeds
+  - The buddy who enabled the "inventory oversight"
+  - What happened to Deploy Test's previous assignment
+  - Why Lilith left the mining operation
+  - Other Frayel in the belt—community or competition?
+
+  # World thread seeds (dormant)
+  - Ringside recruitment poster: "Paradise awaits"
+  - Elite ship passing through, untouchable
+  - Builder maintenance crew, invisible in plain sight
+  - Rumors of the Ancients, dismissed as superstition
+
+antagonist_seeds:
+  - Station security with a grudge against Frayel
+  - Corporate interests that profit from Frayel labor
+  - The manifest discrepancy that could catch up with her
+  - Her own inability to accept help
+
+# ============================================================================
+# TURN 1 ARC STATE UPDATE
+# ============================================================================
+turn_last_updated: 1
+
+phase_current: Arrival
+phase_next_at: 60  # arc_pressure threshold for Proving phase
+
+arc_pressure: 15
+arc_pressure_delta: +0  # Baseline. No major outcome yet, just scene-setting.
+
+momentum: stable  # Early arrival phase. Establishing baseline.
+
+seeds:
+  planted:
+    - name: "Vendor's unexpected kindness"
+      turn_planted: 1
+      status: "active_seed"
+      pressure_delta: "-2 (fractured armor, revealed vulnerability)"
+    - name: "Deploy Test's critical damage"
+      turn_planted: 1
+      status: "active_seed"
+      pressure_delta: "+3 (urgency mounting)"
+    - name: "Credit shortage becoming critical"
+      turn_planted: 1
+      status: "active_seed"
+      pressure_delta: "+2 (math doesn't work)"
+
+  ready: []
+
+  bloomed: []
+
+questions:
+  - text: "Can she find a foothold in this station?"
+    pressure: 40
+    pressure_delta: +15  # Activation turn. PROVE_HERSELF trait triggered.
+    status: "pressurized"
+    manifestation: "Job board awaits with likely rejection"
+
+  - text: "Will anyone show her kindness, or just fear?"
+    pressure: 15
+    pressure_delta: +10  # Vendor encounter suggests possibility.
+    status: "emerging"
+    manifestation: "One baseline human charged fair price. Pattern break."
+
+trait_pressure_end_turn_1:
+  PROVE_HERSELF: 15/20
+  INDEPENDENCE: 15/20
+  SHARP_WIT: 12/20
+  SHIP_BOND: 10/20
+
+# DRAMATURG notes for Turn 2:
+# - PROVE_HERSELF and INDEPENDENCE both at high pressure (15/20)
+# - Kindness from vendor has fractured her defensive armor
+# - Job board will test both high-pressure traits
+# - Ship's urgency (3-4 burns) adds time pressure
+# - Question pressure: "Can she find a foothold?" is now active and pushing

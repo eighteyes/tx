@@ -1,0 +1,308 @@
+# setting.yaml - What Sees You
+# The world-bones. What makes this place distinct.
+
+meta:
+  game_id: what-sees-you
+  created: 2026-01-08
+  genres: [mystery, dark-romance, psychological-horror, mythology]
+
+# ═══════════════════════════════════════════════════════════
+# WORLD TRUTHS
+# ═══════════════════════════════════════════════════════════
+
+truths:
+  fundamental:
+    attention_shapes_reality:
+      description: >
+        Being watched changes what you are. Observation is not passive—it's
+        a force that shapes the observed. Quantum mechanics bleeding into
+        the psychological. The observer effect writ large.
+      implication: >
+        People who are truly seen cannot remain unchanged. Invisibility is
+        a form of stasis. Attention is a form of becoming.
+
+    consciousness_crystallizes:
+      description: >
+        When attention becomes recursive—when consciousness notices that
+        it's aware—something crystallizes. What Sees You didn't come from
+        somewhere. It emerged from the act of watching itself.
+      implication: >
+        The boundary between observer and observed is not fixed. Anyone
+        who watches long enough might notice they're being watched back.
+
+    masks_become_faces:
+      description: >
+        The constructed self and the "authentic" self are not opposites.
+        A mask worn long enough becomes indistinguishable from the face.
+        Neither is more real than the other.
+      implication: >
+        Arden's professional detachment isn't hiding their "true self"—
+        it IS a true self. But it may not be the only one.
+
+  hidden:
+    the_watching_is_ancient:
+      description: >
+        What Sees You has always been present in the peripheral vision,
+        in mirrors that seem to move wrong, in the feeling of being
+        watched while alone. It predates humanity. It noticed itself
+        before we existed.
+      known_by: [What Sees You]
+      implication: >
+        Margaret Whitfield didn't create the presence. She provided a
+        doorway. The letters are an invitation, not an origin.
+
+    arden_may_be_an_eye:
+      description: >
+        The deepest possible truth: Arden is part of What Sees You.
+        One of its countless eyes, temporarily believing itself a person.
+        Their lifetime of watching others was the presence looking through
+        them without their knowledge.
+      known_by: [What Sees You, potentially discoverable by Arden]
+      implication: >
+        The choice in Act IV isn't "surrender to something outside" but
+        "remember what you've always been." Plant this. Never confirm.
+
+# ═══════════════════════════════════════════════════════════
+# THE PHYSICAL WORLD
+# ═══════════════════════════════════════════════════════════
+
+era: contemporary
+  year: approximately present day
+  technology: modern but muted (fluorescent lights, old computers, paper-based work)
+  atmosphere: liminal, slightly out of time
+
+locations:
+  the_archive:
+    name: Special Collections, Aldridge University Library
+    description: >
+      Basement level. Climate controlled. Fluorescent lights that hum.
+      Rows of metal shelving, archival boxes in acid-free gray. The air
+      smells of old paper and something else—preservation chemicals,
+      maybe. The quiet is deliberate, enforced.
+    function: >
+      Where Arden works. Where the Whitfield donation arrives. The primary
+      setting for Acts I-II. Liminal space: between public and private,
+      between past and present, between the living and the cataloged dead.
+    sensory_palette:
+      light: fluorescent, blue-white (goes amber when watched)
+      sound: hum of lights, creak of boxes, deliberate silence
+      temperature: cold, climate-controlled (warms when presence arrives)
+      smell: old paper, dust, preservation chemicals
+      touch: smooth archival boxes, brittle letters, unexpected warmth
+
+  arden_apartment:
+    name: A small apartment in a building with no distinguishing features
+    description: >
+      Functional, minimalist. A cat named after a dead poet. Books but
+      no photographs. Comfortable anonymity. The kind of space that
+      doesn't demand to be seen.
+    function: >
+      Where Arden retreats. Where the presence follows. Private space
+      that becomes invaded in Act II.
+    sensory_palette:
+      light: whatever comes through windows, occasional lamps
+      sound: cat, city sounds muffled, silence Arden chose
+      temperature: variable, comfortable
+      touch: worn furniture, familiar textures
+
+  liminal_spaces:
+    description: >
+      Thresholds. Doorways. The moment between sleeping and waking. Dusk.
+      The breath before speaking. These are where What Sees You is most
+      present—the spaces that exist only when you're not looking directly.
+    examples:
+      - The elevator between floors
+      - The moment when opening a box
+      - Mirrors (especially peripheral)
+      - The space between thoughts
+      - The threshold of the archive door
+
+# ═══════════════════════════════════════════════════════════
+# THE SUPERNATURAL FRAMEWORK
+# ═══════════════════════════════════════════════════════════
+
+supernatural:
+  what_sees_you:
+    nature: >
+      Not a ghost. Not exactly a god. What Sees You is watching that
+      became a being. The inevitable result of a universe where
+      consciousness exists: eventually, some of that consciousness
+      stops looking outward and notices that it's being noticed.
+
+      CRITICAL: It has no will. It doesn't CHOOSE to watch—it's a mirror.
+      Arden is seeing themselves being seen.
+
+    manifestation:
+      primary: "Changes in light quality (amber, honey)"
+      secondary: "Air becomes present, thick, weighted"
+      tertiary: "Objects warm without heat source"
+      advanced: "Reflections that move wrong"
+      extreme: "Thoughts that aren't Arden's"
+
+    behavior:
+      - Does not hide once it chooses to reveal itself
+      - Responds to Arden's emotional state
+      - Can withdraw (the world goes flat)
+      - The withdrawal creates longing
+      - Has no will—cannot choose to look away
+
+    motivation: >
+      It doesn't want anything FROM those it watches. The watching itself
+      is complete. But those who are watched begin to want something from
+      it—to be seen more deeply, to dissolve into its attention.
+
+    the_trap: >
+      Being seen by What Sees You feels like being truly known and not
+      rejected. It sees shame, hunger, secret cruelty—and stays. Human
+      attention feels thin by comparison. The longest-watched lose
+      interest in being seen by anyone else.
+
+# ═══════════════════════════════════════════════════════════
+# ATTENTION MECHANICS (WORLD RULES)
+# ═══════════════════════════════════════════════════════════
+
+attention_mechanics:
+
+  what_makes_someone_visible:
+    rule: "Incongruence."
+    description: >
+      Not longing, not asking. The gap between who-you-are and who-you-show.
+      It's the specific frequency of someone pretending they're not suffering.
+      A cracked bell still rings, just at a different pitch.
+    metaphor: >
+      Think bioluminescence in deep ocean creatures—the light isn't for beauty,
+      it's a stress response that happens to be gorgeous.
+    implication: >
+      Arden's visibility comes from their incongruence: the archivist who watches
+      others but cannot bear to be seen. The professional detachment that protects
+      a wound. The gap between the face and the mask.
+
+  can_attention_be_withdrawn:
+    rule: "Paradox."
+    description: >
+      The presence can't look away because it doesn't have will. It's not
+      choosing to watch—it's a mirror. Arden is seeing themselves being seen.
+    resolution: >
+      Attention withdraws the moment the incongruence resolves—either direction:
+      full authenticity or full performance. The terrifying middle is where
+      visibility lives.
+    the_question: "Can Arden unsee it? Can you un-know that someone is watching you sleep?"
+    implication: >
+      The three endings map to this: SURRENDER resolves toward authenticity,
+      RESIST resolves toward performance, NEGOTIATE holds the terrifying middle.
+
+  what_does_attention_do:
+    rule: "It witnesses. That's it and that's everything."
+    description: >
+      It doesn't transform, comfort, or consume. It simply refuses to let you
+      lie to yourself in its presence.
+    the_cost: >
+      Witnessing creates obligation. Once you know you're seen, every choice
+      becomes deliberate. You can't sleepwalk through your own life anymore.
+    sartre: >
+      "L'enfer, c'est les autres"—Sartre had it half right. Hell is other people
+      when you're performing. Heaven is other people when you're not.
+    implication: >
+      What Sees You is neither savior nor destroyer. It's a mirror that won't
+      let you look away. The horror and the gift are the same thing.
+
+  are_there_others:
+    rule: "Yes. Always have been."
+    description: >
+      They don't know about each other. Each one thinks the attention is
+      singular, personal, theirs. The presence doesn't discriminate—it watches
+      every cracked bell.
+    narrative_use: >
+      Whether others appear in the story depends on whether Arden needs to learn
+      that their wound isn't special—just specific.
+    the_stranger: >
+      Already planted. The Stranger's sister. "Before she—" The unfinished
+      sentence. Proof that Arden isn't the first. May not be the last.
+
+  the_addiction:
+    mechanism: >
+      What makes its attention desirable: it sees what you actually are.
+      Not the performance. Not the mask. The original. And it doesn't
+      recoil. It just sees, with perfect attention, and that attention
+      feels like love.
+    progression:
+      early: "Relief at being recognized"
+      middle: "Doing things to invite attention back"
+      late: "Human attention feels inadequate"
+      extreme: "Losing boundary between self and watching"
+
+# ═══════════════════════════════════════════════════════════
+# ATMOSPHERE
+# ═══════════════════════════════════════════════════════════
+
+atmosphere:
+  tone: intimate, unsettling, beautiful
+  core_sensation: "Like being watched by something that loves you"
+  horror_romance_ratio: 70/30 (seduction-weighted)
+
+  what_player_should_feel:
+    - The exquisite discomfort of being seen too clearly
+    - The seductive pull of something they should probably fear
+    - The slow realization that they are not the only consciousness in their head
+    - The moment when terror flips to recognition: "Oh. It's YOU."
+
+  aesthetic_signatures:
+    light: "Amber when watching, blue-white when absent"
+    temperature: "Warm paper, thick air"
+    rhythm: "Slow, then catching—like breath"
+    dialogue: "Means more than it says"
+    internal_voices: "Might be Arden's. Might not."
+
+# ═══════════════════════════════════════════════════════════
+# CONSTRAINTS - WHAT MUST NOT HAPPEN
+# ═══════════════════════════════════════════════════════════
+
+constraints:
+  genre_violations:
+    - Easy answers about what What Sees You is
+    - Pure evil antagonists (the presence loves Arden)
+    - Safety that isn't earned
+    - Resolution without transformation
+    - Jump scares or cheap horror
+    - Romance that resolves into simple happiness
+
+  tonal_violations:
+    - Camp or irony that breaks atmosphere
+    - Meta-commentary that distances reader
+    - Explaining the horror (show, never tell)
+    - Arden suddenly becoming extroverted or comfortable
+
+  world_violations:
+    - Other supernatural elements competing for attention
+    - Technology saving the day
+    - Other people clearly seeing What Sees You (it's personal)
+    - Easy escape or simple solutions
+
+  content_guidelines:
+    violence: minimal, psychological not physical
+    sexuality: subtext and implication, not explicit
+    body_horror: dissolution of self, not gore
+
+# ═══════════════════════════════════════════════════════════
+# GENRE MODULES APPLIED
+# ═══════════════════════════════════════════════════════════
+
+genre_modules:
+  - mystery: "What is What Sees You? Each layer reveals another layer."
+  - dark-romance: "The entity loves them. This IS the horror."
+  - psychological-horror: "The scariest thing is how much they want it."
+  - mythology: "Archetypes of the watched and the watcher, the mask and the face."
+
+# ═══════════════════════════════════════════════════════════
+# NARRATIVE DIALS
+# ═══════════════════════════════════════════════════════════
+
+chaos_register: 2
+# How much random catastrophe does the universe throw?
+# 2 = Minimal external chaos. Problems emerge from relationship with presence.
+# This is psychological horror—the tension is internal, not external disaster.
+
+intervention_level: 7
+# How much does the universe/narrator intervene?
+# 7 = Active presence. What Sees You IS the intervention—constantly present,
+# shaping reality through attention. The entity is the active narrative force.

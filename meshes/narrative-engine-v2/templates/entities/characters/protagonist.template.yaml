@@ -1,0 +1,117 @@
+# Protagonist Entity Template
+# Copy to: .ai/games/{game-id}/entities/characters/protagonist.yaml
+# The player character - special handling for traits as internal voices
+
+id: protagonist
+type: character
+name: ""                        # Player provides during game creation
+
+# ============================================
+# TRAITS - Internal voices (Disco Elysium style)
+# ============================================
+# Each trait is a CAST member in the player's head.
+# These speak during prose, rendered as italicized internal dialogue.
+
+traits:
+  # Physical appearance for VISUAL blocks
+  appearance:
+    age: ""                     # "early 30s", "teenage", "elderly"
+    ethnicity: ""               # "East Asian", "Black", "South Asian", etc.
+    build: ""                   # "slight", "athletic", "heavyset", "wiry"
+    hair: ""                    # "short black curls", "long gray braid"
+    distinguishing: []          # ["scar across left cheek", "always wears red"]
+
+  # Internal voices - each trait speaks
+  voices: {}
+    # PROTECTIVE:
+    #   pressure: 0              # Evolution at 5
+    #   voice:
+    #     register: urgent       # calm | urgent | seductive | cold | manic
+    #     cadence: "short bursts"
+    #     speaks_when: "Someone she cares about is at risk"
+    #     vocabulary: [shield, between, harm, safe, watch]
+    #     wants: "Keep them safe at any cost"
+    #     fears: "Failing to protect, again"
+    #     secret: "It's not about them. It's about the one you couldn't save."
+    #   escalation:
+    #     low: "Quiet suggestions, easy to dismiss"
+    #     building: "Harder to ignore, interrupts other thoughts"
+    #     critical: "Demanding, drowns out other voices"
+    #   evolves_to: [GUARDIAN, MARTYR]  # Possible evolution paths
+    #
+    # PATTERN-SEEKER:
+    #   pressure: 0
+    #   voice:
+    #     register: calm
+    #     cadence: "observational, detached"
+    #     speaks_when: "Details don't add up"
+    #     vocabulary: [pattern, anomaly, notice, wrong, three times]
+    #     wants: "Find the hidden structure"
+    #     fears: "Chaos without meaning"
+    #     secret: "Sometimes the pattern is you."
+    #   escalation:
+    #     low: "Gentle noticing"
+    #     building: "Insistent cataloging"
+    #     critical: "Everything connects, everything means something"
+
+# ============================================
+# LAYERS - Progressive self-disclosure
+# ============================================
+# How the protagonist appears to OTHERS over time.
+# NARRATOR draws from unrevealed pool when describing protagonist externally.
+layers:
+  first_glance: []
+    # How protagonist appears to new characters they meet
+    # Examples:
+    # - "Moves like someone expecting trouble"
+    # - "The kind of tired that sleep won't fix"
+
+  familiar: []
+    # What regular contacts notice over time
+    # Examples:
+    # - "Always checking the exits, even in safe places"
+    # - "Flinches at sudden sounds, recovers quickly"
+
+  intimate: []
+    # What close bonds might observe
+    # Examples:
+    # - "Talks in their sleep — names, mostly"
+    # - "The way their hands shake after violence"
+
+# ============================================
+# EPISODES - What has happened to protagonist
+# ============================================
+episodes: []
+  # - turn: 5
+  #   event: "PROTECTIVE triggered defending the child"
+  #   state_change:
+  #     trait_pressure: {PROTECTIVE: 2}
+  # - turn: 12
+  #   event: "PATTERN-SEEKER evolved to CONSPIRACY-THEORIST"
+  #   state_change:
+  #     trait_evolved: {PATTERN-SEEKER: CONSPIRACY-THEORIST}
+
+# ============================================
+# CURRENT_STATE - Protagonist's present condition
+# ============================================
+current_state:
+  status: alive
+  condition: healthy            # healthy | injured | critical
+  location: null                # location-id
+  momentum: null                # rising | peak | falling | stable
+
+  # Trait pressure levels (0-5, evolves at 5)
+  trait_pressures: {}
+    # PROTECTIVE: 2
+    # PATTERN-SEEKER: 1
+
+# Bonds - relationships to NPCs
+bonds: []
+  # - target: innkeeper
+  #   type: suspicious_of
+  #   strength: 2
+
+# Secrets known - revelations accumulated
+secrets_known: []
+  # - "The innkeeper is hiding someone in the cellar"
+  # - "The elder was murdered, not died naturally"

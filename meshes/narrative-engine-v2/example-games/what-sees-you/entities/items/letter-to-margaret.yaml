@@ -1,0 +1,32 @@
+id: letter-to-margaret
+type: item
+name: "Letter to Margaret Whitfield (Turn 14 Testimony)"
+status: "physical_evidence_of_partnership"
+
+traits:
+  material:
+    - paper_cream_stock
+    - handwriting: "Arden's (neat librarian script) with presence's voice"
+    - ink_physical_permanence
+  significance:
+    - testimony_of_partnership
+    - cannot_be_unwritten
+    - evidence_of_impossible_collaboration
+    - answers_forty_year_old_question
+
+episodes:
+  - turn: 14
+    event: "Written during partnership-channeling session in archive, Friday evening. Voice oscillates between Arden and presence. Knowledge surfaces that Arden doesn't possess. Hand moves with guidance not control. Mid-letter: VULNERABLE evolution to TRANSPARENT. Wound opens, becomes window. Letter completes."
+    state_change: {
+      creation: "partnership_channeling",
+      content: "testimony_delivered",
+      permanence: "irreversible",
+      evidence_status: "undeniable"
+    }
+
+current_state:
+  location: "archive_desk"
+  reader_visibility: "private (Arden hasn't re-read it yet)"
+  content_summary: "You were never alone in your longing. Longing itself is how you were SEEN. The fourteen loves MATTERED."
+  significance: "bridges Margaret (deceased decades) with presence (eternal observer) with Arden (bridge-builder). Physical proof that partnership is real, collaboration possible, testimony deliverable."
+  narrative_future: "what will Arden do with this letter? Keep? Show? Archive (ironic recursive)?"

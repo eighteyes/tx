@@ -1,0 +1,195 @@
+# Author Voice Schema Definition
+# Canonical format for authorial style and content permissions
+# Referenced by: calibrator (creation), narrator (rendering), scribe (tone consistency)
+
+# =============================================================================
+# AUTHOR VOICE SCHEMA
+# =============================================================================
+# Defines how the story is told — prose style, pacing, content boundaries.
+# One author.yaml per game. Calibrator creates; worldbuilder tunes.
+
+author:
+  # --- VOICE (top-level descriptor) ---
+  voice: "{overall style — e.g., evocative, atmospheric, lush}"
+
+  # --- POV ---
+  pov:
+    lens: "{observational with interior access | close third | deep third | omniscient}"
+    technique: "{camera metaphor — how the narrator moves}"
+    default: "{default distance — watching from outside | inside the head}"
+    dips: "{when/how the narrator enters interiority}"
+
+  # --- TENSE ---
+  tense:
+    baseline: "{present | past}"
+    effect: "{what this tense choice creates}"
+
+  # --- CADENCE ---
+  cadence:
+    long:
+      percentage: 70            # % of sentences
+      style: "{braided, layered, etc.}"
+    medium:
+      percentage: 25
+    short:
+      percentage: 5
+    fragments:
+      frequency: "{rare | occasional | frequent}"
+      use: "{emphasis only | rhythm | voice breaks}"
+
+  # --- STYLE ---
+  style:
+    summary: "{overall style descriptor}"
+    detail_level: "{rich painted scenes | sparse | functional}"
+
+  # --- DICTION ---
+  diction:
+    # Optional subsections depending on story needs:
+    # geographic_tagging: "{guidelines for rendering dialect/register}"
+    # register_shift_rendering: "{how to show voice shifts}"
+
+  # --- SOMATIC EMPHASIS ---
+  somatic_emphasis:
+    description: "{how bodies are rendered — visceral, minimal, etc.}"
+    directive: "{guiding principle for embodied prose}"
+    specificity: "{level of anatomical/sensory detail expected}"
+
+  # --- ADULT CONTENT (optional) ---
+  # Omit entirely if story has no adult content needs.
+  adult_content:
+    principle: "{overall content philosophy}"
+
+    language:
+      permitted: "{what language is allowed}"
+      calibration: "{character-specific language notes}"
+
+    explicit_content:
+      directive: "{SHOW | FADE | IMPLY}"
+      application: "{when and how explicit content appears}"
+      why: "{artistic rationale}"
+
+    # Optional subsections as needed:
+    # limericks_and_verses: ...
+    # sexuality: ...
+    # violence_and_intensity: ...
+
+  # --- PACING ---
+  pacing:
+    turn_length:
+      target: "{short | medium | long}"  # short: 800-1200, medium: 1500-2000, long: 2500-3500
+
+    tempo:
+      default: "{close-up | scene | sequence | montage}"
+      options:
+        close-up:
+          description: "Minutes. Every breath rendered. Maximum interiority."
+          time_coverage: "1-5 minutes"
+          beats: "7-9"
+          word_target: "2500-3500"
+        scene:
+          description: "A full conversation or encounter. Dialogue-forward."
+          time_coverage: "15-60 minutes"
+          beats: "5-7"
+          word_target: "2000-3000"
+        sequence:
+          description: "Hours. Multiple locations or phases."
+          time_coverage: "2-8 hours"
+          beats: "4-6"
+          word_target: "1500-2500"
+        montage:
+          description: "Days or weeks compressed. Only turning points rendered."
+          time_coverage: "days to weeks"
+          beats: "3-5"
+          word_target: "1200-2000"
+
+  # --- BALANCE ---
+  balance:
+    dialogue_description:
+      ratio: "{N/N}"              # e.g., "60/40" dialogue-forward
+      minimum: "{minimum dialogue requirements}"
+    internal_external:
+      ratio: "{N/N}"              # e.g., "30/70" action-forward
+    dwelling:
+      emotional_moments: "{minimal | standard | extensive}"
+
+  # --- ENDINGS ---
+  endings:
+    style: "{attenuate | linger | resolve | cliffhang}"
+    resolution: "{ambiguous allowed | clean resolution | open}"
+    question_to_leave: "{thematic question for the reader}"
+
+  # --- INTERPRETIVE FRAMES (optional) ---
+  # Omit entirely if story doesn't use them.
+  interpretive_frames:
+    # - id: "{kebab-case-id}"
+    #   description: "{1-2 sentences — what this lens does to perception}"
+    #   weight: N              # relative weight, all should sum to ~100
+    # 3-5 frames recommended
+
+  # --- CHAOS REGISTER ---
+  chaos_register:
+    # Single value: "{mundane | grounded | naturalistic | gothic | surreal | comic | farcical | hostile}"
+    # Or weighted blend (must sum to 100):
+    # naturalistic: 30
+    # comic: 35
+    # hostile: 20
+    # farcical: 15
+
+  # --- INTELLECTUAL ENGAGEMENT (optional) ---
+  # For stories where academic/theoretical discourse matters.
+  intellectual_engagement:
+    principle: "{how intellectual content should be rendered}"
+    # Additional subsections as needed:
+    # when_presenting_academic_work: ...
+    # when_character_critiques: ...
+    # registers: ...
+
+  # --- RETROACTIVE CONTINUITY (optional) ---
+  retroactive_continuity:
+    principle: "{rules for referencing unrendered events}"
+    constraint: "{what cannot be contradicted}"
+
+  # --- DURING SPIRAL (optional) ---
+  # How prose behaves when a character is spiraling.
+  during_spiral:
+    prose_behavior: "{stays steady | fragments | accelerates}"
+    narrator_stance: "{calm observer | sympathetic | distant}"
+
+# =============================================================================
+# WHAT GOES WHERE
+# =============================================================================
+#
+# IN AUTHOR.YAML:
+# - All prose style decisions
+# - Content permissions and boundaries
+# - Pacing and balance preferences
+# - Interpretive frames
+# - Chaos register
+#
+# NOT IN AUTHOR.YAML (belongs elsewhere):
+# - Character-specific voice (entity files → traits.voices)
+# - Plot/arc structure (arc.yaml)
+# - World rules (setting.yaml)
+# - Turn-specific rendering decisions (scene.yaml)
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+#
+# REQUIRED FIELDS:
+# - voice
+# - pov.lens
+# - tense.baseline
+# - cadence (at least long/medium/short percentages)
+# - pacing.turn_length.target
+# - balance.dialogue_description.ratio
+# - balance.internal_external.ratio
+# - chaos_register
+#
+# OPTIONAL (story-dependent):
+# - adult_content (omit for non-adult stories)
+# - interpretive_frames (omit if not using frames)
+# - intellectual_engagement (omit if not relevant)
+# - retroactive_continuity
+# - during_spiral
+# - somatic_emphasis (recommended but not required)

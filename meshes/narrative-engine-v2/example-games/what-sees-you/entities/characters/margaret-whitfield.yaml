@@ -1,0 +1,42 @@
+id: margaret-whitfield
+type: character
+name: "Margaret Whitfield"
+role: deceased character (presence via letters)
+status: "dead_forty_years"
+
+traits:
+  nature:
+    - asker (question: "Does anyone really see me?")
+    - writer (fourteen loves, unsent letters)
+    - beacon (longing awakened what-sees-you)
+  wound:
+    - invisibility
+    - unseen_death
+    - archived_incorrectly
+
+episodes:
+  - turn: 1
+    event: "Her letters discovered in Aldridge University archive donation. Boxes contain her question preserved in paper."
+    state_change: {discovery: "present_through_writing"}
+  
+  - turn: 3
+    event: "Arden notices Margaret's handwriting. The letters feel warm. Recognition begins."
+    state_change: {resonance: "arden_begins_to_see"}
+  
+  - turn: 13
+    event: "Five days of Arden reading Margaret's letters with presence as partner. Margaret witnessed as person. Empathic attention across decades. Presence reveals it watched her while alive."
+    state_change: {witness: "witnessed_answered"}
+  
+  - turn: 14
+    event: "Presence delivers written testimony through Arden. Letter to Margaret answers: 'You were never alone in your longing. Longing itself is how you were SEEN. The fourteen loves MATTERED.' Margaret's forty-year question answered through partnership-channeling."
+    state_change: {
+      testimony_received: "presence_testifies",
+      closure: "question_answered_across_death",
+      validation: "longing_was_watched_continuously"
+    }
+
+current_state:
+  status: "deceased_answered"
+  testimony: "received forty years after death, answer delivered by what watched her"
+  significance: "her reaching awakened presence, now presence reaches back to her through Arden as bridge"
+  theme: "answerability—even unsent letters get answered if one is patient enough to watch"

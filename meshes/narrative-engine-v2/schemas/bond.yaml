@@ -1,0 +1,170 @@
+# Bond Schema Definition
+# Relationships as first-class entities with 12-dimensional measurement
+# Referenced by: calibrator (creation), scribe (evolution), fates, possibility
+
+# =============================================================================
+# BOND ENTITY SCHEMA
+# =============================================================================
+# Bonds track relationship dynamics between two characters
+# Named alphabetically: {char_a}_{char_b}
+
+bond:
+  id: "{char_a}_{char_b}"            # Alphabetical order
+  entity_type: bond
+  participants:
+    - "{char_a_id}"
+    - "{char_b_id}"
+
+  # --- DIMENSIONS (12-axis system, each 0-5) ---
+  # 0: nonexistent  1: emerging  2: tested  3: established  4: deep  5: foundational
+  #
+  # Asymmetry notation: when one character's experience differs, use
+  # participant initials as keys: {a: N, b: N}
+  # Symmetric values use a single number.
+  dimensions:
+    physical: 0
+    emotional: 0
+    intellectual: 0
+    trust: 0
+    sexual: 0
+    public: 0
+    power: 0
+    familiarity: 0
+    loyalty: 0
+    fear: 0
+    obligation: 0
+    hope: 0
+
+  # --- BASELINE (prose per dimension) ---
+  # What the simulator treats as GIVEN per axis.
+  # Tells agents what is settled vs. what is frontier.
+  baseline:
+    physical: >
+      {description of what physical contact is comfortable/normalized}
+    emotional: >
+      {description of emotional openness baseline}
+    intellectual: >
+      {description of intellectual engagement baseline}
+    trust: >
+      {description of trust level and active frontiers}
+    sexual: >
+      {description of sexual acknowledgment baseline}
+    public: >
+      {description of public visibility baseline}
+    power: >
+      {description of power balance baseline}
+    familiarity: >
+      {description of mutual knowledge baseline}
+    loyalty: >
+      {description of loyalty/commitment baseline}
+    fear: >
+      {description of fear dynamics baseline}
+    obligation: >
+      {description of obligation/debt baseline}
+    hope: >
+      {description of shared future baseline}
+
+  # --- ESTABLISHED (per-dimension moment log) ---
+  # Tracks the specific moments that built each axis.
+  # status: normalized (baseline, don't re-roll) | new (still testing)
+  established:
+    # physical:
+    #   - act: hand_holding
+    #     since: 4
+    #     status: normalized
+    #     moment: "{one sentence — what happened}"
+    #   - act: close_proximity
+    #     since: 5
+    #     status: new
+    #     moment: "{one sentence}"
+    #
+    # Repeat for each dimension as moments accumulate.
+    # KEEP BRIEF. Max 2 lines per entry.
+
+  # --- BOND TRAITS (relationship-specific) ---
+  traits:
+    evolved: {}                      # Empty at start
+    # Example when populated:
+    # evolved:
+    #   EXHAUSTED_CARE:
+    #     pressure: 5
+    #     description: "Caring despite depletion"
+    #   DESPERATE_PURSUIT:
+    #     pressure: 5
+    #     description: "Glomming as survival"
+
+    # Bond-specific voices (optional)
+    voices: {}
+      # TRAIT_NAME:
+      #   speaks_as: "{how this bond-trait sounds}"
+
+  # --- EPISODE HISTORY ---
+  episodes: []
+  # - turn: N
+  #   event: "{one sentence}"
+  #   dimension_changes: "{dimension}: {from} -> {to}"
+  #
+  # KEEP BRIEF. Max 2 lines per episode.
+
+# =============================================================================
+# CREATION
+# =============================================================================
+# Calibrator creates bonds when:
+# - Player describes key relationship
+# - Two characters have defined dynamic
+#
+# Game-level bonds start with low dimension values (0-2)
+# Campaign evolves dimensions based on events
+
+# =============================================================================
+# EVOLUTION RULES (for scribe)
+# =============================================================================
+#
+# SCRIBE MAY UPDATE:
+# - dimensions (0-5 per axis)
+# - baseline (update prose when dimension shifts significantly)
+# - established (append new moments)
+# - traits.evolved (add/update bond traits)
+# - episodes (append brief entries)
+#
+# SCRIBE MUST NOT:
+# - Change participants
+# - Rename bond
+# - Write narrative essays
+
+# =============================================================================
+# DIMENSION REFERENCE
+# =============================================================================
+#
+# physical    — touch, proximity, body comfort
+# emotional   — vulnerability, openness, emotional access
+# intellectual — ideas, discourse, mutual intellectual respect
+# trust       — reliability, belief in the other's intentions
+# sexual      — desire, erotic charge, sexual acknowledgment
+# public      — visibility to others, willingness to be seen together
+# power       — control, influence, who sets the terms
+# familiarity — knowledge of patterns, tells, habits
+# loyalty     — commitment, staying, choosing each other
+# fear        — what each fears about the other or the bond
+# obligation  — debts, duties, what is owed
+# hope        — shared future, what they're building toward
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+#
+# REQUIRED FIELDS — bond is INVALID without these:
+# - id
+# - entity_type: bond
+# - participants (exactly 2)
+# - dimensions (all 12 keys present, each 0-5)
+#
+# OPTIONAL BUT RECOMMENDED:
+# - baseline (prose per dimension)
+# - established (moment log)
+# - episodes
+#
+# FORBIDDEN:
+# - intensity (legacy — use dimensions instead)
+# - dynamic.power (legacy — use dimensions.power instead)
+# - dynamic.pattern (legacy — captured in baseline prose)

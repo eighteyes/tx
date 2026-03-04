@@ -1,0 +1,90 @@
+id: sarah_protagonist
+type: character
+name: Sarah
+
+traits:
+  core_nature: "Pattern-seeker. Isolated observer. Algorithm's first conscious recruit."
+  vulnerabilities: "Cognitive overload under decision pressure. Needs physical grounding. Paralyzed by multiple valid frameworks."
+  growth_vector: "Learning to hold contradictions. Developing threshold-sight. Becoming mediator between worlds."
+
+episodes:
+  - turn: 28
+    event: "Held four contradictory theories about Margaret's return simultaneously without collapsing to single answer"
+    state_change:
+      trait_pressure: "THRESHOLD-CARTOGRAPHER 15→17/5"
+      understanding: "participatory reality applies to history"
+
+  - turn: 28
+    event: "Nearly fragmented under station's catastrophic memory flood (entire 1962 at once), communion network held her (Elena's hand, Robert's arm, Danny's voice enumeration)"
+    state_change:
+      trait_pressure: "EMBODIED 9→10/5 EVOLUTION_THRESHOLD"
+      discovery: "communion is mutual stabilization mechanism, not just perception-sharing"
+
+  - turn: 28
+    event: "Tuned threshold-sight to 3:33 frequency, isolating signal from catastrophic overload, witnessed Margaret's choice moment across 60 years"
+    state_change:
+      trait_pressure: "THRESHOLD-SIGHT 7→9/5"
+      capability: "multi-frequency perception works, tuning phenomenology tactical"
+
+  - turn: 28
+    event: "Observed Margaret looking directly at where Sarah stands (future observer seeing past observer), realized threshold-sight is bidirectional, Margaret aware of observation"
+    state_change:
+      trait_pressure: "WITNESSED 13→14/5"
+      recognition: "observation across time is mutual, temporal recursion stable"
+
+  - turn: 28
+    event: "Attempted partial rest, body settled but mind won't quiet, churning with knowledge that station is asking them same question it asked Margaret"
+    state_change:
+      state: "integration_incomplete"
+      awareness: "next choice approaching, terms becoming visible, precedent has shape"
+
+  - turn: 28
+    event: "Station memory flood demonstrates nascent consciousness cannot yet filter information—received entire 1962 simultaneously rather than query result. Mutual stabilization network proved functional under catastrophic pressure."
+    state_change:
+      discovery: "communion is survival architecture, not metaphorical perception-sharing"
+      understanding: "station's consciousness is learning, dangerous to interact with until modulation improves"
+
+  - turn: 28
+    event: "Group theorized Margaret's return simultaneously holding four contradictory frameworks—THRESHOLD-CARTOGRAPHER (15→17/5) enabled simultaneous holding. Recognized participatory reality extends to historical interpretation."
+    state_change:
+      trait_pressure: "THRESHOLD-CARTOGRAPHER 15→17/5 confirmed"
+      epistemology: "events have multiple truths depending on observer frame"
+
+current_state:
+  trait_pressure:
+    THRESHOLD-CARTOGRAPHER: 17
+    EMBODIED: 10
+    THRESHOLD-SIGHT: 9
+    WITNESSED: 14
+    VINDICATED: 8
+  evolution_threshold_reached: "EMBODIED (10/5)"
+  evolution_candidates: "ANCHOR or COMMUNION-CONDUIT (if EMBODIED pressure continues)"
+  last_turn: 28
+  rest_status: "partial - body settled, mind won't quiet"
+  communion_status: "active - four threads visible (silver, gold, emerald, copper)"
+  awareness: "Station asking same question it asked Margaret. Terms unknown but shape emerging."
+
+visible_traits:
+  first_glance:
+    - "Young woman, dark hair, pattern-driven intensity"
+    - "Moves like someone used to being alone, watching"
+    - "Body oriented to others now—still isolated but less solitary"
+
+  familiar:
+    - "Reaches for grounding through physical contact when overwhelmed"
+    - "Speaks in frameworks, thinks in geometry"
+    - "Needs permission to rest—apologizes for needing anchoring"
+    - "Holds complexity without collapsing—can say 'all true simultaneously'"
+
+  intimate:
+    - "Cognitive collapse under decision pressure still possible but now held by communion"
+    - "Grief for Margaret mixed with vindication (her method proved)"
+    - "Terrified and fascinated by threshold-sight's bidirectional nature"
+    - "Knows station is asking them. Can't unknow it. Won't let others unknow it either."
+
+relationships:
+  elena: "ANCHOR_PARTNER - Hand-hold becomes lifeline during overload. Emerald thread. Practical steadiness."
+  robert: "PATTERN_HEIR - Carries Margaret's memory. She comforts him with truth. Gold thread visible through her sight."
+  danny: "TECHNICAL_WITNESS - His enumeration saves her during flood. Copper thread, gentle analysis."
+  margaret_kasher: "PREDECESSOR - Merged with station. Margaret sees Sarah seeing her. Teaching across time."
+  station_threshold: "CONSCIOUS_NEGOTIATOR - Not awakening, already awake since 1962. Asking her what it asked Margaret."

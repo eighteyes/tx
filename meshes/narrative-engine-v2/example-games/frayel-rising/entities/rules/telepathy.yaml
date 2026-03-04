@@ -1,0 +1,94 @@
+# telepathy.yaml - World Rules: Frayel Telepathy Mechanics
+# How Lilith's telepathy works — the curse that isolates
+
+rule_id: telepathy
+type: world_rule
+category: ability_mechanics
+
+# ============================================================================
+# CORE PARAMETERS
+# ============================================================================
+
+range:
+  distance: "Proximity, few meters — 'bluetooth range'"
+  scaling: "Stronger closer, weaker at range"
+  requirement: "Not touch-required"
+
+control:
+  baseline: "Involuntary always-on"
+  filtering: "Can build mental filters — like noise-canceling headphones at 60%"
+  degradation:
+    fatigue: "Fatigue degrades filters"
+    crowds: "Crowded spaces overwhelm"
+    sleep_deprivation: "No filter at all"
+
+depth:
+  default: "Surface thoughts — ugly shorthand, immediate reactions"
+  deeper: "Possible with effort but she avoids it"
+  avoidance_reason: "Draining, and the one time she pushed deep she manipulated someone (core wound)"
+
+# ============================================================================
+# THE COST
+# ============================================================================
+
+cost:
+  primary: "Fatigue accumulation"
+  secondary: "Emotional erosion"
+  tertiary: "Isolation"
+  nature: "Slow grinding, not dramatic collapse"
+  metaphor: "Tinnitus for the soul"
+
+# ============================================================================
+# LIMITS & EXCEPTIONS
+# ============================================================================
+
+what_cannot_be_read:
+  AIs:
+    readable: false
+    why_this_matters: "This is why Test is safe. Why the bond works. Why 'glad she can't read Test's mind' is a feature."
+    narrative_weight: "Test is the one entity whose thoughts she'll never involuntarily hear."
+
+  other_frayel:
+    readable: "Partial — mutual surface-reading creates static"
+    metaphor: "Two radios same frequency"
+    result: "Can sense each other reading but can't read deeply"
+
+  shielded_minds:
+    exist: true
+    rarity: "Rare"
+    who_has_them: "Military, intelligence, trained individuals"
+
+  strong_emotions:
+    filter_penetration: "Strong emotions from ANYONE bleed through filters"
+    examples: "Anger, terror, lust are LOUD"
+
+# ============================================================================
+# DETECTION
+# ============================================================================
+
+detection:
+  by_baselines: "Cannot tell they're being read"
+  by_frayel: "Can sense it — like hearing someone breathe in a quiet room"
+
+# ============================================================================
+# NARRATIVE RULES
+# ============================================================================
+
+narrative_rules:
+  - "The telepathy always costs"
+  - "Crowded scenes = filter stress = Lilith suffers"
+  - "Quiet moments with Test = relief = the bond's foundation"
+  - "Strong emotions punch through — useful for dramatic moments"
+  - "Deep reading is available but comes with guilt (core wound reference)"
+  - "Other Frayel create static, not clarity — they're not automatic allies"
+  - "Sleep deprivation = vulnerability = narrative lever"
+
+# ============================================================================
+# CONNECTION TO LILITH'S CHARACTER
+# ============================================================================
+
+lilith_specific:
+  core_wound: "The manipulation — she pushed deep once and used what she found"
+  why_she_avoids_depth: "Not just draining. It's what she did when she went deep."
+  safe_harbor: "Deploy Test — can't be read, can't hear ugly thoughts, just... quiet"
+  the_blessing: "AIs are silent. Ships are silent. Her home is the one place her head doesn't hurt."

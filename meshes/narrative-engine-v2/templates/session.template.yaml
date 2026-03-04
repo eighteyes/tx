@@ -1,0 +1,77 @@
+# session.yaml - Coordinator session state
+# Lives at: .ai/tx/narrative-engine/session.yaml
+# Owned by: coordinator
+# Updated by: coordinator on every phase transition
+
+# Active context
+game: {game-id}
+campaign: {campaign-id}
+turn: 0
+
+# Resolved paths (computed once, used everywhere)
+# Agents reference these instead of constructing paths
+paths:
+  game: .ai/games/{game-id}
+  campaign: .ai/games/{game-id}/campaigns/{campaign-id}
+  workspace: .ai/games/{game-id}/campaigns/{campaign-id}/turns/turn-{N}
+
+  # Game-level files (shared across all campaigns)
+  setting: .ai/games/{game-id}/setting.yaml
+  author: .ai/games/{game-id}/author.yaml
+  base_entities: .ai/games/{game-id}/entities.yaml
+  base_arc: .ai/games/{game-id}/arc.yaml
+  protagonist: .ai/games/{game-id}/protagonist.yaml
+  discoveries: .ai/games/{game-id}/discoveries.yaml
+
+  # Campaign-level files (specific to this playthrough)
+  continuity: .ai/games/{game-id}/campaigns/{campaign-id}/continuity.yaml
+  entities: .ai/games/{game-id}/campaigns/{campaign-id}/entities.yaml
+  arc: .ai/games/{game-id}/campaigns/{campaign-id}/arc.yaml
+  state: .ai/games/{game-id}/campaigns/{campaign-id}/state.yaml
+  thread: .ai/games/{game-id}/campaigns/{campaign-id}/thread.md
+  history: .ai/games/{game-id}/campaigns/{campaign-id}/history.md
+  character_memory: .ai/games/{game-id}/campaigns/{campaign-id}/character-memory.yaml
+
+# State machine
+phase: init
+# Phases:
+#   game_creation - new game HITL extraction in progress
+#   init - ready for player action
+#   awaiting_system - sent ask to system
+#   awaiting_cast - sent ask to cast
+#   awaiting_narrator - sent ask to narrator
+#   awaiting_oracle - sent ask to oracle
+#   awaiting_editor - sent ask to editor
+#   awaiting_scribe - sent ask to scribe
+#   complete - turn finished
+
+consultations:
+  # Narrator handles system/cast internally via direct asks
+  narrator:
+    needed: true
+    asked: false
+    responded: false
+  oracle:
+    needed: true      # Always needed (continuity gate)
+    asked: false
+    responded: false
+    approved: false   # Must be true before proceeding to editor
+  editor:
+    needed: false     # Only after oracle passes
+    asked: false
+    responded: false
+    clean: false      # True if no violations found
+  scribe:
+    needed: false     # Only after editor passes (or max iterations)
+    asked: false
+    responded: false
+
+# Iteration tracking
+editor_iterations: 0
+oracle_iterations: 0
+max_editor_iterations: 3
+prose_violations_flagged: false
+
+task_complete_sent: false
+last_action: "Session initialized"
+last_updated: null

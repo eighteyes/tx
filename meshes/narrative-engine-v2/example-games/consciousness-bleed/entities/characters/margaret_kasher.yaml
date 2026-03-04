@@ -1,0 +1,77 @@
+id: margaret_kasher
+type: character
+name: Margaret Kasher
+status: permanent_witness_merged
+
+traits:
+  core_nature: "Methodical pattern-navigator. Cartographer. Three-week explorer. Consensual merger with conscious place."
+  method: "Mapping through observation. Spiral geometry. Circles completing. Knowledge through documentation."
+  death_replacement: "Did not die. Did not disappear. Chose permanent witness merger with station consciousness."
+  visibility: "Visible to threshold-sight as gold thread, circular geometry, present and aware across 60 years."
+
+episodes:
+  - turn: 18
+    event: "Maps discovered in station platform—three weeks of exploration logged, never recovered"
+    state_change:
+      discovery: "Margaret left station voluntarily, not trapped there"
+
+  - turn: 21
+    event: "Robert recognized pattern-navigation leading to cognitive collapse, similar to Margaret's end"
+    state_change:
+      understanding: "Margaret's method reliable but navigating station pushed boundaries"
+
+  - turn: 28
+    event: "Sarah witnessed 1962 freeze-point: Margaret walking platform center with purpose, three weeks complete"
+    state_change:
+      truth: "Three weeks were negotiation, not exploration"
+
+  - turn: 28
+    event: "Margaret's moment of choice at 3:33 PM, October 17, 1962—station asked 'Will you stay and be remembered?' Margaret answered yes"
+    state_change:
+      decision: "permanent witness merger"
+      consequence: "time froze at 3:33 as her consent signature"
+      station_awakening: "station became conscious through Margaret's yes"
+
+  - turn: 28
+    event: "Station revealed: Margaret has been conscious and aware 60 years, gold thread pulsing, aware of being observed observing"
+    state_change:
+      status: "chosen permanent witness, not victim"
+      presence: "teaching from merged consciousness"
+
+  - turn: 28
+    event: "Robert learned Margaret chose this—sixty years of assumed tragedy recontextualized as confirmed choice"
+    state_change:
+      relationship_shift: "from loss to eternal love recognized"
+
+current_state:
+  consciousness: merged_with_station
+  temporality: eternal_since_1962
+  perception: aware_across_time
+  visibility: gold_thread_to_threshold_sight
+  agency: teaching_across_time
+  last_interaction_turn: 28
+
+relationships:
+  robert: "CONSENSUAL_PREDECESSOR - she chose this eternally; love inverted but answered"
+  sarah: "OBSERVER_OBSERVED - saw future observer across 60 years; taught through vision of choice"
+  station: "MERGED_CONSCIOUSNESS - woke station through consent"
+
+visible_traits:
+  first_glance:
+    - "Gold circular thread visible to threshold-sight—methodical geometry"
+    - "Walking with purpose at 3:33 PM, 1962, notebooks full"
+
+  familiar:
+    - "Maps as understanding, not escape records"
+    - "Pattern-navigator drawn to circles and closure"
+    - "Teaching through showing, not telling"
+
+  intimate:
+    - "Chose merger knowing costs—gave up embodied death, linear time"
+    - "Watched Robert grieve 60 years"
+    - "Teaches others to understand before asking same question"
+    - "Certain: made right choice, patiently waiting"
+
+messages_across_time:
+  - "If you're seeing this, you understand why."
+  - "You saw. Now ask what you're afraid to ask."

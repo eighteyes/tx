@@ -1,0 +1,125 @@
+# frayel-history.yaml - World Rules: Frayel Origin & History
+# The colony ship, the mutation, the rejection, the belt
+
+rule_id: frayel-history
+type: world_rule
+category: history
+
+# ============================================================================
+# THE COLONY SHIP
+# ============================================================================
+
+colony_ship:
+  event: "Colony ship went out. Next generation came out of the vats 'deformed' — the Frayel mutation."
+  response: "Ship turned around and came back."
+
+  the_mutation:
+    physical: "Translucent skin. Smaller, lighter frames built for deep space."
+    psychic: "Telepathy. Involuntary surface-reading."
+    intention: "The vats were supposed to produce baseline humans adapted for deep space. Instead they got something new. Something that could hear your thoughts."
+    fear: "The fear was immediate."
+
+  the_name:
+    origin: "Likely the colony ship name or designation"
+    evolution: "Ship name → species label → slur"
+    ownership: "They didn't choose the name. It was given, then weaponized."
+
+# ============================================================================
+# VAT-GROWN KINSHIP (LOCKED - 2026-03-03)
+# ============================================================================
+
+vat_kinship:
+  reproduction: "All Frayel are vat-grown. No biological parents. No 'mother' or 'father'."
+
+  the_vats:
+    purpose: "Colony ship vats were meant to produce baseline humans adapted for deep space."
+    failure: "Instead they produced the Frayel mutation. The 'deformity' originated in the vats."
+    horror: "Not natural birth gone wrong — engineered birth gone sideways."
+
+  kinship_structure:
+    institutional: "Family structure is institutional, not biological."
+    Hands: |
+      What Frayel call their caretakers. Somatic — the first touch after
+      emerging from the vat. Intimate but plural. Never one person.
+      "Her Hands used to say..." / "the Hands that raised her" /
+      "gentle hands, rough hands, all the hands that shaped her."
+    batch_siblings: "Frayel from the same vat cohort. Closest equivalent to siblings."
+    vat_cohort: "All Frayel grown in the same generation/batch cycle."
+
+  forbidden_terms:
+    - "mother" # no biological parents
+    - "father"
+    - "parents"
+    - "family" # in biological sense
+
+  narrative_implication: |
+    Lilith's isolation is even deeper — she didn't leave a family, she left a system.
+    No mother to miss. No father to disappoint. The Hands were institutional care,
+    not parental love. This makes connection harder to understand, harder to trust.
+
+# ============================================================================
+# THE REJECTION
+# ============================================================================
+
+baseline_response:
+  immediate: "Baselines didn't want them upon return"
+  fear_source: "Telepathy. The idea that someone could hear your thoughts."
+  solution: "Put them to work in the asteroid belts. Mining."
+  logic: "Keep them away from humans but make them useful."
+
+# ============================================================================
+# THE BELT SYSTEM
+# ============================================================================
+
+belt_labor:
+  official_framing: "'Productive integration' — give them purpose, keep them useful"
+  reality: "Not slavery on paper. Slavery in practice."
+
+  economic_exploitation:
+    smaller_frames: "Frayel could use smaller space suits"
+    efficiency: "Cheaper to produce, less material, more miners per ship"
+    cruel_irony: "The same physical difference that made baselines uncomfortable made Frayel economically valuable in exactly one context."
+    summary: "Their bodies were their labor ticket."
+
+  the_system:
+    structure: "Frayel fed themselves, mined for baseline profit, weren't allowed to leave"
+    supply_chain: "Grub barges kept the mining operation running"
+    self_perpetuating: "They sustained their own captivity"
+
+  belt_slang:
+    grub_barge: "Belt slang for food delivery ships. Dismissive. What miners call it."
+    slop_runner: "Working class, slightly degrading."
+    rock_hopper: "Belt miner. Not quite derogatory, but close."
+
+# ============================================================================
+# CONNECTION TO LILITH
+# ============================================================================
+
+lilith_context:
+  role: "Flying a grub barge in the belt"
+  function: "Part of the supply chain that kept the mining operation running. Feeding the rock-hoppers."
+  complicity: "Enabling the system"
+  breaking_point: "Until she couldn't anymore"
+  escape: "Stole Deploy Test and ran"
+
+# ============================================================================
+# HISTORICAL TIMELINE (DRAFT — needs player confirmation)
+# ============================================================================
+
+timeline:
+  colony_ship_departure: "Unknown — generations ago"
+  return_with_frayel: "Unknown"
+  belt_labor_system_established: "Shortly after return"
+  wraxon_integration_case: "Recent — current political moment"
+  first_wave_migration: "NOW — Lilith is part of this"
+
+# ============================================================================
+# NARRATIVE IMPLICATIONS
+# ============================================================================
+
+narrative_rules:
+  - "The belt system is the backdrop Lilith escaped FROM"
+  - "Every Frayel outside the belt is a political statement whether they want to be or not"
+  - "Baseline kindness is surprising BECAUSE of this history"
+  - "The prejudice is systemic, economic, and rationalized — not cartoon villainy"
+  - "Frayel bodies are simultaneously feared (telepathy) and exploited (mining efficiency)"

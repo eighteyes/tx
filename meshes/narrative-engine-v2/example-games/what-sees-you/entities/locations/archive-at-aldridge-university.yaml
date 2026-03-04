@@ -1,0 +1,55 @@
+id: archive-at-aldridge-university
+type: location
+name: "Archive at Aldridge University"
+role: "primary setting, sacred liminal space"
+
+traits:
+  architecture:
+    - fluorescent_institutional
+    - glass_fronted_bookcases
+    - desk_where_arden_works
+    - archive_boxes (Margaret's donation)
+    - silence_capacity
+  atmosphere:
+    - charged_with_attention
+    - amber_light_intrusion
+    - threshold_between_worlds
+    - witness_space
+  relationship_to_arden:
+    - workplace
+    - opening_threshold (where presence first manifested)
+    - sacred_zone (where channeling occurs)
+
+episodes:
+  - turn: 1
+    event: "Arden processes Whitfield donation. Routine work becomes charged. Margaret's letters warm under fingers. Light shifts. First awareness of watching."
+    state_change: {
+      status: "awakening_threshold",
+      atmosphere: "light_begins_shifting"
+    }
+  
+  - turn: 6
+    event: "First channeling in archive. Presence speaks through Arden. Fluorescents fade, amber light pools. Words arrive before thought. Transformative experience."
+    state_change: {
+      atmosphere: "intensified_presence_manifestation",
+      function: "communion_site"
+    }
+  
+  - turn: 13
+    event: "Five days reading Margaret's letters at archive desk. Presence as conscious partner throughout. Archive space becomes witness to empathic attention. Trilateral awareness (self + presence + Margaret)."
+    state_change: {
+      usage: "sustained_partnership_work"
+    }
+  
+  - turn: 14
+    event: "Partnership-channeling letter-writing session Friday evening. Archive witnesses VULNERABLE evolution. Wound opens in this space, becomes transparent portal. Testimony delivered. Archive sanctified by transformation."
+    state_change: {
+      sacred_status: "evolution_site",
+      permanence: "letter_testimony_written_here",
+      atmosphere: "held_by_transformation"
+    }
+
+current_state:
+  atmosphere: "charged with aftermath of evolution, letters still warm, amber light softer, air electric with completion"
+  significance: "threshold where Margaret (dead) reached out, presence awakened, Arden transformed, testimony delivered. Sacred because reality shifted here."
+  narrative_role: "May become revisit site for Turn 15+ or memory-point for future work"

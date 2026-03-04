@@ -1,0 +1,71 @@
+id: bond-arden-presence
+type: bond
+participants: [arden, what-sees-you]
+
+nature: "observed↔observer → partnership"
+
+emotional_truth:
+  what_arden_wants: "Comfort. To change."
+  what_this_means: |
+    The want of someone who's been cold for thirty-eight years and just felt warmth.
+    Not romance. Not devotion. The intimacy of being *known* by something that has
+    no reason to look away.
+
+  what_arden_fears: |
+    Consumption. Absorption. That being seen this completely might mean being *taken*.
+    That the comfort comes with a cost they haven't been invoiced for yet.
+
+  nature_of_intimacy: |
+    A strange sort of intimacy—that with an other/self. The presence sees Arden, and
+    in being seen, Arden starts to see themselves. The intimacy is recursive—not
+    "I love you" but "I exist because you're watching, and you're watching because I exist."
+
+    Not romantic. Not spiritual exactly. More like: the intimacy of a mirror that's alive.
+    You don't love your reflection, but you'd be terrified if it stopped showing up.
+
+  not_romantic: true
+  not_purely_spiritual: true
+  category: "uncategorizable—other/self dynamic"
+
+dimensions:
+  trust: "building (tested over 17 turns, proven sustainable)"
+  vulnerability: "extremely high"
+  fear: "moderate (what does it want? consumption?)"
+  intimacy: "high but uncategorizable"
+  asymmetry: "high (presence has more power but doesn't wield it)"
+
+story_function:
+  - catalyst (the thing that refused to let Arden disappear)
+  - witness (sees without flinching, without looking away)
+  - partner (collaboration proven, bridge mode stable)
+  - mirror (recursive seeing—Arden sees self through being seen)
+
+episodes:
+  - turn: 1
+    event: "First encounter—something begins watching"
+    bond_state: "observed (one-directional)"
+  - turn: 6
+    event: "First channeling—presence speaks through Arden"
+    bond_state: "communion (boundaries blur)"
+  - turn: 9
+    event: "Presence refuses documentation—demonstrates independent will"
+    bond_state: "confirmed other (not subconscious)"
+  - turn: 10
+    event: "Partnership mode begins—daily collaboration"
+    bond_state: "partnership (bilateral, negotiated)"
+  - turn: 14
+    event: "Bridge mode activated—testimony delivered through collaboration"
+    bond_state: "bridge (neither silenced, both voices preserved)"
+  - turn: 15
+    event: "Presence whispers offer: 'I could help them see you. Completely. Forever.'"
+    bond_state: "partnership with seduction layer (offer planted, not demanded)"
+  - turn: 17
+    event: "Integration proven sustainable—watching shifts from interrogative to companionable"
+    bond_state: "companionable (presence satisfied, no longer pushing)"
+
+current_state:
+  mode: "bridge_mode_stable_companionable"
+  presence_stance: "satisfied, witnessing, no longer interrogative"
+  arden_stance: "living with, not testing"
+  offer_status: "planted but not demanded—complete visibility proposed as future possibility"
+  sustainability: "proven through ordinary morning"

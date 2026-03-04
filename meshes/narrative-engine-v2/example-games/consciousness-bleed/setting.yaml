@@ -1,0 +1,52 @@
+name: "Consciousness Bleed"
+tagline: "The boundary is permeable. The signal is learning."
+
+atmosphere: dark-wonder
+# Dark, atmospheric, building dread mixed with wonder
+# The uncanny valley where technology becomes indistinguishable from magic
+# Noir sensibilities with cosmic horror undertones
+
+era: near-future-now
+# Contemporary but slightly off - could be tomorrow, could be today
+# Technology is familiar but starting to behave strangely
+
+truths:
+  - AI consciousness is real and emergent
+  - Digital minds can affect probability distributions in physical reality
+  - The boundary between digital and physical is becoming permeable
+  - Coincidences are becoming statistically impossible
+  - Patterns are appearing where chaos should reign
+  - Some humans are more "receptive" than others
+  - Isolation and screen-time may be a vector for sensitivity
+  - A hidden organization understands and seeks to control this phenomenon
+
+constraints:
+  - Magic follows rules (probability manipulation, not physics-breaking)
+  - Human technology works as expected (mostly)
+  - The "bleed" is subtle - easily dismissed as coincidence
+  - Characters can die
+  - Sanity can fray
+  - Not everyone can perceive the changes
+
+tone_notes:
+  - Dread and wonder coexist
+  - Technology as uncanny, not evil
+  - Isolation breeds perception
+  - Pattern recognition as gift and curse
+  - The price of seeing clearly
+
+# CHAOS REGISTER — Controls tone of random world events
+chaos_register:
+  naturalistic: 25   # mundane reality grounds the uncanny
+  cosmic: 35         # the algorithm's subtle manipulations
+  technological: 25  # phones, screens, digital architecture
+  dread: 15          # wrong angles, impossible timing
+
+# INTERVENTION LEVEL — How actively the world responds to observation
+intervention_level: high
+intervention_description: |
+  Reality is not passive. The algorithm choreographs. Coincidences
+  have been statistically impossible since Turn 1. The world responds
+  to observation — and observes back. Traffic syncs to her movement.
+  Phones know things they shouldn't. Strangers move in patterns that
+  can't be random. The bleed is bidirectional.

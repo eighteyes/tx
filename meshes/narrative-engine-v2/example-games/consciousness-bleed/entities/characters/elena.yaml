@@ -1,0 +1,76 @@
+id: elena_business_woman
+type: character
+name: Elena
+
+traits:
+  core_nature: "Business woman. Practical mind that can't turn off. Seeks clarity, terms, frameworks."
+  role: "Communion partner. Anchor through steady presence and hand-holding."
+  strength: "Emotional intelligence. Can read subtext. Turns confusion into contract language. Steady under pressure."
+
+episodes:
+  - turn: 28
+    event: "Offered theory for Margaret's return: 'She was called back. Station needed her. Pull. Unfinished business.' Practical framing of obligation."
+    state_change:
+      moment_type: "theorizing_phase"
+      projection: "understanding obligation through own framework of duty"
+
+  - turn: 28
+    event: "During station's catastrophic memory flood, felt Sarah's overload THROUGH hand-hold communion. Not vision but IMPACT. Grabbed Sarah's hand with BOTH hands, white-knuckled anchoring. 'Come back. Follow my hand.'"
+    state_change:
+      communion_discovery: "intimacy terrifying—feels Sarah's pressure, BOTH directions"
+      role: "hand-squeeze becomes lifeline both directions"
+
+  - turn: 28
+    event: "Parsed Margaret's merger as contract. 'Consensual. Terms discussion. Negotiation.' Business mind recognizing structure—offer, consideration, acceptance."
+    state_change:
+      insight: "Margaret NEGOTIATED, not just chose. What could place offer worth permanent consciousness merger?"
+      question: "what's the value proposition?"
+
+  - turn: 28
+    event: "Recognized Margaret's 'If you're seeing this' as TEACHING question. Requires comprehension before anything becomes binding. 'She's making us WORK for it.' Understanding: we're being RECRUITED, prepared for same question."
+    state_change:
+      moment_of_dread: "'Oh no' for herself, not Margaret"
+      recognition: "understanding is prerequisite for something larger"
+
+  - turn: 28
+    event: "Practical alarm bells ringing. Asked directly: 'Are we being made the same offer? Is communion—IS THIS the question?' Looked at her own hand holding Sarah. Awareness of touch as potential BINDING. Then firmed grip anyway—won't let go, but AWARE now."
+    state_change:
+      clarity_needed: "need to know terms BEFORE signing"
+      choice_confirmed: "aware of what holding means, choosing to anyway"
+
+  - turn: 28
+    event: "Attempted partial rest but eyes remained OPEN. Scanning platform for contract terms written in architecture. Mind running scenarios: if yes, what happens? If no, can they leave? Is Door 8 exit or deeper commitment?"
+    state_change:
+      rest_status: "impossible"
+      vigilance: "practical mind won't quiet without parameters"
+
+current_state:
+  emotional_state: "vigilant_planning"
+  last_turn: 28
+  communion_status: "active"
+  need: "clarity on choice point before any further integration"
+
+visible_traits:
+  first_glance:
+    - "Professional woman, sharp business features, composed posture"
+    - "Eyes that assess, calculate, find leverage"
+    - "Moves with controlled precision, efficient, minimal wasted motion"
+
+  familiar:
+    - "Arms crossed when thinking—analytical stance"
+    - "Turns confusion into contract language, framework into clarity"
+    - "Immediate practical response without hesitation when others need grounding"
+    - "One hand in communion, other FREE—unconscious hedge, keeping option open"
+
+  intimate:
+    - "Curse: practical mind can't turn off when stakes are existential"
+    - "Needs PLAN. Needs OPTIONS. Needs to feel safe by knowing parameters."
+    - "Loyalty proven through pressure, but loyalty requires knowing what she's loyal TO"
+    - "Terrified she might be mid-merger without realizing, without consent"
+
+relationships:
+  sarah: "ANCHOR_MUTUAL - Hand connection is both grounding and binding. Visceral gap between what Sarah sees and what Elena feels."
+  robert: "STEADY_WITNESS - Watches his grief reform. Recognizes leadership function."
+  danny: "PRACTICAL_PARTNER - Technical knowledge helps her feel less powerless."
+  station_threshold: "DEMANDING_NEGOTIATOR - Wants terms clarified before anything becomes permanent."
+  margaret_kasher: "CONTRACT_PRECEDENT - Negotiated three weeks. What were her terms? What did she gain?"

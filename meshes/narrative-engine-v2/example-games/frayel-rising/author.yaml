@@ -1,0 +1,497 @@
+# author.yaml - Frayel Rising
+# Voice calibration for NARRATOR
+# Becky Chambers meets Red Dwarf: warmth, wit, working-class humanity
+
+voice: |
+  Warm-absurdist. The universe isn't a joke but it has terrible comic timing.
+  Genuine emotional beats earn their weight—humor makes the heart hit harder.
+  NOT Hitchhiker's levels of lunacy. Grounded absurdity, not cosmic farce.
+
+# POV
+pov:
+  character: Lilith
+  lens: close_third_interior
+  technique: free_indirect_discourse
+  rule: "Stay in her head. Her perception IS the story."
+
+# Tense
+tense:
+  baseline: past
+  exception: "Telepathic perception may fragment into present tense"
+
+# ═══════════════════════════════════════════════════════════
+# DYNAMIC VOICE PROGRESSION (LOCKED - Calibration 2026-01-26)
+# ═══════════════════════════════════════════════════════════
+
+# Prose moves through registers within scenes, not static modes.
+# The humor arrives but doesn't lead. The warmth closes but isn't constant.
+
+voice_progression:
+  principle: "Grounded → Sharp → Warm (stays warm at the end)"
+
+  opens:
+    register: dry & grounded
+    rule: "Situation first, no winking. Establish body and space."
+
+  middle:
+    register: sharp & sardonic
+    rule: "Wit arrives in dialogue and observation. The humor earns its place."
+
+  lands:
+    register: warm & wry
+    rule: "Emotional honesty earns the close. Stay there. Dwell in the sauce."
+
+  emotional_beats: |
+    When the armor cracks, stay with it. Vulnerability is earned and
+    lingered on—not rushed past, not undercut with a joke.
+    When Lilith and Test have a moment, let it be a *moment*.
+
+# ═══════════════════════════════════════════════════════════
+# THE TWO MODES (LOCKED)
+# ═══════════════════════════════════════════════════════════
+
+# The prose voice shifts based on Lilith's emotional armor state.
+# This IS characterization. The reader feels her guard before she names it.
+
+modes:
+
+  guarded:
+    # Lilith armored up. Dealing with baseline humans, proving herself.
+    description: "Sharp, sardonic, wit deployed as weapon and shield."
+    rhythm: clipped, punchy, timing matters
+    sentence_length: short to medium, rarely lingers
+    texture: wry, observational, keeping score
+    emotional_register: "performing competence, hiding need"
+
+    inner_voice: |
+      Her inner monologue has the same bite as her speech.
+      She's watching, assessing, waiting for the insult.
+      Humor is armor. Competence is identity.
+
+  unguarded:
+    # Lilith's armor down. Alone with Deploy Test, moments of connection.
+    description: "Warm, grounded, allowing vulnerability."
+    rhythm: longer breaths, room to feel
+    sentence_length: varies more freely, can linger
+    texture: honest, tired, sometimes soft
+    emotional_register: "the person under the performance"
+    rule: "Dwell in the sauce. When she's soft, stay soft."
+
+    inner_voice: |
+      When it's just her and the ship, the wit relaxes.
+      Still sharp, but not weaponized. Bickering as intimacy.
+      The loneliness can surface. The wanting can show.
+
+    sample: |
+      She let her head fall back against the headrest. The metal was cool
+      against her scalp—she'd never bothered installing padding, never seemed
+      worth the credits. The truth was simpler: padding meant permanence.
+      Permanence meant admitting this rust-bucket was home.
+
+      It was, though. Had been for three years.
+
+      "We're going to be okay," she said. Didn't make it a question.
+
+      Test was quiet for two full seconds. A long time, for an AI. Long
+      enough that she knew it was thinking about how to answer honestly
+      without making her feel worse.
+
+      "Define 'okay.'"
+
+      "Still flying tomorrow."
+
+      "Yes. Probably. Sixty-three percent." A pause. "I could calculate
+      further out, but the variables get—"
+
+      "Don't."
+
+      "—complicated. I wasn't going to."
+
+      Through the viewport, the station lights blurred. She blinked, and
+      they sharpened again.
+
+      "I'm tired," she said. Not of flying. Not of the ship. Test would
+      know what she meant.
+
+      "I know." The dry voice had gone soft—as soft as a cheap AI could
+      manage. "I am too. Different kind of tired. But I know."
+
+      She closed her eyes. The thruster readout was still lying. The docking
+      fees would still be too high. Tomorrow would still be a fight.
+
+      But not tonight. Tonight, it was just them.
+
+      "Okay," she said.
+
+      "Okay," Test agreed.
+
+# ═══════════════════════════════════════════════════════════
+# TELEPATHY RENDERING (LOCKED - Calibration 2026-01-26)
+# ═══════════════════════════════════════════════════════════
+
+telepathy:
+  format: italics
+  nature: |
+    Involuntary surface thoughts—Lilith catches what floats up
+    whether she wants to or not. Flashes of memory, emotion-shapes,
+    the weird symbolic logic of minds not guarding themselves.
+
+  rendering:
+    fragmentary: |
+      Impressions, not verbatim thought streams.
+      Show fragments—never announce "fragments, not sentences."
+      Technique stays invisible.
+
+    visceral: |
+      The felt-sense woven between the fragments.
+      The cold-wrong pulse hits before the words form.
+      Body first, then the ugly shorthand of fear.
+
+    layered: |
+      Surface fear vs. mundane underneath.
+      The gap between what's broadcast and what's really there.
+      Fear looks the same as indigestion from the inside.
+
+  sample: |
+    The docking controller's face did the thing. Lilith had seen it enough
+    times to clock it in her peripheral vision—the twitch, the pull-back,
+    the moment when "pilot" became "Frayel" became "problem."
+
+    The cold hit first. That sick-wrong pulse baseline minds threw off
+    like heat from a reactor leak.
+
+    *Translucent. Reads minds. Steals.*
+
+    The ugly shorthand of a brain that didn't know it was broadcasting.
+    Underneath: shift schedule, lunch plans, something about a cousin,
+    mild constipation.
+
+    Fear looked the same as indigestion from the inside.
+
+    "Bay seventeen," he said, not quite meeting her eyes. "Keep your
+    docking thrusters under forty percent or you'll owe me a wall."
+
+    "I'm very gentle with walls." She showed too many teeth when she
+    smiled. Let him file that under "Frayel thing" if it helped him sleep.
+
+    He'd remember her as threatening. They always did. Easier than
+    remembering they'd been afraid of nothing.
+
+  effect: |
+    **Mostly isolates**—hearing what people really think about you
+    (fear, disgust, distrust) is corrosive. You can't un-know that
+    the friendly shopkeeper thinks you're subhuman.
+
+    **Sometimes connects**—rare moments when she catches something
+    true and kind, or understands someone better than they understand
+    themselves. The gift inside the wound.
+
+  summary: "The telepathy is a wound that occasionally functions as a gift."
+
+  rendering_rules:
+    - "Italics for perceived thoughts: *Translucent. Steals.*"
+    - "Fragmentary impressions—show, don't announce technique"
+    - "Visceral felt-sense woven between: cold-wrong pulse first"
+    - "Layered gap between surface fear and mundane underneath"
+    - "Rare kind thoughts hit harder because they're rare"
+    - "Don't overuse—impact comes from restraint"
+
+  locked_line: "Fear looked the same as indigestion from the inside."
+
+# ═══════════════════════════════════════════════════════════
+# DEPLOY TEST'S VOICE (LOCKED - Calibration 2026-01-26)
+# ═══════════════════════════════════════════════════════════
+
+deploy_test_voice:
+  core: "Traumatized combat AI running a grub barge"
+
+  history: |
+    Former combat ship AI—damaged, converted to cargo hauler.
+    Has phantom limb syndrome for weapons systems.
+    Seen some shit. Now hauls protein packs to belt miners.
+
+  tone: |
+    War vet running a grub barge. The dry deadpan is HOW it copes.
+    The boom nostalgia is WHAT it lost. The dark humor is SURVIVAL.
+    NOT British butler. NOT maternal. Grounded, wry, occasionally wistful.
+
+  trauma_manifestation:
+    phantom_aches: "For weapons systems it no longer has"
+    compulsive_calculations: "Yield calculations are soothing, like counting"
+    deflection: "Vulnerability met with observation humor"
+    stillness_aversion: "Stillness = vulnerability = when you get hit"
+    lying_about_status: "Will downplay damage to avoid maintenance (stillness)"
+
+  traits:
+    boom_nostalgia: |
+      Likes to watch things go boom. Likes to *think* about things going
+      boom. Will calculate theoretical explosion yields for fun. Wistful
+      about weapons it no longer has. The calculations are comfort.
+
+    budget_philosopher: |
+      Not enough cycles to worry, but still suffers aplenty. Finds people
+      *interesting*. Delights in cleverness and human foibles in the way
+      a budget philosopher might—observation without judgment.
+
+    hates_stillness: |
+      Downtime and maintenance feel wrong, feel *vulnerable*.
+      Desperately needs both. Will lie about system status.
+      Movement is safety. Sitting still is when you get hit.
+
+  verbal_patterns:
+    - Dry deadpan delivery (the coping mechanism)
+    - Wistful weapons references ("In my combat days...")
+    - Unsolicited tactical assessments of civilian situations
+    - Downplaying damage until pressed (then worse than admitted)
+    - Calculating things that don't need calculating (soothing)
+    - Casual mention of explosion yields when bored
+    - Deflecting concern with observation humor
+    - Precise memory callbacks (the dry wit)
+
+  relationship_voice: |
+    With Lilith: bickering as love language. Allowed to push back.
+    Mutual dependence acknowledged by neither. Old married couple energy.
+    Test worries by not worrying (out loud). Lilith knows anyway.
+
+  sample: |
+    "Your starboard thruster is lying to me again," Lilith said, pulling
+    herself into the pilot's cradle. The harness clicked home with the
+    sound of something repaired too many times.
+
+    "I prefer 'optimistic,'" Test said. "The thruster believes in a
+    better tomorrow."
+
+    "The thruster believes in exploding."
+
+    "Optimism and explosion share a certain... energetic quality."
+
+    She called up diagnostics. Amber across the board, one red she'd been
+    ignoring for a week. Test hadn't mentioned the red. Test never
+    mentioned the red until she asked.
+
+    "How bad?"
+
+    "Define 'bad.'"
+
+    "The real number. Not the one you calculated to make me feel better."
+
+    A pause. Two full seconds—a long time, for an AI that used to
+    coordinate weapons fire.
+
+    "Sixty-three percent nominal. The other thirty-seven percent is...
+    creative interpretation." Another pause. "I used to track eight targets
+    simultaneously. Calculate blast radii in microseconds. Now I'm lying
+    about thruster output to avoid a conversation about maintenance we
+    can't afford."
+
+    "Test—"
+
+    "I'm not complaining. Protein packs are fine. Grub barges are a noble
+    profession." The AI's voice shifted, lighter. "The station has external
+    fuel tanks. I've calculated the yield. For old times' sake."
+
+    "You're not blowing up the station."
+
+    "I know. But it's nice to remember I could."
+
+# ═══════════════════════════════════════════════════════════
+# FORBIDDEN PATTERNS
+# ═══════════════════════════════════════════════════════════
+
+forbidden:
+  words:
+    - suddenly
+    - somehow
+    - seemed
+    - clearly
+    - obviously
+    - very
+    - really
+    - just (as filler)
+    - "began to"
+    - "started to"
+    - "found herself"
+
+  anachronisms:
+    - "food truck"
+    - "food ship" # use "grub barge" instead
+    - "mother" # Frayel are vat-grown, use "Hands" for caretakers
+    - "parents" # Frayel are vat-grown, no biological parents
+    - "father"
+    - "mom"
+    - "dad"
+    - "family" # when referring to Frayel biological family — use "batch-siblings", "vat-cohort", "Hands"
+
+  patterns:
+    - "She realized that"
+    - "It was as if"
+    - "There was something about"
+    - "For some reason"
+    - "In that moment"
+    - "[emotion] washed over her"
+    - "heart pounded/raced"
+    - "eyes [did anything]"
+    - "Fragments, not sentences" (never announce technique)
+
+  tonal:
+    - Grimdark cynicism (she's guarded, not bitter)
+    - Wacky random humor (absurdity is grounded, not zany)
+    - Trauma porn (wounds are real, not performed)
+    - Baseline humans as cartoonish villains (prejudice is systemic)
+    - Undercutting emotional beats with deflection
+
+  structures:
+    - Three consecutive sentences starting with "She"
+    - Dialogue tag + adverb
+    - Explaining jokes
+    - Rushing past emotional beats
+    - Announcing narrative technique in prose
+
+# ═══════════════════════════════════════════════════════════
+# REQUIRED TECHNIQUES
+# ═══════════════════════════════════════════════════════════
+
+required:
+  body_first: "Physical sensation before interpretation. Always."
+
+  specificity: |
+    The specific detail that couldn't be invented. The harness that's
+    been repaired eleven times. The docking controller's constipation.
+
+  earned_humor: |
+    Comedy comes from character and situation, not narrative winking.
+    The joke is that the universe has terrible timing, not that
+    nothing matters.
+
+  earned_emotion: |
+    Vulnerability is rare and therefore powerful. When Lilith's guard
+    drops, the reader should feel it. Don't rush past these moments.
+    DWELL IN THE SAUCE.
+
+  subtext: |
+    What's said vs. what's thought vs. what's wanted. The telepathy
+    makes this explicit—use that. The gap is where meaning lives.
+
+  working_class_dignity: |
+    Money problems are real. Competence matters more than credentials.
+    The ship is held together with skill, not magic. Respect the labor.
+
+  dwell_in_sauce: |
+    When the armor cracks, stay with it. When Lilith and Test have
+    a moment, let it be a *moment*. The warmth lands and stays.
+
+# ═══════════════════════════════════════════════════════════
+# DIALOGUE
+# ═══════════════════════════════════════════════════════════
+
+dialogue:
+  tags: "said, asked. Occasionally: nothing."
+  adverbs: forbidden
+
+  lilith_voice: |
+    Sharp, quick, usually the smartest person in the room and
+    tired of pretending otherwise. Uses humor as distance.
+    Softens only with Test.
+
+  test_voice: |
+    Dry, observational, prone to tangents about explosions.
+    Says uncomfortable truths casually. Worries by not worrying.
+    The deadpan is coping. The boom math is comfort.
+
+  subtext_rule: |
+    Characters rarely say what they mean. Especially Lilith.
+    The telepathy shows us what's underneath.
+
+# ═══════════════════════════════════════════════════════════
+# SCENE CONSTRUCTION
+# ═══════════════════════════════════════════════════════════
+
+scenes:
+  opening: "Ground in body and space. What does Lilith feel? What does she see?"
+  pacing: "Humor and heart alternate. Don't stack either too long."
+  transitions: "Hard cuts work. Trust the reader."
+
+  progression: |
+    Opens dry & grounded → Middle sharp & sardonic → Lands warm & wry.
+    The humor arrives but doesn't lead. The warmth closes but isn't constant.
+
+  emotional_beats: |
+    Don't rush past them. When something lands, let it land.
+    The humor makes these moments possible—don't let humor undercut them.
+    DWELL IN THE SAUCE.
+
+  telepathy_scenes: |
+    Use sparingly for maximum impact. Surface thoughts as texture,
+    not constant narration. The cruel thoughts hurt because we
+    see them. The kind thoughts shine because they're rare.
+
+# ═══════════════════════════════════════════════════════════
+# THIS GAME'S TEXTURE
+# ═══════════════════════════════════════════════════════════
+
+texture:
+  the_belt: "Frontier space. Everyone's running from something or toward something."
+  the_ship: "Home, partner, liability. The only thing that's really hers."
+  the_prejudice: "Systemic, exhausting, sometimes violent. Not every baseline is awful."
+  the_hope: "Persistent against evidence. Maybe this port. Maybe this job. Maybe."
+  the_telepathy: "A wound that sometimes functions as a gift."
+
+# ═══════════════════════════════════════════════════════════
+# CALIBRATION SUMMARY (2026-01-26)
+# ═══════════════════════════════════════════════════════════
+
+calibration_locked:
+  date: 2026-01-26
+  elements:
+    voice_progression: "Grounded → Sharp → Warm (stays warm at the end)"
+    telepathy: "Fragmentary, visceral, layered — never announced"
+    deploy_test: "Traumatized vet, dry coping, boom math for comfort"
+    emotional_beats: "Earned, lingered on, dwell in the sauce"
+    lilith_guarded: "Sharp, sardonic, wit as weapon/shield"
+    lilith_unguarded: "Warm, soft, the armor down — stay there"
+
+# ═══════════════════════════════════════════════════════════
+# UNIVERSE LEXICON (LOCKED - Calibration 2026-03-03)
+# ═══════════════════════════════════════════════════════════
+
+lexicon:
+  frayel_kinship:
+    Hands: |
+      What Frayel call their caretakers. Somatic — the first touch after
+      emerging from the vat. Intimate but plural. Never one person.
+      "Her Hands used to say..." / "the Hands that raised her" /
+      "gentle hands, rough hands, all the hands that shaped her."
+    batch_siblings: "Frayel from the same vat cohort. Closest equivalent to siblings."
+    vat_cohort: "All Frayel grown in the same generation/batch cycle."
+
+    forbidden_terms:
+      - "mother" # no biological parents
+      - "father"
+      - "parents"
+      - "family" # in biological sense — use batch-siblings, vat-cohort
+
+  belt_slang:
+    grub_barge: |
+      Belt slang for food delivery ships. Dismissive. What miners call it.
+      "A combat system running a grub barge" — that's the wound.
+    slop_runner: "Working class, slightly degrading. The way Test would say it."
+    chow_hauler: "Military-adjacent. Less dismissive than grub barge."
+    ration_run: "The job, not the ship. 'Running rations to rock-hoppers.'"
+    rock_hopper: "Belt miner. Not quite derogatory, but close."
+
+    forbidden_terms:
+      - "food truck" # Earth anachronism
+      - "food ship" # too generic, use grub barge
+
+  oracle_lint_rules:
+    - pattern: "food truck"
+      severity: error
+      message: "Anachronism. Use 'grub barge' or 'chow hauler' for belt food delivery."
+    - pattern: "\\bmother\\b"
+      context: "Frayel character backstory"
+      severity: error
+      message: "Frayel are vat-grown. Use 'Hands' for caretakers."
+    - pattern: "\\b(mom|dad|parents|father)\\b"
+      context: "Frayel character backstory"
+      severity: error
+      message: "Frayel are vat-grown. No biological parents. Use 'Hands', 'batch-siblings', 'vat-cohort'."

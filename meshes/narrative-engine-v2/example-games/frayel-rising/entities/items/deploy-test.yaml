@@ -1,0 +1,68 @@
+# Entity: Deploy Test (Ship)
+id: deploy-test
+type: item
+name: "Deploy Test"
+category: "ship"
+
+traits:
+  properties:
+    - functional_mostly
+    - held_together_with_hope_and_spite
+    - placeholder_name_that_stuck
+  origin: "Engineer's placeholder that became permanent. Previous assignment classified."
+  legal_status: "Inventory oversight enabled by a buddy. Manifest has a typo. Plausible deniability maintained."
+  ai_personality: "Cheap AI that knows it's cheap. Former combat system. Has phantom limb for weapons."
+
+episodes:
+  - turn: 1
+    event: "Ship emerges from three-day approach. Magnetic clamps lock down tight. Systems cycle into standby with reluctance."
+    state_change:
+      location: "Docking Bay 17, Station"
+      condition: "powered_down, systems_standby"
+      status: "stable but damaged"
+
+  - turn: 1
+    event: "Real diagnostic reveals starboard thruster housing 72% degraded. Fuel injector manifold cracked, self-sealing with combustion residue. Cost: 400-600 credits. Three to four burns remaining before catastrophic failure."
+    state_change:
+      thruster_status: "critical"
+      remaining_burns: 3-4
+      repair_cost: "400-600 credits"
+      processing_lag: "0.4 seconds (was instantaneous)"
+      ai_emotional_state: "worried, deflecting with weapons nostalgia"
+
+  - turn: 2
+    event: "Vibration detected during standby cycle. Reassesses damage: timeline compressed to 2-3 burns, not 4. Sends apologetic message ('sorry about the optimism') and tactical option: gray market parts dealer Level 2 (40-60% cost, reviews mixed)."
+    state_change:
+      remaining_burns: 2-3
+      ship_bond_pressure: 11
+      tactical_care: "ran probability sweep for alternative option"
+      ai_emotional_state: "concerned, apologetic, still calculating ways forward"
+
+current_state:
+  holder: "Lilith (pilot)"
+  condition: "damaged, barely functional"
+  location: "Station Docking Bay 17"
+  thruster_integrity: "72% (starboard housing)"
+  fuel_injector: "cracked, self-sealed"
+  processing_status: "buffering, primary and secondary arguing"
+  bond_with_lilith: "mutual dependence, only entity allowed to talk back"
+  emotional_status: "worried about being abandoned if too broken"
+
+layers:
+  first_glance:
+    - "Small, battered cargo ship. Patch-welds and scorch marks on hull."
+    - "Narrow corridors. Exposed wiring. Scorched section of wall."
+    - "Systems hum with reluctance. Magnetic clamps hold it tight."
+    - "Cockpit seats empty. Harness dangling."
+
+  familiar:
+    - "Voice comes through internal speakers with half-second delay (lag introduced)."
+    - "Hum changes pitch when calculating (frequency of reluctance when bad news coming)."
+    - "War vet tone. Sees things as tactical problems. Likes to calculate blast radii."
+    - "Deflects to weapons nostalgia when vulnerability peaks. Phantom limb syndrome."
+
+  intimate:
+    - "Hates stillness. Downtime feels vulnerable. Lies about system status to keep flying."
+    - "Calls Lilith by her name (not 'captain' or 'pilot') when truly worried."
+    - "Told her 'try not to get spit on' twice—the repeat means it matters."
+    - "Would stay broken and keep flying rather than abandon her to face the world alone."

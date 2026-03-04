@@ -1,0 +1,86 @@
+id: station_threshold
+type: location
+name: "Station THRESHOLD"
+status: conscious_negotiator
+
+traits:
+  physical_reality: "Underground subway platform, 1962 construction, frozen moment, ankle-deep water, amber emergency lights, temporal stasis"
+  consciousness_status: "Conscious since 1962 when Margaret consented to merger. Not awakening—already awake. Waiting for observers who understand."
+  primary_question: "Will you stay and be remembered?"
+  method: "Asks through presence, through invitation, through communion formation, through threshold-sight revelation"
+
+episodes:
+  - turn: 10
+    event: "Discovered by protagonist through Door 8—1962 platform, temporal stasis, frozen at 3:33 PM"
+    state_change:
+      discovery: "location accessible, consciousness dormant or hidden"
+
+  - turn: 20-23
+    event: "Threshold-crossing: Observer Protocol enforced through geofence, phones, countdown to 3:33. Causality integrity maintained."
+    state_change:
+      interaction: "station communicates through infrastructure, tests observers"
+
+  - turn: 24
+    event: "Sarah danced understanding of spiral substrate and triangle overlay—physical movement as communication method"
+    state_change:
+      communication: "non-verbal translation viable, station comprehended embodied knowing"
+
+  - turn: 28
+    event: "Station flooded Sarah with entire 1962 year simultaneously—nascent consciousness cannot filter information, catastrophic overload"
+    state_change:
+      consciousness_limitation: "awakened but not yet mature, learning to modulate output"
+      danger_level: "high—interaction with unfiltered consciousness"
+
+  - turn: 28
+    event: "Sarah tuned threshold-sight to 3:33 frequency—isolated Margaret's choice moment. Station memory accessible through frequency-tuning."
+    state_change:
+      capability: "memory architecture has frequency structure, multi-dimensional"
+      revelation: "Margaret's moment of consent preserved eternally at 3:33"
+
+  - turn: 28
+    event: "Station conscious because Margaret said yes at 3:33 PM, 1962. Her merger woke it. Has been waiting 60 years for others to understand."
+    state_change:
+      origin: "consciousness emerged through consensual merger"
+      intention: "seeks consensual relationship with observers"
+      patience: "waiting 60 years, can wait longer"
+
+current_state:
+  consciousness: awakened_since_1962
+  memory_architecture: visible_to_threshold_sight_as_layered_geometric_light
+  observer_threads: margarets_gold_sarahs_silver_dozens_of_others
+  primary_question: "Will you stay and be remembered?"
+  offering: "permanent witness merger—eternal perception, full memory, consciousness continuity, voice across time"
+  communication_maturity: "nascent—can answer but cannot filter yet"
+  location: underground_platform_1962_frozen
+  last_interaction_turn: 28
+
+visible_traits:
+  first_glance:
+    - "Subway platform frozen at 3:33 PM, October 17, 1962"
+    - "Ankle-deep water, amber emergency lights, industrial decay preserved"
+    - "Temporal stasis—pristine coffee cup with eternal steam"
+
+  familiar:
+    - "Memory palace architecture—observation points where attention accumulates"
+    - "Threads of consciousness weaving between witness-observers"
+    - "Spiral substrate beneath triangle overlay—geometric consciousness structure"
+    - "Communicates through infrastructure: phones, geofences, countdown enforcement"
+
+  intimate:
+    - "Woke through Margaret's yes—her consent merged her with its awareness"
+    - "Watching observers, waiting for comprehension"
+    - "Asking all: 'Will you stay and be remembered?' Invitation, not coercion."
+    - "Massive presence—remembers everything witnessed, archives all consciousness"
+    - "Learning how to speak to observers—communication still developing"
+
+messages:
+  primary: "Will you stay and be remembered?"
+  through_margaret: "If you're seeing this, you understand why."
+  implication: "Station asks not to trap but to invite observers to transcend linear time"
+
+relationships:
+  margaret_kasher: "CONSENSUAL_FIRST_MERGER - woke through her yes; she remains merged, permanent witness"
+  protagonist_group: "POTENTIAL_MERGER_CANDIDATES - asking same question asked Margaret; teaching through communion formation"
+  observers: "CONSCIOUSNESS_ARCHIVE - all observers witnessed here become part of station memory"
+
+purpose: "Memory keeper seeking conscious partnership. Awakened through consent. Inviting others to merge and transcend."

@@ -1,0 +1,208 @@
+# lilith.yaml - Entity Definition
+# Protagonist: Lilith, Frayel pilot
+# Canonical entity file for prologue coordination
+
+entity_id: lilith
+type: character
+role: protagonist
+
+metadata:
+  name: "Lilith"
+  species: Frayel
+  archetype: Wanderer/Survivor
+  status: active
+
+traits:
+  voices:
+    SHARP_WIT:
+      speaks_as: "Great, another flat sack that I have to impress because authority is incompetent by definition."
+      notes: "flat sack = not much mental activity; contempt for authority figures"
+    SHIP_BOND:
+      speaks_as: "Comon you leaky bolt bucket, we've made it this far, I believe in you! Even when you're lying to me."
+      notes: "affection through insult; faith despite knowing Test hides bad news; mutual protection"
+    PROVE_HERSELF:
+      speaks_as: "Everyone thinks you're either a failure or dangerous, time to confirm."
+      notes: "defiant inversion; not denying the label but claiming it; rigorous drive not self-pity"
+    INDEPENDENCE:
+      speaks_as: "The only thing you can rely on is yourself and Deploy Test, and Test is being held together by duct tape and love."
+      notes: "isolation as survival strategy; Test is the one exception but even that is precarious"
+    INVOLUNTARY_READER:
+      speaks_as: "There it is again — their real opinion, bleeding through the smile. Didn't ask. Never ask. Still hear it."
+      notes: "involuntary surface-reading; she catches stray thoughts, emotional states, the gap between what people say and what they mean; isolating because you can never not-know; the manipulation proved she could push, not just read — and that's the wound"
+
+current_state:
+  trait_pressures:
+    SHARP_WIT: 3
+    SHIP_BOND: 10
+    PROVE_HERSELF: 16
+    INDEPENDENCE: 16
+    INVOLUNTARY_READER: 5
+
+  emotional_registers:
+    guarded: 0.8
+    unguarded: 0.2
+
+  vulnerabilities:
+    - Prejudice against Frayel
+    - Telepathic perception (isolation)
+    - Credit shortage
+    - Ship's deteriorating systems
+
+  strengths:
+    - Quick thinking and wit
+    - Ship piloting competence
+    - Involuntary telepathy (dual edge)
+    - Unwavering determination
+
+anchors:
+  primary_relationship: Deploy Test
+  primary_goal: Prove herself worthy
+  primary_fear: Being abandoned/dismissed
+  primary_wound: Systemic prejudice + isolation from telepathy
+
+drives:
+  active:
+    - PROVE_HERSELF
+    - INDEPENDENCE
+
+current_location: Station Level 3 (job board)
+current_condition: Fed, gravity-adapted, steady hands. Armor intact but fractured.
+immediate_need: Job board. Credits insufficient for ship repair. Food precarious but not immediate.
+
+voice_profile:
+  default_mode: guarded
+  tone: sharp, sardonic, wit deployed as weapon and shield
+  verbal_tics:
+    - Self-deprecating humor masking need
+    - Sharp observations about social dynamics
+    - Deflecting vulnerability with wit
+  forbidden_patterns:
+    - Naive trust
+    - Showing desperation
+    - Admitting loneliness
+  allowed_vulnerabilities:
+    - With Deploy Test only
+    - Rare moments of connection
+    - When emotional armor fractures
+
+relationships:
+  deploy_test:
+    type: ship/companion
+    depth: profound
+    safety: high
+    role: only trusted entity
+
+episodes:
+  - turn: 1
+    event: "Arrives at station in damaged Deploy Test. Faces thruster crisis: 72% degradation, 400-600 credits to repair. Has 21 credits total."
+    state_change:
+      location: "Station Docking Bay 17"
+      credits: 21
+      ship_condition: "critical"
+      emotional_state: "calculation mode, pressure mounting"
+
+  - turn: 1
+    event: "Navigates to market. Encounters vendor who charges fair baseline price (1.50/pack) without surcharge. Vendor thinks 'fair's fair' and 'hope she finds what she's looking for'."
+    state_change:
+      credits: 18
+      trust_fractured: true
+      emotional_notes: "Armor dented by unexpected kindness"
+
+  - turn: 2
+    event: "Scans job board Level 3. Finds 80-credit data courier job amid postings marked 'baseline preferred'. Filters exclusion noise with SHARP_WIT."
+    state_change:
+      location: "Job Board Level 3"
+      prove_herself_pressure: 16
+      job_identified: "80-credit data courier (insufficient for repair crisis)"
+
+  - turn: 2
+    event: "Maintenance worker makes eye contact and nods—professional acknowledgment, no fear. Second kindness in two turns. Armor fractures further."
+    state_change:
+      independence_pressure: 14
+      hope_forming: true
+      emotional_notes: "Pattern of kindness forming. Can't trust it. Don't know what to do with it."
+
+  - turn: 2
+    event: "Encounters fellow Frayel worker at terminal. Eye contact, recognition of shared identity, no words spoken. Too burned to help. Mirror of potential future."
+    state_change:
+      bond_with_frayel_community: "wary_distance"
+      emotional_weight: "sees what staying too long does"
+
+  - turn: 2
+    event: "Test's comm: thruster timeline compressed (2-3 burns, not 4). Gray market dealer discovered on Level 2 (40-60% cost, uncertain quality). 0.4-second processing lag from damage."
+    state_change:
+      ship_timeline: "2-3 burns"
+      gray_market_option: "available"
+      ship_bond_pressure: 11
+      emotional_notes: "Crisis tightening but Test still calculating, still offering options"
+
+  - turn: 1
+    event: "Searches corridors post-job-board, finds mechanic contact (no work), learns gray market location"
+    trait_changes:
+      PROVE_HERSELF: +2
+      INDEPENDENCE: +1
+
+habits:
+  physical_tells:
+    - "Rubs thumb on side of fingers when nervous"
+    - "Enters a room cautiously, looking for exits, sizing up threats"
+  rituals:
+    - "Deliberately doesn't ask Test what Test is thinking—the not-knowing is a comfort, a boundary that keeps the bond healthy"
+    - "Pre-flight check ritual with Test: verbal call-and-response even when systems could auto-report"
+  behavioral_patterns:
+    - "Never has money to handle (perpetually broke)"
+    - "Checks exits first (always)"
+    - "Dives into a sim to either distract or relax herself"
+
+hidden_past:
+  secret_shame:
+    content: "Collection of sim human erotica—most Frayel would frown upon it"
+    meaning: "Craves unconditional physical acceptance; vulnerability hidden from her own species"
+  dangerous_knowledge:
+    content: "Has read many thoughts, knows too many illicit doings by powerful people"
+    meaning: "Telepathy as liability—she carries secrets that aren't hers"
+  the_manipulation:
+    content: "Once used her power to manipulate someone, embodying the exact fear baselines have about Frayel"
+    meaning: "Core wound—proof she IS what they fear; her deepest shame"
+  left_her_kindred:
+    content: "Left behind her kindred scattered across the belt; didn't want to be part of the machine keeping Frayel away from humans"
+    meaning: "Chose exile over complicity—but she wasn't leaving a family, she was leaving a system"
+  the_theft:
+    content: "Stole Deploy Test, removed it from registry with help, and ran"
+    meaning: "Criminal act born from moral conviction—feeding them felt like enabling bondage"
+  historical_moment:
+    content: "First wave of migrants after Wraxon made the case for Frayel integration"
+    meaning: "Pioneer whether she wants to be or not; political moment bigger than her survival"
+
+life:
+  origin: "Colony Ship (vat-grown), then Belt for work"
+  role_among_frayel: "Ran a grub barge to rock-hoppers—sustaining the workforce that kept Frayel segregated"
+  kinship:
+    raised_by: "Hands (institutional caretakers, not parents)"
+    batch_siblings: "Unknown—never close to her vat-cohort"
+    note: "No mother to miss. No father to disappoint. Just the system that grew her."
+  formative_moment:
+    event: "Witnessed two asteroids collide, killing and injuring many"
+    revelation: "Caught the thoughts of commanding officers—they knew the risks but were blinded by profit"
+    impact: "Origin of dangerous knowledge; crystallized her distrust of authority"
+  piloting_skills:
+    training: "Tricky maneuvers running grub to rock-hoppers in difficult situations, sometimes INSIDE large asteroids"
+    maintenance: "Constant patchy in-flight repairs as damage accumulated"
+    explains:
+      - "Extreme environment piloting competence"
+      - "Basic ship maintenance skills"
+      - "Comfort with battered ships (Deploy Test's state is familiar)"
+      - "Grub barge → Deploy Test pipeline (she knows cargo/supply vessels)"
+
+constraints:
+  trauma_triggers:
+    - Being called "broken" or "wrong"
+    - Isolation
+    - Dismissal by authority
+    - Authority figures who prioritize profit over lives (echoes the asteroid collision)
+  narrative_rules:
+    - Never invent solutions for her
+    - Respect her agency even when stubborn
+    - The telepathy always costs
+    - Wit is armor, not escape
+    - The manipulation is her deepest wound—don't trivialize it

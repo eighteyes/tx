@@ -1,0 +1,76 @@
+id: robert_elderly_man
+type: character
+name: Robert
+
+traits:
+  core_nature: "Widower. Carries Margaret's memory and maps. Recognizes patterns from Margaret's navigation."
+  role: "Elder. Leader when pattern-leader fails. Holds grief and love across decades."
+  strength: "Physical grounding. Can stabilize others through presence. Knows how to hold people through impossible moments."
+
+episodes:
+  - turn: 28
+    event: "Offered completion theory for Margaret's choice: 'She found what she was looking for.' Hand gesturing circles unconsciously—her geometry."
+    state_change:
+      moment_type: "theorizing_phase"
+      awareness: "uncertainty creeping in—did she HAVE to complete, or CHOOSE to?"
+
+  - turn: 28
+    event: "During station's catastrophic memory flood, arm around Sarah's shoulders immediately when she whited out. Steady pressure, physical anchor, old hands strong."
+    state_change:
+      moment_type: "mutual_grounding"
+      presence: "decades of living teach how to ground someone fragmenting"
+
+  - turn: 28
+    event: "Learned Margaret CHOSE merger with station consciousness. Sixty years of grief built on assumption she was trapped. Everything he believed about her death was wrong. Not tragedy. Choice."
+    state_change:
+      grief_foundation: "shattered"
+      state: "collapsing inside, holding exterior through sheer will"
+
+  - turn: 28
+    event: "Listened to Sarah describe Margaret's 3:33 choice moment. Margaret looking at future observer. Speaking to Sarah. 'She knew. She knew someone would come.' Anger flaring at exclusion, then realization she COULDN'T have understood without threshold-sight."
+    state_change:
+      emotional_arc: "betrayal → awe → confusion"
+      bond_evolution: "Understanding Margaret's choice requires accepting he never could have been the observer"
+
+  - turn: 28
+    event: "Demanded of the station directly: 'What did you ask her? What did she WANT that she said yes?' Speaking to the station, not about it. Eyes searching amber lights as if station will answer. Needs to believe her terms were magnificent."
+    state_change:
+      action: "direct address to station"
+      need: "terms must have been good, or what does her choice mean about her love for him?"
+
+  - turn: 28
+    event: "Attempted partial rest in communion formation but body remained rigid. Can't soften. Mind circling: she was HERE conscious for 60 years. Did she see him grieve? Does she see him NOW? Asymmetry of awareness—she knows everything about his 60 years, he knows nothing of hers."
+    state_change:
+      rest_status: "impossible"
+      haunted_question: "if Margaret's consciousness preserved since 1962, is she watching him always?"
+
+current_state:
+  emotional_state: "grief_inverted"
+  last_turn: 28
+  communion_status: "active"
+  awareness: "watching him, or not? forever, or choice?"
+
+visible_traits:
+  first_glance:
+    - "Elderly man, cardigan, weathered hands"
+    - "Moves with military precision, decades of collected steadiness"
+    - "Eyes that have seen loss and chosen to keep looking"
+
+  familiar:
+    - "Gestures circles unconsciously—Margaret's geometry absorbed into his movement"
+    - "Immediate anchor response without hesitation when others break"
+    - "Speaks in patterns, thinks in cycles, understands completion and return"
+    - "Takes leadership when pattern-leader fails, decisive when it matters"
+
+  intimate:
+    - "Sixty years of unanswered love"
+    - "Grief that rebuilds itself constantly, never resolving"
+    - "Love confirmed across death and eternity, but at cost of losing her twice"
+    - "Trying to believe Margaret's choice was joy, not loss for him"
+
+relationships:
+  margaret_kasher: "ETERNAL_WITNESS - Margaret sees him in infinite memory. He's held in her consciousness permanently. Love answered across death, but he's still outside."
+  sarah: "PATTERN_HEIR - She carries Margaret's understanding forward. He trusts her to know what he can never fully grasp."
+  elena: "STEADY_PRESENCE - Watches her hold Sarah. Recognizes anchor function."
+  danny: "YOUNG_PATTERN - Sees Margaret's navigation fear repeated, different form."
+  station_threshold: "ASKING PLACE - Demanding it explain what it offered Margaret that was worth everything."

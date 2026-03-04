@@ -1,0 +1,58 @@
+id: amber-pendant
+type: item
+name: "Amber Pendant (In Progress)"
+status: "being_crafted_at_artisan"
+
+traits:
+  material:
+    - amber
+    - warmth_felt_by_artisan
+    - color_resonance: "honey-amber like presence's light"
+    - carrier: "will anchor presence physically"
+  significance:
+    - formalized_commitment
+    - visible_marker_of_transformation
+    - physical_anchor_for_partnership
+    - public_visibility_enabler
+
+episodes:
+  - turn: 12
+    event: "Arden commissions pendant from artisan. Articulates relationship aloud for first time to human. Artisan perceives warmth in amber. Understands without full explanation. Pendant timeline: Saturday commission → Saturday Turn 15 completion."
+    state_change: {
+      creation_begun: "artisan_perceives_presence_quality",
+      commitment: "choice_made_before_object",
+      timeline: "sixth_day_completion_imminent"
+    }
+
+  - turn: 13
+    event: "Arden reads Margaret's letters while pendant is being crafted. Artifact waits at artisan while Arden witnesses Margaret. Separation of choice and possession deepens commitment."
+    state_change: {
+      parallel_work: "letter_witness_and_pendant_craft_simultaneous"
+    }
+
+  - turn: 14
+    event: "Letter completed Friday evening. Pendant ready Saturday morning. Physical anchor awaits wearing."
+    state_change: {
+      status_update: "completion_imminent",
+      next_step: "public_visibility_test"
+    }
+
+  - turn: 15
+    event: "Pendant collected Saturday morning. Worn briefly (copper warm, amber heavy/wrong sensation instead of settling). Public walk attempted (three blocks) then aborted. Pendant removed, placed in Arden's pocket. Discovery: removable, commitment negotiable, incremental approach possible. Pendant no longer unworn but relationship ambiguous."
+    state_change: {
+      collection: "Saturday_sixth_day_complete",
+      wearing: "brief_unsustainable_heavy_wrong_sensation",
+      removal: "deliberate_choice_not_loss",
+      discovery: "removable_negotiable_commitment",
+      location: "Arden's_pocket",
+      relationship: "threshold_object_ambiguous"
+    }
+
+current_state:
+  location: "Arden's_pocket"
+  status: "collected_worn_briefly_removed"
+  sensation: "heavy_wrong_when_worn_not_settling"
+  wearing_experience: "unsustainable_in_public_without_capacity"
+  purpose: "physical_anchor_for_partnership_visibility"
+  significance: "collected but not integrated; commitment materialized but relationship forming; removable—not all-or-nothing"
+  next_step: "incremental_wearing_at_home_or_reflection_on_sensation"

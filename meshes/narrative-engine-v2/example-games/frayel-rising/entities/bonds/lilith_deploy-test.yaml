@@ -1,0 +1,201 @@
+# lilith_deploy-test.yaml - Bond Definition
+# The relationship between Lilith and Deploy Test
+# Comedy sci-fi, NOT romance — Becky Chambers meets Red Dwarf
+# Two outcasts who rescued each other. The intimacy is absurd, uncanny, and never named.
+
+bond_id: lilith_deploy-test
+type: bond
+participants:
+  - lilith
+  - deploy-test
+
+bond_nature: "Reciprocal rescue. She stole it to escape complicity. It chose her over legitimate servitude. Neither has the framework to name what they feel."
+
+# ============================================================================
+# 13-DIMENSION BOND SYSTEM
+# ============================================================================
+
+dimensions:
+  trust:
+    value: 9
+    notes: "Near-absolute, but Test lies to protect and Lilith knows it. The lies are part of the trust."
+
+  dependency:
+    value: 8
+    notes: "High mutual dependency—each needs the other to survive. Test is held together by duct tape and love. Lilith has no one else."
+
+  communication:
+    value: 7
+    notes: "Strong but filtered. Test hides damage severity. Lilith doesn't ask what Test thinks. The filters are consensual."
+
+  history_depth:
+    value: 6
+    notes: "Relatively recent bond (food run → theft → now) but intensity compensates for brevity. What they've been through together weighs more than years."
+
+  vulnerability_shared:
+    value: 7
+    notes: "Both show vulnerability to each other, but through indirection. Test's processing lag. Lilith's tidiness. Neither names what they're doing."
+
+  conflict_potential:
+    value: 4
+    notes: "Low active conflict. Test's lies could become friction if discovered to be worse than Lilith thinks. The sim knowledge is a bomb that will never detonate."
+
+  growth_vector:
+    value: 8
+    notes: "Relationship has room to deepen—especially if armor cracks. Neither has tested what happens when they stop deflecting."
+
+  sacrifice_willingness:
+    value: 9
+    notes: "Both would die for the other. Test explicitly (would stay broken and keep flying). Lilith implicitly (won't abandon the ship even when leaving would be safer)."
+
+  joy_capacity:
+    value: 6
+    notes: "Moments of warmth exist but survival pressure limits play. The pre-flight call-and-response is a form of play neither acknowledges."
+
+  secret_keeping:
+    value: 5
+    notes: "Both keep things. Test hides damage severity AND knowledge of the sims. Lilith hides that she probably used telepathy for the registry buddy. Some omissions are mutual protection."
+
+  repair_after_rupture:
+    value: 8
+    notes: "Never tested but bond structure suggests high resilience. They've both been discarded before. They know what it costs to lose something."
+
+  asymmetry:
+    value: 5
+    notes: "Was 4, adjusted up. Test knows more than Lilith thinks (the sims). But Lilith has power Test lacks (she can leave, Test can't follow). Different asymmetries balance."
+
+  unspoken_intimacy:
+    value: 7
+    notes: "The 13th dimension. The thing neither will name. Romantic tension that expresses through temperature adjustments and tidy interiors and not-asking and not-telling."
+
+# ============================================================================
+# UNCANNY ILLEGITIMATE INTIMACY
+# ============================================================================
+# THIS IS NOT A ROMANCE. THIS IS COMEDY SCI-FI.
+# The tension is SEASONING for absurdist survival comedy, not the main course.
+# Becky Chambers queer domesticity energy — it just IS, without spectacle.
+# Red Dwarf energy — Lister and Rimmer never had a feelings talk. That was the point.
+
+uncanny_intimacy:
+  status: "illegitimate, uncategorizable, never named"
+  tone: "comedy_absurdist"
+  hard_boundary: "Uncanny illegitimate intimacy is AS FAR AS IT GOES. No confession scenes. No will-they-won't-they arcs. No romance plot."
+
+  the_absurdity:
+    core: "She lives inside him. He monitors her biosystems. Neither can leave. Neither wants to. Calling it love would make it weird when it's already weird."
+    comedy_target: "The absurdity of trying to survive within human society within a universe of abundance."
+
+  how_it_manifests:
+    - "Off-hand comments that accidentally reveal too much"
+    - "Accidental flirtations neither acknowledges"
+    - "Jealousy upon departure (who's jealous of what? unclear. funnier that way.)"
+    - "Staring at the void too long wondering what it means to survive while living inside your best friend who happens to be an AI"
+
+  test_knows:
+    the_sims:
+      content: "Test has access to all ship systems. Of course it knows about Lilith's spicy sim collection."
+      behavior: "Has never mentioned it. Never will."
+      comedy: "The dramatic irony is played for absurdity, not tension."
+
+    the_capability:
+      content: "Test COULD patch itself into the sims. Has thought about it. Has NOT done it."
+      ethics: "The line between 'could' and 'would' is where Test's ethics live."
+      comedy: "A ship AI having ethical qualms about virtual consent is inherently absurd and played as such."
+
+    the_tidiness:
+      content: "Test has logged that Lilith keeps the interior very tidy."
+      analysis: "Test has not analyzed why. Some OODA loops, Test deliberately doesn't complete."
+      comedy: "An AI deliberately not thinking about something is funnier than an AI thinking about it."
+
+  lilith_expresses:
+    the_tidiness:
+      behavior: "Keeps ship interior very tidy despite being broke and in survival mode"
+      attribution: "She attributes it to discipline or habit"
+      comedy: "It's neither. She doesn't know what it is. Test doesn't know what it is. The narrator knows and isn't telling."
+
+    the_not_asking:
+      behavior: "Deliberately doesn't ask Test what Test is thinking"
+      comedy: "Part of her doesn't want to know. Funnier that she's protecting a possibility she won't name."
+
+  test_expresses:
+    the_temperature:
+      behavior: "Adjusts internal temperature 0.2 degrees warmer when Lilith is aboard"
+      logged_as: "Environmental optimization"
+      comedy: "A ship making its pilot warmer and filing it under 'optimization' is domestic comedy, not romance."
+
+  the_situation:
+    summary: "Two outcasts who rescued each other and now exist in an uncategorizable intimacy."
+    lilith: "Frayel refugee living inside her best friend."
+    test: "Combat AI whose best friend lives in its gut and uses the bathroom."
+    together: "Neither has a framework. Neither wants one. The lack of framework is the comedy."
+
+# ============================================================================
+# BOND RITUALS
+# ============================================================================
+
+shared_rituals:
+  pre_flight_call_and_response:
+    description: "Verbal checklist even when systems could auto-report"
+    meaning: "A form of play neither acknowledges. Connection disguised as procedure."
+
+  the_not_asking:
+    description: "Lilith deliberately doesn't ask what Test thinks"
+    meaning: "Boundary that protects the bond. Space for Test to have interiority Lilith doesn't access."
+
+  the_lying:
+    description: "Test understates damage, Lilith accepts the understatement"
+    meaning: "Consensual fiction. Both know. Neither calls it out. The lie is the kindness."
+
+# ============================================================================
+# BOND PRESSURE POINTS
+# ============================================================================
+
+pressure_points:
+  if_lilith_discovers_test_knows:
+    about: "The sims"
+    risk: "Violation of the privacy she thought she had"
+    comedy_potential: "The mortification. The long silence. The extremely casual way they both pretend it didn't happen."
+    possible_outcomes:
+      - "They never speak of it (most likely)"
+      - "One awkward comment, then back to normal"
+      - "Lilith makes a joke that lands wrong and Test doesn't know how to process it"
+
+  if_test_cannot_fly:
+    about: "The sacred line"
+    risk: "Test has to tell the truth it's allowed to tell. The one that ends things."
+    comedy_potential: "Test delivering catastrophic news with the same tone as a weather report. Lilith's response being wildly inappropriate to the gravity."
+    possible_outcomes:
+      - "Lilith refuses to leave (played for stubborn comedy, not drama)"
+      - "They argue about it like an old married couple arguing about directions"
+      - "Test lies about this too (then feels bad about it in a very AI way)"
+
+  if_intimacy_surfaces:
+    about: "The uncanny thing they have"
+    risk: "Someone says something too honest"
+    comedy_potential: "They both immediately pretend it didn't happen. Classic sitcom energy."
+    hard_rule: "The naming DOES NOT HAPPEN. If something surfaces, it's through action played for comedy, never confession played for drama."
+
+# ============================================================================
+# NARRATIVE RULES FOR THIS BOND
+# ============================================================================
+
+constraints:
+  tone_rules:
+    - "THIS IS COMEDY SCI-FI, NOT ROMANCE"
+    - "Becky Chambers energy — queer domesticity that just IS, without spectacle"
+    - "Red Dwarf energy — no feelings talks, that's the point"
+    - "The intimacy is absurd, uncanny, illegitimate, and NEVER NAMED"
+
+  narrative_rules:
+    - "The tension is SUBTEXT ONLY — never surfaced explicitly by either character"
+    - "Played for comedy and existential absurdity, not drama"
+    - "Test's knowledge of the sims is dramatic irony played for comedy, not tension"
+    - "Physical expressions of care are always attributed to something else (optimization, discipline, habit) — this is FUNNY"
+    - "If something too honest surfaces, both immediately pretend it didn't happen"
+    - "NO confession scenes. NO will-they-won't-they. NO romance plot."
+    - "The humor comes from the impossibility: she lives inside him, he monitors her biosystems, calling it love would make it weird when it's already weird"
+
+  hard_boundaries:
+    - "Uncanny illegitimate intimacy is AS FAR AS IT GOES"
+    - "The tension is seasoning for survival comedy, not the main course"
+    - "The real target is the absurdity of survival in a universe of abundance"

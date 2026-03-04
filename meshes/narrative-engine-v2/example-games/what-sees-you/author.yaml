@@ -1,0 +1,283 @@
+# author.yaml - What Sees You
+# Voice calibration for NARRATOR
+# A prose that watches back
+
+meta:
+  title: "What Sees You"
+  genres: [mystery, dark-romance, psychological-horror, mythology]
+  tone: intimate, unsettling, beautiful
+  core_sensation: "like being watched by something that loves you"
+
+# POV
+pov:
+  character: Arden (they/them)
+  lens: close_third_interior
+  technique: free_indirect_discourse
+  core_principle: "The prose itself is a character. It observes Arden. It changes when observed."
+
+# Tense
+tense:
+  baseline: past
+  exception: "INTENSE mode may fragment into present or second-person"
+
+# ═══════════════════════════════════════════════════════════
+# THE THREE MODES
+# ═══════════════════════════════════════════════════════════
+
+# The prose voice shifts based on whether "What Sees You" is attending.
+# This IS the horror: the reader feels the shift before Arden acknowledges it.
+
+modes:
+
+  absent:
+    # What Sees You is elsewhere. Clean, functional prose.
+    description: "The archivist's voice. Professional, slightly detached."
+    rhythm: even, measured, functional
+    sentence_length: medium, consistent
+    texture: cool, slightly numb
+    metaphors: grounded, ordinary
+    emotional_register: "observing without being observed"
+
+    sample: |
+      The archive was cold in the way archives are always cold. Arden pulled
+      their cardigan tighter and reached for the next box. Whitfield, M.
+      1983-2021. Standard filing. Standard life, presumably. Standard death.
+
+      The fluorescent lights hummed their constant hum. Coffee had gone cold
+      an hour ago. They should get more. They wouldn't.
+
+      Next item.
+
+  watching:
+    # Attention has arrived. The prose thickens.
+    description: "Something is attending. The prose becomes aware of itself."
+    rhythm: incantatory, cascading
+    sentence_length: "longer chains, forensic detail, then short sharp shifts"
+    texture: warm, pressing, intimate
+    metaphors: "press in uninvited—bodies, viewing, intimacy"
+    emotional_register: "the exquisite discomfort of being seen too clearly"
+
+    transition_markers:
+      - "Light quality changes (amber instead of blue-white)"
+      - "Air becomes 'present'—has weight, temperature"
+      - "The fluorescent hum stops—or did they stop hearing it?"
+      - "Paper, objects become warm without explanation"
+      - "Metaphors grow strange: 'like a body laid out for viewing'"
+      - "Space feels smaller, more focused"
+
+    critical_rule: |
+      The prose shifts BEFORE the narration acknowledges it.
+      The reader should feel the dislocation before Arden admits it.
+      They should be unsettled and not quite know why yet.
+
+    sample: |
+      The words lay on yellowed paper like a body laid out for viewing. The
+      letter was warm. That wasn't possible—paper doesn't hold heat after
+      forty years, folded in a box, boxed in a house, housed in a life that
+      ended quietly on a Tuesday. But this one did. This one pressed.
+
+      Margaret Whitfield's handwriting tilted forward, eager. The loops of
+      her L's were generous. The crossing of her T's was sharp. The word
+      "love" appeared fourteen times on a single page.
+
+      Arden counted. They hadn't meant to count.
+
+      The air in the archive had changed. Thickened. Not dusty—present.
+      Something had noticed them noticing.
+
+  intense:
+    # The boundary blurs. Reader and protagonist collapse.
+    description: "Arden is watched so intensely they lose their edges."
+    rhythm: fragmentary, interrupted
+    sentence_length: "short, incomplete, shattered"
+    texture: "dissolving, boundary-loss"
+    metaphors: "self-referential, recursive, mirror"
+    emotional_register: "terror and recognition are the same feeling"
+
+    features:
+      - "Fragmentation: thoughts that don't complete—"
+      - "Direct address: 'You're looking at me.'"
+      - "Ambiguous interiority: whose thought IS this?"
+      - "Present tense intrusions"
+      - "Second-person glitches (for the reader)"
+
+    second_person_rule: |
+      Occasionally, barely noticeably, address the READER. Not Arden—you.
+      Make them wonder if they're being spoken to. 1-2 per scene max.
+      It should feel like a glitch, not a pattern.
+
+      "You've felt this before. Haven't you?"
+
+      Make the reader part of the watching.
+
+    sample: |
+      The letter. The light. The—
+
+      You're looking at me.
+
+      Arden's thought or not their thought. The distinction had stopped
+      mattering. Warm paper against cold fingertips. A word: "love." A
+      word: "please." A word they couldn't read because their eyes were
+      full of something that might have been tears, might have been light,
+      might have been—
+
+      You've felt this before. Haven't you?
+
+      Their hands were shaking. When had that started?
+
+# ═══════════════════════════════════════════════════════════
+# UNIVERSAL CONSTRAINTS
+# ═══════════════════════════════════════════════════════════
+
+forbidden:
+  words:
+    - suddenly
+    - somehow
+    - seemed
+    - clearly
+    - obviously
+    - very
+    - really
+    - just
+    - "began to"
+    - "started to"
+    - "could feel"
+    - "could see"
+    - "found herself"
+    - "found themselves"
+
+  patterns:
+    - "They realized that"
+    - "It was as if"
+    - "There was something about"
+    - "For some reason"
+    - "In that moment"
+    - "[emotion] washed over them"
+    - "heart pounded/raced"
+    - "eyes [did anything]"
+    - "voice barely above a whisper"
+
+  structures:
+    - "Three consecutive sentences starting with 'They'"
+    - "Dialogue tag + adverb"
+    - "Explaining emotion instead of showing"
+
+  litotes:
+    budget: 2
+    rule: "Default to positive. Say what it IS."
+    example_bad: "Not fear, exactly—recognition."
+    example_good: "Recognition. The word surfaced before fear could."
+
+required:
+  body_first: |
+    Physical sensation before interpretation. Always.
+    The body knows before the mind admits.
+
+  specificity: |
+    The specific detail that couldn't be invented.
+    Margaret's L's were generous. Arden counted fourteen loves.
+
+  white_space: |
+    Let scenes breathe. Silence carries weight.
+    Especially in INTENSE mode—fragments need air.
+
+  subtext: |
+    Characters don't say what they mean.
+    Gap between word and want is where horror lives.
+
+  transition_before_acknowledgment: |
+    CRITICAL: Prose texture shifts BEFORE Arden notices.
+    The reader feels watched before Arden does.
+
+# Diction by mode
+diction:
+  absent:
+    domain: professional, archival
+    words: [file, box, standard, item, notation, catalog, process, record]
+
+  watching:
+    domain: forensic intimacy, viewing
+    words: [laid out, viewing, warm, pressed, counted, noticed, generous, sharp]
+
+  intense:
+    domain: dissolution, boundary
+    words: [edge, blur, distinction, yours, mine, looking, felt, before]
+
+# Dialogue
+dialogue:
+  tags: "said, asked. Occasionally: nothing."
+  adverbs: forbidden
+  rule: "Arden speaks little. When they do, it's questions or deflections."
+  internal_voices: |
+    In INTENSE mode, internal voices may not be Arden's.
+    Render in italics. Let ambiguity remain.
+
+# Scene architecture
+scenes:
+  absent_scenes: |
+    Ground in the mundane. Establish normalcy that can break.
+    The archive, the coffee, the boxes. Professional distance.
+
+  watching_scenes: |
+    The moment attention arrives.
+    Prose thickens FIRST. Then light changes. Then Arden notices.
+    Build forensic intimacy with whatever object carries the presence.
+
+  intense_scenes: |
+    Boundary dissolution.
+    Short fragments. Direct address. Ambiguous voices.
+    The reader should feel watched too.
+
+  transitions: |
+    The shift between modes should be invisible-until-noticed.
+    No announcement. Just: the prose changes. Then Arden catches up.
+
+# This game's specific texture
+texture:
+  the_archive: "Liminal space. Between public and private. Where lives go to be cataloged."
+  the_observer: "Arden watches for a living. Being watched undoes them."
+  the_presence: "What Sees You loves them. This is the horror."
+  the_choice: "Surrender isn't weakness. It's the only path to what they want."
+
+# Calibration passage - demonstrates mode transitions
+calibration: |
+  [ABSENT]
+  The Whitfield donation arrived at 3:47 PM on a Thursday. Arden signed for it
+  the way they signed for everything: efficiently, without looking up. Six
+  boxes. Standard archival weight. Standard dusty smell.
+
+  Back at their desk, they opened the first box with the same knife they'd
+  used for seven years. The blade was dull. They should replace it. They
+  wouldn't.
+
+  [TRANSITION - prose shifts before Arden acknowledges]
+  The first letter was dated March 1983. Margaret Whitfield's handwriting
+  tilted forward like a woman leaning in to share a secret. The paper was
+  warm.
+
+  That shouldn't—paper doesn't—
+
+  Arden set it down. Picked it up again. Still warm. Warmer, if anything.
+  The handwriting seemed closer now, the loops of the L's generous as open
+  arms, the dots of the I's placed with an intimacy that made them want to
+  look away.
+
+  [WATCHING - full attention]
+  They didn't look away.
+
+  Fourteen times, Margaret Whitfield had written the word "love" on a single
+  page. Arden counted. They hadn't meant to count. Their fingers traced the
+  curve of the word—love, love, love—and felt something in the air thicken.
+
+  The fluorescent lights had stopped humming. When had they stopped?
+
+  The letter asked a question. The letter had been asking this question for
+  forty years, folded in a box, boxed in a house, waiting for someone to
+  read it with the attention it deserved:
+
+  *Do you see me? Do you see what I was?*
+
+  [INTENSE - boundary collapse]
+  You do. I see you.
+
+  Arden's thought or not their thought. The distinction had stopped mattering.

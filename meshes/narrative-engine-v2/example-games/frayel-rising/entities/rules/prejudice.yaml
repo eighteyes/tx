@@ -1,0 +1,83 @@
+# prejudice.yaml - World Rules: Anti-Frayel Prejudice System
+# Current-day mechanics of systemic discrimination
+
+rule_id: prejudice
+type: world_rule
+category: social_mechanics
+
+# ============================================================================
+# LEGAL STATUS (POST-WRAXON)
+# ============================================================================
+
+legal_status:
+  official: "Technically legal to work outside belt and own property"
+  reality: "Gray area. Implementation inconsistent station-by-station."
+  summary: "Civil rights on paper, not in hiring office."
+
+# ============================================================================
+# VIOLENCE LEVELS
+# ============================================================================
+
+violence_spectrum:
+  systemic:
+    prevalence: "Primary mode of prejudice"
+    manifestations:
+      - "Job denials"
+      - "Price gouging"
+      - "'Baseline preferred' postings"
+      - "Being ignored to death"
+
+  verbal:
+    slurs: "Common"
+    examples: "'Frayel' itself is the slur (their own name, weaponized)"
+
+  physical:
+    spitting: "Happens"
+    attacks: "Rare"
+    geography: "More common on belt stations than core stations"
+
+  core_danger: "Being ignored to death, not beaten"
+
+# ============================================================================
+# GEOGRAPHIC VARIATION
+# ============================================================================
+
+variation_by_location:
+  core_stations: "More progressive on paper, still systemic barriers"
+  belt_stations: "More overt hostility, closer to the labor history"
+  individual_variance: "Some baselines kind (vendor, maintenance worker), others hostile"
+
+# ============================================================================
+# TIMELINE
+# ============================================================================
+
+integration_timeline:
+  wraxon_push: "5-10 years ago"
+  current_wave: "First wave — early adopters, not a trickle"
+  lilith_status: "Genuinely first wave. Historically early."
+  others_exist: "Yes (fellow Frayel at terminal) but not many"
+  political_moment: "This is a historical transition. Every Frayel outside the belt is a statement."
+
+# ============================================================================
+# NARRATIVE RULES
+# ============================================================================
+
+narrative_rules:
+  - "Prejudice is systemic, not cartoonish villainy"
+  - "Kindness from baselines is SURPRISING — that's the context"
+  - "Job denials and price gouging are the daily grind, not dramatic attacks"
+  - "'Baseline preferred' is the quiet violence"
+  - "Lilith is a pioneer whether she wants to be or not"
+  - "The fellow Frayel at the terminal = mirror of what staying too long does"
+  - "Violence escalates closer to the belt (history is raw there)"
+
+# ============================================================================
+# COMEDY IMPLICATIONS
+# ============================================================================
+
+comedy_hooks:
+  - "The absurdity of filling out paperwork for rights that exist on paper"
+  - "Price gouging negotiated with deadpan wit"
+  - "The baseline who's genuinely trying to be progressive and getting it hilariously wrong"
+  - "'Baseline preferred' as euphemism that everyone pretends is neutral"
+  - "The quiet surprise when someone is just... normal to her"

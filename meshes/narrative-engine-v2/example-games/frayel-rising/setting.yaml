@@ -1,0 +1,122 @@
+# setting.yaml - Frayel Rising
+# Becky Chambers meets Red Dwarf - heartwarming SF with working-class humor
+
+name: "Frayel Rising"
+tagline: "The universe has terrible comic timing."
+
+atmosphere: warm-absurdist
+# Character-driven SF, found family, working-class survival
+# The universe isn't a joke but it does punch down at inconvenient moments
+# Catastrophic incompetence played for laughs, genuine humanity beneath
+
+era: far-future-belt
+# Humanity spread to the stars, fractured into factions
+# The asteroid belt: hardscrabble frontier, miners and traders and outcasts
+# Technology works (mostly), prejudice works (definitely)
+
+truths:
+  - The Frayel are human—evolved, changed, but human
+  - Telepathy is real, feared, and deeply misunderstood
+  - The belt runs on credits, favors, and plausible deniability
+  - Ships are homes, partners, sometimes the only family that matters
+  - Baseline humanity rejected the Frayel; the wound hasn't healed
+  - Work exists for those willing to take the jobs nobody else wants
+  - Found family is the only kind worth having
+
+constraints:
+  - Physics works (FTL exists but has rules and costs)
+  - People die (but not cheaply—deaths earn their weight)
+  - Prejudice is systemic, not cartoonish villainy
+  - Money problems are real problems
+  - Hope persists despite evidence to the contrary
+
+tone_notes:
+  - Absurdity and humanity coexist
+  - Humor sharpens the emotional beats, doesn't undercut them
+  - Working-class dignity—competence matters, credentials don't
+  - Small kindnesses carry enormous weight
+  - The universe is vast and indifferent; people don't have to be
+
+# ============================================================================
+# NARRATIVE DIALS
+# ============================================================================
+
+chaos_register: 6
+# How much random catastrophe does the universe throw?
+# 6 = Universe has terrible comic timing but isn't constant disaster
+# Things break at inconvenient moments, but not every moment
+
+intervention_level: 3
+# How much does the universe/narrator intervene?
+# 3 = Hands-off. She solves her own problems. Rare lucky breaks.
+# No deus ex machina. Working-class dignity means earning it.
+
+# World Threads - Seeded for later integration
+world_threads:
+
+  frayel:
+    name: "The Frayel"
+    status: active
+    description: |
+      Spaceborne humans from the first multigenerational colony ship.
+      Very lightly built, near-translucent skin, telepathic abilities.
+      Colony ship turned back when offspring emerged "not human."
+      Rejected by Earth. Now reside in asteroid belt, scraping by.
+    notes:
+      - "Frayel" was originally their name—weaponized by baseline humanity as slur
+      - First generation trying to build a life amid hostile baseline humanity
+      - Telepathy is involuntary surface-reading, isolating more than connecting
+
+    # VAT-GROWN KINSHIP (LOCKED - 2026-03-03)
+    reproduction:
+      method: "Vat-grown. The colony ship had vats. No biological parents."
+      mutation_origin: "The 'deformity' happened in the vats — translucent skin, telepathy."
+      family_structure: "Institutional, not biological."
+
+    kinship_terms:
+      Hands: |
+        What Frayel call their caretakers. Somatic — the first touch after
+        emerging from the vat. Intimate but plural. Never one person.
+        Usage: "Her Hands used to say..." / "the Hands that raised her"
+      batch_siblings: "Frayel from the same vat cohort. Closest equivalent to siblings."
+      vat_cohort: "All Frayel grown in the same generation/batch cycle."
+      Tenders: "Alternative term some Frayel use — agricultural resonance."
+
+    narrative_implication: |
+      Lilith's isolation is deeper because she didn't leave a family —
+      she left a system. The Hands were institutional care, not parental love.
+      No mother to miss. No father to disappoint. Just the machine that grew her.
+
+  ringside:
+    name: "Ringside"
+    status: dormant
+    description: |
+      Planetary ringworld whose inhabitants don't know they're on a construct.
+      Digital slavery marketed as paradise. A truth-seeker begins to see.
+
+  the_elites:
+    name: "The Elites"
+    status: dormant
+    description: |
+      Cloud city dwellers. Eternal life purchased through alien trade.
+      Hidden status wars beneath the immortal veneer.
+
+  the_builders:
+    name: "The Builders"
+    status: dormant
+    description: |
+      Underground forced exiles who maintain everything above.
+      Seek restoration of birthright. Essential and invisible.
+
+  the_ancients:
+    name: "The Ancients"
+    status: dormant
+    description: |
+      Three ascended humans at the north pole.
+      Balance the power factions. Rarely intervene directly.
+
+# Pivotal Seeds - Events that will matter
+pivotal_seeds:
+  - "Builders distract Ascended, destroy space elevator"
+  - "An embrace as two beings annihilate atop volcano"
+  - "Ascended visited by unknown character"
