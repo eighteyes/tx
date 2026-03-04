@@ -424,12 +424,14 @@ ${ensembleOutput}
       return null;
     }
 
-    const targetAgents = nextStateConfig.agents || [];
-    if (targetAgents.length === 0) {
+    // FSM normalizes 'agents' to 'coordinator' + 'participants' during init
+    // Check coordinator first (normalized form), then agents (raw form) for compatibility
+    const targetAgent = nextStateConfig.coordinator || (nextStateConfig as any).agents?.[0];
+    if (!targetAgent) {
       log.debug('ensemble', 'Next state has no agents', { nextState });
       return null;
     }
 
-    return targetAgents[0];
+    return targetAgent;
   }
 }

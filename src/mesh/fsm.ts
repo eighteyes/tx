@@ -1280,7 +1280,9 @@ export class MeshFSM extends EventEmitter {
           const agents: string[] = [];
           if (toStateConfig.coordinator) agents.push(toStateConfig.coordinator);
           if (toStateConfig.participants) agents.push(...toStateConfig.participants);
+          // Handle both ensemble.agents (array) and ensemble.agent (singular, spawned N times)
           if (toStateConfig.ensemble?.agents) agents.push(...toStateConfig.ensemble.agents);
+          else if ((toStateConfig.ensemble as any)?.agent) agents.push((toStateConfig.ensemble as any).agent);
 
           if (agents.length > 0) {
             this.writeDispatchMessages(currentState, nextState, agents, from);

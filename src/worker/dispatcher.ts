@@ -146,7 +146,7 @@ interface AskMessageEvent {
   type: string;  // 'message' (preferred) or 'ask'/'ask-human' (DEPRECATED)
   headline?: string;
   msgId?: string;
-  // Phase 3: Terminal-by-default additions
+  // Terminal-by-default additions
   crossesHumanBoundary?: boolean;  // True if targets core/core (human)
   isTerminal?: boolean;            // True if suspends the sender (always true for now)
 }
@@ -162,7 +162,7 @@ interface AskResponseMessageEvent {
   content: string;
   headline?: string;
   msgId?: string;
-  // Phase 3: Boundary detection
+  // Boundary detection
   fromHumanBoundary?: boolean;  // true if from === 'core/core' (human response)
   resumesSuspension?: boolean;  // true if this should resume a suspended session
 }
@@ -513,15 +513,15 @@ export class WorkerDispatcher extends EventEmitter {
 
   /**
    * Normalize completion_agent / completion_agents / boundary_agents into an array
-   * Phase 5: Supports boundary_agents (terminal-by-default) with backward compatibility
-   * Priority: boundary_agents > completion_agents > completion_agent
+   * Supports backward compatibility with boundary_agents (deprecated)
+   * Priority: completion_agents > boundary_agents > completion_agent
    */
   private normalizeCompletionAgents(config: MeshConfig | undefined): string[] {
     if (!config) return [];
-    // Phase 5: Prefer boundary_agents (terminal-by-default naming)
-    if (config.boundary_agents?.length) return config.boundary_agents;
-    // Backward compat: completion_agents
+    // Prefer completion_agents (current naming)
     if (config.completion_agents?.length) return config.completion_agents;
+    // Backward compat: boundary_agents (deprecated)
+    if (config.boundary_agents?.length) return config.boundary_agents;
     // Legacy: singular completion_agent
     if (config.completion_agent) return [config.completion_agent];
     return [];
@@ -1232,6 +1232,7 @@ export class WorkerDispatcher extends EventEmitter {
       consumer.on('fan-out-complete', (event: { meshName: string; agentName: string; joinAgent: string }) => {
         this.trackFanOutCompletion(event.meshName, event.agentName);
       });
+
     }
   }
 
@@ -1468,20 +1469,38 @@ export class WorkerDispatcher extends EventEmitter {
       log.info('dispatcher', 'Mesh not loaded, attempting JIT load', { meshName, agentId });
       const loaded = await this.tryLoadMeshOnDemand(meshName);
       if (!loaded) {
-        log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
-        // Inject routing correction back to sender (if we know who sent it)
-        if (senderAgentId && senderAgentId !== 'core/core') {
-          this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+        // Check if this is a parallel instance — use base-mesh from payload
+        const baseMesh = pendingMessage?.payload?.['base-mesh'] as string | undefined;
+        if (baseMesh) {
+          log.info('dispatcher', 'Resolved parallel instance to base mesh', { meshName, baseMesh, agentId });
+          // Ensure base mesh config is loaded
+          if (!this.meshConfigs.has(baseMesh)) {
+            await this.tryLoadMeshOnDemand(baseMesh);
+          }
+          meshConfig = this.meshConfigs.get(baseMesh);
+          if (meshConfig) {
+            // Cache the config under the instance name so future lookups are instant
+            this.meshConfigs.set(meshName, meshConfig);
+          }
         }
-        return;
-      }
-      meshConfig = this.meshConfigs.get(meshName);
-      if (!meshConfig) {
-        log.error('dispatcher', 'Mesh loaded but config missing', { meshName, agentId });
-        if (senderAgentId && senderAgentId !== 'core/core') {
-          this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+
+        if (!meshConfig) {
+          log.error('dispatcher', 'Mesh not found (JIT load failed)', { meshName, agentId });
+          // Inject routing correction back to sender (if we know who sent it)
+          if (senderAgentId && senderAgentId !== 'core/core') {
+            this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+          }
+          return;
         }
-        return;
+      } else {
+        meshConfig = this.meshConfigs.get(meshName);
+        if (!meshConfig) {
+          log.error('dispatcher', 'Mesh loaded but config missing', { meshName, agentId });
+          if (senderAgentId && senderAgentId !== 'core/core') {
+            this.handleRoutingError(senderAgentId, agentId, meshName, 'mesh-not-found');
+          }
+          return;
+        }
       }
     }
 
@@ -1564,7 +1583,12 @@ export class WorkerDispatcher extends EventEmitter {
       // - New: currentState.ensemble?.type === 'parallel'
       const isLegacyEnsemble = currentState?.type === 'ensemble';
       const isNewEnsemble = currentState?.ensemble?.type === 'parallel';
-      if (isLegacyEnsemble || isNewEnsemble) {
+      // Only route to ensemble handler if the message is for an agent IN the ensemble state
+      // (coordinator or ensemble agent). Messages for other agents (e.g., scorer after runner
+      // writes its output) should be processed normally, not hijacked by ensemble handler.
+      const ensembleAgentName = currentState?.ensemble?.agent || currentState?.coordinator;
+      const isForEnsembleAgent = ensembleAgentName === agentName;
+      if ((isLegacyEnsemble || isNewEnsemble) && isForEnsembleAgent) {
         log.info('dispatcher', `Detected ensemble state, delegating to handleEnsembleState`, {
           meshName,
           state: currentState?.name,
@@ -1965,7 +1989,7 @@ export class WorkerDispatcher extends EventEmitter {
         });
         await machine.addAwaitTarget(targetAgentId);
 
-        // Phase 4: Update queue await state with new target
+        // Update queue await state with new target
         const existingState = this.queue.getAwaitState(senderAgentId);
         if (existingState) {
           const currentTargets = JSON.parse(existingState.target_agents);
@@ -1984,7 +2008,7 @@ export class WorkerDispatcher extends EventEmitter {
         });
         await machine.enterAwait(targetAgentId, sessionId);
 
-        // Phase 4: Set await state in queue for persistence
+        // Set await state in queue for persistence
         this.queue.setAwaiting(senderAgentId, sessionId, [targetAgentId]);
 
         // Set up timeout
@@ -2194,8 +2218,9 @@ The system will resume your session when the human responds.`;
 
         // Check if recovery will handle this (queued work exists)
         const hasQueuedWork = this.queue.countPending(agentId) > 0;
-        const isAbortError = error.message.includes('aborted by user') ||
-                            error.message.includes('process aborted');
+        const errorMsg = error?.message || String(error);
+        const isAbortError = errorMsg.includes('aborted by user') ||
+                            errorMsg.includes('process aborted');
 
         if (isAbortError && hasQueuedWork) {
           // Recovery will spawn new worker - not an error
@@ -2909,10 +2934,28 @@ The system will resume your session when the human responds.`;
     });
 
     if (!routingMode.strict) {
-      // Non-strict: log and allow (don't escalate/kill)
       if (routingMode.warning) {
         log.warn('dispatcher', 'Routing error (warning mode)', { senderAgentId, targetAgentId, errorType, retryCount });
-        log.activity('guardrail:routing-error:warning', senderAgentId, `Routing warning: ${targetAgentId} (${errorType}) — attempt ${retryCount}/${maxRetries} (allowed)`);
+        log.activity('guardrail:routing-error:warning', senderAgentId, `Routing warning: ${targetAgentId} (${errorType}) — attempt ${retryCount}/${maxRetries} (injecting correction)`);
+
+        // Build valid targets list from sender's mesh
+        const senderMeshConfig = this.meshConfigs.get(senderMesh);
+        const validAgents = senderMeshConfig
+          ? senderMeshConfig.agents.map((a: AgentConfig) => `${senderMesh}/${a.name}`).join(', ')
+          : availableMeshes;
+
+        const correction = `## Routing Correction
+
+Your message to **${targetAgentId}** could not be delivered — ${errorType === 'mesh-not-found' ? 'mesh does not exist' : 'agent not found'}.
+
+**Only write to**: ${validAgents}`;
+
+        this.emit('routing-error', {
+          from: 'system/router',
+          to: senderAgentId,
+          content: correction,
+          headline: 'Routing Correction',
+        });
       }
       return;
     }
@@ -3071,7 +3114,16 @@ Please advise the agent or check mesh configuration.`;
       const meshConfig = this.meshConfigs.get(meshName);
 
       // Create hook context with task info for quality hooks
-      const meshInstance = `${meshName}-${Date.now()}`;
+      // Extract mesh-id from payload for parallel instance isolation
+      const meshId = nextMsg?.payload?.['mesh-id'] as string | undefined;
+
+      // Session isolation: Use mesh-id if present to create isolated session
+      // Format: meshName:meshId (stable key for parallel instances)
+      //     or: meshName-timestamp (unique per standard execution)
+      const meshInstance = meshId
+        ? `${meshName}:${meshId}`
+        : `${meshName}-${Date.now()}`;
+
       const taskBody = nextMsg?.payload?.body as string || '';
       const featureName = nextMsg?.payload?.feature as string | undefined;
       const hookContext: HookContext = {
@@ -3702,6 +3754,16 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         log.info('dispatcher', `Injected rearmatter instructions into system prompt`, {
           agentId,
           fields: meshConfig.rearmatter.fields || [],
+        });
+      }
+
+      // Inject parallel instance context if mesh-id present
+      if (meshId) {
+        systemPrompt = this.promptInjector.injectParallelInstanceContext(systemPrompt, meshName, meshId);
+        log.info('dispatcher', `Injected parallel instance context into system prompt`, {
+          agentId,
+          baseMesh: meshName,
+          meshId,
         });
       }
 
@@ -5809,6 +5871,7 @@ ${output}
     });
   }
 
+
   /**
    * Handle FSM feedback - inject directly into agent session
    * Called when FSM violation detected (first violation only, escalations still go to core)
@@ -5980,6 +6043,21 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     // Consume task from queue
     this.queue.pollOne(agentId);
 
+    // Re-insert the task for each ensemble worker so SDK runner can poll it.
+    // Each worker's SDK runner calls queue.pollOne(workerId) independently.
+    // Without this, workers find no message and exit immediately with 0 processed.
+    const ensembleTotal = agentsToSpawn.length;
+    for (let i = 0; i < ensembleTotal; i++) {
+      const workerAgentId = `${meshName}/${agentsToSpawn[i]}`;
+      this.queue.insert({
+        from_agent: task.from_agent,
+        to_agent: workerAgentId,
+        type: task.type,
+        payload: { ...task.payload, _ensemble_index: i, _ensemble_total: ensembleTotal },
+        source_file: undefined,
+      });
+    }
+
     this.emit('ensemble:start', {
       ensembleId,
       meshName,
@@ -5998,7 +6076,6 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     }
 
     // Spawn all agents in parallel using unified spawnWorker
-    const ensembleTotal = agentsToSpawn.length;
     const spawnPromises = agentsToSpawn.map((agentName, idx) => {
       const agentConfig = meshConfig.agents.find(a => a.name === agentName);
       if (!agentConfig) {
