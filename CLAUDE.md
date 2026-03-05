@@ -49,7 +49,12 @@ User ──► CLI (tx) ──► Core Agent (tmux/Claude)
 | `src/storage/` | Storage providers: local filesystem, Redis |
 | `src/forensics/` | Post-execution analysis: transcript parsing, session analysis |
 | `src/shared/` | Shared utilities: logger, types, colors, string helpers, Anthropic client, time |
+| `src/session/` | Session storage (SQLite), session summarization, full-text search |
+| `src/quality/` | Quality gate stack, registry, iteration loops |
 | `src/quality-gates/` | Quality gate evaluation |
+| `src/state-machine/` | State machine middleware for worker lifecycle |
+| `src/tools/` | Search providers (arXiv, Stack Overflow, GitHub, DuckDuckGo, HackerNews, PubMed, etc.) |
+| `src/utils/` | Path helpers, general utilities |
 
 ### Meshes (`meshes/`)
 
