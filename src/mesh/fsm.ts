@@ -150,6 +150,7 @@ export class MeshFSM extends EventEmitter {
   private contextDescriptions: Record<string, string>; // Human-readable descriptions for context variables
   private workDir: string; // Project/mesh root for resolving relative paths
   private writer?: SystemMessageWriter; // Queue-first writer for system messages
+  private fatalErrorState: boolean = false; // Track if FSM has hit fatal gate failure to prevent repeated rejections
 
   constructor(
     meshName: string,
@@ -499,6 +500,105 @@ export class MeshFSM extends EventEmitter {
   }
 
   /**
+   * Evaluate exit.set expressions and update context.
+   * Used by ensemble coordinator to properly evaluate expressions
+   * (arithmetic, shell commands) instead of raw-setting them.
+   *
+   * @param setConfig - The exit.set configuration (key → expression)
+   * @param rearmatter - Optional rearmatter from message
+   * @param frontmatter - Optional frontmatter from message
+   */
+  async evaluateSetExpressions(
+    setConfig: Record<string, string>,
+    rearmatter?: Record<string, unknown>,
+    frontmatter?: Record<string, unknown>
+  ): Promise<void> {
+    if (!this.stateData) return;
+
+    for (const [key, valueExpr] of Object.entries(setConfig)) {
+      try {
+        const evalContext: Record<string, unknown> = {
+          ...this.stateData.context,
+        };
+
+        if (rearmatter) {
+          for (const [rmKey, rmValue] of Object.entries(rearmatter)) {
+            if (typeof rmValue === 'string' || typeof rmValue === 'number' || typeof rmValue === 'boolean') {
+              evalContext[`rearmatter_${rmKey}`] = rmValue;
+            }
+          }
+        }
+
+        // Try simple expression evaluation first (arithmetic)
+        const simpleResult = this.expressionEvaluator.evaluate(valueExpr, evalContext);
+
+        if (simpleResult.success && simpleResult.isSimpleExpression) {
+          const output = String(simpleResult.value);
+          this.updateContext({ [key]: output });
+          log.debug('mesh-fsm', 'evaluateSetExpressions: simple', {
+            meshName: this.meshName,
+            key,
+            value: output,
+            expression: valueExpr,
+          });
+          continue;
+        }
+
+        // Shell fallback for complex expressions
+        let expr = valueExpr;
+
+        if (expr.includes('$rearmatter')) {
+          expr = expr.replace(/\$rearmatter/g, JSON.stringify(rearmatter || {}));
+        }
+        if (expr.includes('$message')) {
+          expr = expr.replace(/\$message/g, JSON.stringify(frontmatter || {}));
+        }
+
+        for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
+          if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
+            expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+          }
+        }
+
+        let shellExpr = expr;
+        if (shellExpr.startsWith('$(') && !shellExpr.startsWith('$((') && shellExpr.endsWith(')')) {
+          shellExpr = shellExpr.slice(2, -1);
+        }
+
+        const result = await this.scriptExecutor.executeInline(shellExpr, {
+          fsmState: this.getCurrentState(),
+          fsmMeshName: this.meshName,
+          ...this.stateData.context,
+        });
+
+        if (result.success) {
+          const output = result.stdout.trim();
+          this.updateContext({ [key]: output });
+          log.debug('mesh-fsm', 'evaluateSetExpressions: shell', {
+            meshName: this.meshName,
+            key,
+            value: output,
+          });
+        } else {
+          log.error('mesh-fsm', 'evaluateSetExpressions: failed', {
+            meshName: this.meshName,
+            key,
+            expression: valueExpr,
+            stderr: result.stderr,
+          });
+        }
+      } catch (error) {
+        log.error('mesh-fsm', 'evaluateSetExpressions: exception', {
+          meshName: this.meshName,
+          key,
+          expression: valueExpr,
+          error: String(error),
+        });
+      }
+    }
+  }
+
+  /**
    * Build script context from FSM context
    * Converts context variables to ScriptContext format
    */
@@ -731,6 +831,7 @@ export class MeshFSM extends EventEmitter {
     this.stateData.gateRetries = {};
     this.stateData.lastTransitionAt = Date.now();
     this.stateData.updatedAt = Date.now();
+    this.fatalErrorState = false; // Clear fatal error state on reset
     this.persistence.saveState(this.stateData);
 
     log.debug('mesh-fsm', 'FSM reset to initial state', {
@@ -953,6 +1054,16 @@ export class MeshFSM extends EventEmitter {
       return true; // Allow message if FSM not ready
     }
 
+    // If FSM is in fatal error state, silently drop messages to prevent repeated rejection logs
+    if (this.fatalErrorState) {
+      log.debug('mesh-fsm', 'FSM in fatal error state, dropping message', {
+        meshName: this.meshName,
+        from,
+        to,
+      });
+      return false;
+    }
+
     const currentState = this.getCurrentState();
     const stateConfig = this.stateMap.get(currentState);
 
@@ -1138,6 +1249,13 @@ export class MeshFSM extends EventEmitter {
                 // Increment retry counter
                 this.stateData.gateRetries[gateName] = (this.stateData.gateRetries[gateName] || 0) + 1;
                 if (this.stateData.gateRetries[gateName] >= 3) {
+                  log.error('mesh-fsm', 'FSM validation failed fatally', {
+                    meshName: this.meshName,
+                    gateName,
+                    filePath,
+                    retryCount: this.stateData.gateRetries[gateName],
+                  });
+                  this.fatalErrorState = true; // Mark FSM as halted to prevent repeated rejections
                   throw new Error(`Gate failed after 3 retries: file not found: ${filePath}`);
                 }
                 return false; // Block transition, will retry
@@ -1184,6 +1302,13 @@ export class MeshFSM extends EventEmitter {
                 // Increment retry counter
                 this.stateData.gateRetries[gateName] = (this.stateData.gateRetries[gateName] || 0) + 1;
                 if (this.stateData.gateRetries[gateName] >= 3) {
+                  log.error('mesh-fsm', 'FSM validation failed fatally', {
+                    meshName: this.meshName,
+                    gateName,
+                    scriptPath,
+                    retryCount: this.stateData.gateRetries[gateName],
+                  });
+                  this.fatalErrorState = true; // Mark FSM as halted to prevent repeated rejections
                   throw new Error(`Gate script failed after 3 retries: ${gateName}`);
                 }
                 return false; // Block transition, will retry
@@ -1280,14 +1405,26 @@ export class MeshFSM extends EventEmitter {
           const agents: string[] = [];
           if (toStateConfig.coordinator) agents.push(toStateConfig.coordinator);
           if (toStateConfig.participants) agents.push(...toStateConfig.participants);
-          // Handle both ensemble.agents (array) and ensemble.agent (singular, spawned N times)
-          if (toStateConfig.ensemble?.agents) agents.push(...toStateConfig.ensemble.agents);
-          else if ((toStateConfig.ensemble as any)?.agent) agents.push((toStateConfig.ensemble as any).agent);
+
+          // For ensemble states, include ensemble agents in the event but DON'T write
+          // dispatch messages — the dispatcher's handleEnsembleState spawns workers directly.
+          // Writing task messages causes double-spawn: the dispatch message triggers a
+          // non-ensemble worker that races the FSM forward while the real ensemble runs.
+          const isEnsembleState = !!(toStateConfig.ensemble?.agents || (toStateConfig.ensemble as any)?.agent);
+          if (isEnsembleState) {
+            if (toStateConfig.ensemble?.agents) agents.push(...toStateConfig.ensemble.agents);
+            else if ((toStateConfig.ensemble as any)?.agent) agents.push((toStateConfig.ensemble as any).agent);
+          }
 
           if (agents.length > 0) {
-            this.writeDispatchMessages(currentState, nextState, agents, from);
+            // Only write dispatch messages for non-ensemble states.
+            // Ensemble states are spawned directly by the dispatcher's handleEnsembleState.
+            if (!isEnsembleState) {
+              this.writeDispatchMessages(currentState, nextState, agents, from);
+            }
 
-            // Emit for observability (non-critical)
+            // Always emit fsm:dispatch — the dispatcher listens for this to
+            // trigger handleEnsembleState for ensemble states.
             this.emit('fsm:dispatch', {
               meshName: this.meshName,
               fromState: currentState,

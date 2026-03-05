@@ -83,6 +83,7 @@ export class SdkRunner extends EventEmitter {
   private currentUserPrompt: string = '';  // Track for error context capture
   private turnCount: number = 0;  // Track turns for warning mode
   private maxTurnsWarningEmitted: boolean = false;  // Prevent duplicate warnings
+  private lastResultSubtype: string = '';  // Track SDK result subtype (success, error_max_turns, etc.)
   private filesChanged: FileChangeSummary = {
     created: [],
     modified: [],
@@ -373,6 +374,7 @@ export class SdkRunner extends EventEmitter {
     this.resetFilesChanged();
     this.turnCount = 0;
     this.maxTurnsWarningEmitted = false;
+    this.lastResultSubtype = '';
     this.startedAt = Date.now();
     this.emit('start', { id: workerId });
 
@@ -556,6 +558,7 @@ export class SdkRunner extends EventEmitter {
 
             case 'result':
               const resultMsg = msg as SDKResultMessage;
+              this.lastResultSubtype = resultMsg.subtype;
               resultMessage = resultMsg.subtype === 'success'
                 ? (resultMsg as SDKResultMessage & { subtype: 'success' }).result
                 : '';
@@ -657,6 +660,21 @@ export class SdkRunner extends EventEmitter {
           log.warn('sdk-runner', `Task error`, { workerId, error: resultMessage });
         }
 
+        // Detect max_turns exhaustion from SDK result subtype
+        if (this.lastResultSubtype === 'error_max_turns') {
+          log.warn('sdk-runner', 'Agent hit max_turns limit', {
+            workerId,
+            maxTurns: this.config.maxTurns,
+            turnCount: this.turnCount,
+          });
+          log.activity('guardrail:max-turns', workerId, `max_turns HALT: agent stopped after ${this.config.maxTurns} turns`);
+          this.emit('max-turns-exhausted', {
+            id: workerId,
+            maxTurns: this.config.maxTurns,
+            turnCount: this.turnCount,
+          });
+        }
+
         this.emit('task:complete', { id: workerId, messageId: taskMessage.id, result: resultMessage, isError });
 
         // Emit idle event for FSM transition (worker finished processing message)
@@ -681,6 +699,31 @@ export class SdkRunner extends EventEmitter {
         code?: number | string;
         exitCode?: number;
       };
+
+      // Max turns exhaustion: SDK may throw when agent exceeds maxTurns limit.
+      // Detect by error message or by the last result subtype we captured before the throw.
+      // Treat as graceful completion (not a crash) — the work is just incomplete.
+      const isMaxTurnsError = err.message?.includes('max turns') ||
+                              err.message?.includes('error_max_turns') ||
+                              this.lastResultSubtype === 'error_max_turns';
+      if (isMaxTurnsError) {
+        log.warn('sdk-runner', `Agent hit max_turns limit (caught as error) — treating as completion`, {
+          workerId,
+          totalProcessed,
+          maxTurns: this.config.maxTurns,
+          sessionId: this.currentSessionId,
+          errorMessage: err.message,
+        });
+        log.activity('guardrail:max-turns', workerId, `max_turns HALT: agent stopped after ${this.config.maxTurns} turns (error path)`);
+        const output = sessionOutput.join('\n\n---\n\n');
+        this.emit('max-turns-exhausted', {
+          id: workerId,
+          maxTurns: this.config.maxTurns,
+          turnCount: this.turnCount,
+        });
+        this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
+        return { success: true, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId || undefined };
+      }
 
       // Exit code 1 with processed messages: treat as success with warning.
       // Claude Code CLI may exit non-zero after successful work (e.g., session fork
@@ -749,7 +792,8 @@ export class SdkRunner extends EventEmitter {
 
       // Demote expected exit patterns from error to warn/debug
       const isAbortError = err.message.includes('aborted by user') ||
-                          err.message.includes('process aborted');
+                          err.message.includes('process aborted') ||
+                          err.message.includes('Operation aborted');
       const isExitCode1 = err.message?.includes('exited with code 1');
 
       if (isAbortError) {
@@ -982,6 +1026,7 @@ export class SdkRunner extends EventEmitter {
 
           case 'result':
             const resultMsg = msg as SDKResultMessage;
+            this.lastResultSubtype = resultMsg.subtype;
             resultMessage = resultMsg.subtype === 'success'
               ? (resultMsg as SDKResultMessage & { subtype: 'success' }).result
               : '';
@@ -1048,6 +1093,28 @@ export class SdkRunner extends EventEmitter {
         exitCode?: number;
       };
 
+      // Max turns exhaustion during resume: treat as graceful completion
+      const isMaxTurnsError = err.message?.includes('max turns') ||
+                              err.message?.includes('error_max_turns') ||
+                              this.lastResultSubtype === 'error_max_turns';
+      if (isMaxTurnsError) {
+        log.warn('sdk-runner', `Agent hit max_turns during resume — treating as completion`, {
+          workerId,
+          maxTurns: this.config.maxTurns,
+          sessionId,
+          errorMessage: err.message,
+        });
+        log.activity('guardrail:max-turns', workerId, `max_turns HALT (resume): agent stopped after ${this.config.maxTurns} turns`);
+        const output = sessionOutput.join('\n\n---\n\n');
+        this.emit('max-turns-exhausted', {
+          id: workerId,
+          maxTurns: this.config.maxTurns,
+          turnCount: this.turnCount,
+        });
+        this.emit('complete', { id: workerId, messagesProcessed: 1, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
+        return { success: true, messagesProcessed: 1, output, sessionId: this.currentSessionId || undefined };
+      }
+
       // Check for Usage Policy errors - handle with HITL instead of crashing
       if (isUsagePolicyError(err)) {
         log.warn('sdk-runner', 'Usage Policy error detected during resume, sending ask-human', { workerId });
@@ -1099,7 +1166,8 @@ export class SdkRunner extends EventEmitter {
 
       // Demote abort errors to debug - dispatcher will determine if it's recoverable
       const isAbortError = err.message.includes('aborted by user') ||
-                          err.message.includes('process aborted');
+                          err.message.includes('process aborted') ||
+                          err.message.includes('Operation aborted');
 
       if (isAbortError) {
         log.debug('sdk-runner', `Resume interrupted (may recover)`, errorContext);
