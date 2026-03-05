@@ -5,6 +5,121 @@ All notable changes to TX V4 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-04
+
+### Added
+
+#### FSM Orchestration
+- **State machine meshes**: Full finite state machine support for multi-step workflows with SQLite-persisted state
+- **Exit-based routing**: Conditional transitions via `when` clauses with default fallback
+- **Gate scripts**: Bash script execution at state entry/exit for validation and side effects
+- **Entry.set / Exit.set**: Context variable evaluation on state transitions
+- **Ensemble states**: Parallel agent execution within FSM pipelines
+- **`tx mesh run`**: End-to-end FSM pipeline runner with `--force` flag and headless mode
+- **`tx mesh fsm-chain`**: Visualize FSM transition chains
+- **`tx mesh fsm-reset` / `fsm-goto`**: Runtime FSM state control
+
+#### Lifecycle Hooks
+- **Pre/post-execution hooks**: Extensible hook system for quality gates, linting, and automation
+- **AI linter**: Post-hook JS/TS linting with auto-fix suggestions
+- **Quality gates**: Adversarial, accuracy, checklist, rubric, deterministic, and summarizer hooks
+- **Code validation**: Post-hook code validation and discovery hooks
+- **Auto-commit**: Post-hook automatic commit on mesh completion
+- **tx-context hook**: Injects mesh state context into Claude Code sessions
+
+#### Mesh Forensics
+- **`tx forensics`**: Haiku-powered analysis of mesh execution transcripts
+- **Anomaly detection**: Identifies routing issues, state problems, and behavioral anomalies with severity levels
+- **Actionable recommendations**: Suggests fixes for detected issues
+
+#### HTTP Server & API
+- **`tx serve`**: REST + WebSocket API for mesh management and session streaming
+- **Controllers**: Logs, mesh, sessions, stats, and workspace endpoints
+- **Rate limiting**: Request throttling and quota enforcement
+- **Multi-tenant isolation**: Storage abstraction for SaaS deployment
+
+#### React Frontend
+- **Dashboard**: Real-time system monitoring with WebSocket integration
+- **Session runner**: Interactive mesh sessions with message input/output
+- **Mesh editor**: Browse, configure, and launch meshes from browser
+- **Narrative controls**: Game-like UI for narrative-engine meshes (New Game, Resume, Fork)
+- **Session sidebar**: Session management with activity tracking and artifact viewing
+- **Playwright E2E tests**: Browser-based test suite for frontend
+
+#### Runtime Guardrails
+- **Unified enforcement modes**: `strict`/`warning` on every guardrail with override chain (agent > mesh > global)
+- **`max_messages` / `max_turns`**: Per-agent and per-mesh message limits
+- **Orchestrator gate**: `orchestrator: true` restricts agent tool access
+- **Artifact validation**: Post-execution artifact checks
+
+#### Crash Recovery & Sessions
+- **Session store**: SQLite-backed session tracking with FTS5 full-text search
+- **Crash recovery**: Re-buffer responses for suspended sessions, clear stale sessions on start
+- **Session forking**: Fork sessions for parallel exploration
+- **File preload**: Pre-load files into agent context on session start
+- **`tx recover`**: CLI command for crash recovery diagnostics
+- **`tx session`**: CLI command for session search and management
+
+#### Agent Recovery
+- **`system/help` / `system/stuck` channels**: Deliberate recovery paths for confused agents
+- **Escalation ladder**: 3 requests in 60s triggers ask-human to core
+- **State snapshots**: Agents receive FSM context and valid transitions during recovery
+
+#### New CLI Commands
+- **`tx agent-help`**: Runtime reference for agent capabilities
+- **`tx mesh dump`**: Diagnostic dump of mesh config and state
+- **`tx mesh cost`**: Token cost analysis per mesh run
+- **`tx mesh flow`**: Visualize message flow through mesh
+- **`tx mesh status`**: Runtime mesh status with agent states
+- **`tx mesh kill`**: Kill all workers for a mesh
+- **`tx login` / `tx logout` / `tx deploy`**: Authentication and deployment commands
+
+#### New Meshes
+- **dev-brain**: Implementer + reviewer dual-agent dev mesh
+- **dev-review**: Developer + reviewer + tester pipeline
+- **dev-tdd**: Test-driven development workflow mesh
+- **dev-lite**: Lightweight single-agent dev mesh
+- **dev-know-build**: Know-tool integrated build mesh
+- **rewriter**: Writer + editor content rewriting pipeline
+- **test-echo**: E2E testing mesh
+
+#### Infrastructure
+- **Pluggable storage**: Local file and Redis backends via storage abstraction
+- **Persistent core**: Long-running core agent for browser-based orchestration
+- **In-process FSM agents**: Run FSM agents in-process instead of spawning subprocesses
+- **Mesh runs table**: SQLite persistence for mesh completion tracking
+- **Fan-out dispatch**: Direct dispatch for parallel tasks instead of chokidar relay
+
+### Changed
+
+- **Dispatcher refactored**: Extracted mesh-manager, message-router, and types into separate modules
+- **Boundary-based routing**: Eliminated `in-reply-to` field; message semantics inferred from routing boundaries
+- **Injection queue**: Redesigned as persistent poll with async FSM initialization
+- **Manifest renamed**: `workflow` → `manifest` across types and tests
+- **Narrative engine v2**: Refactored architecture with lint pipeline coordination and entropy pool system
+- **Template variables**: Scoped workspace template variables with type assertions
+- **Consumer**: Direct fan-out dispatch, hot-loading mesh configs
+
+### Fixed
+
+- **FSM initialization**: Async loading, re-init after stale clear, gate path resolution
+- **Ensemble dispatch**: Agent resolution and state dispatch bugs in ensemble states
+- **Session isolation**: Fork sessionId preserved during SDK runner cleanup
+- **BFS predecessor computation**: Correct manifest validation with FSM edges
+- **Read gate**: Exempt `.ai/tx/msgs/` and `.ai/tx/logs/` from read restrictions
+- **Routing**: Recognize "complete" as core keyword, partial from-field resolution
+- **Narrative engine**: Triple-delivery bug in lint pipeline, 50% dialogue minimum enforcement
+- **Consumer**: Fan-out tasks dispatched directly instead of relying on chokidar
+
+### Removed
+
+- **Legacy ensemble meshes**: Deleted test-ensemble-file, test-ensemble-msgs, test-ensemble-n-diff, test-ensemble-n-same
+- **Graded mesh pattern**: Replaced by lifecycle hooks quality gates
+- **Tiered dev meshes**: Removed dev-junior, dev-mid, dev-senior in favor of FSM-based dev meshes
+- **code-review-ensemble**: Replaced by FSM-based review workflows
+- **Lock manager**: Removed in favor of lifecycle manager
+- **Checkpoint optimization**: Added then removed; replaced by agent coordination redesign
+
 ## [0.2.2] - 2026-01-28
 
 ### Added
@@ -173,6 +288,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace manager for task-scoped outputs
 - Prompt injection system
 
+[0.3.0]: https://github.com/eighteyes/tx/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/eighteyes/tx/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eighteyes/tx/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/eighteyes/tx/compare/v0.1.0...v0.2.0
