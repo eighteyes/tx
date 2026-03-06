@@ -1,0 +1,116 @@
+# bug-know-finder/config.yaml
+# Spec-guided QA: generate Playwright tests from spec-graph, find spec violations and gaps
+# Responsibilities:
+#   - Read spec-graph for interfaces, actions, workflows
+#   - Generate Playwright tests from spec assertions
+#   - Run tests and capture results
+#   - Crawl site to find features not in spec
+#   - Produce comprehensive QA report
+
+mesh: bug-know-finder
+description: "Spec-guided QA: generate Playwright tests from spec-graph, find spec violations and gaps"
+
+agents:
+  - name: spec-reader
+    model: sonnet
+    prompt: spec-reader.md
+
+  - name: gap-detector
+    model: sonnet
+    prompt: gap-detector.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: test-writer
+    model: opus
+    prompt: test-writer.md
+
+  - name: runner
+    model: sonnet
+    prompt: runner.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: synthesizer
+    model: sonnet
+    prompt: synthesizer.md
+
+entry_point: spec-reader
+completion_agents: [synthesizer]
+
+routing:
+  spec-reader:
+    complete:
+      test-writer: "Spec assertions extracted"
+  gap-detector:
+    complete:
+      synthesizer: "Gap analysis ready"
+  test-writer:
+    complete:
+      runner: "Tests generated"
+  runner:
+    complete:
+      synthesizer: "Test results ready"
+  synthesizer:
+    complete:
+      core: "Report ready"
+
+workspace:
+  path: ".ai/tx/workspaces/bug-know-finder/"
+  create_on_init: true
+  locations:
+    workspace: ".ai/tx/workspaces/bug-know-finder/"
+
+fsm:
+  initial: analyze
+  context: {}
+  states:
+    analyze:
+      ensemble:
+        type: parallel
+        agents: [spec-reader, gap-detector]
+        aggregation: concat
+      exit:
+        default: generate
+    generate:
+      agents: [test-writer]
+      exit:
+        gates:
+          test-writer:
+            - "$workspace/tests/"
+        default: run
+    run:
+      agents: [runner]
+      exit:
+        default: synthesis
+    synthesis:
+      agents: [synthesizer]
+      exit:
+        default: complete
+    complete:
+      terminal: true
+  scripts: {}
+
+guardrails:
+  strict: false
+  warning: true
+  agents:
+    gap-detector:
+      max_turns:
+        limit: 25
+        strict: true
+        warning: true
+    test-writer:
+      max_turns:
+        limit: 30
+        strict: true
+        warning: true
+    runner:
+      max_turns:
+        limit: 20
+        strict: true
+        warning: true
