@@ -1,0 +1,98 @@
+# bug-finder/config.yaml
+# Crawl a website and find UX, QA, design, and accessibility issues
+# Responsibilities:
+#   - Crawl from a starting URL to build a sitemap
+#   - Test each page in parallel for visual, UX, functional, and a11y issues
+#   - Deduplicate and rank findings into a bug report
+
+mesh: bug-finder
+description: "Crawl a website and find UX, QA, design, and accessibility issues"
+
+agents:
+  - name: crawler
+    model: sonnet
+    prompt: crawler.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: tester
+    model: sonnet
+    prompt: tester.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: synthesizer
+    model: sonnet
+    prompt: synthesizer.md
+
+entry_point: crawler
+completion_agents: [synthesizer]
+
+routing:
+  crawler:
+    complete:
+      tester: "Sitemap ready, spawn testers"
+  tester:
+    complete:
+      synthesizer: "Page tested"
+  synthesizer:
+    complete:
+      core: "Bug report ready"
+
+workspace:
+  path: ".ai/tx/workspaces/bug-finder/"
+  create_on_init: true
+  locations:
+    workspace: ".ai/tx/workspaces/bug-finder/"
+
+fsm:
+  initial: crawl
+  context:
+    page_count: 0
+  states:
+    crawl:
+      agents: [crawler]
+      exit:
+        gates:
+          crawler:
+            - "$workspace/sitemap.yaml"
+        set:
+          page_count: "$(echo '$rearmatter' | yq '.page_count')"
+        default: testing
+    testing:
+      ensemble:
+        type: parallel
+        agent: tester
+        count: $page_count
+        aggregation: concat
+        timeout_ms: 600000
+      exit:
+        set:
+          test_findings: "$ENSEMBLE_OUTPUT"
+        default: synthesis
+    synthesis:
+      agents: [synthesizer]
+      exit:
+        default: complete
+    complete:
+      terminal: true
+  scripts: {}
+
+guardrails:
+  strict: false
+  warning: true
+  agents:
+    crawler:
+      max_turns:
+        limit: 20
+        strict: true
+        warning: true
+    tester:
+      max_turns:
+        limit: 25
+        strict: true
+        warning: true
