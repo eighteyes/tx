@@ -74,6 +74,7 @@ fsm:
         type: parallel
         agents: [spec-reader, gap-detector]
         aggregation: concat
+        timeout_ms: 600000
       exit:
         default: generate
     generate:

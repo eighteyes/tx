@@ -1,5 +1,4 @@
 # Runner Agent
-
 # bug-know-finder mesh
 # Responsibilities:
 #   - Run generated Playwright tests

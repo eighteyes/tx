@@ -1,5 +1,4 @@
 # Test Writer Agent
-
 # bug-know-finder mesh
 # Responsibilities:
 #   - Read spec assertions from spec-reader

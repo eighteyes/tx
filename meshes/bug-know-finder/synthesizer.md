@@ -1,5 +1,4 @@
 # Synthesizer Agent
-
 # bug-know-finder mesh
 # Responsibilities:
 #   - Combine test failures, gap analysis, and observations
