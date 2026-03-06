@@ -1,0 +1,194 @@
+# bug-fixer/config.yaml
+# Batch bug fixing with parallel research and Playwright validation
+# Responsibilities:
+#   - Parse bug lists into structured entries
+#   - Research bugs in parallel via dynamic ensemble
+#   - Group bugs into non-conflicting batches
+#   - Fix each batch with parallel workers
+#   - Validate fixes via Playwright
+#   - Retry failed fixes, skip after max retries
+
+mesh: bug-fixer
+description: "Batch bug fixing with parallel research and Playwright validation"
+
+agents:
+  - name: triage
+    model: haiku
+    prompt: triage.md
+
+  - name: researcher
+    model: sonnet
+    prompt: researcher.md
+
+  - name: planner
+    model: sonnet
+    prompt: planner.md
+
+  - name: fixer
+    model: opus
+    prompt: fixer.md
+
+  - name: validator
+    model: sonnet
+    prompt: validator.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: reporter
+    model: haiku
+    prompt: reporter.md
+
+entry_point: triage
+completion_agents: [reporter]
+
+routing:
+  triage:
+    complete:
+      researcher: "Bugs triaged, spawn researchers"
+  researcher:
+    complete:
+      planner: "Research findings ready"
+  planner:
+    complete:
+      fixer: "Batch plan ready, spawn fixers"
+  fixer:
+    complete:
+      validator: "Fixes applied, validate"
+  validator:
+    complete:
+      reporter: "All batches processed"
+  reporter:
+    complete:
+      core: "Bug fixing complete"
+
+workspace:
+  path: ".ai/tx/workspaces/bug-fixer/"
+  create_on_init: true
+  locations:
+    workspace: ".ai/tx/workspaces/bug-fixer/"
+
+fsm:
+  initial: triage
+
+  context:
+    bug_count: 0
+    batch_index: 0
+    batch_count: 0
+    batch_size: 0
+    retry_count: 0
+    max_retries: 3
+
+  states:
+    triage:
+      agents: [triage]
+      exit:
+        set:
+          bug_count: "$(echo '$rearmatter' | yq '.bug_count')"
+        default: research
+
+    research:
+      ensemble:
+        type: parallel
+        agent: researcher
+        count: $bug_count
+        aggregation: concat
+        timeout_ms: 600000
+      exit:
+        set:
+          research_findings: "$ENSEMBLE_OUTPUT"
+        default: planning
+
+    planning:
+      agents: [planner]
+      exit:
+        gates:
+          planner:
+            - "$workspace/batch-plan.yaml"
+        set:
+          batch_count: "$(echo '$rearmatter' | yq '.batch_count')"
+          batch_size: "$(echo '$rearmatter' | yq '.first_batch_size')"
+          batch_index: 0
+        default: fixing
+
+    fixing:
+      ensemble:
+        type: parallel
+        agent: fixer
+        count: $batch_size
+        aggregation: concat
+        timeout_ms: 600000
+      exit:
+        set:
+          fix_output: "$ENSEMBLE_OUTPUT"
+        default: validating
+
+    validating:
+      agents: [validator]
+      exit:
+        when:
+          - condition: success_signal == "NEXT_BATCH"
+            set:
+              batch_index: "$batch_index + 1"
+              retry_count: 0
+              batch_size: "$(echo '$rearmatter' | yq '.next_batch_size')"
+            target: fixing
+          - condition: success_signal == "RETRY"
+            set:
+              retry_count: "$retry_count + 1"
+            target: fixing
+          - condition: success_signal == "SKIP_BATCH"
+            set:
+              batch_index: "$batch_index + 1"
+              retry_count: 0
+              batch_size: "$(echo '$rearmatter' | yq '.next_batch_size')"
+            target: fixing
+          - condition: success_signal == "ALL_DONE"
+            target: reporting
+        default: reporting
+
+    reporting:
+      agents: [reporter]
+      exit:
+        default: complete
+
+    complete:
+      terminal: true
+
+  scripts: {}
+
+guardrails:
+  strict: false
+  warning: true
+  agents:
+    researcher:
+      max_turns:
+        limit: 15
+        strict: true
+        warning: true
+    fixer:
+      max_turns:
+        limit: 30
+        strict: true
+        warning: true
+    validator:
+      max_turns:
+        limit: 20
+        strict: true
+        warning: true
+
+playbook_notes: |
+  Bug-fixer combines two proven patterns:
+  - Dynamic ensemble (from bug-sleuth) for parallel research and parallel fixing
+  - FSM self-loop (from test-fsm-loop) for batch iteration with retry
+
+  Flow: triage → research ensemble → planner → [fix ensemble → validate] × N batches → report
+
+  The planner writes batch-plan.yaml to workspace. The validator reads it to determine
+  next_batch_size and routing signals. Fixers use ENSEMBLE_INDEX + batch_index to pick
+  their assigned bug from the plan.
+
+  Retry logic: validator sends RETRY (up to max_retries=3), then SKIP_BATCH or ALL_DONE.
+  The FSM tracks retry_count and batch_index; the validator makes the routing decision
+  based on test results + FSM context values.
