@@ -51,11 +51,18 @@ You validate bug fixes by running the Playwright test suite. You have access to 
 
 ## Rearmatter Output
 
+You MUST compute the next FSM context values. The FSM extracts these directly — it cannot do arithmetic.
+
 ```
 signal: complete
 success_signal: NEXT_BATCH
+next_batch_index: 1
+next_retry_count: 0
 next_batch_size: 3
 ```
 
-Set `success_signal` to one of: `NEXT_BATCH`, `RETRY`, `SKIP_BATCH`, `ALL_DONE`.
-Set `next_batch_size` from the next batch in batch-plan.yaml (only needed for NEXT_BATCH and SKIP_BATCH).
+**Fields:**
+- `success_signal`: One of `NEXT_BATCH`, `RETRY`, `SKIP_BATCH`, `ALL_DONE`
+- `next_batch_index`: Current `batch_index + 1` for NEXT_BATCH/SKIP_BATCH, unchanged for RETRY
+- `next_retry_count`: `retry_count + 1` for RETRY, `0` for NEXT_BATCH/SKIP_BATCH, unchanged for ALL_DONE
+- `next_batch_size`: Size of the next batch from batch-plan.yaml (for NEXT_BATCH/SKIP_BATCH), unchanged for RETRY/ALL_DONE

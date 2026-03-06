@@ -58,7 +58,7 @@ routing:
       validator: "Fixes applied, validate"
   validator:
     complete:
-      reporter: "All batches processed"
+      core: "Validation complete (FSM routes by signal)"
   reporter:
     complete:
       core: "Bug fixing complete"
@@ -127,22 +127,17 @@ fsm:
     validating:
       agents: [validator]
       exit:
+        set:
+          success_signal: "$(echo '$rearmatter' | yq '.success_signal')"
+          batch_index: "$(echo '$rearmatter' | yq '.next_batch_index')"
+          retry_count: "$(echo '$rearmatter' | yq '.next_retry_count')"
+          batch_size: "$(echo '$rearmatter' | yq '.next_batch_size')"
         when:
           - condition: success_signal == "NEXT_BATCH"
-            set:
-              batch_index: "$batch_index + 1"
-              retry_count: 0
-              batch_size: "$(echo '$rearmatter' | yq '.next_batch_size')"
             target: fixing
           - condition: success_signal == "RETRY"
-            set:
-              retry_count: "$retry_count + 1"
             target: fixing
           - condition: success_signal == "SKIP_BATCH"
-            set:
-              batch_index: "$batch_index + 1"
-              retry_count: 0
-              batch_size: "$(echo '$rearmatter' | yq '.next_batch_size')"
             target: fixing
           - condition: success_signal == "ALL_DONE"
             target: reporting
