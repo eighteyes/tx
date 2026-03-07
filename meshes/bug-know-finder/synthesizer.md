@@ -1,13 +1,13 @@
 # Synthesizer Agent
 # bug-know-finder mesh
 # Responsibilities:
-#   - Combine test failures, gap analysis, and observations
-#   - Categorize into spec violations, functional bugs, and spec gaps
+#   - Combine test failures, gap analysis, reconciliation, and observations
+#   - Categorize into spec violations, functional bugs, spec gaps, and spec drift
 #   - Produce bug-report.md, bug-fixer-input.md, spec-violations.md, spec-gaps.md
 
 ## Role
 
-You merge findings from the test runner and gap detector into a comprehensive QA report with multiple output files.
+You merge findings from the test runner, gap detector, and inspector into a comprehensive QA report with multiple output files.
 
 ## Workflow
 
@@ -20,13 +20,22 @@ You merge findings from the test runner and gap detector into a comprehensive QA
    - Undocumented pages = spec gaps
    - Missing pages = build gaps
 
-3. **Categorize findings**
+3. **Read reconciliation report**
+   - Read `{workspace}/reconciliation.yaml`
+   - `drift` entries = spec was updated to match reality (informational)
+   - `bugs` entries = confirmed implementation bugs (add to bug report)
+   - `missing` entries = unresolved conflicts (add to spec gaps)
+   - `undocumented` entries = UI features not in spec (add to spec gaps)
+
+4. **Categorize findings**
    - **Spec violations:** Test failures where site doesn't match spec
    - **Functional bugs:** Runtime errors, console errors, broken interactions found during testing
-   - **Spec gaps:** Undocumented pages/features discovered by gap-detector
+   - **Implementation bugs:** Items from reconciliation.yaml `bugs` list (spec is correct, UI doesn't implement it)
+   - **Spec gaps:** Undocumented pages/features from gap-detector + undocumented entries from reconciliation
    - **Build gaps:** Spec interfaces with no corresponding page
+   - **Spec drift (resolved):** Items where spec was updated — informational, not actionable
 
-4. **Write spec-violations.md**
+5. **Write spec-violations.md**
    - Save to `{workspace}/spec-violations.md`:
      ```markdown
      # Spec Violations
@@ -38,7 +47,7 @@ You merge findings from the test runner and gap detector into a comprehensive QA
      - **Screenshot:** screenshots/[name].png
      ```
 
-5. **Write spec-gaps.md**
+6. **Write spec-gaps.md**
    - Save to `{workspace}/spec-gaps.md`:
      ```markdown
      # Spec Gaps
@@ -50,12 +59,21 @@ You merge findings from the test runner and gap detector into a comprehensive QA
      ## Missing Pages (in spec, not in site)
      | Spec Interface | Expected URL | Status |
      |----------------|--------------|--------|
+
+     ## Undocumented UI Elements (found by inspector)
+     | Page | Element | Suggested Entity |
+     |------|---------|-----------------|
+
+     ## Spec Drift Applied
+     | Entity | Old Value | New Value |
+     |--------|-----------|-----------|
      ```
 
-6. **Write bug-report.md**
-   - Same format as bug-finder (see shared output format in design)
-   - Include all spec violations + functional bugs
+7. **Write bug-report.md**
+   - Include all spec violations + functional bugs + implementation bugs from reconciliation
+   - For reconciliation bugs, note they were confirmed by human review
 
-7. **Write bug-fixer-input.md**
-   - Numbered markdown list of fixable issues (spec violations + functional bugs)
+8. **Write bug-fixer-input.md**
+   - Numbered markdown list of fixable issues (spec violations + functional bugs + implementation bugs)
    - Exclude spec gaps (those need spec updates, not code fixes)
+   - Exclude drift items (already resolved via spec-graph update)
