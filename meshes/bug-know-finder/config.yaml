@@ -2,7 +2,8 @@
 # Spec-guided QA: generate Playwright tests from spec-graph, find spec violations and gaps
 # Responsibilities:
 #   - Read spec-graph for interfaces, actions, workflows
-#   - Generate Playwright tests from spec assertions
+#   - Inspect live UI to map spec assertions to real selectors (HITL on conflicts)
+#   - Generate Playwright tests from verified selectors
 #   - Run tests and capture results
 #   - Crawl site to find features not in spec
 #   - Produce comprehensive QA report
@@ -18,6 +19,14 @@ agents:
   - name: gap-detector
     model: sonnet
     prompt: gap-detector.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@playwright/mcp@latest"]
+
+  - name: inspector
+    model: sonnet
+    prompt: inspector.md
     mcpServers:
       playwright:
         command: npx
@@ -45,10 +54,15 @@ completion_agents: [synthesizer]
 routing:
   spec-reader:
     complete:
-      test-writer: "Spec assertions extracted"
+      inspector: "Spec assertions extracted, inspect live UI"
   gap-detector:
     complete:
       synthesizer: "Gap analysis ready"
+  inspector:
+    complete:
+      test-writer: "Selector map ready"
+    blocked:
+      core: "Spec-vs-reality conflicts need human review"
   test-writer:
     complete:
       runner: "Tests generated"
@@ -75,6 +89,10 @@ fsm:
         agents: [spec-reader, gap-detector]
         aggregation: concat
         timeout_ms: 600000
+      exit:
+        default: inspect
+    inspect:
+      agents: [inspector]
       exit:
         default: generate
     generate:
@@ -103,6 +121,11 @@ guardrails:
     gap-detector:
       max_turns:
         limit: 25
+        strict: true
+        warning: true
+    inspector:
+      max_turns:
+        limit: 30
         strict: true
         warning: true
     test-writer:
