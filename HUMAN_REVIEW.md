@@ -87,13 +87,20 @@ tx msg bug-know-finder "Test https://example.com against the spec-graph"
 - [ ] Remove dev_mode: `yq -i 'del(.dev_mode)' meshes/bug-know-finder/config.yaml`
 
 #### 4. FSM state transitions
-- [ ] analyze (named ensemble: spec-reader + gap-detector) → generate → run → synthesis → complete
+- [ ] analyze (named ensemble: spec-reader + gap-detector) → inspect → generate → run → synthesis → complete
 - [ ] Analyze ensemble has 600s timeout
 
-#### 5. Playwright MCP loads for gap-detector and runner
-- [ ] Both agents have access to `browser_navigate`, `browser_screenshot` etc.
+#### 5. Inspector HITL flow
+- [ ] Inspector reads spec-assertions.yaml and visits pages with Playwright
+- [ ] Inspector produces selector-map.yaml with real selectors
+- [ ] When conflicts exist (found: false), inspector sends ask-human to core/core
+- [ ] Mesh suspends until human responds with guidance
+- [ ] Test-writer reads selector-map.yaml (NOT spec-assertions.yaml)
 
-#### 6. Spec-graph access
+#### 6. Playwright MCP loads for gap-detector, inspector, and runner
+- [ ] All three agents have access to `browser_navigate`, `browser_screenshot` etc.
+
+#### 7. Spec-graph access
 - [ ] spec-reader can run `know list`, `know get`, `know graph` commands
 
 ---
