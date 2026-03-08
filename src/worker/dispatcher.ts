@@ -46,6 +46,7 @@ import { GuardrailConfig } from './guardrail-config.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
+import { ReliabilityManager } from '../reliability/reliability-manager.ts';
 import YAML from 'yaml';
 
 /**
@@ -351,6 +352,8 @@ export class WorkerDispatcher extends EventEmitter {
   systemWriter!: SystemMessageWriter;
   // Auto-nudge recovery for stalled routes
   private nudgeDetector?: NudgeDetector;
+  // Reliability: circuit breakers, heartbeat, SLI, DLQ, safe-mode
+  reliability?: ReliabilityManager;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -1184,6 +1187,10 @@ export class WorkerDispatcher extends EventEmitter {
     // Initialize auto-nudge detector from config
     const nudgeConfig = this.guardrails.getNudgeConfig?.() ?? {};
     this.nudgeDetector = new NudgeDetector(this.systemWriter, this.queue, nudgeConfig);
+
+    // Initialize reliability manager (circuit breakers, heartbeat, SLI, DLQ, safe-mode)
+    this.reliability = new ReliabilityManager(this.queue.getDb(), this.config.workDir);
+    this.reliability.start();
 
     // Subscribe to consumer events for event-driven dispatch
     if (consumer) {
@@ -3999,6 +4006,19 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       const worker = new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
 
+      // Reliability: register agent for heartbeat monitoring + circuit breaker check
+      if (this.reliability) {
+        const spawnCheck = this.reliability.canSpawn(meshName!, agentId);
+        if (!spawnCheck.allowed) {
+          log.warn('dispatcher', `Spawn blocked by reliability`, {
+            agentId, reason: spawnCheck.reason,
+          });
+          log.activity('reliability:blocked', agentId, spawnCheck.reason || 'blocked');
+          return;
+        }
+        this.reliability.registerAgent(agentId);
+      }
+
       // Parity gate: emit session-start for consumer to clear stale pending asks
       this.emit('session-start', { agentId });
 
@@ -4036,6 +4056,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             result.worker.lastOutputAt = Date.now();
           }
         }
+        // Reliability: heartbeat on output
+        this.reliability?.recordHeartbeat(agentId);
         this.emit('worker:output', data);
       });
 
@@ -4745,6 +4767,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             : undefined,
         });
 
+        // Reliability: record successful completion
+        const durationMs = Date.now() - (activeWorker?.startedAt || Date.now());
+        this.reliability?.recordSuccess(meshName!, agentId, durationMs);
+
         // OAOM: Check queue for next message
         this.processNextQueuedMessage(agentId);
       });
@@ -4894,6 +4920,13 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
+
+        // Reliability: record failure with categorization
+        const category = data.error?.includes('usage policy') ? 'policy_violation'
+          : data.error?.includes('timeout') ? 'timeout'
+          : data.error?.includes('overloaded') ? 'model_error'
+          : 'crash';
+        this.reliability?.recordFailure(meshName!, agentId, category as any, data.error);
       });
 
       // Add worker to active workers with unique workerId for parallel execution
@@ -5869,6 +5902,10 @@ ${output}
   private finalizeMeshCompletion(meshName: string, completionAgent: string): void {
     // Cancel any pending nudge timers for this mesh
     this.nudgeDetector?.cancelForMesh(meshName);
+
+    // Reliability: cleanup mesh-level state, log status
+    this.reliability?.cleanupMesh(meshName);
+    this.reliability?.logStatus();
 
     // Find session by meshName (delegates to MetricsAggregator)
     const result = this.metricsAggregator.findSessionByMeshName(meshName);

@@ -1,0 +1,86 @@
+# reliability-test/config.yaml
+# Test mesh for validating four-nines reliability features
+#
+# Exercises: circuit breakers, heartbeat monitoring, SLI tracking,
+# dead letter queue, safe mode, and failure recovery.
+#
+# This mesh has an intentionally fragile agent (chaos-agent) that may
+# produce routing errors or slow output to test reliability detection.
+
+mesh: reliability-test
+description: "Test mesh for four-nines reliability features: circuit breakers, heartbeat, SLI, DLQ, safe mode"
+
+agents:
+  - name: planner
+    model: haiku
+    prompt: planner/prompt.md
+
+  - name: worker
+    model: haiku
+    prompt: worker/prompt.md
+
+  - name: checker
+    model: haiku
+    prompt: checker/prompt.md
+
+entry_point: planner
+completion_agent: checker
+
+routing:
+  planner:
+    complete:
+      worker: "Plan ready, execute implementation"
+    blocked:
+      core: "Need clarification from user"
+
+  worker:
+    complete:
+      checker: "Implementation done, verify results"
+    blocked:
+      planner: "Need to revise plan"
+
+  checker:
+    complete:
+      core: "All checks passed, task complete"
+    blocked:
+      worker: "Checks failed, rework needed"
+
+# Reliability-specific guardrails for testing
+guardrails:
+  max_messages:
+    strict: true
+    warning: true
+    limit: 20
+  max_turns:
+    strict: false
+    warning: true
+    limit: 15
+  routing_error:
+    strict: false
+    warning: true
+    max_retries: 2
+
+# Workspace for output
+workspace:
+  path: ".ai/output/{task-id}/"
+
+lifecycle:
+  post:
+    - commit:auto
+
+playbook_notes: |
+  Reliability test mesh for exercising four-nines patterns:
+
+  1. PLANNER: Breaks down the task into steps
+  2. WORKER: Executes the implementation
+  3. CHECKER: Validates the output
+
+  This mesh is configured with tight guardrails to exercise:
+  - Circuit breaker trips on repeated failures
+  - Heartbeat detection on stalled agents
+  - SLI tracking for success/failure rates
+  - DLQ routing for undeliverable messages
+  - Safe mode escalation when SLI drops
+
+  Run with: tx msg "Implement a simple hello world function"
+  Monitor with: tx status (shows reliability metrics)
