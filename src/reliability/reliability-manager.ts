@@ -22,11 +22,12 @@
  */
 
 import type Database from 'better-sqlite3';
-import { DeadLetterQueue, type DLQStats } from './dead-letter-queue.ts';
+import { DeadLetterQueue, type DLQStats, type ReplayResult } from './dead-letter-queue.ts';
 import { CircuitBreaker, type CircuitBreakerState } from './circuit-breaker.ts';
 import { HeartbeatMonitor, type AgentHealth } from './heartbeat-monitor.ts';
 import { SLITracker, type SLISnapshot, type FailureCategory } from './sli-tracker.ts';
 import { SafeMode, type SafeModeLevel, type SafeModeState } from './safe-mode.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { log } from '../shared/logger.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -83,7 +84,7 @@ export class ReliabilityManager {
     const merged = { ...fileConfig, ...config };
 
     this.dlq = new DeadLetterQueue(db, merged.dlq?.maxRetries);
-    this.circuitBreaker = new CircuitBreaker(merged.circuitBreaker);
+    this.circuitBreaker = new CircuitBreaker(merged.circuitBreaker, db);
     this.heartbeat = new HeartbeatMonitor(merged.heartbeat);
     this.sli = new SLITracker(merged.sli);
     this.safeMode = new SafeMode(merged.safeMode);
@@ -234,6 +235,32 @@ export class ReliabilityManager {
   cleanupMesh(meshName: string): void {
     this.circuitBreaker.resetForMesh(meshName);
     this.heartbeat.clearForMesh(meshName);
+  }
+
+  // ============================================================
+  // DLQ Replay API
+  // ============================================================
+
+  /**
+   * Replay all pending DLQ entries via SystemMessageWriter.
+   * Re-injects failed messages back into the live system.
+   */
+  replayDLQ(writer: SystemMessageWriter): ReplayResult[] {
+    return this.dlq.replayAll(writer);
+  }
+
+  /**
+   * Replay a single DLQ entry by ID.
+   */
+  replayDLQEntry(id: number, writer: SystemMessageWriter): ReplayResult {
+    return this.dlq.replayOne(id, writer);
+  }
+
+  /**
+   * Replay all DLQ entries for a specific agent.
+   */
+  replayDLQForAgent(agentId: string, writer: SystemMessageWriter): ReplayResult[] {
+    return this.dlq.replayForAgent(agentId, writer);
   }
 
   // ============================================================

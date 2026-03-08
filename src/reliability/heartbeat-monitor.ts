@@ -45,7 +45,7 @@ type HeartbeatCallback = (health: AgentHealth) => void;
 export class HeartbeatMonitor {
   private agents: Map<string, { lastOutputAt: number; startedAt: number }> = new Map();
   private config: HeartbeatConfig;
-  private checkInterval: NodeJS.Timeout | null = null;
+  private checkInterval: ReturnType<typeof setInterval> | null = null;
   private onStale: HeartbeatCallback | null = null;
   private onDead: HeartbeatCallback | null = null;
   private onWarn: HeartbeatCallback | null = null;

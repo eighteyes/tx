@@ -10,8 +10,10 @@
  * - HALF_OPEN: After cooldown, allow one probe request
  *
  * Applied per agent (mesh/agent) to isolate failures.
+ * Checkpoints to SQLite for persistence across restarts.
  */
 
+import type Database from 'better-sqlite3';
 import { log } from '../shared/logger.ts';
 
 export interface CircuitBreakerConfig {
@@ -42,9 +44,99 @@ const DEFAULT_CONFIG: CircuitBreakerConfig = {
 export class CircuitBreaker {
   private circuits: Map<string, CircuitState> = new Map();
   private config: CircuitBreakerConfig;
+  private db: Database.Database | null = null;
 
-  constructor(config?: Partial<CircuitBreakerConfig>) {
+  constructor(config?: Partial<CircuitBreakerConfig>, db?: Database.Database) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    if (db) {
+      this.db = db;
+      this.ensureSchema();
+      this.restoreCheckpoint();
+    }
+  }
+
+  /**
+   * Create checkpoint table if it doesn't exist
+   */
+  private ensureSchema(): void {
+    this.db?.exec(`
+      CREATE TABLE IF NOT EXISTS circuit_breaker_checkpoints (
+        agent_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        failures INTEGER NOT NULL,
+        last_failure_at INTEGER NOT NULL,
+        opened_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+  }
+
+  /**
+   * Restore circuit states from SQLite checkpoint on startup
+   */
+  private restoreCheckpoint(): void {
+    if (!this.db) return;
+
+    const rows = this.db.prepare(
+      'SELECT * FROM circuit_breaker_checkpoints'
+    ).all() as Array<{
+      agent_id: string;
+      state: CircuitBreakerState;
+      failures: number;
+      last_failure_at: number;
+      opened_at: number;
+    }>;
+
+    for (const row of rows) {
+      // Only restore non-closed circuits (closed is default)
+      if (row.state !== 'closed') {
+        this.circuits.set(row.agent_id, {
+          state: row.state,
+          failures: row.failures,
+          lastFailureAt: row.last_failure_at,
+          openedAt: row.opened_at,
+          successesSinceHalfOpen: 0,
+        });
+      }
+    }
+
+    if (rows.length > 0) {
+      const nonClosed = rows.filter(r => r.state !== 'closed').length;
+      log.info('circuit-breaker', 'Restored checkpoints', {
+        total: rows.length,
+        nonClosed,
+      });
+    }
+  }
+
+  /**
+   * Persist current circuit state to SQLite
+   */
+  private checkpoint(agentId: string): void {
+    if (!this.db) return;
+
+    const circuit = this.circuits.get(agentId);
+    if (!circuit || circuit.state === 'closed') {
+      // Remove checkpoint for closed circuits (default state)
+      this.db.prepare(
+        'DELETE FROM circuit_breaker_checkpoints WHERE agent_id = ?'
+      ).run(agentId);
+      return;
+    }
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO circuit_breaker_checkpoints
+        (agent_id, state, failures, last_failure_at, opened_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      agentId,
+      circuit.state,
+      circuit.failures,
+      circuit.lastFailureAt,
+      circuit.openedAt,
+      Date.now()
+    );
   }
 
   /**
@@ -91,6 +183,7 @@ export class CircuitBreaker {
       circuit.state = 'closed';
       circuit.failures = 0;
       log.info('circuit-breaker', 'Circuit closed (recovery successful)', { agentId });
+      this.checkpoint(agentId);
     }
   }
 
@@ -132,6 +225,7 @@ export class CircuitBreaker {
       circuit.state = 'open';
       circuit.openedAt = now;
       log.error('circuit-breaker', 'Circuit reopened (probe failed)', { agentId, reason });
+      this.checkpoint(agentId);
       return;
     }
 
@@ -144,6 +238,7 @@ export class CircuitBreaker {
         threshold: this.config.failureThreshold,
         reason,
       });
+      this.checkpoint(agentId);
     }
   }
 
@@ -170,6 +265,7 @@ export class CircuitBreaker {
    */
   reset(agentId: string): void {
     this.circuits.delete(agentId);
+    this.checkpoint(agentId);
     log.info('circuit-breaker', 'Circuit manually reset', { agentId });
   }
 
@@ -178,6 +274,7 @@ export class CircuitBreaker {
    */
   resetAll(): void {
     this.circuits.clear();
+    this.db?.prepare('DELETE FROM circuit_breaker_checkpoints').run();
   }
 
   /**
@@ -187,6 +284,7 @@ export class CircuitBreaker {
     for (const agentId of this.circuits.keys()) {
       if (agentId.startsWith(`${meshName}/`)) {
         this.circuits.delete(agentId);
+        this.checkpoint(agentId);
       }
     }
   }
