@@ -28,3 +28,5 @@ meshes/*
 !meshes/structured-thinking
 !meshes/narrative-engine/
 !meshes/narrative-engine-v2/
+!meshes/reliability-test/
+!meshes/reliability-fsm/
