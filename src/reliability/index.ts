@@ -12,7 +12,8 @@
  * not just more of what got you the previous nine.
  */
 
-export { DeadLetterQueue, type DLQEntry, type DLQStats } from './dead-letter-queue.ts';
+export { DeadLetterQueue, type DLQEntry, type DLQStats, type ReplayResult } from './dead-letter-queue.ts';
+export { ReliabilityManager, type ReliabilityConfig, type ReliabilityStatus } from './reliability-manager.ts';
 export { CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerState } from './circuit-breaker.ts';
 export { HeartbeatMonitor, type HeartbeatConfig, type AgentHealth } from './heartbeat-monitor.ts';
 export { SLITracker, type SLIConfig, type SLISnapshot, type FailureCategory } from './sli-tracker.ts';

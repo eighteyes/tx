@@ -7,12 +7,13 @@
  * Features:
  * - Automatic retry with exponential backoff (up to maxRetries)
  * - DLQ storage in SQLite for persistence across restarts
- * - Replay capability for manual recovery
+ * - Replay via SystemMessageWriter (re-injects into live system)
  * - Failure reason tracking for taxonomy
  */
 
 import type Database from 'better-sqlite3';
 import { log } from '../shared/logger.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 export interface DLQEntry {
   id: number;
@@ -35,6 +36,12 @@ export interface DLQStats {
   replayed: number;    // Successfully replayed
   byReason: Record<string, number>;
   byAgent: Record<string, number>;
+}
+
+export interface ReplayResult {
+  id: number;
+  success: boolean;
+  error?: string;
 }
 
 export class DeadLetterQueue {
@@ -141,6 +148,85 @@ export class DeadLetterQueue {
     `).run(Date.now(), id);
 
     log.info('dlq', 'DLQ entry replayed', { id });
+  }
+
+  /**
+   * Replay a single DLQ entry via SystemMessageWriter.
+   * Re-injects the message into the live system with a [DLQ REPLAY] prefix.
+   */
+  replayOne(id: number, writer: SystemMessageWriter): ReplayResult {
+    const entry = this.db.prepare(
+      'SELECT * FROM dead_letter_queue WHERE id = ? AND replayed_at IS NULL'
+    ).get(id) as DLQEntry | undefined;
+
+    if (!entry) {
+      return { id, success: false, error: 'Entry not found or already replayed' };
+    }
+
+    try {
+      const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+      const headline = (payload.headline as string) || 'DLQ Replay';
+      const body = (payload.body as string) || JSON.stringify(payload, null, 2);
+
+      writer.write({
+        to: entry.to_agent,
+        from: entry.from_agent,
+        type: entry.type,
+        headline: `[DLQ REPLAY] ${headline}`,
+        body: `> Replayed from dead letter queue (DLQ #${entry.id})\n> Original failure: ${entry.failure_reason}\n> Failed at: ${new Date(entry.first_failed_at).toISOString()}\n> Retries: ${entry.retry_count}/${entry.max_retries}\n\n${body}`,
+        msgId: `dlq-replay-${entry.id}-${Date.now()}`,
+      });
+
+      this.markReplayed(id);
+
+      log.info('dlq', 'Message replayed via SystemMessageWriter', {
+        id,
+        to: entry.to_agent,
+        from: entry.from_agent,
+        originalReason: entry.failure_reason,
+      });
+
+      return { id, success: true };
+    } catch (err) {
+      const error = (err as Error).message;
+      log.error('dlq', 'Replay failed', { id, error });
+      return { id, success: false, error };
+    }
+  }
+
+  /**
+   * Replay all pending DLQ entries via SystemMessageWriter.
+   * Returns results for each entry.
+   */
+  replayAll(writer: SystemMessageWriter): ReplayResult[] {
+    const pending = this.getPending();
+    const results: ReplayResult[] = [];
+
+    for (const entry of pending) {
+      results.push(this.replayOne(entry.id, writer));
+    }
+
+    log.info('dlq', 'Bulk replay complete', {
+      total: pending.length,
+      succeeded: results.filter(r => r.success).length,
+      failed: results.filter(r => !r.success).length,
+    });
+
+    return results;
+  }
+
+  /**
+   * Replay all pending DLQ entries for a specific agent.
+   */
+  replayForAgent(agentId: string, writer: SystemMessageWriter): ReplayResult[] {
+    const entries = this.getForAgent(agentId);
+    const results: ReplayResult[] = [];
+
+    for (const entry of entries) {
+      results.push(this.replayOne(entry.id, writer));
+    }
+
+    return results;
   }
 
   /**
