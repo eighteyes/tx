@@ -2,7 +2,7 @@
  * ReliabilityManager - Central coordinator for all reliability features
  *
  * Provides a single integration point for the dispatcher to wire up:
- * - Dead letter queue (failed message recovery)
+ * - Dead letter queue (session-aware failure recovery)
  * - Circuit breakers (cascading failure prevention)
  * - Heartbeat monitoring (stalled worker detection)
  * - SLI tracking (reliability measurement)
@@ -15,19 +15,18 @@
  * Wire events:
  *   // On worker complete
  *   this.reliability.recordSuccess(meshName, agentId, durationMs);
- *   // On worker error
- *   this.reliability.recordFailure(meshName, agentId, 'crash', error.message);
+ *   // On worker error (with session context for DLQ)
+ *   this.reliability.recordFailure(meshName, agentId, 'crash', error.message, { sessionId, messagesSent });
  *   // On worker output (heartbeat)
  *   this.reliability.heartbeat(agentId);
  */
 
 import type Database from 'better-sqlite3';
-import { DeadLetterQueue, type DLQStats, type ReplayResult } from './dead-letter-queue.ts';
+import { DeadLetterQueue, type DLQEntry, type DLQStats, type RecoveryMode, type RecoveryResult } from './dead-letter-queue.ts';
 import { CircuitBreaker, type CircuitBreakerState } from './circuit-breaker.ts';
 import { HeartbeatMonitor, type AgentHealth } from './heartbeat-monitor.ts';
 import { SLITracker, type SLISnapshot, type FailureCategory } from './sli-tracker.ts';
 import { SafeMode, type SafeModeLevel, type SafeModeState } from './safe-mode.ts';
-import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { log } from '../shared/logger.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -67,6 +66,28 @@ export interface ReliabilityStatus {
   circuitBreakers: Array<{ agentId: string; state: CircuitBreakerState; failures: number }>;
   agentHealth: AgentHealth[];
 }
+
+/** Context captured at failure time for session-aware DLQ */
+export interface FailureContext {
+  sessionId?: string | null;
+  messagesSent?: number;
+  outputSnapshot?: string;
+  sourceFile?: string;
+  fromAgent?: string;
+  toAgent?: string;
+  msgType?: string;
+  payload?: Record<string, unknown>;
+}
+
+/** Callback for session resume recovery */
+export type SessionResumeHandler = (
+  agentId: string,
+  sessionId: string,
+  meshName: string
+) => Promise<{ success: boolean; error?: string }>;
+
+/** Callback for message requeue recovery */
+export type RequeueHandler = (entry: DLQEntry) => { success: boolean; error?: string };
 
 export class ReliabilityManager {
   readonly dlq: DeadLetterQueue;
@@ -191,13 +212,18 @@ export class ReliabilityManager {
   }
 
   /**
-   * Record failure
+   * Record failure with optional session context for DLQ routing.
+   *
+   * When failureCtx includes a sessionId, the DLQ entry is marked for
+   * session_resume recovery (picks up exactly where the agent left off).
+   * Without a sessionId, it falls back to message requeue.
    */
   recordFailure(
     meshName: string,
     agentId: string,
     category: FailureCategory,
-    reason?: string
+    reason?: string,
+    failureCtx?: FailureContext
   ): void {
     this.sli.recordFailure(meshName, agentId, category, reason);
     this.circuitBreaker.recordFailure(agentId, reason || category);
@@ -209,23 +235,33 @@ export class ReliabilityManager {
   }
 
   /**
-   * Route a failed message to DLQ
+   * Route a failed operation to the DLQ with full session context.
+   *
+   * The DLQ auto-determines recovery mode:
+   * - session_resume: sessionId present → can resume conversation
+   * - requeue: no session → re-inject message into queue
+   * - manual: retries exhausted → needs human intervention
    */
-  deadLetter(msg: {
-    from_agent: string;
-    to_agent: string;
-    type: string;
-    payload: Record<string, unknown>;
-    source_file?: string;
-  }, reason: string, retryCount?: number): void {
+  deadLetter(
+    meshName: string,
+    agentId: string,
+    category: FailureCategory,
+    reason: string,
+    ctx?: FailureContext
+  ): void {
     this.dlq.add({
-      from_agent: msg.from_agent,
-      to_agent: msg.to_agent,
-      type: msg.type,
-      payload: msg.payload,
-      source_file: msg.source_file,
+      agent_id: agentId,
+      mesh_name: meshName,
+      session_id: ctx?.sessionId || undefined,
+      from_agent: ctx?.fromAgent || agentId,
+      to_agent: ctx?.toAgent || agentId,
+      type: ctx?.msgType || 'task',
+      payload: ctx?.payload || {},
+      source_file: ctx?.sourceFile,
       failure_reason: reason,
-      retry_count: retryCount,
+      failure_category: category,
+      messages_sent: ctx?.messagesSent,
+      output_snapshot: ctx?.outputSnapshot,
     });
   }
 
@@ -238,29 +274,114 @@ export class ReliabilityManager {
   }
 
   // ============================================================
-  // DLQ Replay API
+  // Session-Aware Recovery API
   // ============================================================
 
   /**
-   * Replay all pending DLQ entries via SystemMessageWriter.
-   * Re-injects failed messages back into the live system.
+   * Recover all auto-recoverable DLQ entries.
+   *
+   * For session_resume entries: calls sessionResumeHandler to resume
+   * the SDK session where it left off (preserves conversation history).
+   *
+   * For requeue entries: calls requeueHandler to re-inject the message
+   * into the queue for fresh dispatch.
    */
-  replayDLQ(writer: SystemMessageWriter): ReplayResult[] {
-    return this.dlq.replayAll(writer);
+  async recoverAll(
+    sessionResumeHandler: SessionResumeHandler,
+    requeueHandler: RequeueHandler
+  ): Promise<RecoveryResult[]> {
+    const entries = this.dlq.getRecoverable();
+    const results: RecoveryResult[] = [];
+
+    for (const entry of entries) {
+      const result = await this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
+      results.push(result);
+    }
+
+    return results;
   }
 
   /**
-   * Replay a single DLQ entry by ID.
+   * Recover DLQ entries for a specific mesh.
    */
-  replayDLQEntry(id: number, writer: SystemMessageWriter): ReplayResult {
-    return this.dlq.replayOne(id, writer);
+  async recoverForMesh(
+    meshName: string,
+    sessionResumeHandler: SessionResumeHandler,
+    requeueHandler: RequeueHandler
+  ): Promise<RecoveryResult[]> {
+    const entries = this.dlq.getForMesh(meshName);
+    const results: RecoveryResult[] = [];
+
+    for (const entry of entries) {
+      if (entry.recovery_mode === 'manual') continue;
+      const result = await this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
+      results.push(result);
+    }
+
+    return results;
   }
 
   /**
-   * Replay all DLQ entries for a specific agent.
+   * Recover a single DLQ entry by ID.
    */
-  replayDLQForAgent(agentId: string, writer: SystemMessageWriter): ReplayResult[] {
-    return this.dlq.replayForAgent(agentId, writer);
+  async recoverById(
+    id: number,
+    sessionResumeHandler: SessionResumeHandler,
+    requeueHandler: RequeueHandler
+  ): Promise<RecoveryResult> {
+    const entry = this.dlq.getById(id);
+    if (!entry) {
+      return { id, success: false, mode: 'manual', error: 'DLQ entry not found' };
+    }
+    return this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
+  }
+
+  /**
+   * Recover a single DLQ entry using the appropriate recovery mode.
+   */
+  private async recoverEntry(
+    entry: DLQEntry,
+    sessionResumeHandler: SessionResumeHandler,
+    requeueHandler: RequeueHandler
+  ): Promise<RecoveryResult> {
+    if (entry.recovery_mode === 'session_resume' && entry.session_id) {
+      // Resume the SDK session — preserves full conversation history
+      try {
+        const result = await sessionResumeHandler(entry.agent_id, entry.session_id, entry.mesh_name);
+        if (result.success) {
+          this.dlq.markRecovered(entry.id);
+          log.info('reliability', 'DLQ entry recovered via session resume', {
+            id: entry.id,
+            agent: entry.agent_id,
+            sessionId: entry.session_id.slice(0, 8),
+          });
+          return { id: entry.id, success: true, mode: 'session_resume', sessionId: entry.session_id };
+        } else {
+          // Session resume failed — escalate to manual
+          this.dlq.escalateToManual(entry.id, result.error || 'Session resume failed');
+          return { id: entry.id, success: false, mode: 'session_resume', error: result.error };
+        }
+      } catch (err) {
+        this.dlq.escalateToManual(entry.id, (err as Error).message);
+        return { id: entry.id, success: false, mode: 'session_resume', error: (err as Error).message };
+      }
+    } else if (entry.recovery_mode === 'requeue') {
+      // Re-inject message into the queue
+      const result = requeueHandler(entry);
+      if (result.success) {
+        this.dlq.markRecovered(entry.id);
+        log.info('reliability', 'DLQ entry recovered via requeue', {
+          id: entry.id,
+          agent: entry.agent_id,
+        });
+        return { id: entry.id, success: true, mode: 'requeue' };
+      } else {
+        this.dlq.escalateToManual(entry.id, result.error || 'Requeue failed');
+        return { id: entry.id, success: false, mode: 'requeue', error: result.error };
+      }
+    } else {
+      return { id: entry.id, success: false, mode: 'manual', error: 'Requires manual intervention' };
+    }
   }
 
   // ============================================================

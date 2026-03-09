@@ -4886,6 +4886,12 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         await machine.error(data.error);
 
+        // Reliability: categorize failure
+        const category = data.error?.includes('usage policy') ? 'policy_violation'
+          : data.error?.includes('timeout') ? 'timeout'
+          : data.error?.includes('overloaded') ? 'model_error'
+          : 'crash';
+
         // Check if we can retry
         const canRetry = await machine.canTransition('retry', {
           status: 'initializing',
@@ -4915,17 +4921,29 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }, 1000);
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
+
+          // Reliability: route to DLQ with session context for recovery
+          if (this.reliability) {
+            const sessionId = activeWorker?.runner.getSessionId() || undefined;
+            const msgsSent = activeWorker?.messagesSent?.length || 0;
+            this.reliability.deadLetter(meshName!, agentId, category, data.error || 'Unknown error', {
+              sessionId,
+              messagesSent: msgsSent,
+              fromAgent: nextMsg?.from_agent,
+              toAgent: agentId,
+              msgType: nextMsg?.type,
+              payload: nextMsg?.payload as Record<string, unknown>,
+              sourceFile: nextMsg?.source_file,
+            });
+          }
+
           // Cleanup using consolidated helper
           this.cleanupWorker(agentId, errorWorkerId);
         }
 
         this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
 
-        // Reliability: record failure with categorization
-        const category = data.error?.includes('usage policy') ? 'policy_violation'
-          : data.error?.includes('timeout') ? 'timeout'
-          : data.error?.includes('overloaded') ? 'model_error'
-          : 'crash';
+        // Reliability: record failure
         this.reliability?.recordFailure(meshName!, agentId, category as any, data.error);
       });
 
