@@ -3638,6 +3638,100 @@ async function meshDLQ(meshName: string | undefined, flags: MeshFlags): Promise<
   }
 }
 
+/**
+ * Trigger DLQ recovery for a mesh via the running dispatcher.
+ * Uses SIGUSR2 control signal (same pattern as tx mesh kill).
+ *
+ * If the dispatcher is not running, falls back to writing a recovery
+ * message directly so it's picked up on next start.
+ *
+ * tx mesh recover <mesh>     Recover DLQ entries for a mesh
+ * tx mesh recover --all      Recover all DLQ entries
+ */
+async function meshRecover(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const dataDir = path.join(cwd, '.ai/tx/data');
+  const pidFile = path.join(dataDir, '.pid');
+  const controlFile = path.join(dataDir, 'control.json');
+
+  if (!fs.existsSync(queuePath)) {
+    console.log(chalk.yellow('No queue database found.'));
+    return;
+  }
+
+  // Check what's in the DLQ first
+  const queue = new MessageQueue(queuePath);
+  const dlq = new DeadLetterQueue(queue.getDb());
+
+  const entries = meshName && !flags.all
+    ? dlq.getForMesh(meshName).filter(e => e.recovery_mode !== 'manual')
+    : dlq.getRecoverable();
+
+  if (entries.length === 0) {
+    console.log(chalk.green('No recoverable DLQ entries.'));
+    return;
+  }
+
+  const resumable = entries.filter(e => e.recovery_mode === 'session_resume');
+  const requeueable = entries.filter(e => e.recovery_mode === 'requeue');
+  console.log(`\nRecovering ${entries.length} entries: ${chalk.cyan(String(resumable.length))} session_resume, ${chalk.yellow(String(requeueable.length))} requeue`);
+
+  // Try SIGUSR2 to running dispatcher
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (!isNaN(pid)) {
+      const target = meshName && !flags.all ? meshName : '_all';
+      fs.writeFileSync(controlFile, JSON.stringify({ action: 'dlq-recover', mesh: target }));
+
+      try {
+        process.kill(pid, 'SIGUSR2');
+
+        // Wait for ACK
+        for (let i = 0; i < 50; i++) {
+          if (!fs.existsSync(controlFile)) {
+            console.log(chalk.green(`Recovery triggered successfully.`));
+            return;
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        console.log(chalk.yellow('Timeout waiting for dispatcher. Entries will be recovered on next start.'));
+        if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+        return;
+      } catch {
+        // Process not running — fall through to message-based recovery
+        if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+      }
+    }
+  }
+
+  // Fallback: write a recovery message so next start picks it up
+  // Use SystemMessageWriter pattern — write directly to msgs dir
+  if (meshName) {
+    const msgsDir = path.join(cwd, '.ai/tx/msgs');
+    if (!fs.existsSync(msgsDir)) fs.mkdirSync(msgsDir, { recursive: true });
+
+    // Look up entry point from mesh config
+    const meshDir = path.join(cwd, 'meshes', meshName);
+    let entryPoint = 'worker';
+    const configPath = path.join(meshDir, 'config.yaml');
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+        entryPoint = cfg.entry_point || cfg.agents?.[0]?.name || 'worker';
+      } catch { /* use default */ }
+    }
+
+    const timestamp = Date.now();
+    const filename = `${timestamp}-task-system-dlq-recovery--${meshName}-${entryPoint}-recover.md`;
+    const content = `---\nto: ${meshName}/${entryPoint}\nfrom: system/dlq-recovery\ntype: task\nheadline: DLQ recovery\nrecover: true\ntimestamp: ${new Date(timestamp).toISOString()}\n---\n\nRecover failed work from dead letter queue.\n`;
+    fs.writeFileSync(path.join(msgsDir, filename), content);
+    console.log(chalk.cyan(`Recovery message written. Will be processed on next tx start.`));
+  } else {
+    console.log(chalk.yellow('Cannot write fallback recovery without mesh name. Use: tx mesh recover <mesh>'));
+  }
+}
+
 function printUsage(): void {
   console.log(`
 ${chalk.bold('Usage:')} tx mesh <action> [mesh] [options]
@@ -3662,6 +3756,8 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('health')} [mesh]           Reliability dashboard (SLI nines, circuits, safe mode, DLQ)
   ${chalk.cyan('dlq')} [mesh]              Dead letter queue (pending failures, recovery modes)
   ${chalk.cyan('dlq clear')}               Clear recovered DLQ entries
+  ${chalk.cyan('recover')} <mesh>           Trigger DLQ recovery (session resume or requeue)
+  ${chalk.cyan('recover')} --all            Recover all pending DLQ entries
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -3859,6 +3955,10 @@ export async function mesh(args: string[]): Promise<void> {
 
       case 'dlq':
         await meshDLQ(meshName, flags);
+        break;
+
+      case 'recover':
+        await meshRecover(meshName, flags);
         break;
 
       default:

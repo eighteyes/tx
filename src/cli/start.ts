@@ -271,6 +271,16 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
         } else if (ctrl.action === 'reload-meshes') {
           disp.reloadMeshConfigs(ctrl.mesh);
           log.info('start', 'SIGUSR2: reloaded mesh configs', { mesh: ctrl.mesh || 'all' });
+        } else if (ctrl.action === 'dlq-recover') {
+          if (disp.reliability) {
+            const results = ctrl.mesh === '_all'
+              ? disp.reliability.recoverAll()
+              : disp.reliability.recoverForMesh(ctrl.mesh);
+            const succeeded = results.filter((r: { success: boolean }) => r.success).length;
+            log.info('start', 'SIGUSR2: DLQ recovery', {
+              mesh: ctrl.mesh, attempted: results.length, succeeded,
+            });
+          }
         }
 
         // Delete control file as ACK

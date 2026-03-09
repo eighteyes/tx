@@ -1,24 +1,21 @@
 /**
  * ReliabilityManager - Central coordinator for all reliability features
  *
- * Provides a single integration point for the dispatcher to wire up:
+ * Provides a single integration point for the dispatcher:
  * - Dead letter queue (session-aware failure recovery)
  * - Circuit breakers (cascading failure prevention)
- * - Heartbeat monitoring (stalled worker detection)
+ * - Heartbeat monitoring (stalled worker detection + kill)
  * - SLI tracking (reliability measurement)
- * - Safe mode (gradual autonomy control)
+ * - Safe mode (gradual autonomy control via PreToolUse hooks)
  *
  * Usage in dispatcher.start():
- *   this.reliability = new ReliabilityManager(this.queue.getDb(), this.config.workDir);
+ *   this.reliability = new ReliabilityManager(db, workDir);
+ *   this.reliability.bindDispatcher({
+ *     killAgent: (agentId, reason) => this.workerLifecycle.killForAgent(agentId, reason),
+ *     requeueMessage: (from, to, type, payload) => this.systemWriter.write({...}),
+ *     getActiveSessionId: (agentId) => worker?.runner.getSessionId(),
+ *   });
  *   this.reliability.start();
- *
- * Wire events:
- *   // On worker complete
- *   this.reliability.recordSuccess(meshName, agentId, durationMs);
- *   // On worker error (with session context for DLQ)
- *   this.reliability.recordFailure(meshName, agentId, 'crash', error.message, { sessionId, messagesSent });
- *   // On worker output (heartbeat)
- *   this.reliability.heartbeat(agentId);
  */
 
 import type Database from 'better-sqlite3';
@@ -79,15 +76,17 @@ export interface FailureContext {
   payload?: Record<string, unknown>;
 }
 
-/** Callback for session resume recovery */
-export type SessionResumeHandler = (
-  agentId: string,
-  sessionId: string,
-  meshName: string
-) => Promise<{ success: boolean; error?: string }>;
-
-/** Callback for message requeue recovery */
-export type RequeueHandler = (entry: DLQEntry) => { success: boolean; error?: string };
+/**
+ * Dispatcher callbacks — these let the reliability manager
+ * take real action (kill workers, requeue messages) without
+ * importing the dispatcher directly.
+ */
+export interface DispatcherBindings {
+  /** Kill all workers for an agent, returns count killed */
+  killAgent: (agentId: string, reason: string) => number;
+  /** Write a message into the queue (for requeue recovery) */
+  requeueMessage: (from: string, to: string, type: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => void;
+}
 
 export class ReliabilityManager {
   readonly dlq: DeadLetterQueue;
@@ -96,6 +95,7 @@ export class ReliabilityManager {
   readonly sli: SLITracker;
   readonly safeMode: SafeMode;
   private workDir: string;
+  private bindings?: DispatcherBindings;
 
   constructor(db: Database.Database, workDir: string, config?: ReliabilityConfig) {
     this.workDir = workDir;
@@ -110,7 +110,23 @@ export class ReliabilityManager {
     this.sli = new SLITracker(merged.sli);
     this.safeMode = new SafeMode(merged.safeMode);
 
-    // Wire heartbeat callbacks
+    log.info('reliability', 'ReliabilityManager initialized', {
+      dlqMaxRetries: merged.dlq?.maxRetries || 3,
+      cbThreshold: merged.circuitBreaker?.failureThreshold || 3,
+      safeModeDefault: merged.safeMode?.defaultLevel || 'normal',
+      autoEscalate: merged.safeMode?.autoEscalate || false,
+    });
+  }
+
+  /**
+   * Bind dispatcher actions. Must be called before start().
+   * This gives the reliability manager the ability to actually
+   * kill stuck workers and requeue messages — not just observe.
+   */
+  bindDispatcher(bindings: DispatcherBindings): void {
+    this.bindings = bindings;
+
+    // Now that we can kill, wire the heartbeat dead callback
     this.heartbeat.on('stale', (health) => {
       log.warn('reliability', `Agent stale: ${health.agentId}`, {
         silenceMs: health.silenceMs,
@@ -118,20 +134,25 @@ export class ReliabilityManager {
     });
 
     this.heartbeat.on('dead', (health) => {
-      this.recordFailure(
-        health.agentId.split('/')[0],
-        health.agentId,
-        'stuck',
-        `No output for ${Math.round(health.silenceMs / 1000)}s`
-      );
+      const meshName = health.agentId.split('/')[0];
+
+      // Record failure (updates SLI, circuit breaker, safe mode)
+      this.recordFailure(meshName, health.agentId, 'stuck',
+        `No output for ${Math.round(health.silenceMs / 1000)}s`);
+
+      // Kill the stuck worker
+      const killed = this.bindings!.killAgent(health.agentId, `heartbeat dead: ${Math.round(health.silenceMs / 1000)}s silent`);
+      log.warn('reliability', `Killed stuck agent`, {
+        agentId: health.agentId,
+        silenceMs: health.silenceMs,
+        workersKilled: killed,
+      });
+
+      log.activity('reliability:heartbeat-kill', health.agentId,
+        `Killed after ${Math.round(health.silenceMs / 1000)}s silence`);
     });
 
-    log.info('reliability', 'ReliabilityManager initialized', {
-      dlqMaxRetries: merged.dlq?.maxRetries || 3,
-      cbThreshold: merged.circuitBreaker?.failureThreshold || 3,
-      safeModeDefault: merged.safeMode?.defaultLevel || 'normal',
-      autoEscalate: merged.safeMode?.autoEscalate || false,
-    });
+    log.info('reliability', 'Dispatcher bindings attached');
   }
 
   /**
@@ -213,17 +234,12 @@ export class ReliabilityManager {
 
   /**
    * Record failure with optional session context for DLQ routing.
-   *
-   * When failureCtx includes a sessionId, the DLQ entry is marked for
-   * session_resume recovery (picks up exactly where the agent left off).
-   * Without a sessionId, it falls back to message requeue.
    */
   recordFailure(
     meshName: string,
     agentId: string,
     category: FailureCategory,
     reason?: string,
-    failureCtx?: FailureContext
   ): void {
     this.sli.recordFailure(meshName, agentId, category, reason);
     this.circuitBreaker.recordFailure(agentId, reason || category);
@@ -266,6 +282,46 @@ export class ReliabilityManager {
   }
 
   /**
+   * Create a PreToolUse hook that enforces safe mode tool restrictions.
+   * Returns a hook object compatible with the dispatcher's chaos hooks.
+   *
+   * At 'restricted' level: blocks Write, Edit, NotebookEdit, Bash
+   * At 'lockdown' level: blocks everything (spawn already blocked)
+   * At 'cautious' level: allows all tools (restrictions are action-level)
+   */
+  createSafeModeHook(meshName: string, agentId: string): { matcher: string; hooks: Array<(input: unknown) => { decision: string; reason?: string }> } | null {
+    const level = this.safeMode.getLevel(meshName);
+    if (level === 'normal') return null;
+
+    const state = this.safeMode.getState(meshName);
+    const disabledTools = state.disabledTools;
+    if (disabledTools.length === 0) return null;
+
+    return {
+      matcher: '*',  // Check all tools
+      hooks: [(input: unknown) => {
+        const toolInput = input as { tool_name?: string };
+        const toolName = toolInput?.tool_name || '';
+
+        if (disabledTools.includes(toolName)) {
+          log.warn('safe-mode', `Blocked tool ${toolName}`, {
+            agentId,
+            meshName,
+            level,
+          });
+          log.activity('safe-mode:blocked', agentId, `${toolName} blocked at ${level} level`);
+
+          return {
+            decision: 'block',
+            reason: `Safe mode ${level}: ${toolName} is disabled. Current restrictions: ${disabledTools.join(', ')}`,
+          };
+        }
+        return { decision: 'allow' };
+      }],
+    };
+  }
+
+  /**
    * Clean up for a mesh (call on mesh complete)
    */
   cleanupMesh(meshName: string): void {
@@ -274,28 +330,33 @@ export class ReliabilityManager {
   }
 
   // ============================================================
-  // Session-Aware Recovery API
+  // DLQ Recovery — triggered by CLI or front-matter message
   // ============================================================
 
   /**
    * Recover all auto-recoverable DLQ entries.
    *
-   * For session_resume entries: calls sessionResumeHandler to resume
-   * the SDK session where it left off (preserves conversation history).
+   * For session_resume: writes a new message to the target agent
+   * with session-id front-matter so the dispatcher spawns with resume.
    *
-   * For requeue entries: calls requeueHandler to re-inject the message
-   * into the queue for fresh dispatch.
+   * For requeue: re-injects the original message into the queue.
+   *
+   * Requires bindings — call bindDispatcher() first.
    */
-  async recoverAll(
-    sessionResumeHandler: SessionResumeHandler,
-    requeueHandler: RequeueHandler
-  ): Promise<RecoveryResult[]> {
+  recoverAll(): RecoveryResult[] {
+    if (!this.bindings) {
+      log.error('reliability', 'Cannot recover: no dispatcher bindings');
+      return [];
+    }
+
     const entries = this.dlq.getRecoverable();
+    if (entries.length === 0) return [];
+
+    log.info('reliability', `Recovering ${entries.length} DLQ entries`);
     const results: RecoveryResult[] = [];
 
     for (const entry of entries) {
-      const result = await this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
-      results.push(result);
+      results.push(this.recoverEntry(entry));
     }
 
     return results;
@@ -304,18 +365,15 @@ export class ReliabilityManager {
   /**
    * Recover DLQ entries for a specific mesh.
    */
-  async recoverForMesh(
-    meshName: string,
-    sessionResumeHandler: SessionResumeHandler,
-    requeueHandler: RequeueHandler
-  ): Promise<RecoveryResult[]> {
+  recoverForMesh(meshName: string): RecoveryResult[] {
+    if (!this.bindings) return [];
+
     const entries = this.dlq.getForMesh(meshName);
     const results: RecoveryResult[] = [];
 
     for (const entry of entries) {
       if (entry.recovery_mode === 'manual') continue;
-      const result = await this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
-      results.push(result);
+      results.push(this.recoverEntry(entry));
     }
 
     return results;
@@ -324,63 +382,90 @@ export class ReliabilityManager {
   /**
    * Recover a single DLQ entry by ID.
    */
-  async recoverById(
-    id: number,
-    sessionResumeHandler: SessionResumeHandler,
-    requeueHandler: RequeueHandler
-  ): Promise<RecoveryResult> {
+  recoverById(id: number): RecoveryResult {
+    if (!this.bindings) {
+      return { id, success: false, mode: 'manual', error: 'No dispatcher bindings' };
+    }
+
     const entry = this.dlq.getById(id);
     if (!entry) {
       return { id, success: false, mode: 'manual', error: 'DLQ entry not found' };
     }
-    return this.recoverEntry(entry, sessionResumeHandler, requeueHandler);
+    return this.recoverEntry(entry);
   }
 
   /**
    * Recover a single DLQ entry using the appropriate recovery mode.
+   *
+   * session_resume: Write a message to the agent with session-id in
+   * front-matter. The dispatcher's existing session-id handling spawns
+   * a new worker that resumes the SDK conversation.
+   *
+   * requeue: Re-inject the original message from→to with its payload.
    */
-  private async recoverEntry(
-    entry: DLQEntry,
-    sessionResumeHandler: SessionResumeHandler,
-    requeueHandler: RequeueHandler
-  ): Promise<RecoveryResult> {
-    if (entry.recovery_mode === 'session_resume' && entry.session_id) {
-      // Resume the SDK session — preserves full conversation history
-      try {
-        const result = await sessionResumeHandler(entry.agent_id, entry.session_id, entry.mesh_name);
-        if (result.success) {
-          this.dlq.markRecovered(entry.id);
-          log.info('reliability', 'DLQ entry recovered via session resume', {
-            id: entry.id,
-            agent: entry.agent_id,
-            sessionId: entry.session_id.slice(0, 8),
-          });
-          return { id: entry.id, success: true, mode: 'session_resume', sessionId: entry.session_id };
-        } else {
-          // Session resume failed — escalate to manual
-          this.dlq.escalateToManual(entry.id, result.error || 'Session resume failed');
-          return { id: entry.id, success: false, mode: 'session_resume', error: result.error };
+  private recoverEntry(entry: DLQEntry): RecoveryResult {
+    try {
+      if (entry.recovery_mode === 'session_resume' && entry.session_id) {
+        // Write a recovery message with session-id front-matter
+        // The dispatcher already handles session-id: spawns worker resuming that session
+        this.bindings!.requeueMessage(
+          'system/dlq-recovery',
+          entry.agent_id,
+          'task',
+          {
+            headline: `DLQ recovery: resuming session ${entry.session_id.slice(0, 8)}`,
+            body: `Resuming failed work. Original failure: ${entry.failure_reason}`,
+            'resume-mesh': 'true',
+          },
+          { 'session-id': entry.session_id }
+        );
+
+        this.dlq.markRecovered(entry.id);
+        log.info('reliability', 'DLQ entry recovered via session resume', {
+          id: entry.id,
+          agent: entry.agent_id,
+          sessionId: entry.session_id.slice(0, 8),
+        });
+        log.activity('reliability:recovered', entry.agent_id,
+          `Session resume (sid:${entry.session_id.slice(0, 8)})`);
+
+        return { id: entry.id, success: true, mode: 'session_resume', sessionId: entry.session_id };
+
+      } else if (entry.recovery_mode === 'requeue') {
+        // Re-inject the original message
+        let payload: Record<string, unknown>;
+        try {
+          payload = JSON.parse(entry.payload);
+        } catch {
+          payload = { body: entry.payload };
         }
-      } catch (err) {
-        this.dlq.escalateToManual(entry.id, (err as Error).message);
-        return { id: entry.id, success: false, mode: 'session_resume', error: (err as Error).message };
-      }
-    } else if (entry.recovery_mode === 'requeue') {
-      // Re-inject message into the queue
-      const result = requeueHandler(entry);
-      if (result.success) {
+
+        this.bindings!.requeueMessage(
+          entry.from_agent,
+          entry.to_agent,
+          entry.type,
+          { ...payload, headline: payload.headline || `DLQ requeue: ${entry.failure_reason.slice(0, 50)}` },
+        );
+
         this.dlq.markRecovered(entry.id);
         log.info('reliability', 'DLQ entry recovered via requeue', {
           id: entry.id,
           agent: entry.agent_id,
+          from: entry.from_agent,
+          to: entry.to_agent,
         });
+        log.activity('reliability:recovered', entry.agent_id, 'Message requeued');
+
         return { id: entry.id, success: true, mode: 'requeue' };
+
       } else {
-        this.dlq.escalateToManual(entry.id, result.error || 'Requeue failed');
-        return { id: entry.id, success: false, mode: 'requeue', error: result.error };
+        return { id: entry.id, success: false, mode: 'manual', error: 'Requires manual intervention' };
       }
-    } else {
-      return { id: entry.id, success: false, mode: 'manual', error: 'Requires manual intervention' };
+    } catch (err) {
+      const msg = (err as Error).message;
+      this.dlq.escalateToManual(entry.id, msg);
+      log.error('reliability', 'Recovery failed', { id: entry.id, error: msg });
+      return { id: entry.id, success: false, mode: entry.recovery_mode, error: msg };
     }
   }
 
