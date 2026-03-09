@@ -1190,7 +1190,34 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Initialize reliability manager (circuit breakers, heartbeat, SLI, DLQ, safe-mode)
     this.reliability = new ReliabilityManager(this.queue.getDb(), this.config.workDir);
+    this.reliability.bindDispatcher({
+      killAgent: (agentId: string, reason: string) => {
+        return this.workerLifecycle.killForAgent(agentId, reason);
+      },
+      requeueMessage: (from: string, to: string, type: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => {
+        this.systemWriter.write({
+          from,
+          to,
+          type,
+          headline: (payload.headline as string) || 'DLQ recovery',
+          body: (payload.body as string) || '',
+          extraFrontmatter: { ...extraFrontmatter, ...Object.fromEntries(
+            Object.entries(payload).filter(([k]) => !['headline', 'body'].includes(k)).map(([k, v]) => [k, String(v)])
+          )},
+        });
+      },
+    });
     this.reliability.start();
+
+    // Recover any pending DLQ entries from previous crash
+    const dlqRecovery = this.reliability.recoverAll();
+    if (dlqRecovery.length > 0) {
+      log.info('dispatcher', 'DLQ startup recovery', {
+        attempted: dlqRecovery.length,
+        succeeded: dlqRecovery.filter(r => r.success).length,
+        failed: dlqRecovery.filter(r => !r.success).length,
+      });
+    }
 
     // Subscribe to consumer events for event-driven dispatch
     if (consumer) {
@@ -1555,6 +1582,24 @@ export class WorkerDispatcher extends EventEmitter {
           }
           return;
         }
+      }
+    }
+
+    // DLQ RECOVERY: recover front-matter triggers DLQ recovery for this mesh
+    // Core agent or CLI can send: `recover: true` to trigger auto-recovery
+    if (pendingMessage?.payload?.['recover'] === true || pendingMessage?.payload?.['recover'] === 'true') {
+      if (this.reliability) {
+        const results = this.reliability.recoverForMesh(meshName);
+        const succeeded = results.filter(r => r.success).length;
+        log.info('dispatcher', 'DLQ recovery triggered by front-matter', {
+          meshName, attempted: results.length, succeeded,
+        });
+
+        // Consume the recover message — its purpose is fulfilled
+        this.queue.pollOne(agentId);
+
+        // If entries were recovered, they'll flow through as new messages
+        if (results.length > 0) return;
       }
     }
 
@@ -3677,6 +3722,18 @@ Please advise the agent or check mesh configuration.`;
           agentId,
           mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
         });
+      }
+
+      // Safe mode gate: block tools based on current safe mode level
+      if (this.reliability) {
+        const safeModeHook = this.reliability.createSafeModeHook(meshName!, agentId);
+        if (safeModeHook) {
+          preToolUseHooks.push(safeModeHook);
+          log.info('safe-mode', 'Safe mode hook enabled', {
+            agentId,
+            level: this.reliability.safeMode.getLevel(meshName!),
+          });
+        }
       }
 
       // Orchestrator gate: restrict Write to msgs dir only
