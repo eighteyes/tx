@@ -215,8 +215,8 @@ async function runHaikuAnalysis(prompt: string, workDir: string): Promise<string
       cwd: workDir,
       model: 'haiku',
       systemPrompt: FORENSICS_SYSTEM_PROMPT,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      permissionMode: 'dontAsk',
+      allowedTools: [],  // No tools needed for analysis
       maxTurns: 1, // Single turn for analysis
       tools: [], // No tools needed for analysis
     },

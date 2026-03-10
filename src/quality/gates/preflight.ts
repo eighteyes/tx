@@ -152,8 +152,8 @@ export class PreflightGate extends BaseEvaluator {
           cwd: resolve('.'),  // Current working directory
           model: sdkModel,
           systemPrompt: 'You are a helpful assistant that analyzes development tasks and generates quality criteria. Always respond with valid JSON only, no markdown formatting.',
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'dontAsk',
+          allowedTools: [],  // No tools needed for preflight - just text analysis
           abortController: controller,
           maxTurns: 1,  // Single turn for preflight analysis
           tools: [],  // No tools needed for preflight - just text analysis

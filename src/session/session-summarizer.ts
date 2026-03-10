@@ -27,8 +27,8 @@ export async function runHaikuQuery(prompt: string): Promise<string> {
     options: {
       model: 'haiku',
       maxTurns: 1,
-      permissionMode: 'bypassPermissions',
-      allowDangerouslySkipPermissions: true,
+      permissionMode: 'dontAsk',
+      allowedTools: [],  // No tools needed for text summarization
     },
   })) {
     if (message.type === 'assistant' && message.message?.content) {

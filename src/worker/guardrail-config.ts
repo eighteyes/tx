@@ -66,6 +66,7 @@ interface AgentOverrides {
   write_gate?: GateOverride;
   read_gate?: GateOverride;
   identity_gate?: GateOverride;
+  bash_guard?: GateOverride;
   routing_error?: RoutingErrorOverride;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
@@ -82,6 +83,7 @@ interface GuardrailsSchema {
   write_gate?: GateOverride;
   read_gate?: GateOverride;
   identity_gate?: GateOverride;
+  bash_guard?: GateOverride;
   routing_error?: RoutingErrorOverride;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
@@ -108,6 +110,7 @@ const DEFAULTS = {
   write_gate: { kill_threshold: null as number | null },
   read_gate: { kill_threshold: null as number | null },
   identity_gate: { kill_threshold: null as number | null },
+  bash_guard: { kill_threshold: 3 as number | null },
   routing_error: { max_retries: 3, routing_retry_max: null as number | null, routing_fallback: null as string | null },
   max_messages: null as number | null,
   max_turns: null as number | null,
@@ -146,7 +149,7 @@ export class GuardrailConfig {
    * Chain: mesh-local agent > mesh-local mesh > global agent > global mesh > global > default.
    */
   getKillThreshold(
-    gate: 'write_gate' | 'read_gate' | 'identity_gate',
+    gate: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard',
     meshName: string,
     agentName: string,
   ): number | null {
@@ -367,7 +370,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -390,9 +393,9 @@ export class GuardrailConfig {
     const g = this.config.guardrails;
     const sources: Array<{ strict?: boolean; warning?: boolean } | undefined> = [];
 
-    // Agent-level guardrails (write_gate, read_gate, identity_gate, routing_error, max_messages, max_turns, duplicate_target)
+    // Agent-level guardrails (write_gate, read_gate, identity_gate, bash_guard, routing_error, max_messages, max_turns, duplicate_target)
     // max_mesh_messages is mesh-level only
-    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target'];
+    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'bash_guard', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target'];
     if (agentName && agentGuardrails.includes(guardrail)) {
       // Mesh-local agent
       const localAgentOverrides = local?.agents?.[agentName];

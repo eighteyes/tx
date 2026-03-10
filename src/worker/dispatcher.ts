@@ -42,6 +42,7 @@ import { DispatchRouter } from './dispatch-router.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
+import { BashGuard } from './bash-guard.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
@@ -96,6 +97,8 @@ export interface DispatcherConfig {
   sessionStore?: SessionStore;
   /** Enable debug mode: adds forensics postHook to all meshes */
   debug?: boolean;
+  /** Enable god mode: bypasses all permissions (unrestricted tool access) */
+  godMode?: boolean;
 }
 
 /**
@@ -2094,6 +2097,8 @@ The system will resume your session when the human responds.`;
         workDir: this.config.workDir,
         msgsDir: this.config.msgsDir,
         sessionId,  // Resume existing session
+        permissions: agentConfig.permissions,  // Tool access control from mesh config
+        godMode: this.config.godMode,  // God mode from CLI flag
       };
 
       const runner = new SdkRunner(runnerConfig, this.queue);
@@ -3598,6 +3603,24 @@ Please advise the agent or check mesh configuration.`;
         killThreshold: this.guardrails.getKillThreshold('identity_gate', meshName!, agent.name),
       });
 
+      // Bash guard - block dangerous patterns when Bash is allowed
+      const bashAllowed = agent.permissions?.allowedTools?.some(tool =>
+        tool === 'Bash' || tool.startsWith('Bash(')
+      ) || !agent.permissions;  // Default allows Bash
+      if (bashAllowed && !this.config.godMode) {
+        const bashGuard = new BashGuard({
+          agentId,
+          workDir: this.config.workDir,
+          killRunner: (reason) => workerRef.current?.kill(reason),
+          mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
+        });
+        preToolUseHooks.push(bashGuard.createHook());
+        log.debug('bash-guard', 'Bash guard enabled', {
+          agentId,
+          mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
+        });
+      }
+
       // Orchestrator gate: restrict Write to msgs dir only
       if (agent.orchestrator) {
         const msgsDir = this.config.msgsDir;
@@ -3926,6 +3949,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         maxTurnsMode: this.guardrails.getMode('max_turns', meshName!, agent.name),
         hooks: chaosHooks,  // Chaos contract hooks (write-gate)
         thinking: agent.thinking,  // Extended thinking control (false = disabled)
+        permissions: agent.permissions,  // Tool access control from mesh config
+        godMode: this.config.godMode,  // God mode from CLI flag
       };
 
       // Prompt size visibility: ~4 chars per token rough estimate
@@ -5529,8 +5554,8 @@ ${output}
         options: {
           model: 'claude-haiku-4-5-20251001',
           maxTurns: 1,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'dontAsk',
+          allowedTools: [],  // No tools needed for session summary
         }
       });
 

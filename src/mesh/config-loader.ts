@@ -23,6 +23,7 @@ import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingM
 import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
+import type { AgentPermissions } from '../worker/permissions.ts';
 
 /**
  * Routing destination in mesh config
@@ -80,6 +81,7 @@ export interface MeshGuardrailOverrides {
   write_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   read_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   identity_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
+  bash_guard?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number; routing_retry_max?: number | null; routing_fallback?: string | null };
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
@@ -116,6 +118,7 @@ export interface AgentConfig {
   checkpoint?: boolean | 'start' | 'end';  // Checkpoint type: start (after init), end (after completion)
   fork_from?: string;  // Fork from another agent's checkpoint
   orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
+  permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
 }
 
 /**

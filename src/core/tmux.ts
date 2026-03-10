@@ -325,7 +325,14 @@ export async function startClaudeInTmux(sessionName: string): Promise<TmuxSessio
   // Find and start Claude
   const claudePath = findClaudePath();
   console.log(`[tmux] Starting Claude: ${claudePath}`);
-  tmux.send(`${claudePath} --dangerously-skip-permissions`);
+
+  // Permission flags: check TX_GOD_MODE environment variable
+  const godMode = process.env.TX_GOD_MODE === '1';
+  const permissionFlags = godMode
+    ? '--dangerously-skip-permissions'
+    : '--permission-mode dontAsk';  // No --allowed-tools here, will use defaults
+
+  tmux.send(`${claudePath} ${permissionFlags}`);
   tmux.sendEnter();
 
   // Wait for Claude to be ready (look for the prompt)

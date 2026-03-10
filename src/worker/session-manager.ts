@@ -17,6 +17,7 @@ import { log } from '../shared/logger.ts';
 import type { MessageQueue } from '../queue/index.ts';
 import type { HookContext } from './hooks.ts';
 import type { SemanticModel } from '../shared/types.ts';
+import type { AgentPermissions } from './permissions.ts';
 
 /**
  * Agent configuration (subset needed for session management)
@@ -26,6 +27,7 @@ export interface AgentConfigMinimal {
   model: SemanticModel;
   prompt?: string;
   command?: string;
+  permissions?: AgentPermissions;
 }
 
 /**

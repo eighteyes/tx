@@ -15,6 +15,7 @@ import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
 import { SessionStore } from '../session/index.ts';
+import { CORE_AGENT_TOOLS } from '../worker/permissions.ts';
 
 export interface StartOptions {
   continue?: boolean;
@@ -28,6 +29,7 @@ export interface StartOptions {
   noInject?: boolean; // deprecated: use inbox instead
   inbox?: 'inject' | 'hook' | 'ask'; // message delivery mode (default: hook)
   reattach?: boolean; // skip tmux create + claude command (restart mode)
+  godMode?: boolean; // enable bypassPermissions instead of dontAsk (unrestricted tool access)
 }
 
 /**
@@ -167,6 +169,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
+
+  // Set TX_GOD_MODE environment variable if god mode is enabled
+  if (options?.godMode) {
+    process.env.TX_GOD_MODE = '1';
+  }
 
   const aiDir = path.join(cwd, '.ai', 'tx');
 
@@ -416,6 +423,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     ultraLowMode: options?.ultraLow,
     sessionStore,  // Pass session store for session awareness
     debug: options?.debug,  // Enable forensics and verbose logging
+    godMode: options?.godMode,  // Enable god mode (bypass permissions)
   }, queue);
 
   // Register SIGUSR2 control handler now that dispatcher exists
@@ -1193,8 +1201,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     const claudePath = findClaudePath();
     const continueFlag = options?.continue ? ' --continue' : '';
     const modelFlag = options?.model ? ` --model ${options.model}` : '';
+
+    // Permission flags: god mode uses --dangerously-skip-permissions, default uses dontAsk + allowedTools
+    const permissionFlags = options?.godMode
+      ? '--dangerously-skip-permissions'
+      : `--permission-mode dontAsk --allowed-tools "${CORE_AGENT_TOOLS.join(',')}"`;
+
     // TX_CORE_SESSION=1 enables hook to mark messages as seen after display
-    tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} --dangerously-skip-permissions${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+    tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} ${permissionFlags}${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
     tmux.sendEnter();
   }
 
