@@ -12,10 +12,13 @@
 import type { WorkspaceInfo } from './manager.ts';
 import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 import type { FSMStateConfig } from '../shared/types.ts';
+import type { DispatchInjectionContext } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../shared/logger.ts';
 import type { SessionStore, SessionMetadata, FileChangeSummary } from '../session/index.ts';
+import { buildRoutingSection, buildDispatcherRoutingSection } from '../prompt/sections/routing.js';
+import type { RoutingConfig } from '../prompt/sections/routing.js';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -85,7 +88,7 @@ export class PromptInjector {
    */
   injectPreamble(basePrompt: string, context: PreambleContext): string {
     const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
-    const identity = `\n\n# Your Address\nYour fully qualified agent address is \`${context.meshName}/${context.agentName}\`. Always use this as the \`from:\` field in every message you write.`;
+    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nUse \`from: ${context.agentName}\` in your messages — the router auto-resolves it. Use full \`mesh/agent\` only for cross-mesh targets.`;
     return `${preamble}${identity}\n\n${basePrompt}`;
   }
 
@@ -148,7 +151,7 @@ export class PromptInjector {
   /**
    * Build the workspace context section
    */
-  private buildWorkspaceSection(workspace: WorkspaceInfo, taskId: string): string {
+  buildWorkspaceSection(workspace: WorkspaceInfo, taskId: string): string {
     const parts: string[] = [];
 
     parts.push('# Task Workspace\n');
@@ -280,7 +283,7 @@ export class PromptInjector {
   /**
    * Build the rearmatter section
    */
-  private buildRearmatterSection(config: any): string {
+  buildRearmatterSection(config: any): string {
     const parts: string[] = [];
 
     parts.push('# Response Format (Rearmatter)\n');
@@ -392,7 +395,7 @@ This instance is isolated from other instances of \`${baseMesh}\`. Your work is 
   /**
    * Build the FSM context section
    */
-  private buildFSMSection(fsmContext: FSMInjectionContext): string {
+  buildFSMSection(fsmContext: FSMInjectionContext): string {
     const parts: string[] = [];
 
     parts.push('# Workflow State Machine\n');
@@ -465,13 +468,15 @@ This instance is isolated from other instances of \`${baseMesh}\`. Your work is 
       const timestamp = new Date().toISOString();
       const parts: string[] = [];
 
-      // Metadata header
+      // Metadata header (mesh, agent, timestamp are canonical — skip dupes from caller)
+      const reservedKeys = new Set(['agentName', 'timestamp']);
       parts.push('---');
       parts.push('metadata:');
       parts.push(`  mesh: ${meshName}`);
       parts.push(`  agent: ${agentId}`);
       parts.push(`  timestamp: ${timestamp}`);
       for (const [key, value] of Object.entries(metadata)) {
+        if (reservedKeys.has(key)) continue;
         const displayValue = typeof value === 'object'
           ? JSON.stringify(value).slice(0, 100)
           : String(value).slice(0, 100);
@@ -534,6 +539,163 @@ existing work.
    */
   injectEscalationPolicy(basePrompt: string): string {
     return `${basePrompt}\n\n${PromptInjector.ESCALATION_POLICY}`;
+  }
+
+  // ============================================
+  // Section Builders (return content, don't wrap)
+  // ============================================
+
+  /**
+   * Build preamble section content (identity, tool guidance, address)
+   * Returns the section string without wrapping a base prompt
+   */
+  buildPreambleSection(context: PreambleContext): string {
+    const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
+    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nUse \`from: ${context.agentName}\` in your messages — the router auto-resolves it. Use full \`mesh/agent\` only for cross-mesh targets.`;
+    return `${preamble}${identity}`;
+  }
+
+  /**
+   * Build consolidated file section: manifest contract + preloaded file contents
+   * Deduplicates content that appears in both manifest reads and preloaded files
+   */
+  buildFileSection(
+    reads: ManifestFileEntry[],
+    writes: ManifestFileEntry[],
+    preloadedFiles: Array<{ path: string; content: string }>,
+  ): string {
+    const parts: string[] = [];
+
+    // File contract (paths only — content is in preloaded section below)
+    if (reads.length > 0 || writes.length > 0) {
+      parts.push('# File Contract\n');
+      if (writes.length > 0) {
+        parts.push('**You write:**');
+        parts.push('```');
+        for (const f of writes) {
+          parts.push(`${f.path}  # ${f.description || f.id}`);
+        }
+        parts.push('```');
+      }
+      if (reads.length > 0) {
+        parts.push('**You read:**');
+        parts.push('```');
+        for (const f of reads) {
+          parts.push(`${f.path}  # ${f.description || f.id}`);
+        }
+        parts.push('```');
+      }
+      parts.push('Write ONLY the files listed above. Use exact filenames at the paths shown.');
+    }
+
+    // Preloaded file contents (single source of truth for all injected content)
+    if (preloadedFiles.length > 0) {
+      parts.push('\n# Preloaded Files\n');
+      for (const { path: filePath, content } of preloadedFiles) {
+        const ext = filePath.split('.').pop() || '';
+        parts.push(`## ${filePath}`);
+        parts.push(`\`\`\`${ext}`);
+        parts.push(content);
+        parts.push('```\n');
+      }
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Build situational awareness section content
+   */
+  buildSituationalSection(context: SituationalContext): string {
+    const parts: string[] = [];
+    const hasOutgoing = context.outgoingAsks.length > 0;
+    const hasIncoming = context.incomingAsks.length > 0;
+    const hasTasks = context.pendingTasks.length > 0;
+
+    if (!hasOutgoing && !hasIncoming && !hasTasks) return '';
+
+    parts.push('# Situational Awareness\n');
+    parts.push('**IMPORTANT**: Review your current obligations before proceeding.\n');
+
+    if (hasTasks) {
+      const currentTask = context.pendingTasks[0];
+      parts.push('## Current Task\n');
+      parts.push(`- **From**: \`${currentTask.from_agent}\``);
+      if (currentTask.payload?.headline) {
+        parts.push(`- **Headline**: ${currentTask.payload.headline}`);
+      }
+      const taskAge = this.formatAge(currentTask.created_at || Date.now());
+      parts.push(`- **Queued**: ${taskAge}`);
+      if (context.pendingTasks.length > 1) {
+        parts.push(`\n*+${context.pendingTasks.length - 1} more task(s) queued*`);
+      }
+      parts.push('');
+    }
+
+    if (hasOutgoing) {
+      parts.push('## Outgoing Asks (Waiting for Responses)\n');
+      parts.push('You have sent asks and are waiting for responses:\n');
+      for (const ask of context.outgoingAsks) {
+        const age = this.formatAge(ask.created_at || Date.now());
+        parts.push(`- \`${ask.msg_id}\` → **${ask.to_agent}** (${age})`);
+      }
+      parts.push('\n*Do NOT send completion message until these are resolved.*\n');
+    }
+
+    if (hasIncoming) {
+      parts.push('## Incoming Asks (Awaiting YOUR Response)\n');
+      parts.push('Other agents are waiting for your response:\n');
+      for (const ask of context.incomingAsks) {
+        const age = this.formatAge(ask.created_at || Date.now());
+        parts.push(`- \`${ask.msg_id}\` from **${ask.from_agent}** (${age})`);
+      }
+      parts.push('\n**You MUST respond to these before sending task-complete.**\n');
+    }
+
+    return parts.join('\n');
+  }
+
+  /**
+   * Build parallel instance section content
+   */
+  buildParallelInstanceSection(baseMesh: string, meshId: string): string {
+    return `# Parallel Instance Context
+
+You are running as a parallel instance of the \`${baseMesh}\` mesh.
+
+**Instance ID**: \`${meshId}\`
+**Base Mesh**: \`${baseMesh}\`
+
+This instance is isolated from other instances of \`${baseMesh}\`. Your work is specific to this instance.`;
+  }
+
+  /**
+   * Build combined messaging protocol + routing section
+   * Single cohesive section at the END of the prompt
+   */
+  buildMessagingAndRoutingSection(config: {
+    meshName: string;
+    routing?: RoutingConfig;
+    dispatcherRouting?: DispatchInjectionContext;
+  }): string {
+    const parts: string[] = [];
+
+    // Messaging protocol (filename format, frontmatter, status)
+    parts.push(MESSAGING_PROTOCOL.trim());
+
+    // Routing destinations (appended to messaging for cohesion)
+    if (config.dispatcherRouting) {
+      const dr = config.dispatcherRouting;
+      parts.push('');
+      parts.push(buildDispatcherRoutingSection(
+        dr.sentinel, dr.validOutcomes, dr.availableAgents, dr.isTerminal, dr.peers
+      ));
+    } else if (config.routing && Object.keys(config.routing).length > 0) {
+      parts.push('');
+      parts.push(buildRoutingSection(config.routing, config.meshName));
+    }
+
+    return parts.join('\n');
   }
 
   // ============================================

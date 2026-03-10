@@ -37,7 +37,6 @@ import { SessionStore, SessionSummarizer } from '../session/index.ts';
 import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type AddWorkerOptions } from './worker-lifecycle.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
-import { injectRoutingInstructions, injectDispatcherRoutingInstructions } from '../prompt/index.ts';
 import { DispatchRouter } from './dispatch-router.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
@@ -315,6 +314,10 @@ export class WorkerDispatcher extends EventEmitter {
   // Avoids stale session.yaml reads during preflight/post-validation
   // Key: mesh name, Value: resolved variable map (game-id, campaign-id, N, etc.)
   private cachedManifestVars: Map<string, Record<string, string>> = new Map();
+
+  // Last completed session ID per agent — used by routing self-heal to resume
+  // conversation context when spawning a correction worker after OAOM kill
+  private lastCompletedSessionIds: Map<string, string> = new Map();
 
   // Session checkpoints for forking — saves session state for start/end forks
   // Key: `${meshName}/${agentName}`, Value: CheckpointEntry with sessionId + optional initMessageUuid
@@ -769,10 +772,17 @@ export class WorkerDispatcher extends EventEmitter {
         this.edgeCounters.delete(key);
       }
     }
+    // Clean up per-agent session tracking scoped to this mesh
+    for (const key of this.lastCompletedSessionIds.keys()) {
+      if (key.startsWith(prefix)) {
+        this.lastCompletedSessionIds.delete(key);
+      }
+    }
+    // Note: checkpoints intentionally persist across sequential mesh runs (fork_from)
     this.completedAgents.delete(meshName);
     this.cachedManifestVars.delete(meshName);
     this.meshMessageCounters.delete(meshName);
-    log.debug('dispatcher', 'Edge counters, mesh message counter, completed agents, and manifest vars reset for new turn', { meshName });
+    log.debug('dispatcher', 'Mesh state reset for new turn', { meshName });
   }
 
   /**
@@ -958,8 +968,9 @@ export class WorkerDispatcher extends EventEmitter {
       }
     });
 
-    // FSM dispatch observability — the FSM now writes dispatch messages directly.
-    // This listener is for logging and re-emitting on the dispatcher for external consumers.
+    // FSM dispatch — for non-ensemble states, FSM writes dispatch messages directly.
+    // For ensemble states, FSM skips file dispatch to avoid double-spawn; we trigger
+    // the ensemble handler here from the event instead.
     fsm.on('fsm:dispatch', (event: FSMDispatchEvent) => {
       log.info('mesh-fsm', 'FSM dispatched agents for new state', {
         meshName: event.meshName,
@@ -969,6 +980,27 @@ export class WorkerDispatcher extends EventEmitter {
         triggerAgent: event.triggerAgent,
       });
       this.emit('fsm:dispatch', event);
+
+      // Check if the target state is an ensemble state — trigger ensemble directly
+      // (FSM no longer writes dispatch messages for ensemble states to prevent double-spawn)
+      const targetFsm = this.meshFSMs.get(event.meshName);
+      if (targetFsm) {
+        const stateConfig = targetFsm.getStateConfig(event.toState);
+        const isEnsemble = !!(stateConfig?.ensemble?.agents || (stateConfig?.ensemble as any)?.agent);
+        if (isEnsemble && stateConfig) {
+          log.info('dispatcher', 'Triggering ensemble from FSM dispatch event', {
+            meshName: event.meshName,
+            state: event.toState,
+          });
+          this.handleEnsembleState(event.meshName, stateConfig, targetFsm).catch((error) => {
+            log.error('dispatcher', 'Ensemble state handling failed (from dispatch event)', {
+              meshName: event.meshName,
+              state: event.toState,
+              error: (error as Error).message,
+            });
+          });
+        }
+      }
     });
   }
 
@@ -1269,6 +1301,18 @@ export class WorkerDispatcher extends EventEmitter {
     const fsm = this.meshFSMs.get(meshName);
     if (!fsm || !fsm.isInitialized()) {
       // No FSM = no validation needed
+      return true;
+    }
+
+    // Skip FSM validation for individual ensemble worker messages.
+    // The ensemble coordinator handles exit routing separately after all workers complete.
+    // Individual worker messages would fail gate checks prematurely.
+    if (this.ensembleCoordinator.hasActiveEnsembleForMesh(meshName)) {
+      log.debug('mesh-fsm', 'Skipping FSM validation — ensemble active for mesh', {
+        meshName,
+        from: senderAgentId,
+        to: targetAgentId,
+      });
       return true;
     }
 
@@ -2145,6 +2189,12 @@ The system will resume your session when the human responds.`;
           workerId,
           sessionId: sessionId.slice(0, 8),
         });
+
+        // Track last completed session for routing self-heal
+        if (data.sessionId) {
+          this.lastCompletedSessionIds.set(agentId, data.sessionId);
+        }
+
         this.removeActiveWorker(agentId, workerId);
 
         // Check if resumed worker exited while awaiting responses (same as normal handler)
@@ -3082,6 +3132,14 @@ Please advise the agent or check mesh configuration.`;
       log.info('dispatcher', 'Clean shutdown: cleared suspended sessions', { count: clearedSessions });
     }
 
+    // Release per-agent/mesh maps to prevent leaks across restarts
+    this.lastCompletedSessionIds.clear();
+    this.checkpoints.clear();
+    this.completedAgents.clear();
+    this.cachedManifestVars.clear();
+    this.edgeCounters.clear();
+    this.meshMessageCounters.clear();
+
     this.emit('stop');
   }
 
@@ -3226,12 +3284,15 @@ Please advise the agent or check mesh configuration.`;
         }
       }
 
-      // Load the prompt - resolution order:
-      // 1. Relative to mesh's basePath (new structure: meshes/dev/prompt.md)
-      // 2. Relative to workDir (legacy: meshes/agents/dev/prompt.md)
-      // 3. Global TX_ROOT fallback
-      // If agent has command but no prompt, use minimal system prompt
-      let systemPrompt: string;
+      // ============================================================
+      // PROMPT ASSEMBLY — Section-based, explicit ordering
+      // Order: worktree → preamble → files → agent prompt → FSM →
+      //        situational → workspace → rearmatter → parallel →
+      //        messaging+routing (END)
+      // ============================================================
+
+      // --- Load raw agent prompt ---
+      let agentPromptText: string;
 
       if (agent.prompt) {
         let promptPath: string | null = null;
@@ -3264,93 +3325,17 @@ Please advise the agent or check mesh configuration.`;
           this.emit('error', { agentId, error: `Prompt not found: ${agent.prompt}` });
           return;
         }
-        systemPrompt = fs.readFileSync(promptPath, 'utf-8');
+        agentPromptText = fs.readFileSync(promptPath, 'utf-8');
       } else {
-        // Command-only agent: minimal system prompt (routing/preamble injected below)
-        systemPrompt = `You are agent ${agent.name}. Execute the command provided in the user prompt.`;
+        // Command-only agent: minimal system prompt
+        agentPromptText = `You are agent ${agent.name}. Execute the command provided in the user prompt.`;
       }
 
-      // Inject preamble (tool guidance based on mesh agent count)
-      const agentCount = meshConfig?.agents?.length ?? 1;
-      systemPrompt = this.promptInjector.injectPreamble(systemPrompt, { agentCount, meshName: meshName!, agentName: agent.name });
-
-      // Inject messaging protocol for all agents
-      systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
-
-      // Inject FSM context if mesh has FSM config (or ensemble FSM provided)
-      const fsm = ensembleFsm || this.meshFSMs.get(meshName);
-      if (fsm && fsm.isInitialized()) {
-        const currentStateConfig = fsmStateConfig || fsm.getCurrentStateConfig();
-        if (currentStateConfig) {
-          const status = fsm.getStatus();
-
-          // For ensemble workers, add index/total to context for differentiated messaging
-          const contextWithEnsemble = ensembleId
-            ? {
-                ...status.context,
-                ENSEMBLE_INDEX: ensembleIndex,
-                ENSEMBLE_TOTAL: ensembleTotal,
-              }
-            : status.context;
-
-          const fsmContext: FSMInjectionContext = {
-            meshName,
-            currentState: status.currentState,
-            stateConfig: currentStateConfig,
-            // availableTransitions computed from exit config if needed
-            context: contextWithEnsemble,
-            contextDescriptions: fsm.getContextDescriptions(),
-            gateRetries: status.gateRetries,
-          };
-          systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
-          log.debug('mesh-fsm', 'Injected FSM context into prompt', {
-            agentId,
-            currentState: status.currentState,
-            isEnsemble: !!ensembleId,
-          });
-
-          // NOTE: subtask injection removed - ensemble agents now use explicit routing
-          // instead of file-based SUBTASK markers. See: ensemble.type: parallel in config.
-        }
-      }
-
-      // Inject situational context (pending asks, queued tasks)
-      // Gives agent full awareness of obligations when starting/resuming
-      const outgoingAsks = this.queue.getPendingAsks(agentId);
-      const pendingTasks = this.queue.getPendingTasks(agentId);
-
-      if (outgoingAsks.length > 0 || pendingTasks.length > 0) {
-        systemPrompt = this.promptInjector.injectSituationalContext(systemPrompt, {
-          outgoingAsks: outgoingAsks.map(a => ({
-            msg_id: a.msg_id,
-            to_agent: a.to_agent,
-            created_at: a.created_at,
-          })),
-          incomingAsks: [], // No longer tracking agent-to-agent incoming asks
-          pendingTasks: pendingTasks.map(t => ({
-            from_agent: t.from_agent,
-            type: t.type,
-            created_at: t.created_at,
-            payload: t.payload as { headline?: string },
-          })),
-        });
-        log.info('dispatcher', `Injected situational context`, {
-          agentId,
-          outgoingAsks: outgoingAsks.length,
-          pendingTasks: pendingTasks.length,
-        });
-      }
-
-      // Check for workspace config (agent-level overrides mesh-level)
+      // --- Resolve workspace directory (needed for template tokens + file paths) ---
       const workspaceConfig = agent.workspace || meshConfig?.workspace;
-
-      // Resolve workspace directory:
-      // 1. FSM context $workspace variable (highest priority — gates use this path)
-      // 2. Workspace config from agent/mesh
-      // 3. Default: .ai/tx/workspaces/<mesh-name>
       let resolvedWorkspaceDir: string | undefined;
 
-      // Check FSM context for workspace variable (gates resolve $workspace from this)
+      // 1. FSM context $workspace variable (highest priority)
       const fsmObj = ensembleFsm || this.meshFSMs.get(meshName);
       if (fsmObj && fsmObj.isInitialized()) {
         const fsmCtx = fsmObj.getStatus().context;
@@ -3362,10 +3347,6 @@ Please advise the agent or check mesh configuration.`;
       }
 
       // 2. Resolved workspace location from manifest variables (per-turn path)
-      // If the config declares workspace.locations with a 'workspace' key,
-      // resolve template variables from session.yaml and use the result.
-      // Falls back gracefully: if session.yaml is missing or variables don't resolve,
-      // the path will contain unresolved {tokens} and we skip to the static fallback.
       if (!resolvedWorkspaceDir && workspaceConfig) {
         const wsLocations = (workspaceConfig as any)?.locations || {};
         if (Object.keys(wsLocations).length > 0) {
@@ -3391,29 +3372,23 @@ Please advise the agent or check mesh configuration.`;
         resolvedWorkspaceDir = path.join(this.config.workDir, '.ai', 'tx', 'workspaces', meshName);
       }
 
-      // Ensure directory exists and inject into prompt
+      // Ensure directory exists
       if (!fs.existsSync(resolvedWorkspaceDir)) {
         fs.mkdirSync(resolvedWorkspaceDir, { recursive: true });
       }
-      const workspaceInfo: import('../workspace/index.ts').WorkspaceInfo = {
-        taskId,
-        dir: resolvedWorkspaceDir,
-        outputFiles: new Map(),
-      };
-      systemPrompt = this.promptInjector.injectWorkspace(systemPrompt, {
-        workspace: workspaceInfo,
-        taskId,
-      });
       log.info('dispatcher', `Created workspace for task`, { agentId, taskId, dir: resolvedWorkspaceDir });
 
-      // Manifest paths — hoisted for chaos gate access
+      // --- Replace template tokens in agent prompt ---
+      agentPromptText = this.promptInjector.replaceTemplateTokens(agentPromptText, {
+        workspace: resolvedWorkspaceDir,
+      });
+
+      // --- Collect files for preload (from load field + manifest auto-inject) ---
       const agentWrites: import('../workspace/index.ts').ManifestFileEntry[] = [];
       const agentReads: import('../workspace/index.ts').ManifestFileEntry[] = [];
-
-      // Collect files for preload (from load field + manifest auto-inject)
       const preloadedFiles: Array<{ path: string; content: string }> = [];
 
-      // Handle agent preload (load field) - inject file contents before agent starts
+      // Handle agent preload (load field)
       if (agent.load && agent.load.length > 0) {
         const glob = await import('fast-glob');
 
@@ -3433,7 +3408,6 @@ Please advise the agent or check mesh configuration.`;
             for (const filePath of matches) {
               if (fs.existsSync(filePath)) {
                 const stats = fs.statSync(filePath);
-                // Skip files > 200KB
                 if (stats.size > 200 * 1024) {
                   log.warn('dispatcher', `Skipping large file in preload: ${filePath} (${stats.size} bytes)`);
                   continue;
@@ -3449,23 +3423,15 @@ Please advise the agent or check mesh configuration.`;
         }
       }
 
-      // Inject file manifest contract if present
+      // Collect manifest entries — content goes to preloadedFiles only (no dupe in contract)
       if (meshConfig?.manifest) {
-
-        // Resolve workspace locations for path substitution
         const wsLocations = (meshConfig as any).workspace?.locations || {};
         const wsBase = (meshConfig as any).workspace?.path || '';
-
-        // Use cached manifest variables if available, otherwise resolve from session.yaml
         const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
-
-        // Auto-inject setting: mesh-level default (true if not specified)
         const meshAutoInject = meshConfig.autoInjectManifestFiles !== false;
 
         for (const entry of meshConfig.manifest) {
           let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
-
-          // Substitute known variables
           for (const [key, value] of Object.entries(varMap)) {
             locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
           }
@@ -3476,18 +3442,13 @@ Please advise the agent or check mesh configuration.`;
           };
 
           if (entry.reads?.includes(agent.name)) {
-            // Determine if we should auto-inject this entry's content into preload
-            // Entry-level autoInject overrides mesh-level autoInjectManifestFiles
             const shouldAutoInject = entry.autoInject !== undefined ? entry.autoInject : meshAutoInject;
 
-            // Inject file contents for reads if path is fully resolved and file exists
             if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
               try {
                 const content = fs.readFileSync(resolvedPath, 'utf-8');
-                fileEntry.content = content;
-
-                // Auto-inject into preload if enabled and not already in preloadedFiles
                 if (shouldAutoInject) {
+                  // Content goes to preloadedFiles only — no inline dupe in file contract
                   const relativePath = path.relative(this.config.workDir, resolvedPath);
                   const alreadyPreloaded = preloadedFiles.some(f => f.path === relativePath);
                   if (!alreadyPreloaded) {
@@ -3498,6 +3459,9 @@ Please advise the agent or check mesh configuration.`;
                       log.warn('dispatcher', `Skipping large file in manifest auto-inject: ${resolvedPath} (${stats.size} bytes)`);
                     }
                   }
+                } else {
+                  // No auto-inject: inline content in manifest contract
+                  fileEntry.content = content;
                 }
               } catch {
                 // Non-fatal — file listed but unreadable
@@ -3508,37 +3472,123 @@ Please advise the agent or check mesh configuration.`;
           if (entry.writes?.includes(agent.name)) agentWrites.push(fileEntry);
         }
         if (agentReads.length > 0 || agentWrites.length > 0) {
-          const injectedCount = agentReads.filter(f => f.content).length;
-          systemPrompt = this.promptInjector.injectFileManifest(
-            systemPrompt, agentReads, agentWrites
-          );
-          log.info('dispatcher', `Injected file manifest`, {
+          log.info('dispatcher', `Collected file manifest`, {
             agentId,
             reads: agentReads.length,
             writes: agentWrites.length,
-            injectedContents: injectedCount,
+            preloaded: preloadedFiles.length,
           });
         }
       }
 
-      // Build preload section (from load field + manifest auto-inject)
       if (preloadedFiles.length > 0) {
-        const preloadSection = ['# Preloaded Files\n'];
-        for (const { path: filePath, content } of preloadedFiles) {
-          const ext = filePath.split('.').pop() || '';
-          preloadSection.push(`## ${filePath}`);
-          preloadSection.push(`\`\`\`${ext}`);
-          preloadSection.push(content);
-          preloadSection.push('```\n');
-        }
-        systemPrompt = `${systemPrompt}\n\n${preloadSection.join('\n')}`;
-        log.info('dispatcher', `Preloaded files for agent`, {
+        log.info('dispatcher', `Collected preloaded files`, {
           agentId,
           count: preloadedFiles.length,
           fromLoad: agent.load?.length || 0,
           fromManifest: preloadedFiles.length - (agent.load?.length || 0),
         });
       }
+
+      // --- Build FSM section ---
+      let fsmSection = '';
+      const fsm = ensembleFsm || this.meshFSMs.get(meshName);
+      if (fsm && fsm.isInitialized()) {
+        const currentStateConfig = fsmStateConfig || fsm.getCurrentStateConfig();
+        if (currentStateConfig) {
+          const status = fsm.getStatus();
+          const contextWithEnsemble = ensembleId
+            ? { ...status.context, ENSEMBLE_INDEX: ensembleIndex, ENSEMBLE_TOTAL: ensembleTotal }
+            : status.context;
+
+          const fsmContext: FSMInjectionContext = {
+            meshName,
+            currentState: status.currentState,
+            stateConfig: currentStateConfig,
+            context: contextWithEnsemble,
+            contextDescriptions: fsm.getContextDescriptions(),
+            gateRetries: status.gateRetries,
+          };
+          fsmSection = this.promptInjector.buildFSMSection(fsmContext);
+          log.debug('mesh-fsm', 'Built FSM context section', {
+            agentId,
+            currentState: status.currentState,
+            isEnsemble: !!ensembleId,
+          });
+        }
+      }
+
+      // --- Build situational awareness section ---
+      const outgoingAsks = this.queue.getPendingAsks(agentId);
+      const pendingTasks = this.queue.getPendingTasks(agentId);
+      let situationalSection = '';
+
+      if (outgoingAsks.length > 0 || pendingTasks.length > 0) {
+        situationalSection = this.promptInjector.buildSituationalSection({
+          outgoingAsks: outgoingAsks.map(a => ({
+            msg_id: a.msg_id,
+            to_agent: a.to_agent,
+            created_at: a.created_at,
+          })),
+          incomingAsks: [],
+          pendingTasks: pendingTasks.map(t => ({
+            from_agent: t.from_agent,
+            type: t.type,
+            created_at: t.created_at,
+            payload: t.payload as { headline?: string },
+          })),
+        });
+        log.info('dispatcher', `Built situational context`, {
+          agentId,
+          outgoingAsks: outgoingAsks.length,
+          pendingTasks: pendingTasks.length,
+        });
+      }
+
+      // --- Build workspace section ---
+      const workspaceInfo: import('../workspace/index.ts').WorkspaceInfo = {
+        taskId,
+        dir: resolvedWorkspaceDir,
+        outputFiles: new Map(),
+      };
+      const workspaceSection = this.promptInjector.buildWorkspaceSection(workspaceInfo, taskId);
+
+      // --- Build all prompt sections in order ---
+      // Identity+situation → files+workspace → instructions → output constraints
+      const agentCount = meshConfig?.agents?.length ?? 1;
+      const promptSections: string[] = [];
+
+      // -- Identity + situation --
+      // 1. Preamble (identity, tool guidance, address)
+      promptSections.push(this.promptInjector.buildPreambleSection({
+        agentCount,
+        meshName: meshName!,
+        agentName: agent.name,
+      }));
+
+      // 2. FSM context (what phase we're in)
+      if (fsmSection) promptSections.push(fsmSection);
+
+      // 3. Situational awareness (pending asks, queued tasks)
+      if (situationalSection) promptSections.push(situationalSection);
+
+      // 4. Parallel instance context — appended below after gates
+
+      // -- Files + workspace --
+      // 5. Task workspace (where to write)
+      promptSections.push(workspaceSection);
+
+      // 6. File contract + preloaded files (what files, their content)
+      const fileSection = this.promptInjector.buildFileSection(agentReads, agentWrites, preloadedFiles);
+      if (fileSection) promptSections.push(fileSection);
+
+      // -- Instructions --
+      // 7. Agent prompt (with template tokens already replaced)
+      promptSections.push(agentPromptText);
+
+      // 8-10. Rearmatter, parallel instance, messaging+routing — appended below after gates
+
+      let systemPrompt = promptSections.filter(Boolean).join('\n\n');
 
       // Chaos contract: build gate hooks from manifest
       // workerRef is a mutable reference — populated after SdkRunner construction
@@ -3677,42 +3727,33 @@ Please advise the agent or check mesh configuration.`;
         log.info('dispatcher', `[LOW MODE] Demoted model for ${agentId}`, {from: agent.model, to: model});
       }
 
-      const workerConfig: WorkerConfig = {
-        id: agentId,
-        model: model as SemanticModel,
-        prompt: systemPrompt
-      };
-
-      // Check if this is a completion agent (parity gates only apply to completion agents)
-      const isCompletionAgent = this.normalizeCompletionAgents(meshConfig).includes(agent.name);
-
-      // Create state machine
-      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agent.name, 300000, isCompletionAgent);
-
-      // Register logging middleware
-      machine.use(createLoggingMiddleware('worker'));
-
-      // Wire FSM events to dispatcher
-      machine.on('transition', (event) => {
-        this.emit('worker:transition', {
-          ...event,
-          entityType: 'worker'
-        });
-      });
-
-      // Initialize worker state
-      await machine.initialize();
-
-      log.info('dispatcher', `Initializing worker`, { agentId });
-
       // Use worktree path if set by pre-hooks, otherwise use default workDir
       const workDir = hookContext.worktreePath || this.config.workDir;
 
-      // If running in worktree, inject context and sanitize paths
+      // --- Remaining prompt sections (after gates) ---
+
+      // 4 (cont). Parallel instance context (identity cluster)
+      if (meshId) {
+        systemPrompt += '\n\n' + this.promptInjector.buildParallelInstanceSection(meshName, meshId);
+        log.info('dispatcher', `Appended parallel instance section`, {
+          agentId,
+          baseMesh: meshName,
+          meshId,
+        });
+      }
+
+      // 8. Rearmatter (output constraints)
+      if (meshConfig?.rearmatter?.enabled) {
+        systemPrompt += '\n\n' + this.promptInjector.buildRearmatterSection(meshConfig.rearmatter);
+        log.info('dispatcher', `Appended rearmatter section`, {
+          agentId,
+          fields: meshConfig.rearmatter.fields || [],
+        });
+      }
+
+      // Worktree context (prepend to top) + path sanitization
       if (hookContext.worktreePath && hookContext.featureName) {
-        // Inject worktree context into prompt
-        const worktreeContext = `
-## Worktree Context
+        const worktreeContext = `## Worktree Context
 
 You are working in an isolated git worktree for feature: **${hookContext.featureName}**
 
@@ -3727,94 +3768,64 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
 `;
         systemPrompt = worktreeContext + systemPrompt;
-
-        // Strip references to main workDir from prompt to avoid confusion
         systemPrompt = systemPrompt.replaceAll(this.config.workDir, '.');
 
-        log.info('dispatcher', `Injected worktree context`, {
+        log.info('dispatcher', `Prepended worktree context`, {
           agentId,
           featureName: hookContext.featureName,
           worktreePath: hookContext.worktreePath,
         });
       }
 
-      // Extract and inject routing instructions
-      let routing: Record<string, Record<string, string>> | undefined;
+      // 10. Messaging & routing (END of prompt — combined cohesive section)
+      let routingConfig: Record<string, Record<string, string>> | undefined;
+      let dispatcherRoutingCtx: import('../shared/types.ts').DispatchInjectionContext | undefined;
+
       if (meshConfig?.routing_mode === 'dispatcher' && meshConfig.routing) {
-        // Dispatcher mode: inject sentinel address, valid outcomes, available agents
         const agentNames = meshConfig.agents.map(a => a.name);
         const router = new DispatchRouter(
           meshName,
           meshConfig.routing as import('../shared/types.ts').DispatcherRoutingConfig,
           agentNames
         );
-        const ctx = router.getInjectionContext(agent.name);
-        systemPrompt = injectDispatcherRoutingInstructions(
-          systemPrompt, ctx.sentinel, ctx.validOutcomes, ctx.availableAgents, ctx.isTerminal, ctx.peers
-        );
-        log.info('dispatcher', 'Injected dispatcher routing instructions', {
+        dispatcherRoutingCtx = router.getInjectionContext(agent.name);
+        log.info('dispatcher', 'Built dispatcher routing context', {
           agentId,
-          sentinel: ctx.sentinel,
-          isTerminal: ctx.isTerminal,
-          validOutcomes: ctx.validOutcomes,
-          peers: ctx.peers,
+          sentinel: dispatcherRoutingCtx.sentinel,
+          isTerminal: dispatcherRoutingCtx.isTerminal,
+          validOutcomes: dispatcherRoutingCtx.validOutcomes,
+          peers: dispatcherRoutingCtx.peers,
         });
       } else {
-        // Agent mode: inject per-agent routing table (existing behavior)
-        routing = this.extractAgentRouting(meshName, agent.name, meshConfig);
-        if (routing && Object.keys(routing).length > 0) {
-          systemPrompt = injectRoutingInstructions(systemPrompt, routing, meshName);
-          log.info('dispatcher', `Injected routing instructions into system prompt`, {
+        routingConfig = this.extractAgentRouting(meshName, agent.name, meshConfig);
+        if (routingConfig && Object.keys(routingConfig).length > 0) {
+          log.info('dispatcher', `Built agent routing config`, {
             agentId,
-            routes: Object.keys(routing),
+            routes: Object.keys(routingConfig),
           });
         }
       }
 
-      // Inject rearmatter config if present
-      if (meshConfig?.rearmatter) {
-        systemPrompt = this.promptInjector.injectRearmatter(systemPrompt, meshConfig.rearmatter);
-        log.info('dispatcher', `Injected rearmatter instructions into system prompt`, {
-          agentId,
-          fields: meshConfig.rearmatter.fields || [],
-        });
-      }
+      const messagingSection = this.promptInjector.buildMessagingAndRoutingSection({
+        meshName: meshName!,
+        routing: routingConfig,
+        dispatcherRouting: dispatcherRoutingCtx,
+      });
+      systemPrompt += '\n\n' + messagingSection;
 
-      // Inject parallel instance context if mesh-id present
-      if (meshId) {
-        systemPrompt = this.promptInjector.injectParallelInstanceContext(systemPrompt, meshName, meshId);
-        log.info('dispatcher', `Injected parallel instance context into system prompt`, {
-          agentId,
-          baseMesh: meshName,
-          meshId,
-        });
-      }
-
-      // Escalation policy removed — was triggering creative agent name improvisation
-
-      // Save constructed prompt to .ai/tx/prompts/{mesh}/{agent}.md
+      // --- Save constructed prompt ---
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
-      const promptMetadata: Record<string, unknown> = {
-        taskId,
-        agentName: agent.name,
-        timestamp: new Date().toISOString(),
-      };
-      if (featureName) {
-        promptMetadata.featureName = featureName;
-      }
-      if (fsmState) {
-        promptMetadata.fsmState = fsmState;
-      }
-      if (hookContext.worktreePath) {
-        promptMetadata.worktreePath = hookContext.worktreePath;
-      }
+      const promptMetadata: Record<string, unknown> = { taskId };
+      if (featureName) promptMetadata.featureName = featureName;
+      if (fsmState) promptMetadata.fsmState = fsmState;
+      if (hookContext.worktreePath) promptMetadata.worktreePath = hookContext.worktreePath;
 
       try {
         await this.promptInjector.savePrompt(
           meshName,
           agent.name,
           systemPrompt,
-          '', // userPrompt (empty for now, could be populated from message if needed)
+          '',
           promptMetadata
         );
       } catch (error) {
@@ -3823,6 +3834,22 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           error: String(error),
         });
       }
+
+      // --- Create worker config and state machine (prompt is fully assembled) ---
+      const workerConfig: WorkerConfig = {
+        id: agentId,
+        model: model as SemanticModel,
+        prompt: systemPrompt
+      };
+
+      const isCompletionAgent = this.normalizeCompletionAgents(meshConfig).includes(agent.name);
+      const machine = new WorkerStateMachine(agentId, workerConfig, meshName, agent.name, 300000, isCompletionAgent);
+      machine.use(createLoggingMiddleware('worker'));
+      machine.on('transition', (event) => {
+        this.emit('worker:transition', { ...event, entityType: 'worker' });
+      });
+      await machine.initialize();
+      log.info('dispatcher', `Initializing worker`, { agentId });
 
       // Load MCP environment variables if agent has MCP servers
       let mcpServers = agent.mcpServers;
@@ -3938,7 +3965,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         systemPrompt,
         workDir,
         msgsDir: this.config.msgsDir,
-        routing,
+        routing: routingConfig,
         mcpServers,
         toolRestriction: agent.orchestrator ? 'orchestrator' : meshConfig?.toolRestriction,  // Agent orchestrator overrides mesh-level
         sessionId,  // Resume session if continuation enabled
@@ -3970,7 +3997,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       const worker = new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
-      this.emit('worker:spawn', { agentId, model: agent.model });
 
       // Parity gate: emit session-start for consumer to clear stale pending asks
       this.emit('session-start', { agentId });
@@ -4013,19 +4039,45 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
 
       worker.on('init', (data) => {
-        // Start checkpoint: capture sessionId at init time (UUID arrives via init-anchor).
-        // Downstream agents with fork_from may be dispatched when this agent's outbound
-        // message hits the consumer — before this agent completes. Saving at init
-        // ensures the checkpoint exists when the downstream agent needs it.
-        const cpType = resolveCheckpointType(agent.checkpoint);
-        if (cpType === 'start' && data.sessionId && meshName) {
-          const checkpointKey = `${meshName}/${agent.name}`;
-          this.checkpoints.set(checkpointKey, {
-            sessionId: data.sessionId,
-          });
-          log.info('dispatcher', `Start checkpoint saved at init for ${agentId}`, {
-            checkpointKey,
-            sessionId: data.sessionId,
+        if (data.sessionId) {
+          // Eagerly persist sessionId — if the worker crashes mid-run, these survive:
+
+          // 1. Guardrail steering can resume this session on routing/FSM violations
+          this.lastCompletedSessionIds.set(agentId, data.sessionId);
+
+          // 2. Continuation/persistence resume works even after crash
+          this.queue.setConversationId(agentId, data.sessionId);
+
+          // 3. Session store gets an early record (status: running)
+          //    Completion will overwrite via INSERT OR REPLACE with final data
+          if (this.sessionStore) {
+            this.sessionStore.recordSession({
+              id: data.sessionId,
+              agentId,
+              meshId: meshName,
+              startedAt: Date.now(),
+              transcriptPath: '',  // Not yet known — updated at completion
+              finalStatus: 'running',
+              createdAt: Date.now(),
+            });
+          }
+
+          // 4. Start checkpoint for fork_from
+          const cpType = resolveCheckpointType(agent.checkpoint);
+          if (cpType === 'start') {
+            const checkpointKey = `${meshName}/${agent.name}`;
+            this.checkpoints.set(checkpointKey, {
+              sessionId: data.sessionId,
+            });
+            log.info('dispatcher', `Start checkpoint saved at init for ${agentId}`, {
+              checkpointKey,
+              sessionId: data.sessionId,
+            });
+          }
+
+          log.info('dispatcher', `Session eagerly persisted at init`, {
+            agentId,
+            sessionId: data.sessionId.slice(0, 8) + '...',
           });
         }
 
@@ -4515,6 +4567,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
+        // Track last completed session for routing self-heal (resume context on correction)
+        if (data.sessionId) {
+          this.lastCompletedSessionIds.set(agentId, data.sessionId);
+        }
+
         this.removeActiveWorker(agentId, currentWorkerId);
         this.writeWorkerState();
 
@@ -4611,14 +4668,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         // Record session for session awareness (async, non-blocking)
-        if (this.sessionStore && this.sessionSummarizer && data.sessionId && transcriptPath) {
+        // Always update if sessionStore exists — init eagerly created a 'running' record
+        if (this.sessionStore && data.sessionId) {
           const sessionStartTime = activeWorker?.startedAt || Date.now();
           const sessionEndTime = Date.now();
 
           // Get files changed from the runner if available
           const filesChanged = activeWorker?.runner?.getFilesChanged?.() || undefined;
 
-          // Record session metadata
+          // Record session metadata (overwrites init-time 'running' record)
           this.sessionStore.recordSession({
             id: data.sessionId,
             agentId,
@@ -4626,7 +4684,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             startedAt: sessionStartTime,
             endedAt: sessionEndTime,
             durationSeconds: Math.floor((sessionEndTime - sessionStartTime) / 1000),
-            transcriptPath,
+            transcriptPath: transcriptPath || '',
             messageCount: data.metrics?.messageCount,
             toolCalls: data.metrics?.toolCalls,
             finalStatus: 'success',
@@ -4635,16 +4693,18 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           });
 
           // Generate headline async (don't block completion)
-          this.sessionSummarizer.generateHeadline(transcriptPath)
-            .then((headline) => {
-              this.sessionStore!.updateHeadline(data.sessionId!, headline);
-            })
-            .catch((err) => {
-              log.warn('dispatcher', 'Failed to generate session headline', {
-                sessionId: data.sessionId,
-                error: (err as Error).message,
+          if (this.sessionSummarizer && transcriptPath) {
+            this.sessionSummarizer.generateHeadline(transcriptPath)
+              .then((headline) => {
+                this.sessionStore!.updateHeadline(data.sessionId!, headline);
+              })
+              .catch((err) => {
+                log.warn('dispatcher', 'Failed to generate session headline', {
+                  sessionId: data.sessionId,
+                  error: (err as Error).message,
+                });
               });
-            });
+          }
 
           // Index for FTS search
           if (data.output) {
@@ -4692,6 +4752,20 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       worker.on('error', async (data) => {
         const errorWorkerId = registeredWorkerId || 'unknown';
 
+        // Track last completed session even on error — preserves conversation context
+        // for guardrail steering and potential retry/resume flows
+        if (data.sessionId) {
+          this.lastCompletedSessionIds.set(agentId, data.sessionId);
+
+          // Update session record from 'running' to 'error'
+          if (this.sessionStore) {
+            this.sessionStore.updateSession(data.sessionId, {
+              endedAt: Date.now(),
+              finalStatus: 'error',
+            });
+          }
+        }
+
         // Suppress retry for workers killed intentionally (ask-human / ask-agent suspend)
         if (this.sessionManager.isSuspended(agentId)) {
           log.info('dispatcher', 'Suppressing retry for suspended worker', {
@@ -4728,6 +4802,25 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         if (isAbortError) {
           log.debug('dispatcher', `Worker aborted (expected)`, {
             agentId, workerId: errorWorkerId,
+          });
+          this.cleanupWorker(agentId, errorWorkerId);
+          this.processNextQueuedMessage(agentId);
+          return;
+        }
+
+        // Max turns exhaustion: agent hit max_turns limit — don't retry, treat as completion
+        const isMaxTurnsError = data.error?.includes('max turns') ||
+                                data.error?.includes('error_max_turns');
+        if (isMaxTurnsError) {
+          log.warn('dispatcher', `Agent hit max_turns limit — treating as completion (no retry)`, {
+            agentId, workerId: errorWorkerId, error: data.error,
+          });
+          this.systemWriter?.write({
+            to: 'core/core',
+            from: agentId,
+            type: 'info',
+            headline: `Budget exhausted: ${agent.name} hit max_turns`,
+            body: `Agent \`${agentId}\` was stopped after reaching its max_turns limit. Its work may be incomplete.\n\nConsider increasing \`max_turns\` for this agent or reviewing its task scope.`,
           });
           this.cleanupWorker(agentId, errorWorkerId);
           this.processNextQueuedMessage(agentId);
@@ -4816,6 +4909,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       registeredWorkerId = workerId;
       log.debug('dispatcher', `Worker registered`, { agentId, workerId, taskFrom });
       this.writeWorkerState();
+      // Emit spawn AFTER state write so status readers see the new worker
+      this.emit('worker:spawn', { agentId, model: agent.model });
 
       // Run the worker (async, don't await)
       worker.run().catch(async (error) => {
@@ -5889,13 +5984,25 @@ ${output}
   }
 
   private writeSystemFeedbackMessage(agentId: string, feedback: string, reason: string): void {
+    // Resume the agent's last session so it retains conversation context
+    const lastSessionId = this.lastCompletedSessionIds.get(agentId);
+
     this.systemWriter.write({
       to: agentId,
       from: 'system/routing-validator',
       type: 'message',
       headline: 'Routing violation - use correct agent name',
       body: feedback,
+      ...(lastSessionId ? { extraFrontmatter: { 'session-id': lastSessionId } } : {}),
     });
+
+    if (lastSessionId) {
+      log.info('dispatcher', 'Routing feedback includes session-id for context resume', {
+        agentId,
+        sessionId: lastSessionId.slice(0, 8) + '...',
+        reason,
+      });
+    }
   }
 
 
@@ -5987,13 +6094,24 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     // Primary path: write routing-feedback message for next invocation
     // The rejected message was blocked at the gate — agent has already
     // made its decision and is exiting. Queue feedback for next spawn.
+    // Include session-id so the new worker resumes with full conversation context.
+    const lastSessionId = this.lastCompletedSessionIds.get(agentId);
+
     this.systemWriter.write({
       to: agentId,
       from: 'system/fsm-validator',
       type: 'message',
       headline: 'Routing violation - use correct agent name',
       body: feedback,
+      ...(lastSessionId ? { extraFrontmatter: { 'session-id': lastSessionId } } : {}),
     });
+
+    if (lastSessionId) {
+      log.info('dispatcher', 'FSM feedback includes session-id for context resume', {
+        agentId,
+        sessionId: lastSessionId.slice(0, 8) + '...',
+      });
+    }
   }
 
   // ============================================================================
@@ -6036,14 +6154,23 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     // Get task from queue - peek at the first agent's queue or mesh queue
     const firstAgent = agentsToSpawn[0];
     const agentId = `${meshName}/${firstAgent}`;
-    const task = this.queue.peekOne(agentId);
+    let task = this.queue.peekOne(agentId);
     if (!task) {
-      log.warn('dispatcher', 'No task for ensemble state', {
+      // FSM-driven ensemble: synthesize task (no dispatch message written to prevent double-spawn)
+      log.info('dispatcher', 'Synthesizing task for FSM-driven ensemble state', {
         meshName,
         state: stateConfig.name,
         agentId,
       });
-      return;
+      task = {
+        from_agent: 'system/fsm-dispatch',
+        to_agent: agentId,
+        type: 'task',
+        payload: {
+          headline: `Execute task for state ${stateConfig.name}`,
+          body: `FSM transitioned to ensemble state \`${stateConfig.name}\`. Execute your task.`,
+        },
+      };
     }
 
     log.info('dispatcher', 'Starting ensemble execution', {
@@ -6067,8 +6194,11 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       task
     );
 
-    // Consume task from queue
-    this.queue.pollOne(agentId);
+    // Consume task from queue only if it came from the queue (not synthetic)
+    const taskFromQueue = this.queue.peekOne(agentId);
+    if (taskFromQueue) {
+      this.queue.pollOne(agentId);
+    }
 
     // Re-insert the task for each ensemble worker so SDK runner can poll it.
     // Each worker's SDK runner calls queue.pollOne(workerId) independently.

@@ -29,7 +29,7 @@ import type { SemanticModel, FSMStateConfig } from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
-import { injectRoutingInstructions } from '../prompt/sections/routing.ts';
+// Routing now handled through PromptInjector.buildMessagingAndRoutingSection
 import { FSMPersistence } from '../queue/index.ts';
 import type { ManifestEntry } from './mesh-validator.ts';
 import type { FSMInjectionContext } from '../workspace/injector.ts';
@@ -207,30 +207,35 @@ export class HeadlessRunner extends EventEmitter {
       }
     }
 
-    // Build system prompt (mirrors dispatcher injection order)
-    let systemPrompt = this.loadPrompt();
-    systemPrompt = this.promptInjector.injectPreamble(systemPrompt, {
+    // Build system prompt — section-based, mirrors dispatcher order:
+    // identity+situation → files+workspace → instructions → output constraints
+    const agentPromptText = this.loadPrompt();
+    const promptSections: string[] = [];
+
+    // -- Identity + situation --
+    // 1. Preamble
+    promptSections.push(this.promptInjector.buildPreambleSection({
       agentCount: this.meshConfig.agents.length,
       meshName: this.config.mesh,
       agentName: this.config.agent,
-    });
-    systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
+    }));
 
-    // Inject routing from mesh config
-    const agentRouting = this.meshConfig.routing?.[this.config.agent];
-    if (agentRouting && Object.keys(agentRouting).length > 0) {
-      systemPrompt = injectRoutingInstructions(systemPrompt, agentRouting, this.config.mesh);
-      log.info('headless-runner', 'Injected routing', { agentId, routes: Object.keys(agentRouting) });
-    }
+    // 2. FSM context
+    const fsmSection = this.buildFSMSectionIfAvailable();
+    if (fsmSection) promptSections.push(fsmSection);
 
-    // Inject file manifest contract with resolved paths and file contents
+    // -- Files + workspace --
+    // 3. Workspace context
+    const workspaceSection = this.buildWorkspaceSectionIfAvailable();
+    if (workspaceSection) promptSections.push(workspaceSection);
+
+    // 4. File contract + preloaded files
     if (this.meshConfig.manifest) {
       const reads: import('../workspace/index.ts').ManifestFileEntry[] = [];
       const writes: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const preloadedFiles: Array<{ path: string; content: string }> = [];
       const wsLocations = this.meshConfig.workspace?.locations || {};
       const wsBase = this.meshConfig.workspace?.path || '';
-
-      // Resolve template variables from session.yaml
       const varMap = this.resolveManifestVariables(wsLocations);
 
       for (const entry of this.meshConfig.manifest) {
@@ -244,28 +249,40 @@ export class HeadlessRunner extends EventEmitter {
         };
         if (entry.reads?.includes(this.config.agent)) {
           if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
-            try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
+            try {
+              const content = fs.readFileSync(resolvedPath, 'utf-8');
+              const relativePath = path.relative(this.config.workDir, resolvedPath);
+              preloadedFiles.push({ path: relativePath, content });
+            } catch {}
           }
           reads.push(fileEntry);
         }
         if (entry.writes?.includes(this.config.agent)) writes.push(fileEntry);
       }
-      if (reads.length > 0 || writes.length > 0) {
-        systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
-      }
+      const fileSection = this.promptInjector.buildFileSection(reads, writes, preloadedFiles);
+      if (fileSection) promptSections.push(fileSection);
     }
 
-    // Inject FSM context if mesh has FSM config
-    systemPrompt = this.injectFSMContextIfAvailable(systemPrompt);
+    // -- Instructions --
+    // 5. Agent prompt
+    promptSections.push(agentPromptText);
 
-    // Inject workspace context if configured
-    systemPrompt = this.injectWorkspaceContext(systemPrompt);
+    // -- Output constraints --
+    // 6. Headless mode context
+    let headlessSection = `## Headless Run Mode\n`;
+    headlessSection += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
+    headlessSection += `- Write output files to: ${this.config.workDir}\n`;
+    headlessSection += `- Write response messages to: ${this.config.msgsDir}/\n`;
+    promptSections.push(headlessSection);
 
-    // Add headless mode context (informational — routing table is authoritative)
-    systemPrompt += `\n\n## Headless Run Mode\n`;
-    systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
-    systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
-    systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
+    // 7. Messaging & routing (END)
+    const agentRouting = this.meshConfig.routing?.[this.config.agent];
+    promptSections.push(this.promptInjector.buildMessagingAndRoutingSection({
+      meshName: this.config.mesh,
+      routing: (agentRouting && Object.keys(agentRouting).length > 0) ? agentRouting : undefined,
+    }));
+
+    const systemPrompt = promptSections.filter(Boolean).join('\n\n');
 
     const runnerConfig: SdkRunnerConfig = {
       id: agentId,
@@ -404,29 +421,35 @@ export class HeadlessRunner extends EventEmitter {
       this.hookContext.taskBody = taskBody;
     }
 
-    // Build system prompt (mirrors dispatcher injection order)
-    let systemPrompt = this.loadPrompt();
-    systemPrompt = this.promptInjector.injectPreamble(systemPrompt, {
+    // Build system prompt — same section order as primary path:
+    // identity+situation → files+workspace → instructions → output constraints
+    const agentPromptText = this.loadPrompt();
+    const retrySections: string[] = [];
+
+    // -- Identity + situation --
+    // 1. Preamble
+    retrySections.push(this.promptInjector.buildPreambleSection({
       agentCount: this.meshConfig.agents.length,
       meshName: this.config.mesh,
       agentName: this.config.agent,
-    });
-    systemPrompt = this.promptInjector.injectMessagingProtocol(systemPrompt);
+    }));
 
-    // Inject routing from mesh config
-    const agentRouting = this.meshConfig.routing?.[this.config.agent];
-    if (agentRouting && Object.keys(agentRouting).length > 0) {
-      systemPrompt = injectRoutingInstructions(systemPrompt, agentRouting, this.config.mesh);
-    }
+    // 2. FSM context
+    const fsmSection = this.buildFSMSectionIfAvailable();
+    if (fsmSection) retrySections.push(fsmSection);
 
-    // Inject file manifest contract with resolved paths and file contents
+    // -- Files + workspace --
+    // 3. Workspace context
+    const workspaceSection = this.buildWorkspaceSectionIfAvailable();
+    if (workspaceSection) retrySections.push(workspaceSection);
+
+    // 4. File contract + preloads
     if (this.meshConfig.manifest) {
       const reads: import('../workspace/index.ts').ManifestFileEntry[] = [];
       const writes: import('../workspace/index.ts').ManifestFileEntry[] = [];
+      const preloadedFiles: Array<{ path: string; content: string }> = [];
       const wsLocations = this.meshConfig.workspace?.locations || {};
       const wsBase = this.meshConfig.workspace?.path || '';
-
-      // Resolve template variables from session.yaml
       const varMap = this.resolveManifestVariables(wsLocations);
 
       for (const entry of this.meshConfig.manifest) {
@@ -440,35 +463,46 @@ export class HeadlessRunner extends EventEmitter {
         };
         if (entry.reads?.includes(this.config.agent)) {
           if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
-            try { fileEntry.content = fs.readFileSync(resolvedPath, 'utf-8'); } catch {}
+            try {
+              const content = fs.readFileSync(resolvedPath, 'utf-8');
+              const relativePath = path.relative(this.config.workDir, resolvedPath);
+              preloadedFiles.push({ path: relativePath, content });
+            } catch {}
           }
           reads.push(fileEntry);
         }
         if (entry.writes?.includes(this.config.agent)) writes.push(fileEntry);
       }
-      if (reads.length > 0 || writes.length > 0) {
-        systemPrompt = this.promptInjector.injectFileManifest(systemPrompt, reads, writes);
-      }
+      const fileSection = this.promptInjector.buildFileSection(reads, writes, preloadedFiles);
+      if (fileSection) retrySections.push(fileSection);
     }
 
-    // Inject FSM context if mesh has FSM config
-    systemPrompt = this.injectFSMContextIfAvailable(systemPrompt);
+    // -- Instructions --
+    // 5. Agent prompt
+    retrySections.push(agentPromptText);
 
-    // Inject workspace context if configured
-    systemPrompt = this.injectWorkspaceContext(systemPrompt);
+    // -- Output constraints --
+    // 6. Headless mode context
+    let headlessSection = `## Headless Run Mode\n`;
+    headlessSection += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
+    headlessSection += `- Write output files to: ${this.config.workDir}\n`;
+    headlessSection += `- Write response messages to: ${this.config.msgsDir}/\n`;
 
-    // Add headless mode context (informational — routing table is authoritative)
-    systemPrompt += `\n\n## Headless Run Mode\n`;
-    systemPrompt += `You are in headless REPL mode. The user is interacting directly via terminal.\n`;
-    systemPrompt += `- Write output files to: ${this.config.workDir}\n`;
-    systemPrompt += `- Write response messages to: ${this.config.msgsDir}/\n`;
-
-    // Add quality iteration context if this is a retry
     if (this.currentIteration > 1) {
-      systemPrompt += `\n## Quality Iteration ${this.currentIteration}\n`;
-      systemPrompt += `This is quality iteration ${this.currentIteration} of ${this.maxIterations}.\n`;
-      systemPrompt += `Please review the quality feedback below and address all issues.\n`;
+      headlessSection += `\n## Quality Iteration ${this.currentIteration}\n`;
+      headlessSection += `This is quality iteration ${this.currentIteration} of ${this.maxIterations}.\n`;
+      headlessSection += `Please review the quality feedback below and address all issues.\n`;
     }
+    retrySections.push(headlessSection);
+
+    // 7. Messaging & routing (END)
+    const agentRouting = this.meshConfig.routing?.[this.config.agent];
+    retrySections.push(this.promptInjector.buildMessagingAndRoutingSection({
+      meshName: this.config.mesh,
+      routing: (agentRouting && Object.keys(agentRouting).length > 0) ? agentRouting : undefined,
+    }));
+
+    const systemPrompt = retrySections.filter(Boolean).join('\n\n');
 
     const runnerConfig: SdkRunnerConfig = {
       id: agentId,
@@ -842,19 +876,21 @@ ${feedback}
     return varMap;
   }
 
+  // Dead code removed: injectFSMContextIfAvailable, injectWorkspaceContext
+  // Replaced by buildFSMSectionIfAvailable, buildWorkspaceSectionIfAvailable
+
   /**
-   * Inject FSM context into prompt if mesh has FSM config and persisted state
+   * Build FSM section string if mesh has FSM config and persisted state
    */
-  private injectFSMContextIfAvailable(systemPrompt: string): string {
-    if (!this.meshConfig?.fsm) return systemPrompt;
+  private buildFSMSectionIfAvailable(): string {
+    if (!this.meshConfig?.fsm) return '';
 
     try {
       const persistence = new FSMPersistence(this.queue.getDb());
       persistence.initialize();
       const stateData = persistence.getState(this.config.mesh);
-      if (!stateData) return systemPrompt;
+      if (!stateData) return '';
 
-      // Find current state config
       const states = this.meshConfig.fsm.states;
       let stateConfig: FSMStateConfig | undefined;
       if (Array.isArray(states)) {
@@ -864,7 +900,7 @@ ${feedback}
         if (raw) stateConfig = { name: stateData.currentState, ...raw } as FSMStateConfig;
       }
 
-      if (!stateConfig) return systemPrompt;
+      if (!stateConfig) return '';
 
       const fsmContext: FSMInjectionContext = {
         meshName: this.config.mesh,
@@ -875,36 +911,33 @@ ${feedback}
         gateRetries: stateData.gateRetries,
       };
 
-      systemPrompt = this.promptInjector.injectFSMContext(systemPrompt, fsmContext);
-      log.info('headless-runner', 'Injected FSM context', {
+      log.info('headless-runner', 'Built FSM section', {
         mesh: this.config.mesh,
         state: stateData.currentState,
       });
+      return this.promptInjector.buildFSMSection(fsmContext);
     } catch (err) {
-      log.warn('headless-runner', 'Failed to inject FSM context', {
+      log.warn('headless-runner', 'Failed to build FSM section', {
         error: (err as Error).message,
       });
+      return '';
     }
-    return systemPrompt;
   }
 
   /**
-   * Inject workspace context into prompt if mesh has workspace config
+   * Build workspace section string if mesh has workspace config
    */
-  private injectWorkspaceContext(systemPrompt: string): string {
+  private buildWorkspaceSectionIfAvailable(): string {
     const wsConfig = this.meshConfig?.workspace;
-    if (!wsConfig?.path) return systemPrompt;
+    if (!wsConfig?.path) return '';
 
     const wsDir = path.resolve(this.config.workDir, wsConfig.path);
-
-    // Create workspace dir if needed
     if (!fs.existsSync(wsDir)) {
       fs.mkdirSync(wsDir, { recursive: true });
     }
 
-    // Build a simple workspace section (without the full WorkspaceManager)
-    const section = [
-      '\n# Task Workspace\n',
+    return [
+      '# Task Workspace\n',
       `You have a dedicated workspace for this task at: \`${wsDir}\`\n`,
       'You can create any files you need in this workspace.\n',
       '## Writing to Workspace\n',
@@ -913,8 +946,6 @@ ${feedback}
       `Write: file_path="${wsDir}/filename.md"`,
       '```\n',
     ].join('\n');
-
-    return systemPrompt + section;
   }
 
   /**
