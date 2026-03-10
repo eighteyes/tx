@@ -52,6 +52,7 @@ interface MeshFlags {
   next?: boolean;
   all?: boolean;
   verbose?: boolean;
+  rewindTo?: string;
 }
 
 /**
@@ -73,6 +74,14 @@ function parseFlags(args: string[]): MeshFlags {
       flags.all = true;
     } else if (arg === '--verbose') {
       flags.verbose = true;
+    } else if (arg.startsWith('--rewind-to=')) {
+      flags.rewindTo = arg.split('=')[1];
+    } else if (arg === '--rewind-to') {
+      // Next arg will be picked up as a positional, but we handle it here
+      const idx = args.indexOf(arg);
+      if (idx < args.length - 1 && !args[idx + 1].startsWith('-')) {
+        flags.rewindTo = args[idx + 1];
+      }
     }
   }
 
@@ -3673,16 +3682,32 @@ async function meshRecover(meshName: string | undefined, flags: MeshFlags): Prom
     return;
   }
 
+  // Show available checkpoints for rewind-to
+  if (meshName) {
+    const { CheckpointLog } = await import('../reliability/checkpoint-log.ts');
+    const checkpointLog = new CheckpointLog(queue.getDb());
+    const checkpoints = checkpointLog.latestPerState(meshName);
+    if (checkpoints.length > 0) {
+      console.log(`\n${chalk.bold('Available checkpoints')} (use --rewind-to=<state>):`);
+      for (const cp of checkpoints) {
+        console.log(`  ${chalk.cyan(cp.state_name.padEnd(20))} ${chalk.dim('sid:')}${cp.session_id.slice(0, 8)}  ${chalk.dim('agent:')}${cp.agent_id}  ${chalk.dim(cp.created_at)}`);
+      }
+    }
+  }
+
   const resumable = entries.filter(e => e.recovery_mode === 'session_resume');
   const requeueable = entries.filter(e => e.recovery_mode === 'requeue');
-  console.log(`\nRecovering ${entries.length} entries: ${chalk.cyan(String(resumable.length))} session_resume, ${chalk.yellow(String(requeueable.length))} requeue`);
+  const rewindNote = flags.rewindTo ? chalk.magenta(` (rewind-to: ${flags.rewindTo})`) : '';
+  console.log(`\nRecovering ${entries.length} entries: ${chalk.cyan(String(resumable.length))} session_resume, ${chalk.yellow(String(requeueable.length))} requeue${rewindNote}`);
 
   // Try SIGUSR2 to running dispatcher
   if (fs.existsSync(pidFile)) {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
     if (!isNaN(pid)) {
       const target = meshName && !flags.all ? meshName : '_all';
-      fs.writeFileSync(controlFile, JSON.stringify({ action: 'dlq-recover', mesh: target }));
+      const ctrl: Record<string, string> = { action: 'dlq-recover', mesh: target };
+      if (flags.rewindTo) ctrl.rewindTo = flags.rewindTo;
+      fs.writeFileSync(controlFile, JSON.stringify(ctrl));
 
       try {
         process.kill(pid, 'SIGUSR2');
@@ -3724,7 +3749,8 @@ async function meshRecover(meshName: string | undefined, flags: MeshFlags): Prom
 
     const timestamp = Date.now();
     const filename = `${timestamp}-task-system-dlq-recovery--${meshName}-${entryPoint}-recover.md`;
-    const content = `---\nto: ${meshName}/${entryPoint}\nfrom: system/dlq-recovery\ntype: task\nheadline: DLQ recovery\nrecover: true\ntimestamp: ${new Date(timestamp).toISOString()}\n---\n\nRecover failed work from dead letter queue.\n`;
+    const rewindLine = flags.rewindTo ? `\nrewind-to: ${flags.rewindTo}` : '';
+    const content = `---\nto: ${meshName}/${entryPoint}\nfrom: system/dlq-recovery\ntype: task\nheadline: DLQ recovery\nrecover: true${rewindLine}\ntimestamp: ${new Date(timestamp).toISOString()}\n---\n\nRecover failed work from dead letter queue.\n`;
     fs.writeFileSync(path.join(msgsDir, filename), content);
     console.log(chalk.cyan(`Recovery message written. Will be processed on next tx start.`));
   } else {

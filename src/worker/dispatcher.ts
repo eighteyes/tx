@@ -1589,10 +1589,13 @@ export class WorkerDispatcher extends EventEmitter {
     // Core agent or CLI can send: `recover: true` to trigger auto-recovery
     if (pendingMessage?.payload?.['recover'] === true || pendingMessage?.payload?.['recover'] === 'true') {
       if (this.reliability) {
-        const results = this.reliability.recoverForMesh(meshName);
+        // rewind-to: <state> overrides DLQ session with checkpoint session
+        const rewindTo = pendingMessage?.payload?.['rewind-to'] as string | undefined;
+        const results = this.reliability.recoverForMesh(meshName, rewindTo || undefined);
         const succeeded = results.filter(r => r.success).length;
         log.info('dispatcher', 'DLQ recovery triggered by front-matter', {
           meshName, attempted: results.length, succeeded,
+          rewindTo: rewindTo || null,
         });
 
         // Consume the recover message — its purpose is fulfilled
@@ -4734,6 +4737,24 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.checkpoints.set(checkpointKey, {
               ...existing,
               sessionId: data.sessionId,
+            });
+          }
+        }
+
+        // Save reliability checkpoint at FSM state boundaries
+        // Every agent completion in an FSM mesh records the session ID
+        // keyed by the current FSM state — enables rewind-to recovery
+        if (this.reliability && data.sessionId && meshName) {
+          const fsm = this.meshFSMs.get(meshName);
+          if (fsm?.isInitialized()) {
+            const fsmState = fsm.getStatus().currentState;
+            this.reliability.checkpoints.save({
+              meshName,
+              stateName: fsmState,
+              agentId,
+              sessionId: data.sessionId,
+              fromState: fsmState,
+              context: fsm.getContext() as Record<string, unknown>,
             });
           }
         }
