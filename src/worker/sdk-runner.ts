@@ -16,6 +16,7 @@ import {
   type UsagePolicyViolationError,
 } from './usage-policy-error.ts';
 import type { GuardrailMode } from './guardrail-config.ts';
+import { resolvePermissions, type AgentPermissions } from './permissions.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -67,6 +68,8 @@ export interface SdkRunnerConfig {
   hooks?: Record<string, unknown[]>;  // SDK PreToolUse/PostToolUse hooks (chaos contracts)
   maxTurnsMode?: GuardrailMode;  // { strict, warning } for max_turns enforcement
   thinking?: boolean;  // Enable extended thinking (default: true). Set false to disable.
+  permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
+  godMode?: boolean;  // Enable god mode (bypass all permissions)
 }
 
 export class SdkRunner extends EventEmitter {
@@ -450,14 +453,19 @@ export class SdkRunner extends EventEmitter {
               model: this.config.model,
             });
           }
+          // Resolve permissions (god mode or agent-specific)
+          const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+
           this.currentQuery = query({
             prompt: userPrompt,
             options: {
               cwd: this.config.workDir,
               model: MODEL_MAP[this.config.model],
               systemPrompt: this.config.systemPrompt,
-              permissionMode: 'bypassPermissions',
-              allowDangerouslySkipPermissions: true,
+              permissionMode: resolvedPerms.mode,
+              ...(resolvedPerms.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
+              ...(resolvedPerms.allowedTools.length > 0 ? { allowedTools: resolvedPerms.allowedTools } : {}),
+              ...(resolvedPerms.disallowedTools ? { disallowedTools: resolvedPerms.disallowedTools } : {}),
               abortController: this.abortController,
               maxTurns: this.getEffectiveMaxTurns(),
               settingSources: ['project'],  // Load project slash commands
@@ -479,14 +487,19 @@ export class SdkRunner extends EventEmitter {
               error: err.message
             });
             // Retry without project settings
+            // Resolve permissions (god mode or agent-specific)
+            const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+
             this.currentQuery = query({
               prompt: userPrompt,
               options: {
                 cwd: this.config.workDir,
                 model: MODEL_MAP[this.config.model],
                 systemPrompt: this.config.systemPrompt,
-                permissionMode: 'bypassPermissions',
-                allowDangerouslySkipPermissions: true,
+                permissionMode: resolvedPerms.mode,
+                ...(resolvedPerms.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
+                ...(resolvedPerms.allowedTools.length > 0 ? { allowedTools: resolvedPerms.allowedTools } : {}),
+                ...(resolvedPerms.disallowedTools ? { disallowedTools: resolvedPerms.disallowedTools } : {}),
                 abortController: this.abortController,
                 maxTurns: this.getEffectiveMaxTurns(),
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
@@ -948,14 +961,19 @@ export class SdkRunner extends EventEmitter {
         : undefined;
 
       // Create query with resume option to continue the session
+      // Resolve permissions (god mode or agent-specific)
+      const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+
       const q = query({
         prompt: userPrompt,
         options: {
           cwd: this.config.workDir,
           model: MODEL_MAP[this.config.model],
           systemPrompt: this.config.systemPrompt,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: resolvedPerms.mode,
+          ...(resolvedPerms.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
+          ...(resolvedPerms.allowedTools.length > 0 ? { allowedTools: resolvedPerms.allowedTools } : {}),
+          ...(resolvedPerms.disallowedTools ? { disallowedTools: resolvedPerms.disallowedTools } : {}),
           abortController: this.abortController,
           maxTurns: this.getEffectiveMaxTurns(),
           mcpServers: this.config.mcpServers,

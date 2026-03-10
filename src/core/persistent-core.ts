@@ -17,6 +17,7 @@ import { query, type SDKResultMessage, type SDKMessage } from '@anthropic-ai/cla
 import { log } from '../shared/logger.ts';
 import type { SemanticModel } from '../shared/types.ts';
 import { buildCorePrompt } from '../prompt/core.js';
+import { CORE_AGENT_TOOLS } from '../worker/permissions.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -54,6 +55,7 @@ export interface PersistentCoreConfig {
   meshesDir: string;
   model?: SemanticModel;
   sessionId?: string;  // For resuming an existing conversation
+  godMode?: boolean;  // Enable god mode (bypass all permissions)
 }
 
 /**
@@ -208,14 +210,25 @@ This core agent is running in the web interface. The UI will display ask-human r
     try {
       const systemPrompt = this.getSystemPrompt();
 
+      // Permissions: core agent needs full tool access for HITL
+      const godMode = this.config.godMode ?? false;
+      const permissionOptions = godMode
+        ? {
+            permissionMode: 'bypassPermissions' as const,
+            allowDangerouslySkipPermissions: true,
+          }
+        : {
+            permissionMode: 'dontAsk' as const,
+            allowedTools: CORE_AGENT_TOOLS,
+          };
+
       const q = query({
         prompt: content,
         options: {
           cwd: this.config.workDir,
           model: MODEL_MAP[this.model],
           systemPrompt,
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          ...permissionOptions,
           abortController: this.abortController,
           maxTurns: 50,  // Allow more turns for complex tasks
           settingSources: ['project'],

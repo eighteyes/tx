@@ -164,6 +164,7 @@ Options:
   --low              Use cost-effective models (replaces opus with sonnet)
   --ultra-low        Use ultra low cost mode (forces haiku for everything)
   --debug            Enable forensics analysis for all meshes
+  --god-mode         Bypass all tool permissions (unrestricted access)
   --inbox <mode>     Message delivery mode: hook (default), inject, ask
   --no-inject        Alias for --inbox ask (backward compat)`,
 
@@ -513,6 +514,7 @@ async function main() {
         debug: Boolean(flags.debug),
         noInject: Boolean(flags.noInject),
         inbox: (flags.inbox as 'inject' | 'hook' | 'ask' | undefined),
+        godMode: Boolean(flags.godMode),
       });
       break;
 

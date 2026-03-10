@@ -905,6 +905,54 @@ For ensemble `aggregation` field:
 | `max_turns` | number | no | API round-trip limit per invocation |
 | `max_messages` | number | no | Outbound message limit per invocation |
 | `orchestrator` | boolean | no | Restrict to Read + Write(msgs only). For coordinator agents that route, not implement. |
+| `permissions` | object | no | Tool access control. See Permissions section below. |
+
+## Permissions (Tool Access Control)
+
+Control which tools an agent can access using the `permissions` field.
+
+**Default behavior (no permissions block):**
+- Allowed: `Read`, `Write`, `Edit`, `Glob`, `Grep`
+- Denied: `Bash`, `Task` (must be explicitly allowed)
+
+**Example: Allow Bash for an implementer**
+```yaml
+agents:
+  - name: implementer
+    model: sonnet
+    prompt: implementer.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Bash  # Explicitly allowed
+```
+
+**Example: Read-only reviewer**
+```yaml
+agents:
+  - name: reviewer
+    model: sonnet
+    prompt: reviewer.md
+    permissions:
+      allowedTools:
+        - Read
+        - Glob
+        - Grep
+      # No Write, Edit, or Bash
+```
+
+**Available tools:**
+- File operations: `Read`, `Write`, `Edit`, `Glob`, `Grep`
+- Execution: `Bash` (denied by default)
+- Advanced: `Task`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
+
+**Security principle:** Only grant tools an agent actually needs. Start restrictive, add permissions as required.
+
+**God mode:** Run `tx start dev --god-mode` to bypass all permissions (unrestricted tool access). Use only when you need it.
 
 ## Additional Config Fields
 

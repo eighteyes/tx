@@ -145,8 +145,8 @@ ${violationSummary}`;
         model: 'haiku',
         systemPrompt: HAIKU_SYSTEM_PROMPT,
         cwd: workDir,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
+        permissionMode: 'dontAsk',
+        allowedTools: [],  // No tools needed for manifest suggestion
         maxTurns: 1,
         tools: [],
       },
