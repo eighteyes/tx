@@ -98,22 +98,17 @@ tx logs --component reliability  # Heartbeat kill events
 
 **How recovery works**:
 
-1. **Automatic on startup**: When `tx start` runs, the dispatcher calls `recoverAll()` — recovers any pending session_resume and requeue entries from the previous run.
+**Important: Recovery requires human review.** The core agent is instructed to always diagnose, present options (resume vs rewind vs drop), and get explicit user confirmation before triggering recovery. This prevents silent re-execution of bad work.
 
-2. **CLI**: `tx mesh recover <mesh>` sends a SIGUSR2 signal to the running dispatcher, triggering recovery for that mesh's DLQ entries.
+1. **Automatic on startup**: When `tx start` runs, the dispatcher calls `recoverAll()` — recovers any pending session_resume and requeue entries from the previous run. (This is the only automatic path — it handles crash recovery between restarts.)
 
-3. **Front-matter message**: An agent (or core) can write a message with `recover: true` to trigger DLQ recovery:
-   ```markdown
-   ---
-   to: reliability-test/planner
-   from: core/core
-   type: task
-   recover: true
-   ---
-   Recover failed work.
-   ```
+2. **Human-initiated via core agent** (preferred): User asks core to investigate. Core runs `tx mesh health` + `tx mesh dlq`, presents findings with available checkpoints, user picks a recovery strategy, core writes the recovery message.
 
-4. **Fallback**: If the dispatcher isn't running, `tx mesh recover` writes a recovery message to the msgs dir that will be processed on next start.
+3. **CLI**: `tx mesh recover <mesh>` sends a SIGUSR2 signal to the running dispatcher. Shows available checkpoints first.
+
+4. **Front-matter message**: Core writes a message with `recover: true` (and optionally `rewind-to: <state>`) to trigger DLQ recovery.
+
+5. **Fallback**: If the dispatcher isn't running, `tx mesh recover` writes a recovery message to the msgs dir that will be processed on next start.
 
 **Observe it**:
 ```bash
