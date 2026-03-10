@@ -18,3 +18,4 @@ export { CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerState } f
 export { HeartbeatMonitor, type HeartbeatConfig, type AgentHealth } from './heartbeat-monitor.ts';
 export { SLITracker, type SLIConfig, type SLISnapshot, type FailureCategory } from './sli-tracker.ts';
 export { SafeMode, type SafeModeConfig, type SafeModeState } from './safe-mode.ts';
+export { CheckpointLog, type Checkpoint } from './checkpoint-log.ts';

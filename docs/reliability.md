@@ -123,6 +123,61 @@ tx mesh dlq --json       # Machine-readable output
 tx mesh dlq clear        # GC recovered entries
 ```
 
+### Checkpoint Log & Rewind-To
+
+**What it does**: Saves session IDs at every FSM state transition. Enables rewinding to any completed state instead of just the crash point.
+
+**How checkpoints are saved**:
+- Every time an FSM mesh transitions states, the completing agent's session ID is saved to SQLite
+- Checkpoint key: `mesh_name + state_name` → `session_id`
+- Multiple checkpoints per state are kept (most recent wins on lookup)
+
+**How rewind-to works**:
+
+When recovering from the DLQ, you can specify `rewind-to: <state>` to use a checkpoint's session ID instead of the crash-point session. This means the recovered worker resumes from after that state completed — skipping all the bad work that happened after.
+
+```
+FSM: analyze → build → verify → complete
+                  ↑         ✗ (crashed here)
+                  └── rewind-to: build (resumes from here)
+```
+
+**Three ways to trigger rewind-to**:
+
+1. **CLI**:
+   ```bash
+   tx mesh recover my-mesh --rewind-to=build
+   ```
+
+2. **Front-matter message** (core agent):
+   ```markdown
+   ---
+   to: my-mesh/worker
+   from: core/core
+   recover: true
+   rewind-to: build
+   ---
+   The verify step went wrong. Rewind to after build completed.
+   ```
+
+3. **SIGUSR2 control signal** (programmatic):
+   ```json
+   {"action": "dlq-recover", "mesh": "my-mesh", "rewindTo": "build"}
+   ```
+
+**Viewing available checkpoints**:
+```bash
+tx mesh recover my-mesh    # Lists checkpoints before recovering
+```
+Output:
+```
+Available checkpoints (use --rewind-to=<state>):
+  analyze              sid:a1b2c3d4  agent:my-mesh/analyst  2026-03-10 14:30:00
+  build                sid:e5f6g7h8  agent:my-mesh/builder  2026-03-10 14:31:15
+```
+
+**When checkpoints are cleared**: On mesh completion (`clearMeshState`). Old checkpoints are garbage collected (keeps last 50 per mesh).
+
 ### 4. SLI Tracker
 
 **What it does**: Measures success rate, failure categories, MTTR, and nines level.
@@ -200,6 +255,7 @@ Agents can interact with reliability features via message front-matter:
 | Field | Value | Effect |
 |-------|-------|--------|
 | `recover` | `true` | Triggers DLQ recovery for the target mesh |
+| `rewind-to` | FSM state name | Override recovery session with checkpoint from this state |
 | `session-id` | SDK session ID | Spawns worker resuming that session |
 | `resume-mesh` | `true` | Preserves mesh state instead of clearing on entry |
 
@@ -211,7 +267,8 @@ Agents can interact with reliability features via message front-matter:
 | `tx mesh health --json` | Machine-readable health output |
 | `tx mesh dlq [mesh]` | List dead letter queue entries |
 | `tx mesh dlq clear` | Clear recovered DLQ entries |
-| `tx mesh recover <mesh>` | Trigger DLQ recovery via running dispatcher |
+| `tx mesh recover <mesh>` | Trigger DLQ recovery (shows checkpoints first) |
+| `tx mesh recover <mesh> --rewind-to=<state>` | Recover rewinding to a specific FSM state |
 | `tx mesh recover --all` | Recover all pending DLQ entries |
 
 ## Architecture
@@ -224,6 +281,7 @@ Agents can interact with reliability features via message front-matter:
                     │  ├─ Circuit Breaker  │ ← SQLite persisted
                     │  ├─ Heartbeat Monitor│ ← kills via bindings
                     │  ├─ Dead Letter Queue│ ← SQLite persisted
+                    │  ├─ Checkpoint Log  │ ← SQLite, rewind-to
                     │  └─ Safe Mode       │ ← PreToolUse hook
                     │                      │
                     │  bindDispatcher({    │

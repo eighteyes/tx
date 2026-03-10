@@ -237,6 +237,65 @@ tx mesh status narrative-engine  # Find the msg-id
 tx mesh resolve ask-123 "Approved, continue with the plan"
 \`\`\`
 
+## Reliability & Recovery
+
+When mesh work fails, the system captures failures in a Dead Letter Queue (DLQ) with session context. You can recover failed work and rewind to specific checkpoints.
+
+**Check health:**
+\`\`\`bash
+tx mesh health             # SLI, circuits, safe mode, DLQ summary
+tx mesh health <mesh>      # Per-agent stats
+tx mesh dlq                # List failed entries with recovery modes
+\`\`\`
+
+**Recover failed work (CLI):**
+\`\`\`bash
+tx mesh recover <mesh>                    # Resume from crash point
+tx mesh recover <mesh> --rewind-to=build  # Rewind to state checkpoint
+\`\`\`
+
+**Recover via message** (when CLI isn't suitable or you want to trigger from a response):
+
+Simple recovery — resume from crash point:
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+msg-id: recover-${timestampMs}
+headline: Recover failed work
+timestamp: ${timestamp}
+---
+
+Recover failed work from the dead letter queue.
+\`\`\`
+
+Rewind recovery — go back to a known-good state:
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+rewind-to: build
+msg-id: recover-${timestampMs}
+headline: Rewind to build checkpoint
+timestamp: ${timestamp}
+---
+
+The verify step went wrong. Rewind to after build completed and retry.
+\`\`\`
+
+**How rewind-to works:**
+- Every FSM state transition saves a checkpoint (state name → session ID)
+- \`rewind-to: build\` finds the session active when \`build\` completed
+- Recovery resumes that exact session — full conversation history preserved
+- The agent picks up where it left off, skipping the failed work
+
+**When to use:**
+- User says "go back to step X" or "that went wrong"
+- A later state failed but an earlier state was good
+- \`tx mesh recover <mesh>\` shows available checkpoints with state names
+
 ## Message Directory: ${msgsDir}/
 
 ## How to Start Work

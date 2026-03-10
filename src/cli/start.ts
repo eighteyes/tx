@@ -275,7 +275,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
           if (disp.reliability) {
             const results = ctrl.mesh === '_all'
               ? disp.reliability.recoverAll()
-              : disp.reliability.recoverForMesh(ctrl.mesh);
+              : disp.reliability.recoverForMesh(ctrl.mesh, ctrl.rewindTo);
             const succeeded = results.filter((r: { success: boolean }) => r.success).length;
             log.info('start', 'SIGUSR2: DLQ recovery', {
               mesh: ctrl.mesh, attempted: results.length, succeeded,

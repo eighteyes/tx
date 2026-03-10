@@ -24,6 +24,7 @@ import { CircuitBreaker, type CircuitBreakerState } from './circuit-breaker.ts';
 import { HeartbeatMonitor, type AgentHealth } from './heartbeat-monitor.ts';
 import { SLITracker, type SLISnapshot, type FailureCategory } from './sli-tracker.ts';
 import { SafeMode, type SafeModeLevel, type SafeModeState } from './safe-mode.ts';
+import { CheckpointLog, type Checkpoint } from './checkpoint-log.ts';
 import { log } from '../shared/logger.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -94,6 +95,7 @@ export class ReliabilityManager {
   readonly heartbeat: HeartbeatMonitor;
   readonly sli: SLITracker;
   readonly safeMode: SafeMode;
+  readonly checkpoints: CheckpointLog;
   private workDir: string;
   private bindings?: DispatcherBindings;
 
@@ -109,6 +111,7 @@ export class ReliabilityManager {
     this.heartbeat = new HeartbeatMonitor(merged.heartbeat);
     this.sli = new SLITracker(merged.sli);
     this.safeMode = new SafeMode(merged.safeMode);
+    this.checkpoints = new CheckpointLog(db);
 
     log.info('reliability', 'ReliabilityManager initialized', {
       dlqMaxRetries: merged.dlq?.maxRetries || 3,
@@ -364,16 +367,38 @@ export class ReliabilityManager {
 
   /**
    * Recover DLQ entries for a specific mesh.
+   * If rewindTo is specified, override the session ID with the
+   * checkpoint for that FSM state (instead of the crash-point session).
    */
-  recoverForMesh(meshName: string): RecoveryResult[] {
+  recoverForMesh(meshName: string, rewindTo?: string): RecoveryResult[] {
     if (!this.bindings) return [];
+
+    // If rewind-to is specified, look up the checkpoint for that state
+    let overrideSessionId: string | undefined;
+    if (rewindTo) {
+      const checkpoint = this.checkpoints.lookup(meshName, rewindTo);
+      if (checkpoint) {
+        overrideSessionId = checkpoint.session_id;
+        log.info('reliability', `Rewind-to resolved`, {
+          meshName,
+          state: rewindTo,
+          sessionId: checkpoint.session_id.slice(0, 8),
+          agent: checkpoint.agent_id,
+        });
+      } else {
+        log.warn('reliability', `No checkpoint found for rewind-to state`, {
+          meshName, state: rewindTo,
+          available: this.checkpoints.latestPerState(meshName).map(c => c.state_name),
+        });
+      }
+    }
 
     const entries = this.dlq.getForMesh(meshName);
     const results: RecoveryResult[] = [];
 
     for (const entry of entries) {
       if (entry.recovery_mode === 'manual') continue;
-      results.push(this.recoverEntry(entry));
+      results.push(this.recoverEntry(entry, overrideSessionId));
     }
 
     return results;
@@ -403,33 +428,46 @@ export class ReliabilityManager {
    *
    * requeue: Re-inject the original message from→to with its payload.
    */
-  private recoverEntry(entry: DLQEntry): RecoveryResult {
+  /**
+   * @param overrideSessionId - If set (from rewind-to), use this session
+   *   instead of the DLQ entry's crash-point session.
+   */
+  private recoverEntry(entry: DLQEntry, overrideSessionId?: string): RecoveryResult {
     try {
-      if (entry.recovery_mode === 'session_resume' && entry.session_id) {
+      // Use override session (from rewind-to checkpoint) or the crash-point session
+      const sessionId = overrideSessionId || entry.session_id;
+
+      if ((entry.recovery_mode === 'session_resume' || overrideSessionId) && sessionId) {
         // Write a recovery message with session-id front-matter
         // The dispatcher already handles session-id: spawns worker resuming that session
+        const isRewind = overrideSessionId && overrideSessionId !== entry.session_id;
         this.bindings!.requeueMessage(
           'system/dlq-recovery',
           entry.agent_id,
           'task',
           {
-            headline: `DLQ recovery: resuming session ${entry.session_id.slice(0, 8)}`,
-            body: `Resuming failed work. Original failure: ${entry.failure_reason}`,
+            headline: isRewind
+              ? `DLQ recovery: rewinding to checkpoint ${sessionId.slice(0, 8)}`
+              : `DLQ recovery: resuming session ${sessionId.slice(0, 8)}`,
+            body: isRewind
+              ? `Rewinding past failure. Original failure: ${entry.failure_reason}`
+              : `Resuming failed work. Original failure: ${entry.failure_reason}`,
             'resume-mesh': 'true',
           },
-          { 'session-id': entry.session_id }
+          { 'session-id': sessionId }
         );
 
         this.dlq.markRecovered(entry.id);
-        log.info('reliability', 'DLQ entry recovered via session resume', {
+        log.info('reliability', `DLQ entry recovered via ${isRewind ? 'rewind' : 'session resume'}`, {
           id: entry.id,
           agent: entry.agent_id,
-          sessionId: entry.session_id.slice(0, 8),
+          sessionId: sessionId.slice(0, 8),
+          rewind: isRewind || false,
         });
         log.activity('reliability:recovered', entry.agent_id,
-          `Session resume (sid:${entry.session_id.slice(0, 8)})`);
+          isRewind ? `Rewound to checkpoint (sid:${sessionId.slice(0, 8)})` : `Session resume (sid:${sessionId.slice(0, 8)})`);
 
-        return { id: entry.id, success: true, mode: 'session_resume', sessionId: entry.session_id };
+        return { id: entry.id, success: true, mode: 'session_resume', sessionId };
 
       } else if (entry.recovery_mode === 'requeue') {
         // Re-inject the original message
