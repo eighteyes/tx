@@ -47,19 +47,22 @@ export function resolveLifecycle(
 ): ResolvedLifecycle | undefined {
   // Explicit lifecycle takes precedence
   if (config.lifecycle) {
+    const pre = [...(config.lifecycle.pre || [])];
+    // Inject know:check if not already present — no-op for non-know meshes
+    if (!pre.includes('know:check')) {
+      pre.unshift('know:check');
+    }
     // If debug mode is enabled globally but not in explicit lifecycle, append forensics
     const post = [...(config.lifecycle.post || [])];
     if ((config.debug || globalDebug) && !post.includes('forensics:analyze')) {
       post.push('forensics:analyze');
     }
-    return {
-      pre: config.lifecycle.pre || [],
-      post,
-    };
+    return { pre, post };
   }
 
   // Build lifecycle from shorthands
-  const pre: string[] = [];
+  // know:check always runs first — it's a no-op for non-know meshes
+  const pre: string[] = ['know:check'];
   const post: string[] = [];
 
   // worktree: true shorthand

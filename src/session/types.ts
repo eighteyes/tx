@@ -27,7 +27,7 @@ export interface SessionMetadata {
   transcriptPath: string;
   messageCount?: number;
   toolCalls?: number;
-  finalStatus?: 'success' | 'error' | 'abandoned';
+  finalStatus?: 'success' | 'error' | 'abandoned' | 'running';
   headline?: string;
   tags?: string[];
   filesChanged?: FileChangeSummary;

@@ -157,6 +157,9 @@ export class MeshController {
             config = JSON.parse(content) as MeshConfigSchema;
           }
 
+          // Skip disabled meshes
+          if ((config as any).disable) continue;
+
           meshes.push({
             name: meshName,
             path: `meshes/${meshName}`,

@@ -39,12 +39,14 @@ export function buildRoutingSection(
   lines.push('Route your response message to one of these destinations:\n');
 
   // Flatten: dedupe destination → collect all reasons
+  // Use short names for same-mesh agents, full addresses for cross-mesh
   const destinations = new Map<string, string[]>();
   for (const categoryDestinations of Object.values(routing)) {
     for (const [destination, reason] of Object.entries(categoryDestinations)) {
+      // 'core' is a special cross-mesh target
       const targetAgent = destination === 'core' ? 'core/core' :
                          destination.includes('/') ? destination :
-                         `${meshName}/${destination}`;
+                         destination;
       if (!destinations.has(targetAgent)) destinations.set(targetAgent, []);
       destinations.get(targetAgent)!.push(reason);
     }
@@ -55,6 +57,7 @@ export function buildRoutingSection(
   }
 
   lines.push('\nSet the `to` field in your message frontmatter. Send to ONLY these destinations.');
+  lines.push('Single-word names (e.g. `implementer`) auto-route within your mesh. Use `mesh/agent` only for cross-mesh messages.');
   lines.push('\n**After sending your routing message, STOP. Do not read files, analyze state, write prose, or perform any further work. Send ONE message and exit immediately.**');
 
   return lines.join('\n');
@@ -139,6 +142,8 @@ export function buildDispatcherRoutingSection(
     lines.push('');
   }
 
+  lines.push('Single-word names auto-route within your mesh. Use `mesh/agent` only for cross-mesh messages.');
+  lines.push('');
   lines.push('**After sending your message, STOP. Do not read files, analyze state, write prose, or perform any further work. Send ONE message and exit immediately.**');
 
   return lines.join('\n');

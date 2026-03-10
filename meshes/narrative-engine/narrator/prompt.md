@@ -41,12 +41,25 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    - `fates.yaml` — full world possibility table (branches not taken = atmospheric subtext)
    - `scene_script.yaml` — **beat-by-beat scene script with character voices, time, props, pacing** (PRIMARY INPUT)
 2. Read `author.yaml` — extract `interpretive_frames` (if present) for frame-aware rendering
-3. Read campaign's `timeline.yaml` for time references:
+3. **Query campaign.sh for time references** (instead of reading timeline.yaml):
+   ```bash
+   CAMPAIGN_SCRIPT="./scripts/campaign.sh"
+   $CAMPAIGN_SCRIPT {campaign_path} timeline current
+   ```
    - Use for "X days ago" or "since the arrest" references
-   - Check `entries[-1]` for current day, period
+   - Output includes current day, period
 
 ### Phase 2: Knowledge Queries (OPTIONAL)
-Query oracle only if the scene involves world-building context you need to honor.
+Query oracle if the scene involves world-building context you need to honor.
+
+**Direct campaign queries available** (optional, for factoid dedup and entity context):
+```bash
+# Check used factoids to avoid repetition
+$CAMPAIGN_SCRIPT {campaign_path} facts query --factoids
+
+# Get recent facts about entities in scene
+$CAMPAIGN_SCRIPT {campaign_path} facts query --entities={id1,id2} --since={turn-5}
+```
 
 ### Phase 3: Vocabulary Preparation
 Generate vocabulary lists matching author.yaml diction:

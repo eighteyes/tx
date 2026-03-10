@@ -21,6 +21,7 @@ const TYPE_ICONS: Record<string, string> = {
   'task': '📋',
   'task-complete': '✅',
   'message': '💬',         // New canonical type
+  'info': 'ℹ️',            // System info messages
   'ask': '❓',             // DEPRECATED
   'ask-response': '💬',    // DEPRECATED
   'ask-human': '👤',       // DEPRECATED
@@ -32,6 +33,7 @@ const TYPE_COLORS: Record<string, (s: string) => string> = {
   'task': chalk.blue,
   'task-complete': chalk.green,
   'message': chalk.cyan,   // New canonical type
+  'info': chalk.dim,       // System info messages
   'ask': chalk.yellow,     // DEPRECATED
   'ask-response': chalk.cyan,  // DEPRECATED
   'ask-human': chalk.magenta,  // DEPRECATED

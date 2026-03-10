@@ -24,6 +24,7 @@ interface MeshConfig {
   entry_point?: string;
   intents?: { patterns?: string[] };
   worktree?: boolean;
+  disable?: boolean;
 }
 
 /**
@@ -79,8 +80,9 @@ export function buildMeshList(meshesDir: string): string {
     return '- No meshes available';
   }
 
-  // Format mesh list with descriptions and intents
+  // Format mesh list with descriptions and intents (skip disabled)
   return meshConfigs
+    .filter(mesh => !mesh.disable)
     .map(mesh => {
       const entryPoint = mesh.entry_point || 'worker';
       let line = `- \`${mesh.mesh}\` - ${mesh.description || 'No description'}`;

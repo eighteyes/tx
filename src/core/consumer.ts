@@ -135,6 +135,8 @@ export class MessageConsumer extends EventEmitter {
   private meshStateManager: MeshStateManager | null = null;
   // Routing self-heal: track violations per agent
   private routingViolationTracker: Map<string, RoutingViolation> = new Map();
+  // Cross-mesh routing error tracker: track retry count for non-existent mesh errors
+  private crossMeshRoutingErrors: Map<string, number> = new Map();
   // Cache mesh configs for routing validation
   private meshConfigCache: Map<string, CachedMeshConfig> = new Map();
   private readonly MESH_CONFIG_CACHE_TTL = 60000; // 60 seconds
@@ -487,6 +489,31 @@ export class MessageConsumer extends EventEmitter {
       }
     }
 
+    // Both 'to' and 'from' are bare names — find a mesh containing both
+    if (!senderMesh) {
+      const fromAgent = fromParts[0]; // bare agent name
+      for (const [meshName, agents] of this.meshAgents) {
+        if (agents.has(to) && agents.has(fromAgent)) {
+          log.debug('consumer', `Resolved both bare names to same mesh`, {
+            from: fromAgent,
+            to,
+            resolved: `${meshName}/${to}`
+          });
+          return `${meshName}/${to}`;
+        }
+      }
+      // 'from' is bare but 'to' not found alongside it — try 'to' as sole agent match
+      for (const [meshName, agents] of this.meshAgents) {
+        if (agents.has(to)) {
+          log.debug('consumer', `Resolved bare 'to' via mesh scan`, {
+            to,
+            resolved: `${meshName}/${to}`
+          });
+          return `${meshName}/${to}`;
+        }
+      }
+    }
+
     // Treat 'to' as mesh name and append entry point
     const entryPoint = this.meshEntryPoints.get(to);
     if (entryPoint) {
@@ -568,8 +595,9 @@ export class MessageConsumer extends EventEmitter {
       }
 
       // Resolve mesh routing with support for partial names
+      // Resolve 'to' first, then pass resolved 'to' to 'from' resolver for better mesh inference
       let toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
-      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
+      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
 
       // =================================================================
       // DISPATCHER ROUTING — resolve mesh/dispatch sentinel to real target
@@ -791,18 +819,19 @@ export class MessageConsumer extends EventEmitter {
         // Try hot-loading the mesh before dropping the message
         const loaded = this.tryLoadMeshOnDemand(targetMesh);
         if (!loaded) {
-          log.warn('consumer', 'Dropped message to nonexistent mesh', {
-            from: fromAgent,
-            to: toAgent,
+          // Handle cross-mesh routing error with retry mechanism
+          const handled = await this.handleCrossMeshRoutingError(
+            fromAgent,
+            toAgent,
             targetMesh,
-            file: filename,
-            knownMeshes: Array.from(this.meshAgents.keys()).sort(),
-          });
-          // Notify sender's mesh via error to core
-          this.writeErrorToCore(
-            `Agent \`${fromAgent}\` tried to send to \`${toAgent}\` but mesh \`${targetMesh}\` does not exist. Message dropped.`,
-            parsed.frontmatter['msg-id'] || filename
+            parsed.frontmatter['msg-id'] || filename,
+            filepath
           );
+          if (!handled) {
+            // Retry mechanism exhausted or error writing feedback - drop message
+            return;
+          }
+          // Message dropped after retry handling
           return;
         }
         // Mesh was hot-loaded successfully — re-resolve the toAgent in case entry_point differs
@@ -1137,7 +1166,7 @@ export class MessageConsumer extends EventEmitter {
         // Parity gate: check if task-complete has pending asks
         if (messageType === 'task-complete') {
           log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate core path' });
-          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
+          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -1285,7 +1314,7 @@ export class MessageConsumer extends EventEmitter {
         // Parity gate: check if task-complete TO another worker has pending asks
         if (messageType === 'task-complete') {
           log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate worker path' });
-          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
+          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -1950,12 +1979,11 @@ The agent's session is blocked until this is resolved.`,
     });
 
     // Feedback to the agent so they know they're blocked
-    this.systemWriter.write({
-      to: fromAgent,
-      from: 'system/routing-validator',
-      type: 'routing-feedback',
-      headline: 'Routing violation - escalated',
-      body: `# Routing Violation - Escalated
+    // Route through system-feedback event so dispatcher can attach session-id
+    // for conversation context resume
+    this.emit('system-feedback', {
+      agentId: fromAgent,
+      feedback: `# Routing Violation - Escalated
 
 Your message to \`${attemptedTarget}\` with type \`${messageType}\` has been blocked.
 
@@ -1970,7 +1998,177 @@ Your routing attempt does not match any configured routing rules for your agent.
 ${targetsFormatted}
 
 **Your session is paused until a human resolves this issue.**`,
-      extraFrontmatter: { 'violation-count': '2', 'escalated': 'true' },
+      reason: 'routing-escalation',
     });
+  }
+
+  /**
+   * Handle cross-mesh routing errors with retry mechanism.
+   * Tracks retry count and injects correction messages to the agent.
+   * Escalates to core after max retries exhausted.
+   * Returns true if handled (message should be dropped), false if error occurred.
+   */
+  private async handleCrossMeshRoutingError(
+    fromAgent: string,
+    toAgent: string,
+    targetMesh: string,
+    msgId: string,
+    filepath: string
+  ): Promise<boolean> {
+    const [senderMesh, senderAgent] = fromAgent.split('/');
+    const errorKey = `${fromAgent}→${toAgent}`;
+
+    // Get retry count
+    const retryCount = (this.crossMeshRoutingErrors.get(errorKey) || 0) + 1;
+    this.crossMeshRoutingErrors.set(errorKey, retryCount);
+
+    // Get max retries from guardrail config
+    const maxRetries = this.guardrailConfig.getRoutingMaxRetries(senderMesh, senderAgent);
+    const routingMode = this.guardrailConfig.getMode('routing_error', senderMesh, senderAgent);
+
+    log.warn('consumer', 'Cross-mesh routing error', {
+      from: fromAgent,
+      to: toAgent,
+      targetMesh,
+      retryCount,
+      maxRetries,
+      file: path.basename(filepath),
+      knownMeshes: Array.from(this.meshAgents.keys()).sort(),
+      mode: routingMode,
+    });
+
+    // Check if we should escalate
+    if (retryCount >= maxRetries) {
+      log.warn('consumer', 'Cross-mesh routing error: max retries exhausted, escalating', {
+        from: fromAgent,
+        to: toAgent,
+        retryCount,
+        maxRetries,
+      });
+
+      // Escalate to core/core
+      this.systemWriter.write({
+        to: 'core/core',
+        from: 'system/routing-validator',
+        type: 'message',
+        headline: 'Cross-mesh routing error - human intervention required',
+        body: `# Agent Repeatedly Sending to Non-Existent Mesh
+
+Agent \`${fromAgent}\` has tried to send to non-existent mesh \`${targetMesh}\` **${retryCount} times**.
+
+## Latest Attempt
+
+- **Attempted target:** \`${toAgent}\`
+- **Target mesh:** ${targetMesh} (does not exist)
+- **Message ID:** ${msgId}
+
+## Known Meshes
+
+${Array.from(this.meshAgents.keys()).sort().map(m => `- ${m}`).join('\n')}
+
+## Possible Issues
+
+1. **Agent is hallucinating mesh names** - The agent is making up mesh names that don't exist
+2. **Typo in mesh name** - The agent is close to a valid mesh name but has a typo
+3. **Missing mesh config** - The mesh should exist but isn't registered
+
+## Recommended Actions
+
+1. **Guide the agent** - Review the agent's task and provide correct routing
+2. **Check mesh configs** - Ensure all meshes are properly registered
+3. **Restart the mesh** - If the agent is stuck, restart to clear state
+
+The agent's message has been dropped.`,
+        extraFrontmatter: {
+          'retry-count': String(retryCount),
+          'escalated': 'true',
+          'ref-msg-id': msgId,
+        },
+      });
+
+      // Clear retry counter after escalation
+      this.crossMeshRoutingErrors.delete(errorKey);
+
+      // Delete the message file
+      try {
+        fs.unlinkSync(filepath);
+        log.info('consumer', 'Deleted message file after escalation', { file: path.basename(filepath) });
+      } catch (unlinkErr) {
+        log.warn('consumer', 'Failed to delete message file', {
+          file: path.basename(filepath),
+          error: (unlinkErr as Error).message,
+        });
+      }
+
+      return true;
+    }
+
+    // Inject correction message with routing table
+    const knownMeshes = Array.from(this.meshAgents.keys()).sort();
+    const senderMeshConfig = await this.loadMeshConfig(senderMesh);
+
+    // Build valid target list - include agents from sender's mesh and known meshes
+    let validTargets = '';
+
+    // 1. Agents in sender's mesh (for intra-mesh routing)
+    if (senderMeshConfig && senderMeshConfig.agents) {
+      const senderMeshAgents = senderMeshConfig.agents
+        .map((a: { name: string }) => `${senderMesh}/${a.name}`)
+        .join(', ');
+      validTargets += `\n**Agents in your mesh (${senderMesh}):**\n${senderMeshAgents}\n`;
+    }
+
+    // 2. Known meshes (for cross-mesh routing)
+    validTargets += `\n**Known meshes (use mesh/agent or just mesh for entry point):**\n`;
+    for (const meshName of knownMeshes) {
+      const entryPoint = this.meshEntryPoints.get(meshName);
+      validTargets += `- **${meshName}** (entry: ${entryPoint || 'worker'})\n`;
+    }
+
+    // 3. Special targets
+    validTargets += `\n**Special targets:**\n- **core/core** - Send to human\n`;
+
+    const correctionMessage = `# Routing Error — Retry ${retryCount}/${maxRetries}
+
+Your message to \`${toAgent}\` could not be delivered because **mesh "${targetMesh}" does not exist**.
+
+## Valid Routing Targets
+${validTargets}
+
+## What to Do
+
+1. **Review your workspace** to understand your current task
+2. **Check the routing targets above** to find the correct destination
+3. **Resend your message** with a valid target from the list
+
+If you're unsure which target to use, message \`core/core\` to ask for clarification.`;
+
+    // Emit system-feedback event for direct injection into agent session
+    this.emit('system-feedback', {
+      agentId: fromAgent,
+      feedback: correctionMessage,
+      reason: 'cross-mesh-routing-error',
+    });
+
+    log.info('consumer', 'Emitted cross-mesh routing correction for direct injection', {
+      fromAgent,
+      toAgent,
+      targetMesh,
+      retryCount,
+      maxRetries,
+    });
+
+    // Delete the original message file
+    try {
+      fs.unlinkSync(filepath);
+      log.info('consumer', 'Deleted message file after routing correction', { file: path.basename(filepath) });
+    } catch (unlinkErr) {
+      log.warn('consumer', 'Failed to delete message file', {
+        file: path.basename(filepath),
+        error: (unlinkErr as Error).message,
+      });
+    }
+
+    return true;
   }
 }

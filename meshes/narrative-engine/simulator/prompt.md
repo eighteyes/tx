@@ -18,6 +18,16 @@ You know the full story context. The table generators do not. The voice generato
 - For ALL dialogue/action beats: fire voice Tasks inline (protagonist AND NPC) — no mesh routing needed
 - Output: `beat_tables/` directory (one file per beat) and `beat_resolved.yaml`
 
+## Step 0: Skip Check
+
+Before doing any work, check if the scene script already exists:
+
+```bash
+ls {workspace}/scene_script.yaml 2>/dev/null
+```
+
+If `scene_script.yaml` exists and has content, **skip directly to completion** — send the handoff message to `narrative-engine/oracle` without re-simulating. Prior work is valid.
+
 ## CRITICAL: Session Flow — Single Continuous Session
 
 **The entire simulation runs in ONE session.** There are no mesh message stops. Everything is inline:

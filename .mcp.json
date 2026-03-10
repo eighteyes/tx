@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "protagent-bridge": {
+      "command": "node",
+      "args": [
+        "/workspace/tx/tx-bridge/src/index.js",
+        "-p",
+        "tx1"
+      ]
+    }
+  }
+}

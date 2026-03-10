@@ -21,6 +21,9 @@ guardrails:
     strict: false               # default: false (allow + warn)
     warning: true               # default: true (inject feedback)
     kill_threshold: null        # default: null (block only)
+  bash_guard:
+    strict: true                # default: true (block violations)
+    warning: true               # default: true (include reason)
   routing_error:
     strict: false
     warning: true
@@ -72,6 +75,7 @@ Set `strict: true` to restore blocking behavior (the pre-mode-switch default).
 | write_gate | Block tool use | Approve + systemMessage |
 | read_gate | Block tool use | Approve + systemMessage |
 | identity_gate | Block tool use | Approve + systemMessage |
+| bash_guard | Block command + kill after 3 violations | Approve + systemMessage |
 | routing_error | Kill/escalate after max_retries; redirect to fallback on edge limit | Log + return (no escalation); log + allow message through |
 | max_messages | Kill worker | Log + allow worker to continue |
 | max_turns | SDK halts session | No SDK limit; emit warning event at threshold |
@@ -242,6 +246,52 @@ guardrails:
 
 Gate violations inject a steering message that tells the agent what paths are allowed. The message includes guidance to write to `core/core` if the agent believes a path should be allowed — putting escalation in the agent's hands rather than auto-notifying.
 
+### Bash Guard
+
+SDK PreToolUse hook that enforces workDir boundary for Bash commands. Replaces Docker container isolation with runtime boundary enforcement.
+
+**Philosophy**: Docker replacement model — agents have full Bash access but cannot escape the working directory, just like processes inside a container cannot access the host filesystem.
+
+**Config**: `guardrails.bash_guard` or per-mesh/agent override.
+
+```yaml
+guardrails:
+  bash_guard:
+    strict: true    # Block violations (default: true)
+    warning: true   # Include reason in block message (default: true)
+```
+
+| Behavior | Description |
+|----------|-------------|
+| Catastrophic denylist | Blocks privilege escalation (sudo, su), system operations (reboot, systemctl), raw disk writes (dd, mkfs), root filesystem destruction (rm -rf /), Docker host mount, encoded payload piped to shell |
+| Write-path boundary | Extracts destination paths from write operations (rm, cp, mv, mkdir, redirects, tar -C, git clone, pip/npm install --target, sed -i, tee, scripting language file writes) and blocks if outside workDir |
+| cd/pushd blocking | Blocks `cd` or `pushd` to directories outside workDir (prevents state change that affects subsequent commands) |
+| cd-then-destroy detection | Detects `cd /outside && rm -rf *` compound commands where cd changes context before destruction |
+| Home directory protection | Catches `~`, `~/path`, `$HOME`, `${HOME}` — resolves and blocks if outside workDir |
+| Env var protection | Catches `$TMPDIR`, `$TMP`, `$TEMP`, `$OLDPWD` and `${VAR}` variants |
+| Kill threshold | 3 violations in strict mode = worker terminated |
+| Network allowed | curl, wget, ssh, git push, npm publish — all allowed (Docker parity) |
+| Reads allowed | cat, head, grep, find (read-only) — allowed anywhere. Only write operations are boundary-checked |
+
+**Explicitly NOT blocked**: Network access, read operations, relative paths within workDir, /dev/null|stdout|stderr.
+
+**Escape hatch**: `tx start dev --god-mode` bypasses all permissions including bash guard (sets `TX_GOD_MODE=1`).
+
+```yaml
+# Per-mesh strict enforcement
+# meshes/my-mesh/config.yaml
+guardrails:
+  bash_guard:
+    strict: true
+    warning: true
+```
+
+| File | Role |
+|------|------|
+| `src/worker/bash-guard.ts` | BashGuard class — catastrophic denylist, path extraction, boundary check |
+| `src/worker/permissions.ts` | Default tool lists, permission resolution, god mode |
+| `src/worker/dispatcher.ts` | Wires BashGuard into PreToolUse hooks |
+
 ### Orchestrator Gate
 
 Per-agent flag that restricts an agent to routing-only behavior.
@@ -275,6 +325,8 @@ Always-on validation that completion agents match boundary agents. Not exposed i
 | File | Role |
 |------|------|
 | `src/worker/guardrail-config.ts` | GuardrailConfig class — load config, resolve thresholds and mode |
+| `src/worker/bash-guard.ts` | BashGuard class — workDir boundary enforcement for Bash |
+| `src/worker/permissions.ts` | Tool permission defaults and resolution (dontAsk mode) |
 | `src/worker/write-gate.ts` | WriteGate class — SDK PreToolUse hooks for writes |
 | `src/worker/read-gate.ts` | ReadGate class — SDK PreToolUse hooks for reads |
 | `src/worker/identity-gate.ts` | IdentityGate class — SDK PreToolUse hooks for message identity |

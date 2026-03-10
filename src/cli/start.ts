@@ -5,7 +5,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { TmuxSession, findClaudePath, getSessionName, injectPrompt, isClaudeIdle } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
@@ -207,42 +206,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     throw err;
   }
 
-  // Optional checks for know CLI - warn but allow continue
-  const knowWarnings: string[] = [];
-
-  // Check 1: know CLI in PATH
-  const knowInPath = process.env.PATH?.split(':').some(p => {
-    try { return fs.existsSync(path.join(p, 'know')); } catch { return false; }
-  });
-  if (!knowInPath) {
-    knowWarnings.push(`know CLI not in PATH (install: npm install -g know-cli)`);
-  }
-
-  // Check 2: .claude/commands/know/ exists
-  const knowCommandsDir = path.join(cwd, '.claude', 'commands', 'know');
-  if (!fs.existsSync(knowCommandsDir)) {
-    knowWarnings.push(`/know:* commands not found (.claude/commands/know/)`);
-  }
-
-  // If warnings, prompt user to continue or abort
-  if (knowWarnings.length > 0) {
-    console.warn(`\n⚠️  Know integration not configured:`);
-    for (const warn of knowWarnings) {
-      console.warn(`   • ${warn}`);
-    }
-    console.warn(`\nBrain mesh and /know:* workflows will not work.`);
-    console.warn(`Other meshes (dev, test, research) will work fine.\n`);
-
-    const continueStart = await promptYesNo('Continue without know? (y/n): ');
-    if (!continueStart) {
-      console.log('\nTo set up know:');
-      console.log(`  1. Install CLI:  npm install -g know-cli`);
-      console.log(`  2. Init project: know init`);
-      console.log(`  Or copy commands: cp -r ${txRoot}/.claude/commands/know ${cwd}/.claude/commands/\n`);
-      process.exit(0);
-    }
-    console.log('');  // Blank line before continuing
-  }
+  // know CLI check moved to pre-hook (know:check) — runs per-mesh for brain/dev-know-build
 
   // Rotate previous logs (keep up to 4 prior runs)
   rotateLog(logsDir, 'v4.jsonl');
@@ -714,6 +678,25 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
   };
 
+  // Track recently completed workers for status bar grace period
+  const COMPLETION_GRACE_MS = 15_000;
+  const writeRecentCompletion = (dir: string, agentId: string) => {
+    try {
+      const completionsPath = path.join(dir, 'recent-completions.json');
+      let completions: Array<{ agentId: string; at: number }> = [];
+      if (fs.existsSync(completionsPath)) {
+        completions = JSON.parse(fs.readFileSync(completionsPath, 'utf-8'));
+      }
+      const now = Date.now();
+      // Prune expired entries
+      completions = completions.filter(c => now - c.at < COMPLETION_GRACE_MS);
+      completions.push({ agentId, at: now });
+      fs.writeFileSync(completionsPath, JSON.stringify(completions, null, 2));
+    } catch {
+      // Non-fatal
+    }
+  };
+
   // Write status.json for hook consumption (mirrors worker state)
   // Also updates status bar with current counts
   const writeStatusFile = () => {
@@ -1134,6 +1117,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   });
   dispatcher.on('worker:complete', ({ id }: { id: string }) => {
     setTimeout(writeStatusFile, 50);
+    // Track recent completion for status bar grace period
+    writeRecentCompletion(dataDir, id);
     const [mesh, agent] = (id || '').split('/');
     if (mesh) pushWwwStatus(mesh, `${agent || id} completed`).catch(err => {
       log.error('injector', 'pushWwwStatus error (complete)', { error: (err as Error).message });
@@ -1156,6 +1141,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   dispatcher.on('mesh:halted-message', () => {
     setTimeout(writeStatusFile, 50);
   });
+
+  // Heartbeat: refresh status.json every 10s so the tmux hook's staleness check
+  // (30s threshold) doesn't suppress worker indicators during long-running tasks
+  const STATUS_HEARTBEAT_MS = 10_000;
+  const statusHeartbeat = setInterval(writeStatusFile, STATUS_HEARTBEAT_MS);
 
   await dispatcher.start(consumer);
 
@@ -1219,6 +1209,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   console.log('\n[core] Detached from session.');
 
   // Stop self-healing components
+  clearInterval(statusHeartbeat);
   staleCleaner.stop();
   deadlockDetector.stop();
 
@@ -1232,6 +1223,22 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   await consumer.stop();
   queue.close();
   sessionStore.close();
+
+  // Clean shutdown - reset status.json so status bar shows IDLE
+  try {
+    const statusPath = path.join(dataDir, 'status.json');
+    const cleanStatus = {
+      meshes: {},
+      workers: [],
+      pendingAsks: 0,
+      pendingQueue: {},
+      timestamp: new Date().toISOString(),
+    };
+    fs.writeFileSync(statusPath, JSON.stringify(cleanStatus, null, 2));
+    log.info('start', 'status.json reset on shutdown');
+  } catch {
+    // Non-fatal
+  }
 
   // Clean shutdown - remove PID file (crash recovery won't trigger on next start)
   if (fs.existsSync(pidFile)) {
@@ -1260,8 +1267,23 @@ export async function stop(workDir?: string): Promise<void> {
     console.log('TX is not running');
   }
 
-  // Clean shutdown - remove PID file
+  // Clean shutdown - reset status.json
   const dataDir = path.join(cwd, '.ai', 'tx', 'data');
+  try {
+    const statusPath = path.join(dataDir, 'status.json');
+    const cleanStatus = {
+      meshes: {},
+      workers: [],
+      pendingAsks: 0,
+      pendingQueue: {},
+      timestamp: new Date().toISOString(),
+    };
+    fs.writeFileSync(statusPath, JSON.stringify(cleanStatus, null, 2));
+  } catch {
+    // Non-fatal
+  }
+
+  // Clean shutdown - remove PID file
   const pidFile = path.join(dataDir, '.pid');
   if (fs.existsSync(pidFile)) {
     fs.unlinkSync(pidFile);
@@ -1342,19 +1364,3 @@ Process this message. If it's ask-human, present the question and wait for user 
 `;
 }
 
-/**
- * Prompt user for yes/no confirmation
- */
-function promptYesNo(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase().startsWith('y'));
-    });
-  });
-}
