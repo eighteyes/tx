@@ -277,3 +277,46 @@ Run the calibrator (send "new game" to `narrative-engine-v2/entry`) for a guided
 - `cast/`, `dialogue/`, `scene-crafter/` — collapsed into simulator
 - `fates/`, `dramaturg/`, `possibility/`, `system/` — collapsed into architect
 - `render-coord.md`, `validate-coord.md`, `compress-coord.md` — retired coordinators
+
+## How Dialogue Changed from V1
+
+### V1: Linear, Pre-Planned Pipeline
+
+```
+CAST (reaction guidance, no actual dialogue)
+  → SCENE-CRAFTER (beat structure + scaffold)
+    → DIALOGUE (writes ALL dialogue for ALL characters)
+      → NARRATOR (weaves pre-written dialogue into prose)
+```
+
+The dedicated **DIALOGUE agent** had full narrative visibility — it saw arc pressure, story goals, and both characters' internals. It pre-wrote dialogue for both protagonist and NPCs as structured `dialogue.yaml` with explicit trait-voice annotations and subtext fields before any prose rendering happened.
+
+### V2: Distributed, Entropy-Driven, Information-Isolated
+
+```
+SIMULATOR (orchestrates beat-by-beat)
+  ├── entropy tables → rolls → beat direction
+  ├── NPC-VOICE Task (blind, per character, per beat)
+  └── scene_script.yaml → NARRATOR (verbatim rendering)
+```
+
+### Key Differences
+
+| Aspect | V1 | V2 |
+|--------|----|----|
+| **Who writes dialogue** | Dedicated DIALOGUE agent | Distributed NPC-VOICE Tasks |
+| **When** | Pre-planned before simulation | Generated per-beat as simulation unfolds |
+| **Narrative visibility** | Full — sees arc, story, both characters | Blind — sees only observable context |
+| **Protagonist dialogue** | Pre-written alongside NPC lines | Emerges from player action |
+| **Entropy** | Weights outcomes before dialogue | Rolls outcomes then generates dialogue from result |
+| **Subtext** | Explicitly documented in YAML | Emergent from trait psychology + information barrier |
+
+### Why It Changed
+
+V1 had problems:
+1. **Narrative bias** — the DIALOGUE agent could see the full story, so dialogue sometimes served plot instead of character
+2. **NPCs knew too much** — information leaked through the pipeline
+3. **Locked protagonist** — both sides pre-written before player could influence
+4. **Tight coupling** — SCENE-CRAFTER, DIALOGUE, and NARRATOR were interdependent
+
+V2's fix: make voice generation **blind** (only observable context), **just-in-time** (after entropy rolls), and **parallel** (one Task per character per beat). Characters can genuinely surprise each other because they don't know what the other is thinking.

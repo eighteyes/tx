@@ -1,0 +1,21 @@
+{
+  "name": "tx",
+  "owner": {
+    "name": "eighteyes"
+  },
+  "metadata": {
+    "description": "Distributed agentic AI workflow system using Claude Agent SDK",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "tx",
+      "source": "./plugins/tx",
+      "description": "Multi-agent mesh orchestration for Claude Code. Define agent workflows in YAML, run them with tx start, observe with tx spy/msg/logs.",
+      "version": "1.0.0",
+      "category": "ai-ml",
+      "tags": ["multi-agent", "mesh", "orchestration", "agent-sdk", "workflows"],
+      "license": "MIT"
+    }
+  ]
+}

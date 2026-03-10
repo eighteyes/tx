@@ -3,6 +3,7 @@
 # Splits orchestration into discrete haiku phase coordinators
 
 mesh: narrative-engine
+disable: true
 description: "Statless RPG with coordinator pattern. Traits are semantically weighted, damage is trait accumulation, outcomes emerge from JIT probability tables + external entropy."
 
 agents:
@@ -615,18 +616,18 @@ manifest:
     writes: [scribe]
 
   - id: timeline.yaml
-    description: Canonical time tracking — day counter, time skips, elapsed time
+    description: Canonical time tracking — day counter, time skips, elapsed time. Query via campaign.sh, not preloaded.
     location: campaign
     persistent: true
-    reads: [narrator, architect]
-    writes: [scribe]
+    reads: [scribe]  # Agents query via campaign.sh timeline — not preloaded
+    writes: [scribe]  # Scribe writes via campaign.sh timeline add
 
   - id: continuity.yaml
-    description: Canonical facts, established details, and continuity anchors
+    description: Canonical facts, established details, and continuity anchors. Query via campaign.sh facts, not preloaded.
     location: campaign
     persistent: true
-    reads: [narrator, oracle, scribe, architect]
-    writes: [scribe]
+    reads: [scribe]  # Agents query via campaign.sh facts — not preloaded
+    writes: [scribe]  # Scribe writes via campaign.sh facts add/appearance/etc.
 
   - id: history.md
     description: Narrative history log of completed turns

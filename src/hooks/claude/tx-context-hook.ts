@@ -81,6 +81,19 @@ function readOutgoingTasks(): number {
   }
 }
 
+function readRecentCompletions(): Array<{ agentId: string; at: number }> {
+  const completionsPath = join(dataDir, 'recent-completions.json');
+  try {
+    if (!existsSync(completionsPath)) return [];
+    const data = JSON.parse(readFileSync(completionsPath, 'utf-8'));
+    const now = Date.now();
+    const GRACE_MS = 15_000;
+    return (data as Array<{ agentId: string; at: number }>).filter(c => now - c.at < GRACE_MS);
+  } catch {
+    return [];
+  }
+}
+
 function getUnreadCount(
   pending: ReturnType<typeof readPending>,
   hookState: ReturnType<typeof readHookState>,
@@ -96,12 +109,23 @@ function outputStatusBar(): void {
   const hookState = readHookState();
   const messagesForCore = getUnreadCount(pending, hookState);
   const outgoingTasks = readOutgoingTasks();
+  const recentCompletions = readRecentCompletions();
 
-  // Count active and suspended workers from status.json
+  // Staleness detection: if status.json timestamp is >30s old, TX is likely stopped
+  // Ignore worker/queue data from stale status to avoid ghost indicators
+  const STALE_THRESHOLD_MS = 30_000;
+  const statusAge = status.timestamp
+    ? Date.now() - new Date(status.timestamp).getTime()
+    : Infinity;
+  const isStale = statusAge > STALE_THRESHOLD_MS;
+
+  // Count active and suspended workers from status.json (only if fresh)
   let activeWorkers = 0;
   let suspendedCount = 0;
-  activeWorkers = status.workers?.length || 0;
-  suspendedCount = status.pendingAsks || 0;
+  if (!isStale) {
+    activeWorkers = status.workers?.length || 0;
+    suspendedCount = status.pendingAsks || 0;
+  }
 
   const parts: string[] = [];
 
@@ -124,28 +148,39 @@ function outputStatusBar(): void {
     parts.push(`${messagesForCore}📨`);
   }
 
-  // Outgoing tasks from core awaiting completion
-  if (outgoingTasks > 0) {
+  // Outgoing tasks from core awaiting completion (only if fresh)
+  if (!isStale && outgoingTasks > 0) {
     parts.push(`${outgoingTasks}📤`);
   }
 
-  // Pending ask-human messages
-  if (status.pendingAsks > 0) {
+  // Pending ask-human messages (only if fresh)
+  if (!isStale && status.pendingAsks > 0) {
     parts.push(`${status.pendingAsks}❓`);
   }
 
-  // Active workers with agent names
+  // Active workers with agent names (only if fresh)
   if (activeWorkers > 0) {
     parts.push(`${activeWorkers}🔧 ${agentNames}`);
   }
 
-  // Suspended/awaiting
+  // Recently completed workers (grace period — show for ~15s after finish)
+  // Exclude any that are still active (re-spawned)
+  const activeSet = new Set(status.workers || []);
+  const completedNames = recentCompletions
+    .filter(c => !activeSet.has(c.agentId))
+    .map(c => c.agentId.split('/').pop() || c.agentId);
+  if (completedNames.length > 0) {
+    const unique = [...new Set(completedNames)];
+    parts.push(`${unique.join(',')}✓`);
+  }
+
+  // Suspended/awaiting (only if fresh)
   if (suspendedCount > 0) {
     parts.push(`${suspendedCount}💤`);
   }
 
-  // Pending queue messages (waiting for dispatch)
-  const pendingQueue = status.pendingQueue || {};
+  // Pending queue messages (only if fresh)
+  const pendingQueue = isStale ? {} : (status.pendingQueue || {});
   const totalPending = Object.values(pendingQueue).reduce((sum, n) => sum + n, 0);
   if (totalPending > 0) {
     parts.push(`${totalPending}⏳`);

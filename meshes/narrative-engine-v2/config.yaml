@@ -27,7 +27,18 @@ agents:
     model: sonnet
     prompt: coordinator/init-turn.md
     continuation: false
-    # Renamed from init-coord — creates workspace, validates action coherence
+    # Mechanical coordinator — stamps files via scripts, confirms intent, routes to architect
+    # Sonnet: reliable prompt-following, won't hallucinate destinations or skip HITL
+    permissions:
+      allowedTools: [Read, Write, Bash, Glob, Grep]
+      disallowedTools: [Task, Edit, NotebookEdit]
+
+  - name: gravity
+    model: sonnet
+    prompt: gravity/prompt.md
+    continuation: false
+    # Collision detector — reads all state, finds pressure points, writes collisions.yaml
+    # Sits between init-turn and architect. Analytical, not creative.
 
   # RETIRED: prep-coord replaced by direct agent chain routing + state-discovery.sh
   # - name: prep-coord
@@ -164,7 +175,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
+  # Phase flow: entry → game-coord|init-turn → gravity → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -191,7 +202,11 @@ routing:
 
   init-turn:
     message:
-      architect: "Turn workspace ready — action locked"
+      gravity: "Turn workspace ready — action locked"
+
+  gravity:
+    message:
+      architect: "Collision map ready — proceed with entropy generation"
 
   # ==========================================
   # ENTROPY + SIMULATION ROUTING (collapsed)
@@ -286,7 +301,7 @@ manifest_enforcement:
 
 guardrails:
   max_messages:
-    limit: 3
+    limit: 10
   routing_error:
     strict: true
     warning: true
@@ -299,9 +314,26 @@ guardrails:
     init-turn:
       routing_error:
         strict: true
-    editor:
+      write_gate:
+        strict: true
+        kill_threshold: 3
       max_messages:
         limit: 5
+    architect:
+      max_messages:
+        limit: 15
+    simulator:
+      max_messages:
+        limit: 25
+    narrator:
+      max_messages:
+        limit: 15
+    editor:
+      max_messages:
+        limit: 10
+    calibrator:
+      max_messages:
+        limit: 30
 
 # ==========================================
 # MANIFEST - File-centric I/O manifest (source of truth)
@@ -322,20 +354,26 @@ manifest:
   - id: context.yaml
     description: Turn context seeded by coordinator, consumed by creative agents
     location: workspace
-    reads: [narrator, scribe, architect, simulator]
+    reads: [narrator, scribe, architect, simulator, gravity]
     writes: [init-turn]
 
   - id: intent.yaml
     description: Single source for player action — raw input, clarified intent, hopes, off-table outcomes
     location: workspace
-    reads: [narrator, architect, simulator]
+    reads: [narrator, architect, simulator, gravity]
     writes: [init-turn]
 
   - id: action-lock.yaml
     description: Locked player action — ground truth, not subject to entropy
     location: workspace
-    reads: [narrator, architect, simulator]
+    reads: [narrator, architect, simulator, gravity]
     writes: [init-turn]
+
+  - id: collisions.yaml
+    description: Collision map — pressure points between conditions, character data, seeds, bonds
+    location: workspace
+    reads: [architect, narrator, scribe]
+    writes: [gravity]
 
   - id: dramaturg-notes.yaml
     description: Story analysis and outcome shapes (no weights)
@@ -487,18 +525,32 @@ manifest:
     reads: [narrator, oracle, scribe, calibrator]
     writes: [scribe, calibrator]
 
-  - id: entities/characters/
-    description: Individual character entity files (traits, bonds, state)
+  - id: game/entities/characters/
+    description: Game-level character templates (baseline traits, foundation)
     location: game
     persistent: true
-    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, simulator]
+    reads: [calibrator]
     writes: [scribe, calibrator]
 
-  - id: entities/bonds/
-    description: Bond entity files (relationship intensity, dynamics)
+  - id: campaign/entities/characters/
+    description: Campaign-level character entities (enriched — NRE, sexuality, desires, conditions, episodes)
+    location: campaign
+    persistent: true
+    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, simulator, gravity]
+    writes: [scribe, calibrator]
+
+  - id: game/entities/bonds/
+    description: Game-level bond templates
     location: game
     persistent: true
-    reads: [scribe, architect, simulator]
+    reads: [calibrator]
+    writes: [scribe, calibrator]
+
+  - id: campaign/entities/bonds/
+    description: Campaign-level bond entities (enriched — conditions, episodes, dimensions)
+    location: campaign
+    persistent: true
+    reads: [narrator, oracle, scribe, architect, simulator, gravity]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt
@@ -511,11 +563,12 @@ manifest:
 
   # --- Campaign State ---
   - id: arc.yaml
-    description: Story arc structure, act progression, and tension curves
+    description: "Story arc structure, act progression, and tension curves. Scribe writes via campaign.sh arc commands."
     location: campaign
     persistent: true
-    reads: [narrator, scribe, calibrator, architect]
-    writes: [scribe, calibrator]
+    autoInject: false  # 41K at 46 turns — 80% is turn_history log. Narrator/architect can read on demand; context.yaml carries current arc state.
+    reads: [narrator, scribe, calibrator, architect, gravity]
+    writes: [scribe, calibrator]  # Scribe writes via campaign.sh
 
   - id: turns/
     description: Turn workspace directories (init-turn creates new turn dirs)
@@ -541,15 +594,15 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, architect, simulator, lint-temporal]
+    reads: [init-turn, architect, simulator, lint-temporal, gravity]
     writes: [scribe]
 
   - id: trajectories.yaml
-    description: Committed futures with timers (Chekhov's Guns)
+    description: "Committed futures with timers (Chekhov's Guns). Scribe writes via campaign.sh trajectory commands."
     location: campaign
     persistent: true
-    reads: [architect]
-    writes: [scribe]
+    reads: [architect, gravity]
+    writes: [scribe]  # Scribe writes via campaign.sh
 
   - id: timeline.md
     description: Canonical time tracking in markdown — day headers, turn entries, beat-level time stretches
@@ -559,11 +612,12 @@ manifest:
     writes: [scribe]
 
   - id: continuity.yaml
-    description: Canonical facts, established details, and continuity anchors
+    description: "Canonical facts, established details, and continuity anchors. Query via campaign.sh facts, not preloaded."
     location: campaign
     persistent: true
-    reads: [narrator, oracle, scribe, architect]
-    writes: [scribe]
+    autoInject: false  # 1600+ lines at 46 turns — too large for preload. Agents query via campaign.sh for surgical access.
+    reads: [oracle, scribe, architect]  # Agents query via campaign.sh facts
+    writes: [scribe]  # Scribe writes via campaign.sh
 
   - id: history.md
     description: Narrative history log of completed turns

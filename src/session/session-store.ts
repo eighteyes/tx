@@ -74,7 +74,7 @@ export class SessionStore {
 
     // Prepare frequently used statements
     this.insertSessionStmt = this.db.prepare(`
-      INSERT INTO sessions (
+      INSERT OR REPLACE INTO sessions (
         id, agent_id, mesh_id, started_at, ended_at, duration_seconds,
         transcript_path, message_count, tool_calls, final_status,
         headline, tags, files_changed, created_at

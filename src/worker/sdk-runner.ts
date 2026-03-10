@@ -823,6 +823,7 @@ export class SdkRunner extends EventEmitter {
         stack: err.stack,
         stderr: err.stderr,
         code: err.code || err.exitCode,
+        sessionId: this.currentSessionId,
       });
       return { success: false, messagesProcessed: totalProcessed, error: err.message };
     } finally {
@@ -1199,6 +1200,7 @@ export class SdkRunner extends EventEmitter {
         stack: err.stack,
         stderr: err.stderr,
         code: err.code || err.exitCode,
+        sessionId: this.currentSessionId,
       });
       return { success: false, messagesProcessed: 0, error: err.message };
     } finally {

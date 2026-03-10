@@ -291,6 +291,100 @@ async function listMeshes(flags: MeshFlags): Promise<void> {
 }
 
 /**
+ * Config validation result for mesh status display
+ */
+interface ConfigValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  configFound: boolean;
+  promptIssues: string[];
+}
+
+/**
+ * Validate mesh config and check for common issues
+ */
+function validateMeshConfig(meshName: string, cwd: string): ConfigValidationResult {
+  let configPath = path.join(cwd, 'meshes', meshName, 'config.yaml');
+  if (!fs.existsSync(configPath)) {
+    configPath = path.join(cwd, 'meshes', meshName, 'config.yml');
+  }
+
+  if (!fs.existsSync(configPath)) {
+    return { valid: false, errors: [`Mesh config not found: meshes/${meshName}/config.yaml`], warnings: [], configFound: false, promptIssues: [] };
+  }
+
+  let config: unknown;
+  try {
+    config = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch (err) {
+    return { valid: false, errors: [`Failed to parse config: ${(err as Error).message}`], warnings: [], configFound: true, promptIssues: [] };
+  }
+
+  const result = MeshValidator.validate(config, path.basename(configPath));
+
+  // Additional runtime checks beyond schema validation
+  const promptIssues: string[] = [];
+  const cfg = config as Record<string, unknown>;
+  if (Array.isArray(cfg.agents)) {
+    for (const agent of cfg.agents) {
+      const a = agent as Record<string, unknown>;
+      if (typeof a.prompt === 'string' && !a.command) {
+        const promptPath = path.join(cwd, 'meshes', meshName, a.prompt as string);
+        if (!fs.existsSync(promptPath)) {
+          promptIssues.push(`${a.name}: prompt file missing → ${a.prompt}`);
+        }
+      }
+    }
+  }
+
+  return {
+    valid: result.valid && promptIssues.length === 0,
+    errors: result.errors,
+    warnings: result.warnings,
+    configFound: true,
+    promptIssues,
+  };
+}
+
+/**
+ * Print config validation results
+ */
+function printConfigValidation(result: ConfigValidationResult): void {
+  if (!result.configFound) {
+    console.log(`${chalk.red('Config:')} not found\n`);
+    return;
+  }
+
+  const hasIssues = result.errors.length > 0 || result.warnings.length > 0 || result.promptIssues.length > 0;
+  if (!hasIssues) return; // Clean config — don't clutter output
+
+  if (result.errors.length > 0) {
+    console.log(chalk.red(chalk.bold('Config Errors:')));
+    for (const error of result.errors) {
+      console.log(`  ${chalk.red('×')} ${error}`);
+    }
+    console.log();
+  }
+
+  if (result.promptIssues.length > 0) {
+    console.log(chalk.red(chalk.bold('Missing Prompts:')));
+    for (const issue of result.promptIssues) {
+      console.log(`  ${chalk.red('×')} ${issue}`);
+    }
+    console.log();
+  }
+
+  if (result.warnings.length > 0) {
+    console.log(chalk.yellow(chalk.bold('Config Warnings:')));
+    for (const warning of result.warnings) {
+      console.log(`  ${chalk.yellow('!')} ${warning}`);
+    }
+    console.log();
+  }
+}
+
+/**
  * Show detailed status for a specific mesh
  */
 async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void> {
@@ -299,10 +393,15 @@ async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void>
   const sessionsPath = path.join(cwd, '.ai/tx/data/sessions.db');
   const workersPath = path.join(cwd, '.ai/tx/data/workers.json');
 
+  // ── Config Validation ──────────────────────────────────────────────
+  const configValidation = validateMeshConfig(meshName, cwd);
+
   if (!fs.existsSync(queuePath)) {
     if (flags.json) {
-      console.log(JSON.stringify({ error: 'No queue database found' }));
+      console.log(JSON.stringify({ error: 'No queue database found', configValidation }));
     } else {
+      // Still show config issues even without runtime state
+      printConfigValidation(configValidation);
       console.log(chalk.yellow('No mesh state found (no queue database).'));
     }
     return;
@@ -349,6 +448,7 @@ async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void>
     if (flags.json) {
       console.log(JSON.stringify({
         meshName,
+        configValidation,
         fsmState,
         suspendedSessions,
         pendingAsks,
@@ -361,6 +461,9 @@ async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void>
 
     // Display mesh status
     console.log(`\n${chalk.bold(chalk.cyan(`Mesh: ${meshName}`))}\n`);
+
+    // Config issues (before runtime state)
+    printConfigValidation(configValidation);
 
     // FSM State
     if (fsmState) {

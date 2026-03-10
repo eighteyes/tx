@@ -12,20 +12,45 @@
 
 # TX v0.2.0
 
+Human-scale AI Augmentation / Orchestration Hydra
+
+## Usage
+```
+> build a mesh that fixes a list of bugs, `bug-hunt`: ingests a list of bugs, use haiku to batch into groups, fan-out and iterates on each batch through [ examine > fix ] stages, on fan-in, validate against original bug list. 
+
+# -- wait for completion -- 
+
+> run bug-hunt on @buglist.csv 
+```
+
+```
+> karpathy's llm council looks neat, can you make one for me?
+```
+
+```
+> research what it takes to run a coffee shop, build agents to help me manage one
+```
+
 ## Objective
-Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. 
+Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. Provide for reliability using logical wrappers around non-deterministic LLM calls.
 
 ## Terms
 - `mesh` - a collection of agents with a defined workflow
 - `message` - core unit of interaction between meshes and agents
 - `core` - the AI you use to interact with the tx system
-- `task` - a unit of work which is sent to a mesh, or between agents
-- `ask` - a message between agents or to the user which blocks further work until a responce is recieved
 
-## Usage
-After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". 
+## Start
+After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`with a status bar. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". 
 
-`tx` will write a file with frontmatter formatting, which starts the mesh process. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to you for response.
+The core agent has instructions to write a file with frontmatter formatting, which triggers the agentic mesh. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to the user for response.
+
+## Responses
+The mesh agents interact with your core session in the following ways. `--inbox=` and global config provides override options. 
+
+`hook` - ( default ) new messages are injected into context automatically
+`inject` - direct response added to your session, can be triggered explicitly.
+`ask` - new messages must be retrieved with `tx inbox` 
+
 
 ## Features
 - Claude Code SDK uses your current authentication to run agents in isolation.
@@ -33,30 +58,48 @@ After install, run `tx start` in a new, or existing project directory. You will 
 - Immutable message logs provide observability between core agent and downstream.
 - Configuration driven collections of agents called `meshes`
 - Mesh message routing protocols provide for agent-driven workflows and HITL.
-- Conduct many parallel agent sessions from ONE conversation.
+- Maintain parallel agent sessions from ONE conversation.
 - Chain agent outputs with plain language "research pain points around (topic) and plan a software project based off your findings"
-- [Know](https://github.com/eighteyes/know-cli) provides opinionated product & software tooling for project planning and execution and is integrated deeply with `tx` ( works, a little rough around the edges )
+- [Know](https://github.com/eighteyes/know-cli) integration: product & software knowledge graph for project planning and execution
+
+
+### Documentation
+- [Guardrails Reference](docs/guardrails.md) — write gate, read gate, bash guard, routing errors, max turns/messages
+- [Permissions & Security](docs/permissions.md) — dontAsk mode, tool access, workDir boundary, god mode
+- [Message Format](docs/message-format.md) — frontmatter fields, routing, message types
+- [Mesh List](docs/MESH_LIST.md) — complete list of available meshes
 
 ### Mesh Features
-- Routing table defined per mesh, injected at runtime and enforced by framework.
-- State management to govern phase transitions and carry variables between meshes.
-- Session continuation to revisit conversations.
-- SlashCommand support for agents.
-- Workspace defining files and folders.
-- Pre/Post hooks for logic and/or agents surrounding mesh operations.
+
+#### Mesh Configuration Options
+`agents` - agent definitions, name, description, prompt file, options
+`routing` - which agents talk to others and when
+`manifest` - what files to read/write per agent
+`workspace` - where to save files and artifacts
+`fsm` - ( beta ) state machine, variables, gates, scripts wrapping your agents
+`guiderails` - settings for automatic steering behavior, see Chaos Contracts below
+`pre/post hooks` - scripts / agents to run before or after the mesh, carries independent context
+
+### Router Types
+`normal` - default operation, agent topology is fixed
+`dispatch` - central dispatch agent, dynamic agent topologies
+
 
 ### Chaos Contracts
-LLM agents are chaotic by nature — stochastic, not buggy. Prompts that say "STOP", "NEVER", or "ALWAYS" are prayers, not guarantees. TX accepts the chaos and contains it: behavioral constraints are enforced by the runtime, not the prompt. Prompts carry domain knowledge; the chaos contract guarantees invariants.
+LLM agents are chaotic by nature stochastic, not buggy. Prompts that say "STOP", "NEVER", or "ALWAYS" are prayers, not guarantees. TX accepts the chaos and contains it: behavioral constraints are enforced by the runtime, not the prompt. Prompts carry domain knowledge; the chaos contract guarantees invariants.
 
 | Contract Clause | Enforcement | Config |
 |----------------|-------------|--------|
 | **Write Gate** | Intercepts Write/Edit tool calls. Rejects writes to undeclared files. Error with allowed list 2x, then silent reject, then kill. | `manifest.writes` in config.yaml |
+| **Read Gate** | Intercepts Read/Glob/Grep tool calls. Restricts reads to declared inputs. | `manifest.reads` in config.yaml |
+| **Bash Guard** | Enforces workDir boundary for Bash commands. Blocks writes outside project dir, catastrophic commands (sudo, rm -rf /, reboot). Replaces Docker isolation. | [`guardrails.bash_guard`](docs/guardrails.md#bash-guard) |
 | **Max Messages** | Dispatcher counts outbound messages per invocation. Hard kill at limit. | `max_messages` per agent |
 | **Route Gate** | Dispatcher rejects messages with invalid `to:` fields against routing table. | `routing` in config.yaml |
 | **Turn Budget** | SDK enforces maximum API round-trips per invocation. Prevents runaway agents. | `max_turns` per agent |
-| **Read Gate** | Intercepts Read/Glob/Grep tool calls. Restricts reads to declared inputs. | `manifest.reads` in config.yaml |
 
 **Principle:** If a constraint can be enforced by the runtime, remove it from the prompt. Save tokens, eliminate a class of bugs.
+
+See [Guardrails Reference](docs/guardrails.md) for full configuration details.
 
 ## Dependencies
 - `node` (recommended: Node >= 20.19.0)
@@ -67,8 +110,8 @@ LLM agents are chaotic by nature — stochastic, not buggy. Prompts that say "ST
 - If `npm install` fails during native rebuilds, ensure you are on Node >= 20.19.0 (via nvm-windows is fine).
 
 ## Quick Start
-> [!IMPORTANT]  
-> `tx` runs with `--dangerously-skip-permissions`. Some form of protective isolation is recommended. I made / use [safe-claude](https://github.com/eighteyes/safe-claude) for this.
+> [!IMPORTANT]
+> `tx` uses `dontAsk` permission mode with [workDir boundary enforcement](docs/permissions.md) — no Docker required. For unrestricted access, use `tx start --god-mode`.
 
 ```bash
 git clone git@github.com:eighteyes/tx.git
@@ -173,5 +216,7 @@ I made to this to facilitate my interactions with AI and implement the best patt
 
 ## Troubleshooting
 - tx suppresses `stdout/stderr` so it doesn't interrupt the session. See error messages with `tx logs`
-- Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Try a tmux reset with cntl-b, r. If that doesn't work, cntl-c to exit claude, cntl-b, d and run `reset`. 
+- Sometimes `claude` and `tmux` stop playing together nicely (gibberish output). Try a tmux reset with cntl-b, r. If that doesn't work, cntl-c to exit claude, cntl-b, d and run `reset`.
 - We are barely in Beta. There are Bugs here.
+
+HYDRA = Humans Yeeting Directional Recursive Alchemy

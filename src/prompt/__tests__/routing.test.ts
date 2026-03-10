@@ -19,7 +19,8 @@ describe('buildRoutingSection', () => {
     const section = buildRoutingSection(routing, 'dev');
 
     assert.ok(section.includes('## Message Routing'));
-    assert.ok(section.includes('dev/reviewer'));
+    // Same-mesh agents use short names (no mesh prefix)
+    assert.ok(section.includes('`reviewer`'));
     assert.ok(section.includes('Work complete, ready for review'));
   });
 
@@ -38,14 +39,13 @@ describe('buildRoutingSection', () => {
 
     const section = buildRoutingSection(routing, 'dev');
 
-    assert.ok(section.includes('dev/reviewer'));
+    // Same-mesh agents use short names
+    assert.ok(section.includes('`reviewer`'));
+    // 'core' maps to cross-mesh 'core/core'
     assert.ok(section.includes('core/core'));
-    assert.ok(section.includes('dev/planner'));
+    assert.ok(section.includes('`planner`'));
     // Categories should NOT appear in output
     assert.ok(!section.includes('Status'));
-    assert.ok(!section.includes('`complete`'));
-    assert.ok(!section.includes('`error`'));
-    assert.ok(!section.includes('`blocked`'));
   });
 
   it('should dedupe destinations and collect reasons', () => {
@@ -61,7 +61,7 @@ describe('buildRoutingSection', () => {
     const section = buildRoutingSection(routing, 'dev');
 
     // Single destination entry with both reasons
-    assert.ok(section.includes('dev/reviewer'));
+    assert.ok(section.includes('`reviewer`'));
     assert.ok(section.includes('Ask for review'));
     assert.ok(section.includes('Review response'));
   });
@@ -76,8 +76,8 @@ describe('buildRoutingSection', () => {
 
     const section = buildRoutingSection(routing, 'dev');
 
-    assert.ok(section.includes('dev/reviewer'));
-    assert.ok(section.includes('dev/tester'));
+    assert.ok(section.includes('`reviewer`'));
+    assert.ok(section.includes('`tester`'));
     assert.ok(section.includes('For code review'));
     assert.ok(section.includes('For testing'));
   });
@@ -128,6 +128,17 @@ describe('buildRoutingSection', () => {
 
     assert.ok(section.includes('ONLY these destinations'));
   });
+
+  it('should include auto-routing note', () => {
+    const routing = {
+      complete: { reviewer: 'Done' },
+    };
+
+    const section = buildRoutingSection(routing, 'dev');
+
+    assert.ok(section.includes('auto-route'));
+    assert.ok(section.includes('cross-mesh'));
+  });
 });
 
 describe('injectRoutingInstructions', () => {
@@ -143,7 +154,7 @@ describe('injectRoutingInstructions', () => {
 
     assert.ok(result.startsWith('# Test Agent'));
     assert.ok(result.includes('## Message Routing'));
-    assert.ok(result.includes('dev/reviewer'));
+    assert.ok(result.includes('`reviewer`'));
   });
 
   it('should return original prompt when routing is empty', () => {

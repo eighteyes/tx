@@ -155,6 +155,7 @@ export interface MeshConfig {
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
+  disable?: boolean;  // Disable mesh: hidden from prompts, cannot be started
   dev_mode?: boolean;  // Override all agent models to haiku for cheap workflow testing
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
@@ -492,6 +493,12 @@ export class MeshConfigLoader extends EventEmitter {
         : null;
       if (serveMeshes && !serveMeshes.has(config.mesh)) {
         log.debug('config-loader', `Skipping mesh (TX_SERVE_MESHES filter): ${config.mesh}`);
+        return;
+      }
+
+      // Skip disabled meshes
+      if (config.disable) {
+        log.debug('config-loader', `Skipping disabled mesh: ${config.mesh}`);
         return;
       }
 

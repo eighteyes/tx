@@ -56,36 +56,12 @@ She pulled herself out of the cradle and stood. Gravity here was point-eight sta
 
 *Frayel.* Their name, once. Before baseline humanity made it a slur.
 
-The airlock cycled with a hiss. On the other side: a station that didn't want her, prices she couldn't afford, a job board that would remind her what she was. The usual. The math of existence, laid out in credits and closed doors.
+Through the viewport, the station's docking corridor stretched away—gray panels, fluorescent strips, a maintenance worker hauling cable. Beyond that: levels and markets and job boards and all the infrastructure of a place that ran on credits she didn't have.
 
-But the thruster wouldn't fix itself. Test wouldn't admit how bad things really were until she asked three more times. And somewhere on this station, there was work—had to be. Work that paid. Work that didn't care what color her skin was, how it caught the light wrong, what her grandmother's ship looked like when it limped back to Earth and got turned away.
+The airlock waited. The station waited. Test hummed in the walls around her, running calculations it wouldn't share until she asked three more times.
 
-She put her hand on the airlock control. Paused.
+Twenty-one credits. Three burns left. A ship that was home and a station that wasn't.
 
-"Test."
+---
 
-"Yes?"
-
-"We're going to be okay."
-
-A pause. Long enough that she knew it was calculating how to answer honestly without making her feel worse. "Define 'okay.'"
-
-"Still flying tomorrow."
-
-"Yes. Probably. Sixty-three percent."
-
-"Good enough." She showed too many teeth when she smiled—let the airlock see, the empty corridor beyond. "Watch my ship."
-
-"Always do." The dry voice had softened, just at the edges. As soft as a cheap AI could manage. "Try not to get spit on."
-
-The airlock opened. The station's recycled air hit her face—oil and bodies and something cooking, the smell of a thousand lives compressed into corridors and levels. She stepped through.
-
-Behind her, Deploy Test's systems hummed in the dark. Waiting. Calculating. Running combat simulations it would never need, on weapons it didn't have anymore.
-
-In the cockpit, the temperature adjusted 0.2 degrees warmer. Environmental optimization, the log would say. Not care. Never that.
-
-The station swallowed Lilith whole.
-
-And somewhere in the market ahead, someone was about to charge her fair price for food—no surcharge, no hesitation—and she wouldn't know what to do with that.
-
-The universe has terrible comic timing. But sometimes, terrible timing is the only kind of grace that gets through.
+**You could:** Step out and head for the job boards—courier runs, data drops, anything that pays. Or find food first, because three days of ship rations has limits. Or stay in the cockpit a while longer, run the numbers one more time with Test, and figure out just how bad things really are before you face what's out there.

@@ -287,6 +287,7 @@ export interface WorkerCompleteEvent {
 export interface WorkerErrorEvent {
   id: string;
   error: string;
+  sessionId?: string | null;
   transitionName?: string;
 }
 

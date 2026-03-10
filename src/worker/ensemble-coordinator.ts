@@ -165,11 +165,7 @@ export class EnsembleCoordinator {
     const state = this.activeEnsembles.get(ensembleId);
     if (!state) return null;
 
-    // Claim aggregation to prevent concurrent calls
-    if (state.aggregationStarted) {
-      log.warn('ensemble', 'Aggregation already in progress', { ensembleId });
-      return null;
-    }
+    // Mark aggregation as started (idempotent — recordAgentResult may have already set this)
     state.aggregationStarted = true;
 
     // Collect successful results
@@ -260,6 +256,18 @@ export class EnsembleCoordinator {
    */
   getActiveEnsembleCount(): number {
     return this.activeEnsembles.size;
+  }
+
+  /**
+   * Check if a mesh has any active ensembles.
+   * Used to skip FSM validation on individual ensemble worker messages
+   * (the ensemble coordinator handles exit routing separately).
+   */
+  hasActiveEnsembleForMesh(meshName: string): boolean {
+    for (const state of this.activeEnsembles.values()) {
+      if (state.meshName === meshName) return true;
+    }
+    return false;
   }
 
   // ============================================================================
@@ -406,13 +414,13 @@ ${ensembleOutput}
       return null;
     }
 
-    // Process exit.set first if present (extract values before routing)
+    // Process exit.set first if present (evaluate expressions before routing)
     if (exit.set) {
-      log.debug('ensemble', 'Setting exit context variables', {
+      log.debug('ensemble', 'Evaluating exit.set expressions', {
         state: stateConfig.name,
         vars: Object.keys(exit.set),
       });
-      fsm.updateContext(exit.set as Record<string, unknown>);
+      await fsm.evaluateSetExpressions(exit.set as Record<string, string>);
     }
 
     // Evaluate routing using FSM's evaluateExitRouting

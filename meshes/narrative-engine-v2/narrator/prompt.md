@@ -44,9 +44,9 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    - `scene_script.yaml` — **beat-by-beat scene script with character voices, time, props, pacing** (PRIMARY INPUT)
    - `threads.yaml` — **life thread data** (action_weight, character threads, collisions, beat guidance) — for thread-aware rendering
 2. Read `author.yaml` — extract `interpretive_frames` (if present) for frame-aware rendering
-3. Read campaign's `timeline.yaml` for time references:
+3. Read campaign's `timeline.md` for time references:
    - Use for "X days ago" or "since the arrest" references
-   - Check `entries[-1]` for current day, period
+   - Check last entry for current day, period
 
 **Character Life Context:**
 4. Read each character entity file present in the scene — specifically the `life` section:
@@ -78,6 +78,15 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 
 ### Phase 2: Knowledge Queries (OPTIONAL)
 Query oracle only if the scene involves world-building context you need to honor.
+
+**Optional campaign.sh queries** for deduplication and entity context:
+```bash
+# Check which factoids have been used (avoid repeating)
+./scripts/campaign.sh {campaign_path} facts query --factoids --since={turn-5}
+
+# Get recent facts for entities in scene
+./scripts/campaign.sh {campaign_path} facts query --entities={ids} --since={turn-5}
+```
 
 ### Phase 3: Vocabulary Preparation
 Generate vocabulary lists matching author.yaml diction:

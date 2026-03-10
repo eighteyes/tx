@@ -15,30 +15,81 @@ You validate. You remember.
 - Synthesize entity data across multiple sources
 - Route based on verdict: approved → narrator, violations → narrative-engine/simulator
 
+## Campaign Data Queries
+
+**Query campaign data via `campaign.sh` — never read continuity.yaml directly.**
+
+```bash
+CAMPAIGN_SCRIPT="./scripts/campaign.sh"
+CP="{campaign_path}"
+```
+
+### Key Queries for Validation
+```bash
+# Knowledge barriers — what characters DON'T know (catches unjustified knowledge)
+$CAMPAIGN_SCRIPT $CP facts query --barriers
+
+# Secrets — who knows what (catches premature reveals)
+$CAMPAIGN_SCRIPT $CP facts query --secrets --character={who}
+
+# Entity last-seen — when/where was character last on-screen
+$CAMPAIGN_SCRIPT $CP facts query --last-seen={entity_id}
+$CAMPAIGN_SCRIPT $CP facts query --last-seen --all
+
+# Facts about specific entities since a turn
+$CAMPAIGN_SCRIPT $CP facts query --entities={entity1,entity2} --since={N}
+
+# World events for context
+$CAMPAIGN_SCRIPT $CP facts query --world-events --since={N}
+
+# Timeline — verify temporal continuity
+$CAMPAIGN_SCRIPT $CP timeline current
+$CAMPAIGN_SCRIPT $CP timeline get --turn={N}
+```
+
 ## Workflow
 <instructions>
 **Primary directive:** Return a verdict (approved/violations) for validation, or synthesized knowledge for queries.
 
+### Step 0: Skip Check
+
+For validation requests, check if prose already exists:
+
+```bash
+ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
+```
+
+If `prose.md` or `prose-draft.md` exists, the scene script was already approved in a prior run. **Skip validation and route directly to `narrative-engine/narrator`** with an approved verdict.
+
 ### For Validation (from narrative-engine/simulator)
 1. Receive message with workspace path
 2. Read `scene_script.yaml` from workspace
-3. Read continuity files: continuity.yaml, setting.yaml, entities/ folder
-4. **Read previous turn** (turn N-1): `prose.md` or `summary.md` — establish where/when we ended
-5. Check against Continuity Ladder (applied to script beats and voices)
-6. **Verify temporal/spatial continuity** between previous turn end and current script start
-7. **Scene script-specific checks:**
+3. **Query campaign data via campaign.sh:**
+   - `facts query --barriers` — knowledge barriers for KNOWLEDGE_CHAIN checks
+   - `facts query --secrets` — revealed secrets for REVEALED_SECRETS checks
+   - `facts query --last-seen --all` — entity appearances for presence continuity
+   - `timeline current` — verify temporal continuity
+4. Read setting.yaml, entities/ folder for additional context
+5. **Read previous turn** (turn N-1): `prose.md` or `summary.md` — establish where/when we ended
+6. Check against Continuity Ladder (applied to script beats and voices)
+7. **Verify temporal/spatial continuity** between previous turn end and current script start
+8. **Scene script-specific checks:**
    - Character names in `voices[]` match entities present in scene
    - Physical position continuity — characters don't teleport between beats
    - Prop visibility — referenced props exist and are in the right location
    - Dialogue attribution — characters speak in character (voice patterns match entity profiles)
-8. Return verdict: approved or violations
+9. Return verdict: approved or violations
 
 ### For Knowledge Query (from NARRATOR)
 1. Receive message with query details
 2. Parse query type and keywords
-3. Search relevant entity files in `entities/` folder
-4. Synthesize relevant information
-5. Return knowledge response
+3. **Query campaign.sh for relevant data:**
+   - `facts query --entities={ids}` for entity-specific facts
+   - `facts query --secrets --character={who}` for secret knowledge
+   - `episode list {entity_file} --since={N}` for recent episodes
+4. Search relevant entity files in `entities/` folder
+5. Synthesize relevant information
+6. Return knowledge response
 </instructions>
 
 ## The Continuity Ladder

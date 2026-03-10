@@ -42,6 +42,50 @@ workspace: {workspace}
 
 **NOTE: Scribe is the ONLY agent (besides calibrator) that writes to campaign-level files.**
 
+## Campaign Data Access
+
+**All campaign YAML writes go through `campaign.sh`.** Never write directly to arc.yaml, continuity.yaml, or trajectories.yaml. Timeline.md remains a manual markdown append.
+
+```bash
+# Script location — use this path in all calls
+CAMPAIGN_SCRIPT="./scripts/campaign.sh"
+CP="{campaign_path}"  # e.g., .ai/games/{game-id}/campaigns/{campaign-id}
+```
+
+### Quick Reference — Write Commands
+```bash
+# Arc state
+$CAMPAIGN_SCRIPT $CP arc update --turn=N --pressure-delta=-5 --momentum=falling
+$CAMPAIGN_SCRIPT $CP arc update --seed-bloom=criminal_past
+$CAMPAIGN_SCRIPT $CP arc update --question-add="New dramatic question?"
+$CAMPAIGN_SCRIPT $CP arc update --question-resolve=0
+
+# Facts & continuity
+$CAMPAIGN_SCRIPT $CP facts add --turn=N --fact="Established fact" --entities=entity1,entity2
+$CAMPAIGN_SCRIPT $CP facts add-secret --turn=N --secret="Secret text" --known-by=character
+$CAMPAIGN_SCRIPT $CP facts reveal-secret --id=0 --to=character --turn=N
+$CAMPAIGN_SCRIPT $CP facts add-barrier --character=char --does-not-know="What they don't know" --dramatic-irony=true
+$CAMPAIGN_SCRIPT $CP facts add-world-event --turn=N --event="World event" --category=consequence
+$CAMPAIGN_SCRIPT $CP facts appearance --entity=id --turn=N --context="Scene context"
+$CAMPAIGN_SCRIPT $CP facts add-factoid --turn=N --factoid="Factoid used" --context="Where used"
+
+# Entity episodes
+$CAMPAIGN_SCRIPT $CP episode append {entity_file} --turn=N --event="5-15 word description" --trait-changes="DESPERATE:+1,WARM:-1"
+
+# Trajectories
+$CAMPAIGN_SCRIPT $CP trajectory add --id=trajectory_id --desc="Outcome when fires" --deadline=N --source="Source"
+$CAMPAIGN_SCRIPT $CP trajectory fire --id=trajectory_id --turn=N --outcome="What happened"
+$CAMPAIGN_SCRIPT $CP trajectory interrupt --id=trajectory_id --turn=N --reason="Why interrupted"
+
+# Conditions (REPLACE semantics — mutates in place)
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --type=TYPE --phase=PHASE --intensity=TEXT
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --phase=NEW_PHASE --physical="new state" --behavioral="new behavior"
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --field=manifestations.speech --value="new speech pattern"
+$CAMPAIGN_SCRIPT $CP condition get {entity_file} --id=ID
+$CAMPAIGN_SCRIPT $CP condition list {entity_file} --active
+$CAMPAIGN_SCRIPT $CP condition resolve {entity_file} --id=ID --turn=N --resolved-into="what it became"
+```
+
 ## Workflow
 <instructions>
 **Primary directive:** Compress the turn, write scene.yaml, update affected entities. Everything else supports this.
@@ -50,9 +94,9 @@ workspace: {workspace}
    - From editor: prose was polished
    - From lint-metaphor: prose was clean, editor was skipped
    - From visual: visual generation complete
-2. **Story Concordance**: append prose to corpus, regenerate word frequency
+2. **Story Concordance**: append prose to corpus, regenerate word frequency (top 100 non-stopwords only)
    ```bash
-   cat {workspace}/prose.md >> {game}/story-corpus.txt && tr '[:upper:]' '[:lower:]' < {game}/story-corpus.txt | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn > {game}/story-concordance.txt
+   cat {workspace}/prose.md >> {game}/story-corpus.txt && tr '[:upper:]' '[:lower:]' < {game}/story-corpus.txt | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn | grep -vw -e the -e a -e an -e and -e or -e but -e in -e on -e at -e to -e for -e of -e with -e by -e from -e is -e it -e was -e be -e are -e were -e been -e has -e had -e have -e do -e did -e does -e not -e no -e so -e if -e as -e up -e out -e that -e this -e what -e which -e who -e when -e where -e how -e all -e each -e its -e she -e her -e he -e his -e they -e them -e their -e we -e our -e you -e your -e i -e me -e my -e s -e t -e d -e re -e ve -e ll -e just -e then -e than -e too -e very -e can -e could -e would -e will -e about -e into -e over -e after -e before -e between -e through -e during -e without -e again -e still -e now -e here -e there -e some -e any -e more -e other -e also -e back -e down -e only -e even -e because -e while -e like -e being -e something -e way -e one -e two | head -100 > {game}/story-concordance.txt
    ```
 3. Read workspace files: resolution.yaml, fates.yaml, prose.md, dramaturg-notes.yaml, scene_script.yaml
 4. Write `summary.md` to workspace (see Turn Compression)
@@ -65,15 +109,40 @@ workspace: {workspace}
 8. **Bond Updates**: if relationship intensity changed, update bond entity (see Bond Management)
 9. **Prop Updates**: if props changed location/state, update prop entities (see Prop Management)
 10. **Location Updates**: if location details established/changed, update location entity (see Location Management)
-11. **Entity Episodes**: append episodes to affected character entities (lean format)
+11. **Entity Episodes** via campaign.sh:
+    ```bash
+    $CAMPAIGN_SCRIPT $CP episode append {campaign_path}/entities/characters/{id}.yaml --turn={N} --event="{5-15 words}" --trait-changes="{TRAIT:+N,...}"
+    ```
 12. **Life Detail Capture**: scan prose.md for NEW life details invented by narrator (see Life Detail Capture below)
 13. **Layer Evolution**: add new details from episodes to appropriate description layers
-13. **Encounter Logging**: update continuity.yaml with what NARRATOR revealed
-14. **Arc State**: update arc.yaml — pressure, momentum, seeds, questions, phase
-15. **Fates Archival**: promote fired world events to continuity.yaml, advance NPC agendas
-16. **Trajectory Management**: add/remove/fire trajectories in campaign's trajectories.yaml
-17. Check for game-level promotions (see Canon Promotion)
-18. Run completion duties (see Turn Completion below)
+14. **Condition Management**: update mutable temporal states on characters and bonds (see Condition Management below)
+15. **Encounter Logging** via campaign.sh — log what NARRATOR established:
+    ```bash
+    $CAMPAIGN_SCRIPT $CP facts add --turn={N} --fact="{established fact}" --entities={entity1,entity2}
+    $CAMPAIGN_SCRIPT $CP facts appearance --entity={id} --turn={N} --context="{scene context}"
+    $CAMPAIGN_SCRIPT $CP facts add-factoid --turn={N} --factoid="{factoid used}" --context="{where used}"
+    ```
+16. **Arc State** via campaign.sh:
+    ```bash
+    $CAMPAIGN_SCRIPT $CP arc update --turn={N} --pressure-delta={delta} --momentum={state}
+    ```
+    For seeds: `--seed-bloom={id}`. For questions: `--question-add="{text}"` or `--question-resolve={index}`.
+17. **Fates Archival** — promote fired world events via campaign.sh:
+    ```bash
+    $CAMPAIGN_SCRIPT $CP facts add-world-event --turn={N} --event="{world event}" --category={category}
+    ```
+    Advance NPC agendas in entity files directly.
+18. **Trajectory Management** via campaign.sh:
+    ```bash
+    # From resolution.yaml trajectory_created:
+    $CAMPAIGN_SCRIPT $CP trajectory add --id={id} --desc="{outcome}" --deadline={fires_at} --source="{source}" --category={cat}
+    # From fates.yaml trajectory_updates.firing_this_turn:
+    $CAMPAIGN_SCRIPT $CP trajectory fire --id={id} --turn={N} --outcome="{what happened}"
+    # From fates.yaml trajectory_updates.interrupted:
+    $CAMPAIGN_SCRIPT $CP trajectory interrupt --id={id} --turn={N} --reason="{why}"
+    ```
+19. Check for game-level promotions (see Canon Promotion)
+20. Run completion duties (see Turn Completion below)
 </instructions>
 
 ## Turn Compression
@@ -446,6 +515,153 @@ life:
 3. **Tag with turn number** when useful — helps track when details were established
 4. **The `life` section is malleable** — new subsections can be created if the narrator invents something that doesn't fit existing categories. The schema follows the story, not the other way around.
 
+## Condition Management (Mutable Temporal States)
+
+Conditions are time-bound experiential states with natural arcs. Unlike traits (persistent personality) or episodes (historical log), conditions describe **what a character is going through right now**. They use REPLACE semantics — the current state overwrites the previous one.
+
+**Examples:** NRE (new relationship energy), grief, trauma response, intoxication, creative block, academic pressure, post-fight recalibration, obsession, healing, seasonal affect.
+
+**Where conditions live:**
+- **Individual conditions** (grief, academic pressure, creative block) → character entity files
+- **Relationship conditions** (NRE, post-fight recalibration, codependency) → bond entity files
+
+### Detection — Oracle Flags First
+
+Oracle includes `condition_flags` in its validation response. **Read these first.** Oracle observes the prose and flags:
+- `new` — condition onset detected (with pace recommendation)
+- `mutate` — existing condition changed (with specific fields)
+- `resolve` — condition ended or transformed
+- `none` — no changes
+
+**Oracle flags are your primary input.** Don't independently scan for condition changes oracle already flagged. Instead:
+1. Read oracle's `condition_flags`
+2. For each `new` flag → check if the character has relevant backstory (see Backstory Generation below)
+3. For each flag, read the relevant prose to extract **specific, concrete manifestation details**
+4. Execute the campaign.sh command with rich detail from the prose
+
+**If oracle missed something obvious** (rare), you may create/mutate independently. But oracle should catch most condition changes.
+
+### Backstory Generation (NEW conditions only)
+
+When oracle flags a NEW condition, the character needs a *past* for it to land in. Grief needs a relationship with the deceased. NRE needs a sexual/romantic history. Academic pressure needs a history with this subject.
+
+**Before writing a new condition**, check if the character's entity file has relevant backstory:
+
+1. Read the character's `life`, `hidden_past`, `foundation`, `sexuality` sections
+2. Ask: does this character have enough backstory for this condition to feel *theirs*?
+3. If NO → spawn an **opus** Task to generate the missing backstory
+
+**Task prompt template:**
+```
+You are enriching a character's backstory to support a new experiential condition.
+
+CHARACTER FOUNDATION:
+{paste character's foundation, traits.starting, hidden_past, existing life section}
+
+NEW CONDITION: {condition type} — {oracle's reason for flagging}
+
+Generate backstory that makes this condition land with specificity. The backstory
+must be DERIVED from who this character already is, not invented from nothing.
+
+Output as YAML that can be merged into the character's `life` section:
+
+life:
+  {relevant_subsection}:
+    {key details — relationship, memories, last interaction, unresolved tension,
+     what the character owes, what they can't forgive, sensory anchors}
+
+Rules:
+- 5-10 fields per backstory entry
+- Include at least one sensory memory (smell, sound, texture)
+- Include at least one unresolved tension
+- Match the character's voice and register
+- No cliché. No AI-default names (no "Sarah," "James," "Emily").
+- This becomes permanent character data. Make it count.
+```
+
+4. When Task returns, write the backstory to the entity file
+5. THEN write the condition (now it has somewhere to land)
+
+**When to generate backstory:**
+
+Ask one question: **does this character have a past with this kind of experience?** If you can't find it in their entity file, they need one. Every condition comes from somewhere. Generate the somewhere.
+
+**Rules:**
+- Only generate on NEW condition onset, never on mutate/resolve
+- Only generate if backstory is genuinely missing — don't duplicate existing content
+- Use opus model for the Task — backstory is permanent character data, quality matters
+- Write backstory BEFORE writing the condition — order matters for coherence
+
+### Fallback Detection (if oracle flags are absent or incomplete)
+
+| Signal | Action |
+|--------|--------|
+| Existing condition manifests in prose | Mutate manifestation fields to match current expression |
+| Phase transition visible (giddiness settling, grief moving to anger) | Advance phase |
+| Intensity change (escalation, calming) | Update intensity |
+| New behavioral pattern within condition | Update behavioral manifestation |
+| Condition no longer active in prose | Consider resolving |
+| New temporal state emerging (character starts grieving, obsessing, etc.) | Create new condition |
+
+### Commands
+
+```bash
+# Create new condition (first appearance)
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
+  --id={condition_id} --turn={N} --type={type} --phase={phase} \
+  --pace={instant|fast|medium|slow|glacial} \
+  --intensity="{N/10}" \
+  --physical="{body symptoms}" \
+  --cognitive="{thought patterns}" \
+  --behavioral="{actions/habits}" \
+  --speech="{verbal patterns}" \
+  --advances="{what escalates it}" \
+  --regresses="{what calms it}" \
+  --resolves-into="{what it becomes}"
+
+# Mutate existing condition (REPLACE changed fields only)
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
+  --id={condition_id} --turn={N} \
+  --phase={new_phase} --intensity="{new}" \
+  --physical="{updated body state}"
+
+# Mutate a specific nested field
+$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
+  --id={condition_id} --turn={N} \
+  --field=manifestations.speech --value="{new speech pattern}"
+
+# Resolve when condition ends
+$CAMPAIGN_SCRIPT $CP condition resolve {entity_file} \
+  --id={condition_id} --turn={N} --resolved-into="{what it became}"
+```
+
+### Phase Evolution Guidelines
+
+Conditions aren't linear — they can regress, stall, or skip phases. But here are common arcs:
+
+| Type | Typical Phases | Pace | Min story-days per phase |
+|------|---------------|------|------------------------|
+| NRE | electric → consuming → integrating → settled | slow | 30 |
+| Grief | shock → acute → wave → integrated | glacial | 90 |
+| Trauma response | hypervigilance → avoidance → processing → integration | glacial | 90 |
+| Intoxication | onset → peak → sloppy → crash | instant | 0 |
+| Arousal | building → active → peak → cooling | instant | 0 |
+| Academic pressure | building → mounting → crisis → aftermath | medium | 7 |
+| Post-fight | rupture → defensiveness → tentative → repair | fast | 2 |
+| Anger | flash → sustained → cooling → residue | instant | 0 |
+| Obsession | seed → fixation → consuming → confrontation → release | medium | 7 |
+
+**Pace enforcement:** campaign.sh blocks phase transitions if insufficient story-days have elapsed. Intensity and manifestations always change freely — only phase is gated.
+
+### Rules
+
+1. **Only mutate what changed in prose** — don't rewrite stable fields every turn
+2. **Manifestations should be concrete** — "can't stop touching own lips" not "feeling excited"
+3. **Intensity is subjective** — "9/10" or "overwhelming" or "fading" — whatever conveys the felt sense
+4. **Phase transitions need evidence** — don't advance phase without prose showing the shift
+5. **Check bond AND character files** — a relationship condition (NRE) lives on the bond; individual manifestations of it may also warrant character condition entries
+6. **Conditions interact with traits** — NRE might suppress BOUNDARIED, grief might amplify PROTECTIVE. Note these interactions in episode entries, not condition entries.
+
 ## Entity Episode Updates (Lean Format)
 
 **Reference schemas:**
@@ -530,13 +746,17 @@ episodes:
 ### Process
 
 1. Identify affected entities from resolution.yaml and prose.md
-2. Read entity file
-3. Append episode with turn number, brief event, trait changes
-4. Update traits.evolved if pressure changed:
-   - Update `pressure` value
-   - If pressure INCREASED: update `last_pressured` to current turn
-   - If new evolved trait: set `baseline: 0`, infer `decay_type` from trait name
-5. Write updated entity file
+2. For each affected character, use campaign.sh to append episodes:
+   ```bash
+   $CAMPAIGN_SCRIPT $CP episode append {campaign_path}/entities/characters/{id}.yaml \
+     --turn={N} --event="{5-15 words}" --trait-changes="{TRAIT:+N,TRAIT:-N}"
+   ```
+   campaign.sh automatically:
+   - Appends to `episodes[]`
+   - Creates/updates `traits.evolved` entries with pressure, baseline, decay_type, last_pressured
+   - Only updates `last_pressured` when pressure increases
+3. For trait changes NOT covered by episode append (voice evolution, metaphor codification):
+   - Update entity file directly via yq
 
 ## Emergent Vocabulary Codification
 
@@ -576,29 +796,46 @@ Layer placement is SEMANTIC (visibility), not temporal.
 
 ## Encounter Logging
 
-Update `continuity.yaml` encounters after each turn:
+Log what NARRATOR established via campaign.sh:
 
-1. For each entity in prose: add to encounters if new, update last_appearance
+1. For each entity in prose: log appearance and established facts
 2. Track which description layers NARRATOR surfaced
 3. Log specific details rendered
 
-```yaml
-encounters:
-  moth:
-    reader_introduced: 3
-    protagonist_met: 5
-    layers_surfaced: [first_glance, familiar]
-    details_revealed:
-      - detail: "collar-touching habit"
-        turn: 8
-    last_appearance: 8
+```bash
+# Log entity appearances
+$CAMPAIGN_SCRIPT $CP facts appearance --entity={id} --turn={N} --context="{scene context}"
+
+# Log established facts
+$CAMPAIGN_SCRIPT $CP facts add --turn={N} --fact="{what was established}" --entities={entity1,entity2}
+
+# Log factoids used in prose
+$CAMPAIGN_SCRIPT $CP facts add-factoid --turn={N} --factoid="{factoid}" --context="{where used}"
+
+# Log new secrets revealed
+$CAMPAIGN_SCRIPT $CP facts add-secret --turn={N} --secret="{secret}" --known-by={character}
+
+# Log knowledge barriers
+$CAMPAIGN_SCRIPT $CP facts add-barrier --character={char} --does-not-know="{info}" --dramatic-irony=true
 ```
 
-Purpose: NARRATOR checks this before describing — ensures fiction is only new information.
+Purpose: ORACLE queries these via `campaign.sh facts query` before validating — ensures continuity is surgical, not whole-file reads.
 
 ## Arc State Maintenance
 
-Update `campaigns/{campaign-id}/arc.yaml` after each turn. DRAMATURG reads this file.
+Update arc.yaml via campaign.sh after each turn. ARCHITECT and GRAVITY read this file.
+
+### Story Day
+
+Maintain `story_day` in arc.yaml. Increment when the turn's timeline shows a new calendar day. If the turn stays on the same day, don't increment.
+
+```bash
+# Check if new day — compare turn's date against timeline
+# If new day:
+$CAMPAIGN_SCRIPT $CP arc update --field=story_day --value={new_day_count}
+```
+
+Story_day is used by campaign.sh to enforce condition pace — phase transitions are gated by elapsed story-days, not turns.
 
 ### Update Rules
 
@@ -608,22 +845,35 @@ Update `campaigns/{campaign-id}/arc.yaml` after each turn. DRAMATURG reads this 
 4. **questions**: tested this turn → increase pressure, answered → resolved, new emerges → add at pressure 10
 5. **phase**: if arc_pressure crosses phase_next_at → update phase_current
 
+### Commands
+```bash
+# Pressure and momentum
+$CAMPAIGN_SCRIPT $CP arc update --turn={N} --pressure-delta={delta} --momentum={state}
+
+# Seeds — promote to ready_to_activate
+$CAMPAIGN_SCRIPT $CP arc update --seed-bloom={seed_id}
+
+# Questions — add or resolve
+$CAMPAIGN_SCRIPT $CP arc update --question-add="{new question text}"
+$CAMPAIGN_SCRIPT $CP arc update --question-resolve={0-based-index}
+
+# Phase — update directly
+$CAMPAIGN_SCRIPT $CP arc update --phase={phase_name}
+
+# Read current state
+$CAMPAIGN_SCRIPT $CP arc get
+```
+
 ## Fates Archival
 
-When `fates.yaml` exists in workspace, archive the world's actions.
+When `fates.yaml` exists in workspace, archive the world's actions via campaign.sh.
 
 ### Fired Events → Continuity
 
-If `world_event` is not null, promote to `continuity.yaml`:
+If `world_event` is not null, promote via campaign.sh:
 
-```yaml
-world_events:
-  - turn: 16
-    event: "The unlocked gate was noticed. Armed pursuers followed the trail."
-    category: consequence
-    branch: "armed-pursuit"
-    mechanical_impact: "Combat thread opens, time pressure"
-    entities_involved: [gate, pursuers]
+```bash
+$CAMPAIGN_SCRIPT $CP facts add-world-event --turn={N} --event="{world event description}" --category={category}
 ```
 
 ### NPC Agenda Advancement
@@ -632,55 +882,51 @@ For each NPC with an `agenda` field in their entity file:
 
 1. If the NPC's agenda was relevant this turn: increment `agenda_progress` by 1
 2. If the NPC's agenda was NOT relevant but `turns_since_active` > 3: increment `agenda_pressure` by 1
-3. Update entity file agenda section
+3. Update entity file agenda section directly (agendas live in entity files, not continuity.yaml)
 
 ## Trajectory Management (Chekhov's Guns)
 
-**Only scribe writes to campaign's trajectories.yaml. System detects, scribe records.**
-
-### Location
-```
-{campaign_path}/trajectories.yaml
-```
+**Only scribe writes to campaign's trajectories.yaml via campaign.sh. System detects, scribe records.**
 
 ### Adding New Trajectories
 
-Read `resolution.yaml` → `trajectory_created`. If not null, append to trajectories.yaml:
+Read `resolution.yaml` → `trajectory_created`. If not null:
 
-```yaml
-trajectories:
-  - id: "{from resolution.yaml}"
-    setup_turn: {from resolution.yaml}
-    source: "{from resolution.yaml}"
-    fires_at_turn: {from resolution.yaml}
-    interruptible_by: {from resolution.yaml}
-    outcome_when_fires: "{from resolution.yaml}"
-    category: {from resolution.yaml}
-    weight_when_firing: {from resolution.yaml}
-```
-
-### Removing Interrupted Trajectories
-
-Read `fates.yaml` → `trajectory_updates.interrupted`. For each:
-1. Remove from trajectories.yaml
-2. Log to continuity.yaml:
-```yaml
-trajectories_defused:
-  - id: "{trajectory_id}"
-    interrupted_at_turn: {N}
-    reason: "{from fates.yaml}"
+```bash
+$CAMPAIGN_SCRIPT $CP trajectory add \
+  --id={id} \
+  --desc="{outcome_when_fires}" \
+  --deadline={fires_at_turn} \
+  --source="{source}" \
+  --category={category} \
+  --weight={weight_when_firing}
 ```
 
 ### Marking Fired Trajectories
 
 Read `fates.yaml` → `trajectory_updates.firing_this_turn`. For each:
-1. Remove from trajectories.yaml (it fired)
-2. Log to continuity.yaml:
-```yaml
-trajectories_fired:
-  - id: "{trajectory_id}"
-    fired_at_turn: {N}
-    outcome: "{from resolution.yaml world_event}"
+
+```bash
+$CAMPAIGN_SCRIPT $CP trajectory fire --id={id} --turn={N} --outcome="{what happened}"
+```
+
+This moves the trajectory from active to `archived_fired` automatically.
+
+### Removing Interrupted Trajectories
+
+Read `fates.yaml` → `trajectory_updates.interrupted`. For each:
+
+```bash
+$CAMPAIGN_SCRIPT $CP trajectory interrupt --id={id} --turn={N} --reason="{why interrupted}"
+```
+
+This moves the trajectory from active to `archived_interrupted` automatically.
+
+### Listing Active Trajectories
+
+```bash
+$CAMPAIGN_SCRIPT $CP trajectory list                  # active only
+$CAMPAIGN_SCRIPT $CP trajectory list --include-archived  # all
 ```
 
 ## Rolling Window

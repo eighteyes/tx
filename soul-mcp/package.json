@@ -1,0 +1,25 @@
+{
+  "name": "@tx-opus/soul-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for navigating soul-graph metadata in tx-opus-soul",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "soul-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": ["mcp", "soul-graph", "tx-opus"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}

@@ -45,6 +45,7 @@ err()  { echo -e "${RED}[init-workspace]${RESET} $*" >&2; }
 
 NEW_CAMPAIGN=""
 VERBOSE=false
+STAMP_ACTION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,6 +54,15 @@ while [[ $# -gt 0 ]]; do
         NEW_CAMPAIGN="$2"; shift 2
       else
         NEW_CAMPAIGN="auto"; shift
+      fi
+      ;;
+    --stamp-action)
+      # Next arg is the raw player action text to stamp into intent.yaml
+      if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+        STAMP_ACTION="$2"; shift 2
+      else
+        # Read from stdin if no inline arg
+        STAMP_ACTION="$(cat)"; shift
       fi
       ;;
     --verbose) VERBOSE=true; shift ;;
@@ -211,6 +221,24 @@ fi
 
 mkdir -p "$workspace"
 vlog "Workspace: $workspace"
+
+# ─────────────────────────────────────────────
+# 6b. STAMP RAW PLAYER ACTION (tamper-proof)
+# ─────────────────────────────────────────────
+# When --stamp-action is provided, write the player's exact words into
+# intent.yaml BEFORE any LLM touches the file. This prevents models
+# from sanitizing, softening, or rewriting the player's input.
+# The LLM appends decomposition fields later via yq — raw_input is sacred.
+
+if [[ -n "$STAMP_ACTION" ]]; then
+  intent_file="$workspace/intent.yaml"
+  # Use yq with env() for safe escaping — handles quotes, em-dashes, special chars
+  export _STAMP_RAW="$STAMP_ACTION"
+  yq -n '.raw_input = strenv(_STAMP_RAW)' > "$intent_file"
+  unset _STAMP_RAW
+  vlog "Stamped raw_input to $intent_file (${#STAMP_ACTION} chars)"
+  log "${GREEN}Player action stamped (tamper-proof)${RESET}"
+fi
 
 # ─────────────────────────────────────────────
 # 7. LOAD PROTAGONIST ENTITY
@@ -461,6 +489,76 @@ else
     .timeline.last_day = 0 |
     .timeline.last_period = null
   ' "$BLOB"
+fi
+
+# ─────────────────────────────────────────────
+# 13. WRITE CONTEXT.YAML (script-generated, not LLM)
+# ─────────────────────────────────────────────
+# context.yaml is 100% derivable from the blob. Writing it here ensures
+# no LLM can sanitize the player_action field or alter scene state.
+# The raw_input from intent.yaml is used as player_action — verbatim.
+
+if [[ -n "$STAMP_ACTION" ]]; then
+  context_file="$workspace/context.yaml"
+
+  # Start with session fields
+  export _CTX_ACTION="$STAMP_ACTION"
+  export _CTX_POV="$pov_character"
+
+  yq -n '
+    .turn = '"$new_turn"' |
+    .context_type = "action" |
+    .player_action = strenv(_CTX_ACTION) |
+    .pov_character = strenv(_CTX_POV)
+  ' > "$context_file"
+
+  # Actor block from blob protagonist
+  protag_tmp=$(mktemp)
+  yq '.protagonist' "$BLOB" > "$protag_tmp"
+  yq -i '.actor = load("'"$protag_tmp"'")' "$context_file"
+  rm -f "$protag_tmp"
+
+  # Scene block from blob scene
+  scene_tmp=$(mktemp)
+  yq '{
+    "location": .scene.location,
+    "present": .scene.present,
+    "pov_is": .session.pov_character
+  }' "$BLOB" > "$scene_tmp"
+  yq -i '.scene = load("'"$scene_tmp"'")' "$context_file"
+  rm -f "$scene_tmp"
+
+  # Closing state from blob scene
+  closing_tmp=$(mktemp)
+  yq '{
+    "door": .scene.closing.door,
+    "characters": .scene.closing.positions,
+    "objects": .scene.closing.objects,
+    "time": .scene.closing.time
+  }' "$BLOB" > "$closing_tmp"
+  yq -i '.closing_state = load("'"$closing_tmp"'")' "$context_file"
+  rm -f "$closing_tmp"
+
+  # Prose anchor
+  anchor_tmp=$(mktemp)
+  yq '{"v": .scene.prose_anchor}' "$BLOB" > "$anchor_tmp"
+  yq -i '.closing_state.prose_anchor = load("'"$anchor_tmp"'").v' "$context_file"
+  rm -f "$anchor_tmp"
+
+  # Arc block from blob scene
+  arc_tmp=$(mktemp)
+  yq '.scene.arc // {}' "$BLOB" > "$arc_tmp"
+  yq -i '.arc = load("'"$arc_tmp"'")' "$context_file"
+  rm -f "$arc_tmp"
+
+  # Suspended block
+  suspended_tmp=$(mktemp)
+  yq '{"v": .scene.suspended}' "$BLOB" > "$suspended_tmp"
+  yq -i '.suspended = load("'"$suspended_tmp"'").v' "$context_file"
+  rm -f "$suspended_tmp"
+
+  vlog "context.yaml written to $context_file"
+  log "${GREEN}context.yaml generated (script, not LLM)${RESET}"
 fi
 
 # Output clean YAML

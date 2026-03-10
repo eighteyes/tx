@@ -187,7 +187,7 @@ export class IdentityGate {
       decision: 'block',
       reason: `IDENTITY CONTRACT VIOLATION [strike ${this.strikes}${killAt !== null ? `/${killAt}` : ''}]: ` +
         `Message has \`from: ${actualFrom}\` but your identity is \`${expectedFrom}\`.\n\n` +
-        `Your agent address is: ${expectedFrom}\n\n` +
+        `Use \`from: ${expectedFrom.split('/')[1] || expectedFrom}\` (or full: \`${expectedFrom}\`).\n\n` +
         `Fix the \`from:\` field in your message frontmatter and try again.`,
     };
   }

@@ -1,0 +1,14 @@
+{
+  "name": "tx",
+  "description": "Multi-agent mesh orchestration for Claude Code",
+  "version": "1.0.0",
+  "author": {
+    "name": "eighteyes"
+  },
+  "skills": [
+    "./skills/mesh-builder/"
+  ],
+  "commands": [
+    "./commands/"
+  ]
+}
