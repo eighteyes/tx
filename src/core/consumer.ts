@@ -477,12 +477,14 @@ export class MessageConsumer extends EventEmitter {
     const senderMesh = fromParts.length > 1 ? fromParts[0] : null;
 
     // Check if 'to' is an agent in sender's mesh (partial name resolution)
+    // This is like DNS search domains — bare names resolve within sender's mesh first
     if (senderMesh) {
       const meshAgents = this.meshAgents.get(senderMesh);
       if (meshAgents && meshAgents.has(to)) {
-        log.debug('consumer', `Resolved partial agent name`, {
+        log.info('consumer', `Resolved bare agent name within sender's mesh`, {
           from,
           to,
+          senderMesh,
           resolved: `${senderMesh}/${to}`
         });
         return `${senderMesh}/${to}`;
@@ -494,7 +496,7 @@ export class MessageConsumer extends EventEmitter {
       const fromAgent = fromParts[0]; // bare agent name
       for (const [meshName, agents] of this.meshAgents) {
         if (agents.has(to) && agents.has(fromAgent)) {
-          log.debug('consumer', `Resolved both bare names to same mesh`, {
+          log.info('consumer', `Resolved both bare names to same mesh`, {
             from: fromAgent,
             to,
             resolved: `${meshName}/${to}`
@@ -502,12 +504,14 @@ export class MessageConsumer extends EventEmitter {
           return `${meshName}/${to}`;
         }
       }
-      // 'from' is bare but 'to' not found alongside it — try 'to' as sole agent match
+      // 'from' is bare but 'to' not found alongside it — try 'to' as sole agent match (cross-mesh fallback)
       for (const [meshName, agents] of this.meshAgents) {
         if (agents.has(to)) {
-          log.debug('consumer', `Resolved bare 'to' via mesh scan`, {
+          log.warn('consumer', `Bare agent name resolved via cross-mesh fallback (agent not in sender's mesh)`, {
+            from,
             to,
-            resolved: `${meshName}/${to}`
+            resolved: `${meshName}/${to}`,
+            note: 'This may indicate a routing mistake'
           });
           return `${meshName}/${to}`;
         }
@@ -595,9 +599,10 @@ export class MessageConsumer extends EventEmitter {
       }
 
       // Resolve mesh routing with support for partial names
-      // Resolve 'to' first, then pass resolved 'to' to 'from' resolver for better mesh inference
-      let toAgent = this.resolveToAgent(parsed.frontmatter.to, parsed.frontmatter.from);
-      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
+      // CRITICAL: Resolve 'from' first so resolveToAgent can use sender's mesh context
+      // This enables bare agent names to resolve within sender's mesh (e.g., oracle → narrator stays in narrative-engine-v2)
+      const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
+      let toAgent = this.resolveToAgent(parsed.frontmatter.to, fromAgent);
 
       // =================================================================
       // DISPATCHER ROUTING — resolve mesh/dispatch sentinel to real target
