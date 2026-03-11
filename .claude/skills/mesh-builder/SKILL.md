@@ -167,6 +167,12 @@ agents:
 
 **Propagation:** Upstream agents must include the key in their completion message frontmatter for downstream agents to receive it. The consumer maps frontmatter fields to `payload` automatically.
 
+**Reliability front-matter fields** (used by core agent for recovery, not in mesh configs):
+- `recover: true` — triggers DLQ recovery for the target mesh
+- `rewind-to: <state>` — override recovery session with checkpoint from named FSM state
+- `session-id: <id>` — resume a specific SDK session
+- `resume-mesh: true` — preserve mesh state instead of clearing on new entry
+
 ```
 User message:  feature: auth  → prebuild gets "/know:prebuild auth"
 Prebuild msg:  feature: auth  → builder gets "/know:build auth"

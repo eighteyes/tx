@@ -358,3 +358,118 @@ max_turns:
   warning: true
   limit: 50
 ```
+
+## Reliability (Four Nines)
+
+The reliability module (`src/reliability/`) provides four-nines (99.99%) patterns inspired by Karpathy's "March of Nines". Each nine requires fundamentally new approaches:
+
+| Nine | Target | TX Mechanism |
+|------|--------|-------------|
+| 1 (90%) | Basic error handling | Logging, guardrails, FSM validation |
+| 2 (99%) | Message recovery | Dead Letter Queue, retry with backoff |
+| 3 (99.9%) | Failure isolation | Circuit breakers, heartbeat monitoring |
+| 4 (99.99%) | Proactive safety | SLI tracking, safe mode, failure taxonomy |
+
+### Configuration
+
+Add to `.ai/tx/data/config.yaml`:
+
+```yaml
+reliability:
+  circuitBreaker:
+    failureThreshold: 3      # Failures before circuit opens
+    cooldownMs: 60000         # Wait before probe request
+    windowMs: 300000          # Failure counting window (5 min)
+  heartbeat:
+    warnMs: 60000             # Silence before warning (1 min)
+    staleMs: 120000           # Silence before stale (2 min)
+    deadMs: 300000            # Silence before dead (5 min)
+    checkIntervalMs: 15000    # Check interval (15s)
+  safeMode:
+    defaultLevel: normal      # normal | cautious | restricted | lockdown
+    autoEscalate: false       # Auto-escalate based on SLI
+    cautiousThreshold: 0.95   # SLI rate triggering cautious mode
+    restrictedThreshold: 0.90 # SLI rate triggering restricted mode
+    lockdownThreshold: 0.80   # SLI rate triggering lockdown
+  dlq:
+    maxRetries: 3             # Max retries before DLQ
+  sli:
+    retentionMs: 604800000    # SLI data retention (7 days)
+```
+
+### Dead Letter Queue (DLQ)
+
+Messages that fail delivery after max retries are routed to the DLQ instead of being silently dropped. DLQ entries persist in SQLite and can be replayed manually.
+
+- Automatic retry with exponential backoff
+- Failure reason tracking for taxonomy
+- Replay capability for manual recovery
+- Stats available via `reliability.dlq.getStats()`
+
+### Circuit Breaker
+
+Prevents cascading failures when an agent repeatedly fails. Three states:
+
+| State | Behavior |
+|-------|----------|
+| **Closed** | Normal — requests pass through |
+| **Open** | Failures exceeded threshold — requests fail immediately |
+| **Half-Open** | After cooldown — single probe request allowed |
+
+Applied per-agent (`mesh/agent`). Resets on mesh completion.
+
+### Heartbeat Monitor
+
+Detects stalled/hung workers by monitoring output timestamps:
+
+| Level | Default | Action |
+|-------|---------|--------|
+| Warn | 60s silence | Log warning |
+| Stale | 120s silence | Inject nudge to worker |
+| Dead | 300s silence | Record failure, trigger circuit breaker |
+
+### SLI Tracker
+
+Tracks success rates, latencies, and failure categories per mesh:
+
+- **Success rate**: Per-mesh and per-agent (target: 99.99%)
+- **MTTR**: Mean time to recovery (failure → next success)
+- **Failure taxonomy**: Categorized failures for targeted fixes
+- **Nines level**: Human-readable "99.9% (3 nines)" display
+
+Failure categories: `model_error`, `routing_error`, `timeout`, `guardrail_kill`, `crash`, `stuck`, `policy_violation`, `gate_failure`, `circuit_open`, `unknown`
+
+### Safe Mode
+
+Treat autonomy as a knob, not a switch. Four levels:
+
+| Level | Tools Disabled | Actions Blocked |
+|-------|---------------|-----------------|
+| **normal** | None | None |
+| **cautious** | None | Destructive bash, git push, file delete |
+| **restricted** | Write, Edit, Bash | All writes, all bash, git operations |
+| **lockdown** | All tools | All operations (stops agent execution) |
+
+Safe mode can be:
+- Set manually per-mesh or globally
+- Auto-escalated based on SLI thresholds (when `autoEscalate: true`)
+- Only escalates automatically; human must clear/de-escalate
+
+### Test Meshes
+
+Two meshes for testing reliability features:
+
+- **`reliability-test`**: Simple 3-agent linear mesh (planner → worker → checker) with tight guardrails
+- **`reliability-fsm`**: FSM-based mesh with gate scripts, iteration tracking, and state transitions
+
+### Implementation
+
+| File | Role |
+|------|------|
+| `src/reliability/index.ts` | Module exports |
+| `src/reliability/reliability-manager.ts` | Central coordinator (single integration point) |
+| `src/reliability/dead-letter-queue.ts` | DLQ with SQLite persistence |
+| `src/reliability/circuit-breaker.ts` | Per-agent circuit breaker |
+| `src/reliability/heartbeat-monitor.ts` | Stalled worker detection |
+| `src/reliability/sli-tracker.ts` | SLI measurement and nines calculation |
+| `src/reliability/safe-mode.ts` | Gradual autonomy control |

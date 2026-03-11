@@ -1,0 +1,72 @@
+# reliability-test/config.yaml
+# Test mesh for validating four-nines reliability features
+#
+# Uses tight thresholds so reliability events trigger quickly during testing.
+# See docs/reliability.md for how to exercise each feature.
+
+mesh: reliability-test
+description: "Reliability test mesh: circuit breakers, heartbeat, SLI, DLQ, safe mode"
+
+agents:
+  - name: planner
+    model: haiku
+    prompt: planner/prompt.md
+
+  - name: worker
+    model: haiku
+    prompt: worker/prompt.md
+
+  - name: checker
+    model: haiku
+    prompt: checker/prompt.md
+
+entry_point: planner
+completion_agent: checker
+
+routing:
+  planner:
+    complete:
+      worker: "Plan ready, execute implementation"
+    blocked:
+      core: "Need clarification from user"
+
+  worker:
+    complete:
+      checker: "Implementation done, verify results"
+    blocked:
+      planner: "Need to revise plan"
+
+  checker:
+    complete:
+      core: "All checks passed, task complete"
+    blocked:
+      worker: "Checks failed, rework needed"
+
+# Tight guardrails to trigger reliability events quickly
+guardrails:
+  max_messages:
+    strict: true
+    warning: true
+    limit: 10
+  max_turns:
+    strict: false
+    warning: true
+    limit: 8
+
+# Reliability config — tight thresholds for testing
+reliability:
+  circuitBreaker:
+    failureThreshold: 2       # Opens after just 2 failures (default: 3)
+    cooldownMs: 15000          # 15s cooldown (default: 30s)
+  heartbeat:
+    warnMs: 30000              # Warn after 30s silence (default: 60s)
+    staleMs: 60000             # Stale after 60s (default: 120s)
+    deadMs: 120000             # Dead after 120s (default: 300s)
+  safeMode:
+    autoEscalate: true         # Auto-restrict on SLI drop
+    cautiousThreshold: 0.80    # Cautious when <80% success
+    restrictedThreshold: 0.50  # Restricted when <50%
+    lockdownThreshold: 0.25    # Lockdown when <25%
+
+workspace:
+  path: ".ai/output/{task-id}/"

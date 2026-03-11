@@ -46,6 +46,7 @@ import { GuardrailConfig } from './guardrail-config.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
+import { ReliabilityManager } from '../reliability/reliability-manager.ts';
 import YAML from 'yaml';
 
 /**
@@ -351,6 +352,8 @@ export class WorkerDispatcher extends EventEmitter {
   systemWriter!: SystemMessageWriter;
   // Auto-nudge recovery for stalled routes
   private nudgeDetector?: NudgeDetector;
+  // Reliability: circuit breakers, heartbeat, SLI, DLQ, safe-mode
+  reliability?: ReliabilityManager;
 
   constructor(config: DispatcherConfig, queue: MessageQueue) {
     super();
@@ -1185,6 +1188,37 @@ export class WorkerDispatcher extends EventEmitter {
     const nudgeConfig = this.guardrails.getNudgeConfig?.() ?? {};
     this.nudgeDetector = new NudgeDetector(this.systemWriter, this.queue, nudgeConfig);
 
+    // Initialize reliability manager (circuit breakers, heartbeat, SLI, DLQ, safe-mode)
+    this.reliability = new ReliabilityManager(this.queue.getDb(), this.config.workDir);
+    this.reliability.bindDispatcher({
+      killAgent: (agentId: string, reason: string) => {
+        return this.workerLifecycle.killForAgent(agentId, reason);
+      },
+      requeueMessage: (from: string, to: string, type: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => {
+        this.systemWriter.write({
+          from,
+          to,
+          type,
+          headline: (payload.headline as string) || 'DLQ recovery',
+          body: (payload.body as string) || '',
+          extraFrontmatter: { ...extraFrontmatter, ...Object.fromEntries(
+            Object.entries(payload).filter(([k]) => !['headline', 'body'].includes(k)).map(([k, v]) => [k, String(v)])
+          )},
+        });
+      },
+    });
+    this.reliability.start();
+
+    // Recover any pending DLQ entries from previous crash
+    const dlqRecovery = this.reliability.recoverAll();
+    if (dlqRecovery.length > 0) {
+      log.info('dispatcher', 'DLQ startup recovery', {
+        attempted: dlqRecovery.length,
+        succeeded: dlqRecovery.filter(r => r.success).length,
+        failed: dlqRecovery.filter(r => !r.success).length,
+      });
+    }
+
     // Subscribe to consumer events for event-driven dispatch
     if (consumer) {
       this.boundMessageHandler = (event: { agentId: string }) => {
@@ -1548,6 +1582,27 @@ export class WorkerDispatcher extends EventEmitter {
           }
           return;
         }
+      }
+    }
+
+    // DLQ RECOVERY: recover front-matter triggers DLQ recovery for this mesh
+    // Core agent or CLI can send: `recover: true` to trigger auto-recovery
+    if (pendingMessage?.payload?.['recover'] === true || pendingMessage?.payload?.['recover'] === 'true') {
+      if (this.reliability) {
+        // rewind-to: <state> overrides DLQ session with checkpoint session
+        const rewindTo = pendingMessage?.payload?.['rewind-to'] as string | undefined;
+        const results = this.reliability.recoverForMesh(meshName, rewindTo || undefined);
+        const succeeded = results.filter(r => r.success).length;
+        log.info('dispatcher', 'DLQ recovery triggered by front-matter', {
+          meshName, attempted: results.length, succeeded,
+          rewindTo: rewindTo || null,
+        });
+
+        // Consume the recover message — its purpose is fulfilled
+        this.queue.pollOne(agentId);
+
+        // If entries were recovered, they'll flow through as new messages
+        if (results.length > 0) return;
       }
     }
 
@@ -3672,6 +3727,18 @@ Please advise the agent or check mesh configuration.`;
         });
       }
 
+      // Safe mode gate: block tools based on current safe mode level
+      if (this.reliability) {
+        const safeModeHook = this.reliability.createSafeModeHook(meshName!, agentId);
+        if (safeModeHook) {
+          preToolUseHooks.push(safeModeHook);
+          log.info('safe-mode', 'Safe mode hook enabled', {
+            agentId,
+            level: this.reliability.safeMode.getLevel(meshName!),
+          });
+        }
+      }
+
       // Orchestrator gate: restrict Write to msgs dir only
       if (agent.orchestrator) {
         const msgsDir = this.config.msgsDir;
@@ -3999,6 +4066,19 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       const worker = new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
 
+      // Reliability: register agent for heartbeat monitoring + circuit breaker check
+      if (this.reliability) {
+        const spawnCheck = this.reliability.canSpawn(meshName!, agentId);
+        if (!spawnCheck.allowed) {
+          log.warn('dispatcher', `Spawn blocked by reliability`, {
+            agentId, reason: spawnCheck.reason,
+          });
+          log.activity('reliability:blocked', agentId, spawnCheck.reason || 'blocked');
+          return;
+        }
+        this.reliability.registerAgent(agentId);
+      }
+
       // Parity gate: emit session-start for consumer to clear stale pending asks
       this.emit('session-start', { agentId });
 
@@ -4036,6 +4116,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             result.worker.lastOutputAt = Date.now();
           }
         }
+        // Reliability: heartbeat on output
+        this.reliability?.recordHeartbeat(agentId);
         this.emit('worker:output', data);
       });
 
@@ -4659,6 +4741,24 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }
         }
 
+        // Save reliability checkpoint at FSM state boundaries
+        // Every agent completion in an FSM mesh records the session ID
+        // keyed by the current FSM state — enables rewind-to recovery
+        if (this.reliability && data.sessionId && meshName) {
+          const fsm = this.meshFSMs.get(meshName);
+          if (fsm?.isInitialized()) {
+            const fsmState = fsm.getStatus().currentState;
+            this.reliability.checkpoints.save({
+              meshName,
+              stateName: fsmState,
+              agentId,
+              sessionId: data.sessionId,
+              fromState: fsmState,
+              context: fsm.getContext() as Record<string, unknown>,
+            });
+          }
+        }
+
         // Emit quality pass if we had preflight and made it here without errors
         if (workerHookContext.qualityPreflight) {
           this.emit('quality:pass', {
@@ -4744,6 +4844,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             ? { iterations: workerHookContext.qualityIteration || 1, passed: true }
             : undefined,
         });
+
+        // Reliability: record successful completion
+        const durationMs = Date.now() - (activeWorker?.startedAt || Date.now());
+        this.reliability?.recordSuccess(meshName!, agentId, durationMs);
 
         // OAOM: Check queue for next message
         this.processNextQueuedMessage(agentId);
@@ -4860,6 +4964,12 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
         await machine.error(data.error);
 
+        // Reliability: categorize failure
+        const category = data.error?.includes('usage policy') ? 'policy_violation'
+          : data.error?.includes('timeout') ? 'timeout'
+          : data.error?.includes('overloaded') ? 'model_error'
+          : 'crash';
+
         // Check if we can retry
         const canRetry = await machine.canTransition('retry', {
           status: 'initializing',
@@ -4889,11 +4999,30 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }, 1000);
         } else {
           log.error('dispatcher', `Worker exhausted retries`, { agentId, workerId: errorWorkerId });
+
+          // Reliability: route to DLQ with session context for recovery
+          if (this.reliability) {
+            const sessionId = activeWorker?.runner.getSessionId() || undefined;
+            const msgsSent = activeWorker?.messagesSent?.length || 0;
+            this.reliability.deadLetter(meshName!, agentId, category, data.error || 'Unknown error', {
+              sessionId,
+              messagesSent: msgsSent,
+              fromAgent: nextMsg?.from_agent,
+              toAgent: agentId,
+              msgType: nextMsg?.type,
+              payload: nextMsg?.payload as Record<string, unknown>,
+              sourceFile: nextMsg?.source_file,
+            });
+          }
+
           // Cleanup using consolidated helper
           this.cleanupWorker(agentId, errorWorkerId);
         }
 
         this.emit('worker:error', { ...data, workerId: errorWorkerId, transitionName: 'error' });
+
+        // Reliability: record failure
+        this.reliability?.recordFailure(meshName!, agentId, category as any, data.error);
       });
 
       // Add worker to active workers with unique workerId for parallel execution
@@ -5869,6 +5998,10 @@ ${output}
   private finalizeMeshCompletion(meshName: string, completionAgent: string): void {
     // Cancel any pending nudge timers for this mesh
     this.nudgeDetector?.cancelForMesh(meshName);
+
+    // Reliability: cleanup mesh-level state, log status
+    this.reliability?.cleanupMesh(meshName);
+    this.reliability?.logStatus();
 
     // Find session by meshName (delegates to MetricsAggregator)
     const result = this.metricsAggregator.findSessionByMeshName(meshName);

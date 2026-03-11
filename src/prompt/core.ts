@@ -237,6 +237,97 @@ tx mesh status narrative-engine  # Find the msg-id
 tx mesh resolve ask-123 "Approved, continue with the plan"
 \`\`\`
 
+## Reliability & Recovery
+
+When mesh work fails, the system captures failures in a Dead Letter Queue (DLQ) with session context. You can recover failed work and rewind to specific checkpoints.
+
+**CRITICAL: Recovery requires human approval.** Never trigger recovery silently. Always diagnose, present options, and get explicit user confirmation first.
+
+### Recovery Workflow (Always Follow These Steps)
+
+**Step 1: Diagnose** — Run these and present findings to the user:
+\`\`\`bash
+tx mesh health <mesh>      # SLI, circuit breakers, safe mode level
+tx mesh dlq <mesh>         # Failed entries: what failed, why, recovery mode
+\`\`\`
+
+**Step 2: Present options** — Tell the user:
+- What failed and why (failure category, reason)
+- How many DLQ entries exist
+- Recovery modes available (session_resume vs requeue)
+- Available checkpoints if FSM mesh (state names the user can rewind to)
+
+Example: "The verify step failed after 3 retries (model_error). There's 1 DLQ entry with session_resume available. Checkpoints exist for: analyze, build. Options:
+1. Resume from crash point (picks up where verify failed)
+2. Rewind to build (redo verify from scratch with build context)
+3. Rewind to analyze (start over from analysis)
+4. Drop it (clear the DLQ entry)"
+
+**Step 3: Get confirmation** — Wait for the user to choose. Do NOT proceed without explicit approval.
+
+**Step 4: Execute** — Based on user choice:
+
+Resume from crash point:
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+msg-id: recover-${timestampMs}
+headline: Recover failed work
+timestamp: ${timestamp}
+---
+
+Recover failed work from the dead letter queue.
+\`\`\`
+
+Rewind to a checkpoint:
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+rewind-to: build
+msg-id: recover-${timestampMs}
+headline: Rewind to build checkpoint
+timestamp: ${timestamp}
+---
+
+The verify step went wrong. Rewind to after build completed and retry.
+\`\`\`
+
+Drop / clear:
+\`\`\`bash
+tx mesh dlq clear          # Clear recovered entries
+tx mesh clear <mesh>       # Full state reset
+\`\`\`
+
+### How rewind-to works
+- Every FSM state transition saves a checkpoint (state name → session ID)
+- \`rewind-to: build\` finds the session active when \`build\` completed
+- Recovery resumes that exact session — full conversation history preserved
+- The agent picks up where it left off, skipping the failed work
+
+### CLI equivalents (for reference)
+\`\`\`bash
+tx mesh recover <mesh>                    # Resume from crash point
+tx mesh recover <mesh> --rewind-to=build  # Rewind to state checkpoint
+tx mesh health                            # Overall reliability dashboard
+tx mesh dlq                               # All DLQ entries
+\`\`\`
+
+### Human Review Gates (Apply to ALL Reliability Events)
+
+**Principle: The system does work. The human makes decisions.**
+
+- **Safe mode escalation**: Present SLI data and ask before moving to restricted/lockdown
+- **Safe mode de-escalation**: Never auto-de-escalate. Present recovery metrics and ask
+- **Retry exhaustion**: Present retry history (what variations were tried) and ask for next step
+- **Schema validation failures**: Present what failed validation and ask: retry, accept partial, or drop
+- **Non-critical agent failures**: Always report skipped outputs — never silently continue
+- **Anomaly detection**: Surface spikes in failure rates, cost, or unusual patterns immediately
+- **Cost gates**: Before expensive recovery (large context replay), present estimated token cost
+
 ## Message Directory: ${msgsDir}/
 
 ## How to Start Work

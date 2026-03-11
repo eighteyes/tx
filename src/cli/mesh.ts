@@ -20,6 +20,9 @@
  *   tx mesh ideal <mesh>          Ideal execution stages from routing + manifest
  *   tx mesh drain <mesh>          Drain all pending messages (mark delivered, unblock queue)
  *   tx mesh dump [mesh]           Chronological dump of all events (logs, messages, sessions, prompts)
+ *   tx mesh health [mesh]         Reliability dashboard (SLI nines, circuit breakers, safe mode)
+ *   tx mesh dlq [mesh]            Dead letter queue entries with recovery modes
+ *   tx mesh dlq clear             Clear recovered DLQ entries
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -28,6 +31,8 @@ import { HeadlessRunner } from '../worker/headless-runner.ts';
 import { SessionStore } from '../session/index.ts';
 import { validateMesh } from './validate-mesh.ts';
 import { MeshValidator } from '../worker/mesh-validator.ts';
+import { ReliabilityManager } from '../reliability/reliability-manager.ts';
+import { DeadLetterQueue } from '../reliability/dead-letter-queue.ts';
 import { log } from '../shared/logger.ts';
 import { chalk } from '../shared/colors.ts';
 import { formatTimeAgo } from '../shared/time.ts';
@@ -47,6 +52,7 @@ interface MeshFlags {
   next?: boolean;
   all?: boolean;
   verbose?: boolean;
+  rewindTo?: string;
 }
 
 /**
@@ -68,6 +74,14 @@ function parseFlags(args: string[]): MeshFlags {
       flags.all = true;
     } else if (arg === '--verbose') {
       flags.verbose = true;
+    } else if (arg.startsWith('--rewind-to=')) {
+      flags.rewindTo = arg.split('=')[1];
+    } else if (arg === '--rewind-to') {
+      // Next arg will be picked up as a positional, but we handle it here
+      const idx = args.indexOf(arg);
+      if (idx < args.length - 1 && !args[idx + 1].startsWith('-')) {
+        flags.rewindTo = args[idx + 1];
+      }
     }
   }
 
@@ -3435,6 +3449,315 @@ async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise
 /**
  * Print usage help
  */
+/**
+ * Show reliability health: SLI nines, circuit breakers, safe mode, heartbeat
+ */
+async function meshHealth(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  if (!fs.existsSync(queuePath)) {
+    console.log(chalk.yellow('No queue database found. Run a mesh first.'));
+    return;
+  }
+
+  const queue = new MessageQueue(queuePath);
+  const reliability = new ReliabilityManager(queue.getDb(), cwd);
+  const status = reliability.getStatus(300_000); // 5 min window
+
+  if (flags.json) {
+    console.log(JSON.stringify(status, null, 2));
+    return;
+  }
+
+  // Header
+  const nines = status.sli.ninesLevel;
+  const rate = (status.sli.successRate * 100).toFixed(2);
+  const ninesColor = status.sli.successRate >= 0.9999 ? chalk.green
+    : status.sli.successRate >= 0.999 ? chalk.cyan
+    : status.sli.successRate >= 0.99 ? chalk.yellow
+    : chalk.red;
+
+  console.log();
+  console.log(chalk.bold('Reliability Health'));
+  console.log(chalk.dim('─'.repeat(50)));
+
+  // SLI
+  console.log(`  Nines:          ${ninesColor(nines)} (${rate}% success)`);
+  console.log(`  Events:         ${status.sli.totalEvents} total  ${chalk.green(String(status.sli.totalSuccesses))} ok  ${chalk.red(String(status.sli.totalFailures))} fail`);
+  if (status.sli.mttrMs != null) {
+    console.log(`  MTTR:           ${(status.sli.mttrMs / 1000).toFixed(1)}s`);
+  }
+
+  // Failure categories
+  const cats = status.sli.failuresByCategory;
+  if (Object.keys(cats).length > 0) {
+    console.log(`  Failures:       ${Object.entries(cats).map(([k, v]) => `${k}=${v}`).join('  ')}`);
+  }
+
+  // Safe mode
+  const safeLevelColor = status.safeMode.level === 'normal' ? chalk.green
+    : status.safeMode.level === 'cautious' ? chalk.yellow
+    : status.safeMode.level === 'restricted' ? chalk.red
+    : chalk.bgRed;
+  console.log(`  Safe mode:      ${safeLevelColor(status.safeMode.level)}${status.safeMode.autoEscalated ? chalk.dim(' (auto)') : ''}`);
+
+  // Circuit breakers
+  const open = status.circuitBreakers.filter(cb => cb.state === 'open');
+  const halfOpen = status.circuitBreakers.filter(cb => cb.state === 'half_open');
+  if (open.length > 0 || halfOpen.length > 0) {
+    console.log(chalk.dim('─'.repeat(50)));
+    console.log(chalk.bold('  Circuit Breakers'));
+    for (const cb of open) {
+      console.log(`    ${chalk.red('OPEN')}       ${cb.agentId}  (${cb.failures} failures)`);
+    }
+    for (const cb of halfOpen) {
+      console.log(`    ${chalk.yellow('HALF_OPEN')}  ${cb.agentId}  (${cb.failures} failures)`);
+    }
+  }
+
+  // Agent health
+  const unhealthy = status.agentHealth.filter(h => h.status !== 'healthy');
+  if (unhealthy.length > 0) {
+    console.log(chalk.dim('─'.repeat(50)));
+    console.log(chalk.bold('  Agent Health'));
+    for (const h of unhealthy) {
+      const statusColor = h.status === 'dead' ? chalk.red : h.status === 'stale' ? chalk.yellow : chalk.dim;
+      console.log(`    ${statusColor(h.status.padEnd(8))}  ${h.agentId}  silent ${(h.silenceMs / 1000).toFixed(0)}s`);
+    }
+  }
+
+  // DLQ summary
+  if (status.dlq.pending > 0) {
+    console.log(chalk.dim('─'.repeat(50)));
+    console.log(`  DLQ:            ${chalk.red(String(status.dlq.pending) + ' pending')}  ${chalk.dim(String(status.dlq.recovered) + ' recovered')}`);
+    const modes = status.dlq.byMode;
+    if (modes.session_resume > 0) console.log(`                  ${chalk.cyan(String(modes.session_resume))} session_resume`);
+    if (modes.requeue > 0) console.log(`                  ${chalk.yellow(String(modes.requeue))} requeue`);
+    if (modes.manual > 0) console.log(`                  ${chalk.red(String(modes.manual))} manual`);
+    console.log(`                  ${chalk.dim('Use')} tx mesh dlq ${chalk.dim('for details')}`);
+  } else {
+    console.log(`  DLQ:            ${chalk.green('clean')}`);
+  }
+
+  // Per-mesh breakdown if requested
+  if (meshName) {
+    const meshSLI = status.sli.byMesh[meshName];
+    if (meshSLI) {
+      console.log(chalk.dim('─'.repeat(50)));
+      console.log(chalk.bold(`  Mesh: ${meshName}`));
+      console.log(`    Rate:  ${(meshSLI.rate * 100).toFixed(1)}%  (${meshSLI.success}/${meshSLI.total})`);
+    }
+    // Per-agent within mesh
+    const agentEntries = Object.entries(status.sli.byAgent)
+      .filter(([id]) => id.startsWith(`${meshName}/`));
+    for (const [id, data] of agentEntries) {
+      const agentName = id.split('/').slice(1).join('/');
+      const rateColor = data.rate >= 0.99 ? chalk.green : data.rate >= 0.9 ? chalk.yellow : chalk.red;
+      console.log(`    ${agentName.padEnd(20)} ${rateColor((data.rate * 100).toFixed(0) + '%')}  (${data.success}/${data.total})`);
+    }
+  }
+
+  console.log();
+}
+
+/**
+ * Show and manage dead letter queue entries
+ *
+ * tx mesh dlq              List pending DLQ entries
+ * tx mesh dlq <mesh>       List DLQ entries for a mesh
+ * tx mesh dlq clear        Clear recovered entries
+ */
+async function meshDLQ(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+
+  if (!fs.existsSync(queuePath)) {
+    console.log(chalk.yellow('No queue database found.'));
+    return;
+  }
+
+  const queue = new MessageQueue(queuePath);
+  const dlq = new DeadLetterQueue(queue.getDb());
+
+  // Special action: clear recovered
+  if (meshName === 'clear') {
+    const cleared = dlq.clearRecovered();
+    console.log(cleared > 0
+      ? chalk.green(`Cleared ${cleared} recovered DLQ entries.`)
+      : chalk.dim('No recovered entries to clear.'));
+    return;
+  }
+
+  const entries = meshName ? dlq.getForMesh(meshName) : dlq.getPending();
+  const stats = dlq.getStats();
+
+  if (flags.json) {
+    console.log(JSON.stringify({ stats, entries }, null, 2));
+    return;
+  }
+
+  console.log();
+  console.log(chalk.bold('Dead Letter Queue'));
+  console.log(chalk.dim('─'.repeat(70)));
+  console.log(`  Total: ${stats.total}  Pending: ${chalk.red(String(stats.pending))}  Recovered: ${chalk.green(String(stats.recovered))}`);
+
+  if (entries.length === 0) {
+    console.log(chalk.green('\n  No pending DLQ entries.'));
+    console.log();
+    return;
+  }
+
+  console.log();
+
+  for (const entry of entries) {
+    const modeColor = entry.recovery_mode === 'session_resume' ? chalk.cyan
+      : entry.recovery_mode === 'requeue' ? chalk.yellow
+      : chalk.red;
+    const age = formatTimeAgo(entry.first_failed_at);
+    const sessionHint = entry.session_id ? chalk.dim(` sid:${entry.session_id.slice(0, 8)}`) : '';
+
+    console.log(`  ${chalk.dim('#' + entry.id)}  ${modeColor(entry.recovery_mode.padEnd(16))} ${chalk.bold(entry.agent_id)}`);
+    console.log(`      ${chalk.dim('mesh:')} ${entry.mesh_name}  ${chalk.dim('category:')} ${entry.failure_category}  ${chalk.dim('retries:')} ${entry.retry_count}/${entry.max_retries}${sessionHint}`);
+    console.log(`      ${chalk.dim('reason:')} ${entry.failure_reason.slice(0, 80)}`);
+    if (entry.messages_sent > 0) {
+      console.log(`      ${chalk.dim('msgs sent:')} ${entry.messages_sent} before failure`);
+    }
+    console.log(`      ${chalk.dim('failed:')} ${age}${entry.recovered_at ? chalk.green('  recovered') : ''}`);
+    console.log();
+  }
+
+  // Recovery hints
+  const resumable = entries.filter(e => e.recovery_mode === 'session_resume');
+  const requeueable = entries.filter(e => e.recovery_mode === 'requeue');
+  const manual = entries.filter(e => e.recovery_mode === 'manual');
+
+  if (resumable.length > 0 || requeueable.length > 0 || manual.length > 0) {
+    console.log(chalk.dim('─'.repeat(70)));
+    if (resumable.length > 0) {
+      console.log(`  ${chalk.cyan(String(resumable.length))} can resume session (conversation preserved)`);
+    }
+    if (requeueable.length > 0) {
+      console.log(`  ${chalk.yellow(String(requeueable.length))} can be requeued (fresh dispatch)`);
+    }
+    if (manual.length > 0) {
+      console.log(`  ${chalk.red(String(manual.length))} need manual intervention`);
+    }
+    console.log();
+  }
+}
+
+/**
+ * Trigger DLQ recovery for a mesh via the running dispatcher.
+ * Uses SIGUSR2 control signal (same pattern as tx mesh kill).
+ *
+ * If the dispatcher is not running, falls back to writing a recovery
+ * message directly so it's picked up on next start.
+ *
+ * tx mesh recover <mesh>     Recover DLQ entries for a mesh
+ * tx mesh recover --all      Recover all DLQ entries
+ */
+async function meshRecover(meshName: string | undefined, flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const dataDir = path.join(cwd, '.ai/tx/data');
+  const pidFile = path.join(dataDir, '.pid');
+  const controlFile = path.join(dataDir, 'control.json');
+
+  if (!fs.existsSync(queuePath)) {
+    console.log(chalk.yellow('No queue database found.'));
+    return;
+  }
+
+  // Check what's in the DLQ first
+  const queue = new MessageQueue(queuePath);
+  const dlq = new DeadLetterQueue(queue.getDb());
+
+  const entries = meshName && !flags.all
+    ? dlq.getForMesh(meshName).filter(e => e.recovery_mode !== 'manual')
+    : dlq.getRecoverable();
+
+  if (entries.length === 0) {
+    console.log(chalk.green('No recoverable DLQ entries.'));
+    return;
+  }
+
+  // Show available checkpoints for rewind-to
+  if (meshName) {
+    const { CheckpointLog } = await import('../reliability/checkpoint-log.ts');
+    const checkpointLog = new CheckpointLog(queue.getDb());
+    const checkpoints = checkpointLog.latestPerState(meshName);
+    if (checkpoints.length > 0) {
+      console.log(`\n${chalk.bold('Available checkpoints')} (use --rewind-to=<state>):`);
+      for (const cp of checkpoints) {
+        console.log(`  ${chalk.cyan(cp.state_name.padEnd(20))} ${chalk.dim('sid:')}${cp.session_id.slice(0, 8)}  ${chalk.dim('agent:')}${cp.agent_id}  ${chalk.dim(cp.created_at)}`);
+      }
+    }
+  }
+
+  const resumable = entries.filter(e => e.recovery_mode === 'session_resume');
+  const requeueable = entries.filter(e => e.recovery_mode === 'requeue');
+  const rewindNote = flags.rewindTo ? chalk.magenta(` (rewind-to: ${flags.rewindTo})`) : '';
+  console.log(`\nRecovering ${entries.length} entries: ${chalk.cyan(String(resumable.length))} session_resume, ${chalk.yellow(String(requeueable.length))} requeue${rewindNote}`);
+
+  // Try SIGUSR2 to running dispatcher
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (!isNaN(pid)) {
+      const target = meshName && !flags.all ? meshName : '_all';
+      const ctrl: Record<string, string> = { action: 'dlq-recover', mesh: target };
+      if (flags.rewindTo) ctrl.rewindTo = flags.rewindTo;
+      fs.writeFileSync(controlFile, JSON.stringify(ctrl));
+
+      try {
+        process.kill(pid, 'SIGUSR2');
+
+        // Wait for ACK
+        for (let i = 0; i < 50; i++) {
+          if (!fs.existsSync(controlFile)) {
+            console.log(chalk.green(`Recovery triggered successfully.`));
+            return;
+          }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        console.log(chalk.yellow('Timeout waiting for dispatcher. Entries will be recovered on next start.'));
+        if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+        return;
+      } catch {
+        // Process not running — fall through to message-based recovery
+        if (fs.existsSync(controlFile)) fs.unlinkSync(controlFile);
+      }
+    }
+  }
+
+  // Fallback: write a recovery message so next start picks it up
+  // Use SystemMessageWriter pattern — write directly to msgs dir
+  if (meshName) {
+    const msgsDir = path.join(cwd, '.ai/tx/msgs');
+    if (!fs.existsSync(msgsDir)) fs.mkdirSync(msgsDir, { recursive: true });
+
+    // Look up entry point from mesh config
+    const meshDir = path.join(cwd, 'meshes', meshName);
+    let entryPoint = 'worker';
+    const configPath = path.join(meshDir, 'config.yaml');
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = YAML.parse(fs.readFileSync(configPath, 'utf-8'));
+        entryPoint = cfg.entry_point || cfg.agents?.[0]?.name || 'worker';
+      } catch { /* use default */ }
+    }
+
+    const timestamp = Date.now();
+    const filename = `${timestamp}-task-system-dlq-recovery--${meshName}-${entryPoint}-recover.md`;
+    const rewindLine = flags.rewindTo ? `\nrewind-to: ${flags.rewindTo}` : '';
+    const content = `---\nto: ${meshName}/${entryPoint}\nfrom: system/dlq-recovery\ntype: task\nheadline: DLQ recovery\nrecover: true${rewindLine}\ntimestamp: ${new Date(timestamp).toISOString()}\n---\n\nRecover failed work from dead letter queue.\n`;
+    fs.writeFileSync(path.join(msgsDir, filename), content);
+    console.log(chalk.cyan(`Recovery message written. Will be processed on next tx start.`));
+  } else {
+    console.log(chalk.yellow('Cannot write fallback recovery without mesh name. Use: tx mesh recover <mesh>'));
+  }
+}
+
 function printUsage(): void {
   console.log(`
 ${chalk.bold('Usage:')} tx mesh <action> [mesh] [options]
@@ -3456,6 +3779,11 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('guardrails')} [mesh]       Show guardrail violations from activity logs
   ${chalk.cyan('ideal')} <mesh>            Ideal execution stages from routing + manifest
   ${chalk.cyan('dump')} [mesh]             Chronological dump of all events (logs, msgs, sessions, prompts)
+  ${chalk.cyan('health')} [mesh]           Reliability dashboard (SLI nines, circuits, safe mode, DLQ)
+  ${chalk.cyan('dlq')} [mesh]              Dead letter queue (pending failures, recovery modes)
+  ${chalk.cyan('dlq clear')}               Clear recovered DLQ entries
+  ${chalk.cyan('recover')} <mesh>           Trigger DLQ recovery (session resume or requeue)
+  ${chalk.cyan('recover')} --all            Recover all pending DLQ entries
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -3645,6 +3973,18 @@ export async function mesh(args: string[]): Promise<void> {
 
       case 'dump':
         await meshDump(meshName, flags);
+        break;
+
+      case 'health':
+        await meshHealth(meshName, flags);
+        break;
+
+      case 'dlq':
+        await meshDLQ(meshName, flags);
+        break;
+
+      case 'recover':
+        await meshRecover(meshName, flags);
         break;
 
       default:
