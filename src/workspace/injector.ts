@@ -88,7 +88,7 @@ export class PromptInjector {
    */
   injectPreamble(basePrompt: string, context: PreambleContext): string {
     const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
-    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nUse \`from: ${context.agentName}\` in your messages — the router auto-resolves it. Use full \`mesh/agent\` only for cross-mesh targets.`;
+    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
     return `${preamble}${identity}\n\n${basePrompt}`;
   }
 
@@ -551,7 +551,7 @@ existing work.
    */
   buildPreambleSection(context: PreambleContext): string {
     const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
-    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nUse \`from: ${context.agentName}\` in your messages — the router auto-resolves it. Use full \`mesh/agent\` only for cross-mesh targets.`;
+    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
     return `${preamble}${identity}`;
   }
 
