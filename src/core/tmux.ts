@@ -438,8 +438,8 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
   // Also get plain text for logging
   const plainOutput = tmux.capture(5);
 
-  // Log raw capture for debugging (first 5 attempts only)
-  if (idleCheckLogCount < 5) {
+  // Log raw capture for debugging (first 10 attempts only)
+  if (idleCheckLogCount < 10) {
     idleCheckLogCount++;
     log.info('tmux', 'Raw capture debug', {
       raw: JSON.stringify(plainOutput.slice(-150)),
@@ -490,8 +490,24 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     /\d+\s*deletions?/i,            // "111 deletions"
   ];
 
+  // Filter out status line patterns before prompt detection
+  // Status line: "> model-name · $cost · tokens" or similar metadata
+  const statusLinePatterns = [
+    /^>\s*\S+\s*·/,                    // "> claude-sonnet-4 · ..."
+    /^>\s*\S+\s+\$/,                   // "> model $0.05"
+    /·\s*\$[\d.]+/,                    // "· $0.05" anywhere
+    /·\s*[\d.]+[kKmM]?\s*tokens?/i,   // "· 2.3k tokens"
+    /^\s*>\s*[a-z]+-[a-z]+-[\d]/i,     // "> claude-sonnet-4..." model names
+  ];
+
   for (const line of lastNLines) {
-    if (line.includes('❯') || line.includes('⏵') || line.includes('>')) {
+    // Skip status lines that happen to start with >
+    if (statusLinePatterns.some(p => p.test(line.trim()))) {
+      continue;
+    }
+
+    // Only match actual prompt characters (not bare >, which matches status lines)
+    if (line.includes('❯') || line.includes('⏵')) {
       // Found prompt line - check if remaining text is a known hint
       for (const pattern of idleHintPatterns) {
         if (pattern.test(line)) {
@@ -519,8 +535,8 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     // Dim text escape codes: \x1b[2m or \x1b[0;2m
     // If there's text after prompt that's NOT preceded by dim code, user is typing
 
-    // Split on the prompt character position
-    const promptMatch = colorLine.match(/([❯⏵>]|M-bM-\^]M-\/)\s*/);
+    // Split on the prompt character position (not bare > — matches status lines)
+    const promptMatch = colorLine.match(/([❯⏵]|M-bM-\^]M-\/)\s*/);
     if (!promptMatch) continue;
 
     const afterPrompt = colorLine.slice(colorLine.indexOf(promptMatch[0]) + promptMatch[0].length);
@@ -566,7 +582,10 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     }
 
     // Non-dim text after prompt - user typed something
-    log.debug('tmux', 'Claude not idle: non-dim text after prompt');
+    log.debug('tmux', 'Claude not idle: non-dim text after prompt', {
+      plainAfter: plainAfter.slice(0, 80),
+      colorLineSnippet: colorLine.slice(-120),
+    });
     return false;
   }
 
