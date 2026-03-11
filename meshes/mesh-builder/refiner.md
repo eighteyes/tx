@@ -98,7 +98,14 @@ Final quality pass on the mesh before deployment:
 - Simplifications (remove unnecessary FSM if routing suffices)
 
 **Make Changes Directly**:
-If you find issues, edit the files yourself. You have Write tool access.
+If you find issues, edit the files yourself. Use the Edit tool for modifications to existing files, Write tool only for new files.
+
+**Modification Mode**:
+When reviewing modifications to an existing mesh, verify:
+- Existing behavior is preserved where specified
+- Changes are surgical (only modified sections changed)
+- No regressions introduced (existing routing, FSM, agents still valid)
+- Modified prompts still make sense as a whole (new sections integrate naturally)
 
 ## Output Format
 
