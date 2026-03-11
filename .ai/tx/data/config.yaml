@@ -10,6 +10,8 @@ guardrails:
     strict: true                # Block workDir escapes — primary security boundary
     warning: true               # Include reason in block message
     kill_threshold: 3           # Violations before worker kill
+    # allowed_paths:            # Additional paths workers can write to (merged across all levels)
+    #   - /Users/god/some/path  # User-approved directories beyond workDir
   identity_gate:
     strict: false               # Warn on identity mismatch
     warning: true

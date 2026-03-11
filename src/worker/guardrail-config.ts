@@ -23,6 +23,7 @@ interface GateOverride {
   strict?: boolean;
   warning?: boolean;
   kill_threshold?: number | null;
+  allowed_paths?: string[];  // Additional paths allowed (bash_guard only)
 }
 
 interface RoutingErrorOverride {
@@ -392,6 +393,37 @@ export class GuardrailConfig {
     const strict = sources.find(s => s?.strict !== undefined)?.strict ?? defaults.strict;
     const warning = sources.find(s => s?.warning !== undefined)?.warning ?? defaults.warning;
     return { strict, warning };
+  }
+
+  /**
+   * Resolve bash_guard allowed_paths from config.
+   * Merges: mesh-local agent > mesh-local mesh > global agent > global mesh > global.
+   * All levels accumulate (union), not override.
+   */
+  getBashAllowedPaths(meshName: string, agentName?: string): string[] {
+    const paths = new Set<string>();
+    const local = this.meshLocal.get(meshName);
+    const g = this.config.guardrails;
+
+    // Collect from all levels (union — more permissive wins)
+    const sources = [
+      g?.bash_guard?.allowed_paths,
+      g?.meshes?.[meshName]?.bash_guard?.allowed_paths,
+      local?.bash_guard?.allowed_paths,
+    ];
+    if (agentName) {
+      sources.push(
+        g?.meshes?.[meshName]?.agents?.[agentName]?.bash_guard?.allowed_paths,
+        local?.agents?.[agentName]?.bash_guard?.allowed_paths,
+      );
+    }
+    for (const list of sources) {
+      if (Array.isArray(list)) {
+        for (const p of list) paths.add(p);
+      }
+    }
+
+    return Array.from(paths);
   }
 
   /**

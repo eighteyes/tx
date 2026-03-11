@@ -3713,10 +3713,19 @@ Please advise the agent or check mesh configuration.`;
         tool === 'Bash' || tool.startsWith('Bash(')
       ) || !agent.permissions;  // Default allows Bash
       if (bashAllowed && !this.config.godMode) {
+        // Build allowed paths: meshes dir + TX_ROOT install dir + user-configured paths from config.yaml
+        const bashAllowedPaths = [this.config.meshesDir];
+        if (process.env.TX_ROOT) {
+          bashAllowedPaths.push(process.env.TX_ROOT);
+        }
+        const userAllowedPaths = this.guardrails.getBashAllowedPaths(meshName!, agent.name);
+        if (userAllowedPaths.length > 0) {
+          bashAllowedPaths.push(...userAllowedPaths);
+        }
         const bashGuard = new BashGuard({
           agentId,
           workDir: this.config.workDir,
-          allowedPaths: [this.config.meshesDir],
+          allowedPaths: bashAllowedPaths,
           killRunner: (reason) => workerRef.current?.kill(reason),
           mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
         });
