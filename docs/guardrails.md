@@ -64,9 +64,19 @@ Every guardrail supports two boolean toggles that control enforcement behavior.
 | true   | false   | Block/kill silently |
 | false  | false   | Allow silently (guardrail disabled) |
 
-Default for all guardrails: `strict: false, warning: true`.
+Per-guardrail defaults:
 
-Set `strict: true` to restore blocking behavior (the pre-mode-switch default).
+| Guardrail | strict | warning | Rationale |
+|-----------|--------|---------|-----------|
+| bash_guard | **true** | true | Block workDir escapes — primary security boundary |
+| max_messages | **true** | true | Kill runaway agents at message limit |
+| max_mesh_messages | **true** | true | Kill runaway meshes at message limit |
+| identity_gate | false | true | Warn on identity mismatch |
+| write_gate | false | true | Warn on path violations |
+| read_gate | false | true | Warn on path violations |
+| routing_error | false | true | Warn on routing failures |
+| max_turns | false | true | Warn at threshold (SDK handles hard limit) |
+| duplicate_target | false | true | Warn on duplicate routing |
 
 ### Per-Guardrail Enforcement
 

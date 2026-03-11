@@ -106,6 +106,19 @@ interface TxConfig {
 
 const DEFAULT_MODE: GuardrailMode = { strict: false, warning: true };
 
+/** Per-guardrail default modes — override DEFAULT_MODE where needed */
+const GUARDRAIL_DEFAULT_MODES: Record<string, GuardrailMode> = {
+  bash_guard:       { strict: true,  warning: true },   // Block violations, include reason
+  identity_gate:    { strict: false, warning: true },   // Warn on identity mismatch
+  write_gate:       { strict: false, warning: true },   // Warn on path violations
+  read_gate:        { strict: false, warning: true },   // Warn on path violations
+  routing_error:    { strict: false, warning: true },   // Warn on routing failures
+  max_messages:     { strict: true,  warning: true },   // Kill on message limit
+  max_turns:        { strict: false, warning: true },   // Warn on turn limit (SDK handles hard limit)
+  max_mesh_messages:{ strict: true,  warning: true },   // Kill on mesh message limit
+  duplicate_target: { strict: false, warning: true },   // Warn on duplicate routing
+};
+
 const DEFAULTS = {
   write_gate: { kill_threshold: null as number | null },
   read_gate: { kill_threshold: null as number | null },
@@ -375,8 +388,9 @@ export class GuardrailConfig {
     agentName?: string,
   ): GuardrailMode {
     const sources = this.collectModeSources(guardrail, meshName, agentName);
-    const strict = sources.find(s => s?.strict !== undefined)?.strict ?? DEFAULT_MODE.strict;
-    const warning = sources.find(s => s?.warning !== undefined)?.warning ?? DEFAULT_MODE.warning;
+    const defaults = GUARDRAIL_DEFAULT_MODES[guardrail] ?? DEFAULT_MODE;
+    const strict = sources.find(s => s?.strict !== undefined)?.strict ?? defaults.strict;
+    const warning = sources.find(s => s?.warning !== undefined)?.warning ?? defaults.warning;
     return { strict, warning };
   }
 
