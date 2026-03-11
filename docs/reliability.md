@@ -2,6 +2,56 @@
 
 TX reliability features organized by Karpathy's "March of Nines" — each nine requires fundamentally new approaches.
 
+## March of Nines — Current Status
+
+| Nines | Technique | TX Status | Human Review |
+|-------|-----------|-----------|--------------|
+| **1 (90%)** | Basic error handling, retries | SQLite WAL, worker retries (3x), injection retries (poll loop), routing correction injection | Retry exhaustion → present failure + options to user |
+| **2 (99%)** | Validation, protocol enforcement | Parity gate, FSM validation, mesh validator, identity gate, write gate | Validation failures → surface to user with context. Identity/routing violations → warn or kill per guardrail mode |
+| **~2.5** | Self-healing / auto-recovery | Nudge detector, deadlock breaker, stale cleaner, quality iteration loops | Nudge fires → logged. Deadlock cycles > `autoBreakDepth` → escalate to human. Quality exhaustion → present feedback history + ask user |
+| **3 (99.9%)** | Monitoring, circuit breaking, DLQ | Circuit breaker, heartbeat monitor, DLQ with session resume, SLI tracker, safe mode, checkpoint log | Circuit open → notify user. Safe mode escalation → user approval. DLQ recovery → diagnose/present/confirm workflow |
+| **4 (99.99%)** | [Roadmap] Retry-with-variation, schema validation, agent classification, observability | Planned — see Reliability Roadmap below | Every action requires human confirmation (see roadmap gates) |
+
+### Nine 1 — Basic Error Handling (90%)
+
+Foundational durability. Nothing silently drops.
+
+| Feature | What It Does | Where |
+|---------|-------------|-------|
+| **SQLite WAL mode** | Write-ahead logging prevents queue corruption on crash | `src/queue/index.ts` — `journal_mode=WAL` on init |
+| **Worker retries (3x)** | Failed workers retry up to 3 times before DLQ | `src/worker/dispatcher.ts` — configurable via `dlq.maxRetries` |
+| **Injection poll loop** | Core message injection retries on next poll if Claude is busy | `src/cli/start.ts` — leaves message at head of queue for next cycle |
+| **Routing correction injection** | Bad routing target → corrective prompt injected back to sender | `src/worker/dispatcher.ts` — `handleRoutingError()`, max retries per guardrail config |
+
+**Human review**: When worker retries exhaust → DLQ entry created → core presents failure to user. When routing retries exhaust → escalated to user with full attempt history.
+
+### Nine 2 — Validation & Protocol Enforcement (99%)
+
+Catch bad outputs and protocol violations before they propagate.
+
+| Feature | What It Does | Where |
+|---------|-------------|-------|
+| **Parity gate** | Ensures completion agents answer all pending asks before completing | `src/worker/dispatcher.ts`, `src/core/consumer.ts` — tracks `pending_asks` table |
+| **FSM validation** | State machine meshes enforce valid transitions, prevent skipped/repeated states | `src/state-machine/` — transition guards + checkpoint persistence |
+| **Mesh validator** | Validates mesh config before loading (required fields, types, routing consistency) | `src/worker/mesh-validator.ts` — errors block load, warnings log |
+| **Identity gate** | PreToolUse hook validates `from:` field matches agent identity | `src/worker/identity-gate.ts` — blocks/warns per guardrail mode, strike system |
+| **Write gate** | Controls which tools agents can use based on safe mode level | `src/worker/guardrail-config.ts` — restricted/lockdown blocks Write/Edit/Bash |
+
+**Human review**: Parity gate violations → reminder injected, if unresolved → surfaced to user. Identity gate kills → logged with reason. Mesh validation errors → block load, user sees what's wrong.
+
+### Nine 2.5 — Self-Healing & Auto-Recovery
+
+Detect stuck states and recover without human intervention where safe.
+
+| Feature | What It Does | Where |
+|---------|-------------|-------|
+| **Nudge detector** | Detects when a completing agent fails to forward work to the next route step; summarizes dead output with Haiku and writes recovery task | `src/worker/nudge-detector.ts` — 15s delay, max 1 nudge/agent |
+| **Deadlock breaker** | DFS cycle detection in ask graph; auto-breaks short cycles, escalates deep ones | `src/queue/deadlock-detector.ts` — scans every 60s, `autoBreakDepth: 3` |
+| **Stale message cleaner** | TTL-based GC for unprocessed queue entries (missing target, crashed worker) | `src/queue/stale-cleaner.ts` — 30min TTL, warn/archive/delete actions |
+| **Quality iteration loops** | Quality hooks evaluate output → inject feedback → agent retries with feedback | `src/hooks/post/quality-evaluate.ts` — configurable gates, max iterations |
+
+**Human review**: Nudges are logged and visible in `tx spy`. Deadlock cycles deeper than `autoBreakDepth` (default 3) → escalated to human with cycle visualization. Quality exhaustion (max iterations hit) → presents feedback history and asks user: retry, accept, or drop. Stale message cleanup → logged, user can audit via `tx spy`.
+
 ## Quick Start
 
 ```bash
