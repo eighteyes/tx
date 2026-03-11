@@ -1,0 +1,14 @@
+mesh: walker
+description: Knowledge graph navigator that walks paths through concepts
+
+agents:
+  - name: walker
+    model: sonnet
+    prompt: walker.md
+    max_messages: 50  # Allow long walks
+
+# Walker is a single-agent mesh
+# Uses Task tool to spawn inline crows (haiku agents)
+# No routing needed - walker handles everything internally
+type: persistent
+auto_despawn: true
