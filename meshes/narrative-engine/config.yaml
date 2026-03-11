@@ -59,6 +59,8 @@ agents:
     # Collapsed entropy pipeline — replaces fates + dramaturg + possibility + system
     # Fires parallel blind Tasks for world possibilities, inline story shaping and resolution
     # Produces: fates.yaml, dramaturg-notes.yaml, entropy-tables.yaml, resolution.yaml
+    permissions:
+      allowedTools: [Read, Write, Edit, Glob, Grep, Bash, Task]
 
   # ARCHIVED: fates, dramaturg, possibility, system, cast, scene-crafter, dialogue
   # All replaced by architect + simulator pipeline. Prompts in archive/

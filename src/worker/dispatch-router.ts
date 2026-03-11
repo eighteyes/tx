@@ -166,7 +166,17 @@ export class DispatchRouter {
       return { target, source: 'branch', outcome, usedDefault: true };
     }
 
-    // No match, no default — resolution fails
+    // No match, no default — if outcome is 'complete', treat as implicit terminal
+    // Agents with branch routing that don't define 'complete' are done when they exit complete
+    if (outcome === 'complete') {
+      log.info('dispatch-router', 'Implicit terminal: complete outcome with no explicit route', {
+        meshName: this.meshName, fromAgent,
+        validOutcomes: Object.keys(outcomeMap),
+      });
+      return { target: 'core/core', source: 'terminal', outcome };
+    }
+
+    // Non-complete outcome with no match — resolution fails
     log.warn('dispatch-router', 'No route resolved for outcome', {
       meshName: this.meshName, fromAgent, outcome,
       validOutcomes: Object.keys(outcomeMap),

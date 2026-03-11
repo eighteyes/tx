@@ -70,12 +70,16 @@ agents:
     read_gate: strict
     # Collapsed entropy pipeline — fates + dramaturg + possibility + system in one session
     # Parallel blind Tasks for world possibilities, inline story shaping and resolution
+    permissions:
+      allowedTools: [Read, Write, Edit, Glob, Grep, Bash, Task]
 
   - name: simulator
     model: sonnet
     prompt: simulator/prompt.md
     # Beat-by-beat scene simulation — orchestrates blind table-gen and NPC voice Tasks
     # All table/voice generation is inline via Task tool, not mesh routing
+    permissions:
+      allowedTools: [Read, Write, Edit, Glob, Grep, Bash, Task]
 
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)
@@ -321,7 +325,7 @@ guardrails:
         limit: 5
     architect:
       max_messages:
-        limit: 15
+        limit: 35
     simulator:
       max_messages:
         limit: 25
@@ -689,6 +693,21 @@ manifest:
     persistent: true
     reads: [calibrator]
     writes: []
+
+  - id: conditions.template.yaml
+    description: Absolute narrative constraints template
+    location: template
+    persistent: true
+    reads: [calibrator]
+    writes: []
+
+  # --- Game Root: Conditions ---
+  - id: conditions.yaml
+    description: Absolute narrative constraints — principles the narrator follows, editor validates
+    location: game
+    persistent: true
+    reads: [narrator, editor, calibrator]
+    writes: [calibrator]
 
 # ==========================================
 # WORKSPACE
