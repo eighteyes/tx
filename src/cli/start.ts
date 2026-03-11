@@ -14,7 +14,6 @@ import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
 import { SessionStore } from '../session/index.ts';
-import { CORE_AGENT_TOOLS } from '../worker/permissions.ts';
 import YAML from 'yaml';
 
 export interface StartOptions {
@@ -1213,13 +1212,13 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     const continueFlag = options?.continue ? ' --continue' : '';
     const modelFlag = options?.model ? ` --model ${options.model}` : '';
 
-    // Permission flags: god mode uses --dangerously-skip-permissions, default uses dontAsk + allowedTools
+    // Permission flags: god mode bypasses all permissions, default is normal userland (interactive approval)
     const permissionFlags = options?.godMode
-      ? '--dangerously-skip-permissions'
-      : `--permission-mode dontAsk --allowed-tools "${CORE_AGENT_TOOLS.join(',')}"`;
+      ? ' --dangerously-skip-permissions'
+      : '';
 
     // TX_CORE_SESSION=1 enables hook to mark messages as seen after display
-    tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath} ${permissionFlags}${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
+    tmux.send(`clear && TX_CORE_SESSION=1 ${claudePath}${permissionFlags}${continueFlag}${modelFlag} --system-prompt "$(cat '${corePromptPath}')"`);
     tmux.sendEnter();
   }
 
