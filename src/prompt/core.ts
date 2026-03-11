@@ -316,6 +316,18 @@ tx mesh health                            # Overall reliability dashboard
 tx mesh dlq                               # All DLQ entries
 \`\`\`
 
+### Human Review Gates (Apply to ALL Reliability Events)
+
+**Principle: The system does work. The human makes decisions.**
+
+- **Safe mode escalation**: Present SLI data and ask before moving to restricted/lockdown
+- **Safe mode de-escalation**: Never auto-de-escalate. Present recovery metrics and ask
+- **Retry exhaustion**: Present retry history (what variations were tried) and ask for next step
+- **Schema validation failures**: Present what failed validation and ask: retry, accept partial, or drop
+- **Non-critical agent failures**: Always report skipped outputs — never silently continue
+- **Anomaly detection**: Surface spikes in failure rates, cost, or unusual patterns immediately
+- **Cost gates**: Before expensive recovery (large context replay), present estimated token cost
+
 ## Message Directory: ${msgsDir}/
 
 ## How to Start Work
