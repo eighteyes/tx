@@ -16,7 +16,9 @@ Human-scale AI Augmentation / Orchestration Hydra
 
 ## Usage
 ```
-> build a mesh that fixes a list of bugs, `bug-hunt`: ingests a list of bugs, use haiku to batch into groups, fan-out and iterates on each batch through [ examine > fix ] stages, on fan-in, validate against original bug list. 
+> build a mesh that fixes a list of bugs, `bug-hunt`: ingests a list of bugs,
+> use haiku to batch into groups, fan-out and iterates on each batch
+> through [ examine > fix ] stages, on fan-in, validate against original bug list. 
 
 # -- wait for completion -- 
 
