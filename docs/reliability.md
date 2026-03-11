@@ -293,3 +293,122 @@ Agents can interact with reliability features via message front-matter:
         │ + circuit  │   │ + SLI     │   │ + DLQ     │
         └────────────┘   └───────────┘   └───────────┘
 ```
+
+## Reliability Roadmap — Human Review Gates
+
+Every reliability improvement includes human review steps. The system **never** silently changes behavior, retries destructively, or masks failures.
+
+### Priority 1: Default-On Checkpoints + Replay
+
+**Impact**: 10x — turns N-step recovery into 1-step problem
+**Effort**: Medium
+
+**What it does**: Every FSM state transition auto-saves a checkpoint. On failure, the user picks which checkpoint to rewind to and replay from.
+
+**Human review steps**:
+1. **Checkpoint notification**: When a mesh completes a state transition, core can optionally surface it: "Mesh X completed 'build' — checkpoint saved."
+2. **Replay approval**: Before any rewind-to replay, core presents:
+   - Which checkpoint to rewind to
+   - What work will be replayed (states after the checkpoint)
+   - What work will be discarded (failed states)
+3. **Post-replay review**: After replay completes, core presents the result for user approval before the mesh continues to the next state.
+
+**Never automatic**: Replay does not happen without the user choosing a checkpoint.
+
+---
+
+### Priority 2: Reliability Metrics Table + Tracking
+
+**Impact**: Foundation for everything else
+**Effort**: Low
+
+**What it does**: SLI tracker records success rate, failure categories, MTTR, and nines level per mesh and per agent.
+
+**Human review steps**:
+1. **Threshold alerts**: When SLI drops below a configured threshold, core surfaces it: "Mesh X reliability dropped to 94.2% (below 95% cautious threshold). 3 failures in last 10 runs. Categories: 2x model_error, 1x timeout."
+2. **Safe mode escalation approval**: Before escalating safe mode (cautious → restricted → lockdown), core presents the SLI data and asks: "Restrict write access for mesh X? Current SLI: 89%."
+3. **De-escalation approval**: Safe mode never auto-de-escalates. Core presents current metrics and asks: "SLI recovered to 98%. Clear restricted mode for mesh X?"
+4. **Periodic health summary**: On user request (`tx mesh health`), core presents a table of all meshes with SLI, open circuits, DLQ entries, and safe mode level.
+
+**Never automatic**: Safe mode escalation beyond `cautious` requires user confirmation. SLI data is always visible.
+
+---
+
+### Priority 3: Retry-With-Variation on Routing/Protocol Failures
+
+**Impact**: 3-5x improvement on retry success
+**Effort**: Low
+
+**What it does**: When a retry fires, it varies the approach — different prompt framing, model fallback, or simplified task scope — instead of repeating the identical failing request.
+
+**Human review steps**:
+1. **First failure notification**: On first failure, core reports: "Agent X failed (model_error). Retrying with variation: [describe variation]. Retry 1/3."
+2. **Variation transparency**: Each retry logs what changed (e.g., "retry 2: simplified prompt, dropped optional context" or "retry 3: fallback model").
+3. **Retry exhaustion review**: When all retries exhaust, core presents the full retry history: "3 retries failed for agent X. Variations tried: [list]. Recommend: [recovery options]." User decides next step.
+4. **Variation strategy approval**: If a new variation strategy is added to config, core surfaces it for review before it takes effect.
+
+**Never automatic**: Retries within the configured limit are automatic (they're cheap and fast), but the user sees what's happening. Exhausted retries always stop and ask.
+
+---
+
+### Priority 4: Output Schema Validation
+
+**Impact**: Catches semantic failures early
+**Effort**: Medium
+
+**What it does**: Validates agent outputs against expected schemas (front-matter structure, required fields, output format) before passing results downstream.
+
+**Human review steps**:
+1. **Validation failure notification**: When output fails schema validation, core reports: "Agent X output failed validation: missing required field 'summary'. Output was [N] chars."
+2. **Correction approval**: Before asking the agent to retry with validation feedback, core presents: "Ask agent X to fix output? Validation errors: [list]. Or drop this output?"
+3. **Schema change review**: When a mesh config adds or modifies `output_schema`, core surfaces: "Mesh X now requires 'summary' field in output. Existing agents may need prompt updates."
+4. **Partial pass handling**: When output partially validates (some fields valid, some not), core presents what passed and what failed. User decides: accept partial, retry, or drop.
+
+**Never automatic**: Schema validation failures are always surfaced. The system does not silently discard or re-request outputs.
+
+---
+
+### Priority 5: Critical / Non-Critical Agent Classification
+
+**Impact**: Prevents cascade from optional steps
+**Effort**: Low
+
+**What it does**: Agents are classified as `critical` (failure blocks mesh) or `non-critical` (failure is logged but mesh continues). Prevents optional agents from taking down the whole workflow.
+
+**Human review steps**:
+1. **Classification review**: When a mesh is loaded, core can surface agent classifications: "Mesh X: critical=[planner, builder], non-critical=[linter, formatter]."
+2. **Non-critical failure notification**: When a non-critical agent fails, core reports: "Non-critical agent 'linter' failed (timeout). Mesh continues. Output from this step will be missing."
+3. **Promotion decision**: If a non-critical agent fails repeatedly, core asks: "Agent 'linter' has failed 5 times. Should it be promoted to critical (failures block mesh) or disabled?"
+4. **Critical failure escalation**: Critical agent failures always stop the mesh and present recovery options (Priority 1 checkpoints + Priority 3 retry history).
+
+**Never automatic**: Non-critical failures are always reported. The user is never surprised by missing outputs from skipped agents.
+
+---
+
+### Priority 6: Aggregate Observability Dashboard
+
+**Impact**: Needed to find the long-tail 0.01%
+**Effort**: Medium
+
+**What it does**: Unified view across all meshes — SLI trends, failure patterns, cost tracking, and anomaly detection.
+
+**Human review steps**:
+1. **Anomaly alerts**: When the dashboard detects anomalies (sudden SLI drop, unusual failure pattern, cost spike), core surfaces: "Anomaly detected: mesh X failure rate spiked from 2% to 15% in last hour. Failure category: model_error."
+2. **Trend review**: On request, core presents trend data: "Last 24h: 47 mesh runs, 98.3% success, 1 DLQ entry (recovered). Top failure: timeout (3x in mesh Y)."
+3. **Cost review gate**: Before approving expensive recovery (multiple retries, large context replay), core presents estimated cost: "Recovering mesh X with rewind-to will replay ~50k tokens. Proceed?"
+4. **Weekly digest**: Core can present a weekly reliability summary: nines achieved, worst-performing meshes, recurring failure patterns, DLQ utilization.
+
+**Never automatic**: The dashboard is passive — it collects and presents. All actions triggered by dashboard insights go through the standard human review workflow (diagnose → present → confirm → execute).
+
+---
+
+### Human Review Principle
+
+Across all 6 priorities, the same principle applies:
+
+> **The system does work. The human makes decisions.**
+
+- Retries within limits → automatic (but visible)
+- Recovery, replay, escalation → always human-approved
+- Failures → always surfaced with context and options
+- No silent state changes that affect mesh behavior
