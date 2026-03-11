@@ -15,6 +15,7 @@ import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
 import { SessionStore } from '../session/index.ts';
 import { CORE_AGENT_TOOLS } from '../worker/permissions.ts';
+import YAML from 'yaml';
 
 export interface StartOptions {
   continue?: boolean;
@@ -26,7 +27,7 @@ export interface StartOptions {
   serveHost?: string; // server host (default: 0.0.0.0)
   debug?: boolean; // enable forensics and verbose logging for all meshes
   noInject?: boolean; // deprecated: use inbox instead
-  inbox?: 'inject' | 'hook' | 'ask'; // message delivery mode (default: hook)
+  inbox?: 'inject' | 'hook' | 'ask'; // message delivery mode (default: inject)
   reattach?: boolean; // skip tmux create + claude command (restart mode)
   godMode?: boolean; // enable bypassPermissions instead of dontAsk (unrestricted tool access)
 }
@@ -292,8 +293,18 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   };
 
   // Write runtime.json for context hook
-  // Resolve inbox mode: explicit flag > backward-compat noInject > default 'hook'
-  const inboxMode = options?.inbox || (options?.noInject ? 'ask' : 'hook');
+  // Resolve inbox mode: explicit flag > backward-compat noInject > config.yaml > default 'inject'
+  let configInbox: string | undefined;
+  const configPath = path.join(dataDir, 'config.yaml');
+  if (fs.existsSync(configPath)) {
+    try {
+      const txConfig = YAML.parse(fs.readFileSync(configPath, 'utf-8')) || {};
+      configInbox = txConfig.inbox;
+    } catch (err) {
+      log.warn('start', 'Failed to parse config.yaml for inbox default', { error: String(err) });
+    }
+  }
+  const inboxMode = options?.inbox || (options?.noInject ? 'ask' : undefined) || configInbox || 'inject';
   const runtimePath = path.join(dataDir, 'runtime.json');
   const runtimeState = {
     inbox: inboxMode,

@@ -165,7 +165,7 @@ Options:
   --ultra-low        Use ultra low cost mode (forces haiku for everything)
   --debug            Enable forensics analysis for all meshes
   --god-mode         Bypass all tool permissions (unrestricted access)
-  --inbox <mode>     Message delivery mode: hook (default), inject, ask
+  --inbox <mode>     Message delivery mode: inject (default), hook, ask
   --no-inject        Alias for --inbox ask (backward compat)`,
 
   restart: `tx restart - Restart backend services (keeps Claude session alive)

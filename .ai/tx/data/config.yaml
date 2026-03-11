@@ -1,3 +1,6 @@
+# Runtime defaults
+inbox: inject                   # Message delivery: inject (tmux), hook (on user input), ask (manual)
+
 # Guardrails - unified runtime enforcement
 # See docs/guardrails.md for full reference
 # Mode: strict (block/kill) + warning (inject feedback)
