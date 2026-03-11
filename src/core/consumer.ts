@@ -1406,6 +1406,14 @@ export class MessageConsumer extends EventEmitter {
     if (parts.length < 3) return null;
 
     const frontmatter = this.parseFrontmatter(parts[1].trim());
+
+    // External messages: cross-project (txlit) or external systems
+    // Synthesize missing fields so they pass through the pipeline
+    if (frontmatter.external === 'true') {
+      if (!frontmatter.to) frontmatter.to = 'core/core';
+      if (!frontmatter.from) frontmatter.from = `external/${frontmatter.source || 'unknown'}`;
+    }
+
     // Type field is optional — inferred from routing context
     if (!frontmatter.to || !frontmatter.from) return null;
     if (frontmatter.type) {
