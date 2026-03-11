@@ -7,7 +7,7 @@ TX reliability features organized by Karpathy's "March of Nines" — each nine r
 | Nines | Technique | TX Status |
 |-------|-----------|-----------|
 | **1 (90%)** | Basic error handling, retries | SQLite WAL, worker retries (3x), injection poll loop, routing correction, graceful shutdown, usage policy recovery, recovery handler escalation |
-| **2 (99%)** | Validation, protocol enforcement | Parity gate, FSM validation, mesh validator, identity gate, write gate, manifest validator, guardrail config chain |
+| **2 (99%)** | Validation, protocol enforcement | Parity gate, FSM validation, mesh validator, identity gate, write gate, bash guard, manifest validator, guardrail config chain |
 | **~2.5** | Self-healing / auto-recovery | Nudge detector, deadlock breaker, stale cleaner, quality iteration loops, session suspend/resume, FSM state persistence + backup, session store backfill |
 | **3 (99.9%)** | Monitoring, circuit breaking, DLQ | Circuit breaker, heartbeat monitor, DLQ with session resume, SLI tracker, safe mode, checkpoint log, rate limiter, worker pool backpressure, metrics aggregator, worker lifecycle tracking |
 | **4 (99.99%)** | [Roadmap] | Retry-with-variation, schema validation, agent classification, observability dashboard |
@@ -39,10 +39,11 @@ Catch bad outputs and protocol violations before they propagate.
 | **Mesh validator** | Validates mesh config before loading (required fields, types, routing consistency) | `src/worker/mesh-validator.ts` — errors block load, warnings log |
 | **Identity gate** | PreToolUse hook validates `from:` field matches agent identity | `src/worker/identity-gate.ts` — blocks/warns per guardrail mode, strike system |
 | **Write gate** | Controls which tools agents can use based on safe mode level | `src/worker/guardrail-config.ts` — restricted/lockdown blocks Write/Edit/Bash |
+| **Bash guard** | PreToolUse hook intercepts Bash commands with redirects (`>`, `>>`, `tee`), validates target paths against allowed write manifest. Strike system: 1-2 violations → error with allowed paths, 3+ → kill worker | `src/worker/write-gate.ts` — `createBashHook()` |
 | **Manifest validator** | Validates agent output artifacts against declared manifest paths with template variable resolution (5-pass chained substitution) | `src/worker/manifest-validator.ts` |
 | **Guardrail config chain** | Unified strict/warning mode on every guardrail with override chain: agent > mesh > global > hardcoded | `src/worker/guardrail-config.ts` |
 
-**Human review**: Parity gate violations → reminder injected, if unresolved → surfaced to user. Identity gate kills → logged with reason. Mesh validation errors → block load, user sees what's wrong. Manifest validation failures → surfaced to user with missing/invalid paths.
+**Human review**: Parity gate violations → reminder injected, if unresolved → surfaced to user. Identity gate kills → logged with reason. Mesh validation errors → block load, user sees what's wrong. Manifest validation failures → surfaced to user with missing/invalid paths. Bash guard violations → logged for forensics, worker killed after 3 strikes.
 
 ### Nine 2.5 — Self-Healing & Auto-Recovery
 
