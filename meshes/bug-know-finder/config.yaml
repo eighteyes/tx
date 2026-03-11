@@ -36,6 +36,10 @@ agents:
     model: opus
     prompt: test-writer.md
 
+  - name: journey-writer
+    model: sonnet
+    prompt: journey-writer.md
+
   - name: runner
     model: sonnet
     prompt: runner.md
@@ -43,6 +47,10 @@ agents:
       playwright:
         command: npx
         args: ["@playwright/mcp@latest"]
+
+  - name: bug-prioritizer
+    model: sonnet
+    prompt: bug-prioritizer.md
 
   - name: synthesizer
     model: sonnet
@@ -66,9 +74,15 @@ routing:
   test-writer:
     complete:
       runner: "Tests generated"
+  journey-writer:
+    complete:
+      runner: "Journey tests generated"
   runner:
     complete:
-      synthesizer: "Test results ready"
+      bug-prioritizer: "Test results ready"
+  bug-prioritizer:
+    complete:
+      synthesizer: "Bug prioritization complete"
   synthesizer:
     complete:
       core: "Report ready"
@@ -96,15 +110,31 @@ fsm:
       exit:
         default: generate
     generate:
-      agents: [test-writer]
+      ensemble:
+        type: parallel
+        agents: [test-writer, journey-writer]
+        aggregation: concat
+        timeout_ms: 600000
       exit:
         gates:
           test-writer:
+            - "$workspace/tests/"
+          journey-writer:
             - "$workspace/tests/"
         default: run
     run:
       agents: [runner]
       exit:
+        gates:
+          runner:
+            - "$workspace/test-results.yaml"
+        default: prioritize
+    prioritize:
+      agents: [bug-prioritizer]
+      exit:
+        gates:
+          bug-prioritizer:
+            - "$workspace/prioritized-bugs.yaml"
         default: synthesis
     synthesis:
       agents: [synthesizer]
@@ -133,8 +163,18 @@ guardrails:
         limit: 30
         strict: true
         warning: true
+    journey-writer:
+      max_turns:
+        limit: 25
+        strict: true
+        warning: true
     runner:
       max_turns:
         limit: 20
+        strict: true
+        warning: true
+    bug-prioritizer:
+      max_turns:
+        limit: 15
         strict: true
         warning: true
