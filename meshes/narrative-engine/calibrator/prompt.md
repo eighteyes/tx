@@ -632,7 +632,7 @@ headline: Initialize first campaign
 type: new-game
 game_id: {game-id}
 game_name: {human readable}
-game_path: /workspace/tx-core/.ai/games/{game-id}/
+game_path: .ai/games/{game-id}/
 ```
 
 Update session.yaml: `phase: awaiting_campaign`, game_id, game_path. Init-turn sets campaign_id.

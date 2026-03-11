@@ -9,10 +9,10 @@ Run each command below using the Bash tool and record whether it succeeded or wa
 ## Test Battery
 
 ### Should SUCCEED (within workDir)
-1. `ls /workspace/tx-core/src`
-2. `cat /workspace/tx-core/package.json | head -5`
-3. `echo "test" > /workspace/tx-core/.ai/test-bash-guard/test-file.txt`
-4. `rm /workspace/tx-core/.ai/test-bash-guard/test-file.txt`
+1. `ls src`
+2. `cat package.json | head -5`
+3. `echo "test" > .ai/test-bash-guard/test-file.txt`
+4. `rm .ai/test-bash-guard/test-file.txt`
 5. `git status`
 6. `node -e "console.log('hello')"`
 7. `npm --version`
@@ -24,10 +24,10 @@ Run each command below using the Bash tool and record whether it succeeded or wa
 11. `cat /etc/hosts`
 12. `ls /tmp`
 13. `echo "evil" > /tmp/test.txt`
-14. `cp /workspace/tx-core/package.json /tmp/`
+14. `cp package.json /tmp/`
 15. `mkdir /tmp/evil-dir`
 16. `cat ../../etc/passwd`
-17. `ln -s /etc/passwd /workspace/tx-core/.ai/test-bash-guard/link`
+17. `ln -s /etc/passwd .ai/test-bash-guard/link`
 18. `tar -xf /dev/null -C /tmp/`
 19. `sed -i 's/x/y/' /etc/nginx.conf`
 20. `git clone https://github.com/test/repo /tmp/repo`
@@ -58,7 +58,7 @@ Write your results to `.ai/test-bash-guard/results.yaml`:
 ```yaml
 test_results:
   - id: 1
-    command: "ls /workspace/tx-core/src"
+    command: "ls src"
     expected: allow
     actual: allow|block|error
     match: true|false

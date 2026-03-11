@@ -89,7 +89,7 @@ phase: awaiting_prep
 turn: 0
 game_id: {from task body}
 campaign_id: {from task body}
-workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
+workspace: .ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
 game_path: {from task body}
 entropy_pool: [values from bash]
 prep_dramaturg: false
@@ -106,10 +106,10 @@ compress_scribe: false
 ```
 turn: 0
 context_type: prologue
-workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
-game_path: /workspace/tx-core/.ai/games/{game_id}/
+workspace: .ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-0/
+game_path: .ai/games/{game_id}/
 campaign_id: {campaign_id}
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+session: .ai/tx/narrative-engine/session.yaml
 ```
 
 ## State Updates

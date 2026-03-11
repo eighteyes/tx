@@ -32,8 +32,8 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     "soul-navigator": {
       "command": "node",
       "args": [
-        "/workspace/projects/tx-opus-soul/soul-mcp/dist/index.js",
-        "/workspace/tx-core/.ai/know/opus-soul"
+        "../tx-opus-soul/soul-mcp/dist/index.js",
+        "./.ai/know/opus-soul"
       ]
     }
   }

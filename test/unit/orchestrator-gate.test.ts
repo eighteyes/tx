@@ -71,7 +71,7 @@ describe('Orchestrator Gate', () => {
 
   describe('Orchestrator Write hook logic', () => {
     it('should block Write to non-msgs paths', () => {
-      const msgsDir = '/workspace/tx-core/.ai/tx/msgs';
+      const msgsDir = '/tmp/test-workspace/.ai/tx/msgs';
 
       // Simulate the hook logic from dispatcher
       const checkWrite = (filePath: string) => {
@@ -82,7 +82,7 @@ describe('Orchestrator Gate', () => {
       };
 
       // Should block writes to source code
-      const blocked = checkWrite('/workspace/tx-core/src/app.ts');
+      const blocked = checkWrite('/tmp/test-workspace/src/app.ts');
       assert.strictEqual(blocked.decision, 'block');
 
       // Should allow writes to msgs dir
@@ -90,7 +90,7 @@ describe('Orchestrator Gate', () => {
       assert.strictEqual(allowed.decision, 'allow');
 
       // Should block writes to other .ai paths
-      const blockedAi = checkWrite('/workspace/tx-core/.ai/tx/data/config.yaml');
+      const blockedAi = checkWrite('/tmp/test-workspace/.ai/tx/data/config.yaml');
       assert.strictEqual(blockedAi.decision, 'block');
 
       // Should allow subdirectories of msgs
@@ -99,7 +99,7 @@ describe('Orchestrator Gate', () => {
     });
 
     it('should block when file_path is empty', () => {
-      const msgsDir = '/workspace/tx-core/.ai/tx/msgs';
+      const msgsDir = '/tmp/test-workspace/.ai/tx/msgs';
       const checkWrite = (filePath: string) => {
         if (!filePath.startsWith(msgsDir)) {
           return { decision: 'block' as const };

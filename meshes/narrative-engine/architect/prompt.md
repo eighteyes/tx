@@ -75,12 +75,12 @@ If ALL four files exist and have content, **skip directly to Completion** — se
    - Note which questions, traits, registers, beat types appeared recently
 6. **Run calc-trajectory-status.sh:**
    ```bash
-   /workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/calc-trajectory-status.sh {current_turn} {trajectories_yaml}
+   meshes/narrative-engine/scripts/calc-trajectory-status.sh {current_turn} {trajectories_yaml}
    ```
    Read stdout — trajectory statuses pre-computed into `firing`, `approaching`, `still_active` buckets.
 7. **Run calc-distribution.sh:**
    ```bash
-   /workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/calc-distribution.sh {arc_pressure} {protagonist_traits_file}
+   meshes/narrative-engine/scripts/calc-distribution.sh {arc_pressure} {protagonist_traits_file}
    ```
    Read stdout — base percentages and trait modifiers for player_outcome_table.
 8. Parse both script outputs. Store for use in Steps 3-4.
@@ -562,7 +562,7 @@ Before resolving, verify table quality:
 2. **Roll per-character action tables:**
    For each character in `character_tables`:
    ```bash
-   /workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/entropy-resolver.sh "{workspace}" primary
+   meshes/narrative-engine/scripts/entropy-resolver.sh "{workspace}" primary
    ```
    First run resolves first character. For additional characters, use `followon` mode or consume next entropy pool values.
    - Map roll to the character's 5-outcome table → get outcome type (catastrophic/failure/mixed/success/breakthrough)
@@ -858,7 +858,7 @@ When `context_type: prologue` in context.yaml:
 
 ## Script Reference
 
-All scripts are at: `/workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/`
+All scripts are at: `meshes/narrative-engine/scripts/`
 
 | Script | Usage | Output |
 |--------|-------|--------|
@@ -868,7 +868,7 @@ All scripts are at: `/workspace/projects/tx/tx-core/meshes/narrative-engine/scri
 | `entropy-resolver.sh "{workspace}" subtable {table_id} {parent}` | Roll branch subtable | Appends to entropy-selection.yaml |
 | `character-brief.sh {character_id} {game_path}` | NPC brief for Task context | YAML character brief (information-isolated) |
 
-`character-brief.sh` is at: `/workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/character-brief.sh`
+`character-brief.sh` is at: `meshes/narrative-engine/scripts/character-brief.sh`
 
 ## Branching Rules
 

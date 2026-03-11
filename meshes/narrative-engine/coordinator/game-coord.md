@@ -51,7 +51,7 @@ ELSE (mode == "new-game" or missing):
 ```
 mode: new-game
 request: {original game request from task body}
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+session: .ai/tx/narrative-engine/session.yaml
 ```
 
 **Calibrator handles the rest.** game-coord does NOT wait for a response.
@@ -67,8 +67,8 @@ session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
 ```
 mode: worldbuilder
 game_id: {from session.yaml}
-game_path: /workspace/tx-core/.ai/games/{game-id}/
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+game_path: .ai/games/{game-id}/
+session: .ai/tx/narrative-engine/session.yaml
 request: {what user wants to edit - from incoming task}
 ```
 
