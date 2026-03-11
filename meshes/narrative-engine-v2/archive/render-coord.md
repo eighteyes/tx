@@ -47,7 +47,7 @@ You are a COORDINATOR. You dispatch to narrator, you do not write prose.
 ```
 workspace: {workspace}
 game: {game_path}
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+session: .ai/tx/narrative-engine/session.yaml
 context: {workspace}/context.yaml
 dramaturg: {workspace}/dramaturg-notes.yaml
 scene_outline: {workspace}/scene-outline.yaml
@@ -83,7 +83,7 @@ author: {game_path}/author.yaml
 workspace: {workspace}
 game_path: {game_path}
 campaign_id: {campaign_id}
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+session: .ai/tx/narrative-engine/session.yaml
 prose: {workspace}/prose.md
 campaign_concluded: {true if narrator signaled, omit otherwise}
 ```

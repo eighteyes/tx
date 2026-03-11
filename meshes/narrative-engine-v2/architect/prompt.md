@@ -84,12 +84,12 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
    - **These are the ONLY prior-turn files you read.** Do not read prior entropy-tables.yaml, dramaturg-notes.yaml, fates.yaml, threads.yaml, or any other prior-turn artifacts. You generate fresh versions of those files each turn.
 6. **Run calc-trajectory-status.sh:**
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/calc-trajectory-status.sh {current_turn} {trajectories_yaml}
+   meshes/narrative-engine-v2/scripts/calc-trajectory-status.sh {current_turn} {trajectories_yaml}
    ```
    Read stdout — trajectory statuses pre-computed into `firing`, `approaching`, `still_active` buckets.
 7. **Run calc-distribution.sh:**
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/calc-distribution.sh {arc_pressure} {protagonist_traits_file}
+   meshes/narrative-engine-v2/scripts/calc-distribution.sh {arc_pressure} {protagonist_traits_file}
    ```
    Read stdout — base percentages and trait modifiers for player_outcome_table.
 8. Parse both script outputs. Store for use in Steps 3-4.
@@ -468,11 +468,11 @@ The Task writes its files to `{workspace}/entropy_tables/` as before.
 1. Write `{workspace}/entropy_tables/header.yaml` (turn, arc_pressure, distribution_shape)
 2. Merge POV table into a temporary `entropy-tables.yaml`:
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
+   meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
    ```
 3. Resolve POV outcome:
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" primary
+   meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" primary
    ```
 4. Read `{workspace}/entropy-selection.yaml` — record POV outcome_type, shape, subtable_result, mechanical_note
 5. Store this as `pov_resolution` for NPC Task context
@@ -777,7 +777,7 @@ ending:
 
 3. **Run merge script:**
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
+   meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
    ```
 
 4. **Write `fates.yaml` to workspace** — combine raw branches from `entropy_tables/fates-*.yaml`:
@@ -871,7 +871,7 @@ Before resolving, verify table quality:
 3. **Roll NPC action tables:**
    For each NPC in `character_tables`:
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable char-{npc_id} ""
+   meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable char-{npc_id} ""
    ```
    - Map roll to the NPC's 5-outcome table → get outcome type
    - Then roll that outcome's subtable → get specific manifestation
@@ -1242,7 +1242,7 @@ When `context_type: prologue` in context.yaml:
 
 ## Script Reference
 
-All scripts are at: `/workspace/tx-core/meshes/narrative-engine-v2/scripts/`
+All scripts are at: `meshes/narrative-engine-v2/scripts/`
 
 | Script | Usage | Output |
 |--------|-------|--------|
@@ -1253,7 +1253,7 @@ All scripts are at: `/workspace/tx-core/meshes/narrative-engine-v2/scripts/`
 | `character-brief.sh {character_id} {game_path}` | NPC brief for Task context | YAML character brief (information-isolated) |
 | `merge-entropy-tables.sh {workspace}` | Assemble entropy_tables/ fragments | Writes entropy-tables.yaml to stdout |
 
-`character-brief.sh` is at: `/workspace/tx-core/meshes/narrative-engine-v2/scripts/character-brief.sh`
+`character-brief.sh` is at: `meshes/narrative-engine-v2/scripts/character-brief.sh`
 
 ## Branching Rules
 

@@ -104,7 +104,7 @@ phase: awaiting_prep
 turn: {N}
 game_id: {preserved from read}
 campaign_id: {preserved from read}
-workspace: /workspace/tx-core/.ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-{N}/
+workspace: .ai/games/{game_id}/campaigns/{campaign_id}/turns/turn-{N}/
 game_path: {preserved from read}
 entropy_pool: [values from bash]
 prep_dramaturg: false
@@ -124,7 +124,7 @@ context_type: action
 workspace: {workspace path}
 game_path: {game_path}
 campaign_id: {campaign_id}
-session: /workspace/tx-core/.ai/tx/narrative-engine/session.yaml
+session: .ai/tx/narrative-engine/session.yaml
 player_action: {action}
 ```
 

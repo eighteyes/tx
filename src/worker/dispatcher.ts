@@ -3661,6 +3661,7 @@ Please advise the agent or check mesh configuration.`;
         const bashGuard = new BashGuard({
           agentId,
           workDir: this.config.workDir,
+          allowedPaths: [this.config.meshesDir],
           killRunner: (reason) => workerRef.current?.kill(reason),
           mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
         });

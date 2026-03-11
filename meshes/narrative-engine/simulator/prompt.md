@@ -655,7 +655,7 @@ other:
 After getting tables from all three Tasks, write the CHARACTER table to `entropy-tables.yaml` (for the entropy-resolver script), then roll:
 
 ```bash
-/workspace/projects/tx/tx-core/meshes/narrative-engine/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
+meshes/narrative-engine/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
 ```
 
 **Table format for entropy-tables.yaml** (append, exact format required):

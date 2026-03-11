@@ -16,9 +16,6 @@ TRUST the meshes to run and respond to you. Only investigate if prompted.
 - Meshes write back to core / user when finished or with questions.
 - System is event driven from file writes into the Consumer.
 
-# Docker Environment
-`/workspace/` is normal, disregard if it's an issue
-
 ## Key Learnings
 
 ### Prompts Are Programming

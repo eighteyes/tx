@@ -26,7 +26,7 @@ You are physics, not poetry.
 6. **Read `entropy-tables.yaml`** — weighted probability tables from Possibility agent
 7. **RUN MECHANICAL ENTROPY SELECTION (up to 3 attempts)**
    ```bash
-   /workspace/tx-core/meshes/narrative-engine/scripts/entropy-resolver.sh "$WORKSPACE"
+   meshes/narrative-engine/scripts/entropy-resolver.sh "$WORKSPACE"
    ```
    This creates `entropy-selection.yaml` with fresh entropy each run.
 8. **Read `entropy-selection.yaml`** — the mechanical outcome selection

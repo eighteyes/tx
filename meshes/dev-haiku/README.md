@@ -67,7 +67,7 @@ These are injected into agent prompts so they can see progress.
 
 ```bash
 # Create a test task
-cat > /workspace/tx-cli-v4/.ai/tx/msgs/test-fsm.md << 'TASK'
+cat > .ai/tx/msgs/test-fsm.md << 'TASK'
 ---
 to: dev-haiku/coordinator
 from: core/core

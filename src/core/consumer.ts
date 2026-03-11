@@ -454,12 +454,29 @@ export class MessageConsumer extends EventEmitter {
       }
     }
 
-    // Check all meshes for this agent name
+    // Both from and to are bare — prefer the mesh that contains BOTH agents
+    // This prevents cross-mesh leaks when agents with identical names exist in multiple meshes
+    const bareTo = to.includes('/') ? null : to;
+    if (bareTo) {
+      for (const [meshName, agents] of this.meshAgents) {
+        if (agents.has(from) && agents.has(bareTo)) {
+          log.warn('consumer', 'Resolved bare from+to to same mesh (bare names should be qualified)', {
+            from,
+            to: bareTo,
+            resolved: `${meshName}/${from}`,
+          });
+          return `${meshName}/${from}`;
+        }
+      }
+    }
+
+    // Last resort: check all meshes for this agent name (arbitrary order — may pick wrong mesh)
     for (const [meshName, agents] of this.meshAgents) {
       if (agents.has(from)) {
-        log.debug('consumer', 'Resolved from agent via mesh scan', {
+        log.warn('consumer', 'Resolved bare from via mesh scan (ambiguous)', {
           from,
-          resolved: `${meshName}/${from}`
+          resolved: `${meshName}/${from}`,
+          note: 'Agent should use fully-qualified from: field',
         });
         return `${meshName}/${from}`;
       }

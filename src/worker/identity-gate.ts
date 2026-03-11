@@ -64,6 +64,7 @@ export class IdentityGate {
         const actualFrom = fromField.trim();
 
         if (this.matchesIdentity(actualFrom, expectedFrom)) {
+          // from: is valid — bare to: names are resolved by consumer (DNS-style search)
           return { decision: 'approve' } as HookJSONOutput;
         }
 
@@ -112,17 +113,12 @@ export class IdentityGate {
       return true;
     }
 
-    // Handle partial matches (agent might omit mesh prefix)
+    // Bare agent name (missing mesh prefix) — treated as routing violation
     // e.g., "worker" instead of "dev/worker"
-    const [expectedMesh, expectedAgent] = expected.split('/');
+    // We do NOT accept this — bare names cause cross-mesh routing leaks
+    const [_expectedMesh, expectedAgent] = expected.split('/');
     if (expectedAgent && actual === expectedAgent) {
-      // Partial match - could be acceptable but log for awareness
-      log.debug('identity-gate', 'Partial identity match (missing mesh prefix)', {
-        actual,
-        expected,
-        agentId: this.config.agentId,
-      });
-      return true;
+      return false; // Force the agent to use fully-qualified name
     }
 
     return false;
@@ -156,8 +152,9 @@ export class IdentityGate {
         `Identity mismatch: wrote from="${actualFrom}" but expected "${expectedFrom}"`);
       return {
         decision: 'approve',
-        systemMessage: `Note: Your message has \`from: ${actualFrom}\` but your identity is \`${expectedFrom}\`. ` +
-          `Please use your correct identity in future messages. The message was allowed this time.`,
+        systemMessage: `ROUTING WARNING: Your message has \`from: ${actualFrom}\` but your identity is \`${expectedFrom}\`. ` +
+          `Bare agent names cause cross-mesh routing leaks. Always use \`from: ${expectedFrom}\`. ` +
+          `The message was allowed this time.`,
       } as HookJSONOutput;
     }
 
@@ -187,8 +184,9 @@ export class IdentityGate {
       decision: 'block',
       reason: `IDENTITY CONTRACT VIOLATION [strike ${this.strikes}${killAt !== null ? `/${killAt}` : ''}]: ` +
         `Message has \`from: ${actualFrom}\` but your identity is \`${expectedFrom}\`.\n\n` +
-        `Use \`from: ${expectedFrom.split('/')[1] || expectedFrom}\` (or full: \`${expectedFrom}\`).\n\n` +
-        `Fix the \`from:\` field in your message frontmatter and try again.`,
+        `Always use the fully-qualified name: \`from: ${expectedFrom}\`\n\n` +
+        `Bare names like \`from: ${expectedFrom.split('/')[1] || expectedFrom}\` cause cross-mesh routing leaks.\n\n` +
+        `Fix the \`from:\` field and try again.`,
     };
   }
 

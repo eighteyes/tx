@@ -61,7 +61,7 @@ Route to init-turn when:
 1. Verify session.yaml shows phase: complete
 2. **Run increment script** to advance turn number and workspace path:
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/increment-turn.sh
+   meshes/narrative-engine-v2/scripts/increment-turn.sh
    ```
    This updates session.yaml with the new turn number and workspace path BEFORE init-turn spawns, so the manifest resolves to the correct paths.
 3. Route to init-turn with player action in message body
@@ -107,7 +107,7 @@ If the incoming task contains "redo", "retry", "again", "repeat", "replay", "res
 
 1. Run the redo script:
    ```bash
-   /workspace/tx-core/meshes/narrative-engine-v2/scripts/redo-turn.sh
+   meshes/narrative-engine-v2/scripts/redo-turn.sh
    ```
 
 2. Script handles: archive turn, restore campaign snapshot, reset session, clear messages

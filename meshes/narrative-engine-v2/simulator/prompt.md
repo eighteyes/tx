@@ -630,7 +630,7 @@ Every beat produces voice data from one of three tiers. The tiers have different
 For protagonist AND NPC. After rolling entropy, if a **character speaks, acts, or has a significant internal moment**, fire a sonnet voice Task. Run `character-brief.sh` first to extract an information-isolated character brief:
 
 ```bash
-/workspace/tx-core/meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root_from_file_contract}
+meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root_from_file_contract}
 ```
 
 This outputs a YAML character brief containing only what the character knows — traits, wounds, voice_layers, bonds. No story-level context leaks.
@@ -850,7 +850,7 @@ other:
 After getting tables from all three Tasks, write the CHARACTER table to `entropy-tables.yaml` (for the entropy-resolver script), then roll:
 
 ```bash
-/workspace/tx-core/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
+meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
 ```
 
 **Table format for entropy-tables.yaml** (append, exact format required):
@@ -1294,7 +1294,7 @@ The narrator's contract:
 Before sending to oracle, run the validation script:
 
 ```bash
-bash /workspace/tx-core/meshes/narrative-engine-v2/scripts/validate-scene-script.sh "{workspace}" "{game_root}"
+bash meshes/narrative-engine-v2/scripts/validate-scene-script.sh "{workspace}" "{game_root}"
 ```
 
 - `{workspace}` = the turn directory path from `# Task Workspace` injection
@@ -1327,7 +1327,7 @@ Oracle gets its own File Contract with resolved paths at runtime — you just ne
 
 ## Scripts Reference
 
-All scripts are at: `/workspace/tx-core/meshes/narrative-engine-v2/scripts/`
+All scripts are at: `meshes/narrative-engine-v2/scripts/`
 
 | Script | Usage | Output |
 |--------|-------|--------|
@@ -1347,7 +1347,7 @@ All scripts are at: `/workspace/tx-core/meshes/narrative-engine-v2/scripts/`
 - EVERY beat has entropy rolls via script (character) and bash (environment, complication)
 - EVERY active character in a beat gets their own table Task AND voice Task — all in parallel
 - EVERY beat where the world acts with agency gets an "Other" block (written by you)
-- Run `/workspace/tx-core/meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root}` for EACH character before their voice generation (game_root from File Contract)
+- Run `meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root}` for EACH character before their voice generation (game_root from File Contract)
 - Fire a character behavior table for EACH active character — not just one per beat
 - Maintain `scene_so_far` — the cumulative record of all observable events (including "Other") — and pass to every voice Task
 - No beat cap — let the scene breathe

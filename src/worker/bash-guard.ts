@@ -42,6 +42,7 @@ import type { GuardrailMode } from './guardrail-config.ts';
 export interface BashGuardConfig {
   agentId: string;
   workDir: string;
+  allowedPaths?: string[];  // Additional paths allowed (e.g., tx-core meshes/scripts dir)
   killRunner: (reason: string) => void;
   mode: GuardrailMode;  // { strict, warning } — controls enforcement behavior
 }
@@ -399,15 +400,30 @@ export class BashGuard {
   }
 
   /**
-   * Check if resolved path is within workDir
+   * Check if resolved path is within workDir or any allowed path
    */
   private isWithinWorkDir(resolved: string): boolean {
-    const normalizedWorkDir = path.normalize(this.config.workDir);
     const normalizedPath = path.normalize(resolved);
 
-    // Path must start with workDir and either match exactly or have a separator
-    return normalizedPath === normalizedWorkDir ||
-           normalizedPath.startsWith(normalizedWorkDir + path.sep);
+    // Check workDir
+    const normalizedWorkDir = path.normalize(this.config.workDir);
+    if (normalizedPath === normalizedWorkDir ||
+        normalizedPath.startsWith(normalizedWorkDir + path.sep)) {
+      return true;
+    }
+
+    // Check additional allowed paths (e.g., tx-core install dir for mesh scripts)
+    if (this.config.allowedPaths) {
+      for (const allowed of this.config.allowedPaths) {
+        const normalizedAllowed = path.normalize(allowed);
+        if (normalizedPath === normalizedAllowed ||
+            normalizedPath.startsWith(normalizedAllowed + path.sep)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   private handleViolation(

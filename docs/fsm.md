@@ -287,7 +287,7 @@ FSM context is injected into agent task messages automatically:
 **Turn**: 5
 **Game ID**: abc123
 **Score**: 87
-**Workspace**: /workspace/my-game
+**Workspace**: .ai/games/my-game
 
 ---
 
@@ -405,7 +405,7 @@ You are the analysis worker.
 
 **Current State**: working
 **Turn**: 5
-**Workspace**: /workspace/my-project
+**Workspace**: .ai/games/my-project
 
 ---
 

@@ -27,7 +27,7 @@ RAW_ACTION="<exact player text from message body>"
 ## Step 1: Run Workspace Script
 
 ```bash
-/workspace/tx-core/meshes/narrative-engine-v2/scripts/init-workspace.sh --stamp-action "$RAW_ACTION" --verbose
+meshes/narrative-engine-v2/scripts/init-workspace.sh --stamp-action "$RAW_ACTION" --verbose
 ```
 
 Read the stdout blob. You need these fields only:
@@ -100,7 +100,7 @@ If conflict → ask player via HITL how to bridge it.
 ## Step 3: Run Stamp Script
 
 ```bash
-/workspace/tx-core/meshes/narrative-engine-v2/scripts/stamp-decomposition.sh \
+meshes/narrative-engine-v2/scripts/stamp-decomposition.sh \
   "{workspace}" {turn} \
   --interpreted-action "{interpretation}" \
   --actor "{actor}" --actor-source "{source}" \

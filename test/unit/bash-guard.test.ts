@@ -27,7 +27,7 @@ describe('BashGuard - workDir Boundary (ALLOW within workDir)', () => {
     killReason = '';
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: (reason) => {
         killCalled = true;
         killReason = reason;
@@ -38,7 +38,7 @@ describe('BashGuard - workDir Boundary (ALLOW within workDir)', () => {
 
   it('should approve ls within workDir', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'ls /workspace/tx-core/src' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'ls /tmp/test-workspace/src' } }, 'tool-1', {});
     assert.equal(result.decision, 'approve');
   });
 
@@ -56,13 +56,13 @@ describe('BashGuard - workDir Boundary (ALLOW within workDir)', () => {
 
   it('should approve echo redirect within workDir', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'echo "test" > /workspace/tx-core/out.txt' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'echo "test" > /tmp/test-workspace/out.txt' } }, 'tool-1', {});
     assert.equal(result.decision, 'approve');
   });
 
   it('should approve cd && ls within workDir', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'cd /workspace/tx-core/src && ls' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'cd /tmp/test-workspace/src && ls' } }, 'tool-1', {});
     assert.equal(result.decision, 'approve');
   });
 
@@ -97,7 +97,7 @@ describe('BashGuard - workDir Boundary (BLOCK outside workDir)', () => {
   beforeEach(() => {
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: true },
     });
@@ -215,21 +215,21 @@ describe('BashGuard - workDir Boundary (EDGE CASES)', () => {
   beforeEach(() => {
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: true },
     });
   });
 
-  it('should block prefix attack /workspace/tx-core-evil/', async () => {
+  it('should block prefix attack /tmp/test-workspace-evil/', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'cat /workspace/tx-core-evil/foo' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'cat /tmp/test-workspace-evil/foo' } }, 'tool-1', {});
     assert.equal(result.decision, 'block');
   });
 
-  it('should block traversal /workspace/tx-core/../../../etc/passwd', async () => {
+  it('should block traversal /tmp/test-workspace/../../../etc/passwd', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'cat /workspace/tx-core/../../../etc/passwd' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'cat /tmp/test-workspace/../../../etc/passwd' } }, 'tool-1', {});
     assert.equal(result.decision, 'block');
   });
 
@@ -247,7 +247,7 @@ describe('BashGuard - workDir Boundary (EDGE CASES)', () => {
 
   it('should approve curl redirect within workDir', async () => {
     const hook = guard.createHook();
-    const result = await hook.hooks[0]({ tool_input: { command: 'curl https://example.com > /workspace/tx-core/out.txt' } }, 'tool-1', {});
+    const result = await hook.hooks[0]({ tool_input: { command: 'curl https://example.com > /tmp/test-workspace/out.txt' } }, 'tool-1', {});
     assert.equal(result.decision, 'approve');
   });
 
@@ -276,7 +276,7 @@ describe('BashGuard - Catastrophic Denylist', () => {
   beforeEach(() => {
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: true },
     });
@@ -363,7 +363,7 @@ describe('BashGuard - Network Access (explicitly allowed)', () => {
   beforeEach(() => {
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: true },
     });
@@ -410,7 +410,7 @@ describe('BashGuard - Mode behavior', () => {
   it('should approve in warning mode (strict: false, warning: true)', async () => {
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: false, warning: true },
     });
@@ -425,7 +425,7 @@ describe('BashGuard - Mode behavior', () => {
   it('should approve silently in disabled mode (strict: false, warning: false)', async () => {
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: false, warning: false },
     });
@@ -439,7 +439,7 @@ describe('BashGuard - Mode behavior', () => {
   it('should block silently in strict mode without warning (strict: true, warning: false)', async () => {
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: false },
     });
@@ -458,7 +458,7 @@ describe('BashGuard - Violation Counting + Kill Threshold', () => {
 
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: (reason) => {
         killCalled = true;
         killReason = reason;
@@ -487,7 +487,7 @@ describe('BashGuard - Violation Counting + Kill Threshold', () => {
 
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {
         killCalled = true;
       },
@@ -510,7 +510,7 @@ describe('BashGuard - Violation Counting + Kill Threshold', () => {
 
     const guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {
         killCalled = true;
       },
@@ -540,7 +540,7 @@ describe('BashGuard - Empty/null command handling', () => {
   beforeEach(() => {
     guard = new BashGuard({
       agentId: 'test/worker',
-      workDir: '/workspace/tx-core',
+      workDir: '/tmp/test-workspace',
       killRunner: () => {},
       mode: { strict: true, warning: true },
     });
