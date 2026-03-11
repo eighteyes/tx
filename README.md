@@ -15,7 +15,12 @@
 Human-scale AI Augmentation / Orchestration Hydra
 
 ## Usage
+`tx` is operated via CLI and launches you into a `tmux` wrapped Claude Code.
 ```
+> tx start
+
+# -- wait for launch --
+
 > build a mesh that fixes a list of bugs, `bug-hunt`: ingests a list of bugs,
 > use haiku to batch into groups, fan-out and iterates on each batch
 > through [ examine > fix ] stages, on fan-in, validate against original bug list. 
