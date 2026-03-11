@@ -4,13 +4,13 @@ TX reliability features organized by Karpathy's "March of Nines" — each nine r
 
 ## March of Nines — Current Status
 
-| Nines | Technique | TX Status | Human Review |
-|-------|-----------|-----------|--------------|
-| **1 (90%)** | Basic error handling, retries | SQLite WAL, worker retries (3x), injection retries (poll loop), routing correction injection | Retry exhaustion → present failure + options to user |
-| **2 (99%)** | Validation, protocol enforcement | Parity gate, FSM validation, mesh validator, identity gate, write gate | Validation failures → surface to user with context. Identity/routing violations → warn or kill per guardrail mode |
-| **~2.5** | Self-healing / auto-recovery | Nudge detector, deadlock breaker, stale cleaner, quality iteration loops | Nudge fires → logged. Deadlock cycles > `autoBreakDepth` → escalate to human. Quality exhaustion → present feedback history + ask user |
-| **3 (99.9%)** | Monitoring, circuit breaking, DLQ | Circuit breaker, heartbeat monitor, DLQ with session resume, SLI tracker, safe mode, checkpoint log | Circuit open → notify user. Safe mode escalation → user approval. DLQ recovery → diagnose/present/confirm workflow |
-| **4 (99.99%)** | [Roadmap] Retry-with-variation, schema validation, agent classification, observability | Planned — see Reliability Roadmap below | Every action requires human confirmation (see roadmap gates) |
+| Nines | Technique | TX Status |
+|-------|-----------|-----------|
+| **1 (90%)** | Basic error handling, retries | SQLite WAL, worker retries (3x), injection poll loop, routing correction, graceful shutdown, usage policy recovery, recovery handler escalation |
+| **2 (99%)** | Validation, protocol enforcement | Parity gate, FSM validation, mesh validator, identity gate, write gate, manifest validator, guardrail config chain |
+| **~2.5** | Self-healing / auto-recovery | Nudge detector, deadlock breaker, stale cleaner, quality iteration loops, session suspend/resume, FSM state persistence + backup, session store backfill |
+| **3 (99.9%)** | Monitoring, circuit breaking, DLQ | Circuit breaker, heartbeat monitor, DLQ with session resume, SLI tracker, safe mode, checkpoint log, rate limiter, worker pool backpressure, metrics aggregator, worker lifecycle tracking |
+| **4 (99.99%)** | [Roadmap] | Retry-with-variation, schema validation, agent classification, observability dashboard |
 
 ### Nine 1 — Basic Error Handling (90%)
 
@@ -22,8 +22,11 @@ Foundational durability. Nothing silently drops.
 | **Worker retries (3x)** | Failed workers retry up to 3 times before DLQ | `src/worker/dispatcher.ts` — configurable via `dlq.maxRetries` |
 | **Injection poll loop** | Core message injection retries on next poll if Claude is busy | `src/cli/start.ts` — leaves message at head of queue for next cycle |
 | **Routing correction injection** | Bad routing target → corrective prompt injected back to sender | `src/worker/dispatcher.ts` — `handleRoutingError()`, max retries per guardrail config |
+| **Graceful worker pool shutdown** | Drains active workers before terminating pool, prevents orphaned workers | `src/server/worker-pool.ts` |
+| **Usage policy error handling** | Detects Claude API usage policy errors, captures diagnostic context, writes ask-human message instead of crashing | `src/worker/usage-policy-error.ts` |
+| **Recovery handler with escalation** | Tracks recovery requests per agent, provides FSM guidance on first attempt, escalates to human after 3 requests in 60s | `src/core/recovery.ts` |
 
-**Human review**: When worker retries exhaust → DLQ entry created → core presents failure to user. When routing retries exhaust → escalated to user with full attempt history.
+**Human review**: When worker retries exhaust → DLQ entry created → core presents failure to user. When routing retries exhaust → escalated to user with full attempt history. Usage policy errors → human chooses retry/skip/modify-prompt/abort.
 
 ### Nine 2 — Validation & Protocol Enforcement (99%)
 
@@ -36,8 +39,10 @@ Catch bad outputs and protocol violations before they propagate.
 | **Mesh validator** | Validates mesh config before loading (required fields, types, routing consistency) | `src/worker/mesh-validator.ts` — errors block load, warnings log |
 | **Identity gate** | PreToolUse hook validates `from:` field matches agent identity | `src/worker/identity-gate.ts` — blocks/warns per guardrail mode, strike system |
 | **Write gate** | Controls which tools agents can use based on safe mode level | `src/worker/guardrail-config.ts` — restricted/lockdown blocks Write/Edit/Bash |
+| **Manifest validator** | Validates agent output artifacts against declared manifest paths with template variable resolution (5-pass chained substitution) | `src/worker/manifest-validator.ts` |
+| **Guardrail config chain** | Unified strict/warning mode on every guardrail with override chain: agent > mesh > global > hardcoded | `src/worker/guardrail-config.ts` |
 
-**Human review**: Parity gate violations → reminder injected, if unresolved → surfaced to user. Identity gate kills → logged with reason. Mesh validation errors → block load, user sees what's wrong.
+**Human review**: Parity gate violations → reminder injected, if unresolved → surfaced to user. Identity gate kills → logged with reason. Mesh validation errors → block load, user sees what's wrong. Manifest validation failures → surfaced to user with missing/invalid paths.
 
 ### Nine 2.5 — Self-Healing & Auto-Recovery
 
@@ -45,10 +50,13 @@ Detect stuck states and recover without human intervention where safe.
 
 | Feature | What It Does | Where |
 |---------|-------------|-------|
-| **Nudge detector** | Detects when a completing agent fails to forward work to the next route step; summarizes dead output with Haiku and writes recovery task | `src/worker/nudge-detector.ts` — 15s delay, max 1 nudge/agent |
+| **Nudge detector** | Detects when a completing agent fails to forward work; summarizes dead output with Haiku and writes recovery task | `src/worker/nudge-detector.ts` — 15s delay, max 1 nudge/agent |
 | **Deadlock breaker** | DFS cycle detection in ask graph; auto-breaks short cycles, escalates deep ones | `src/queue/deadlock-detector.ts` — scans every 60s, `autoBreakDepth: 3` |
 | **Stale message cleaner** | TTL-based GC for unprocessed queue entries (missing target, crashed worker) | `src/queue/stale-cleaner.ts` — 30min TTL, warn/archive/delete actions |
 | **Quality iteration loops** | Quality hooks evaluate output → inject feedback → agent retries with feedback | `src/hooks/post/quality-evaluate.ts` — configurable gates, max iterations |
+| **Session suspend/resume** | Persists suspended session state to SQLite for crash recovery; re-buffers delivered responses on restart | `src/worker/session-manager.ts` — `restoreFromDatabase()` on startup |
+| **FSM state persistence + backup** | Saves FSM state with atomic backup-before-update; can restore from latest backup on corruption | `src/mesh/fsm-persistence.ts` |
+| **Session store with backfill** | SQLite session persistence with FTS5 search; backfills existing transcripts from filesystem on startup | `src/session/session-store.ts` |
 
 **Human review**: Nudges are logged and visible in `tx spy`. Deadlock cycles deeper than `autoBreakDepth` (default 3) → escalated to human with cycle visualization. Quality exhaustion (max iterations hit) → presents feedback history and asks user: retry, accept, or drop. Stale message cleanup → logged, user can audit via `tx spy`.
 
@@ -271,6 +279,48 @@ tx mesh health --json       # Full snapshot
 tx mesh health           # Shows current safe mode level
 tx spy                   # Watch safe-mode:blocked activity events
 ```
+
+### 6. Rate Limiter
+
+**What it does**: Token bucket rate limiting for server endpoints. Prevents burst overload.
+
+**How it works**:
+- Per-endpoint limits with configurable burst capacity
+- Automatic bucket cleanup every 5 minutes
+- Smooth rate limiting (not hard cutoff)
+
+**Source**: `src/server/rate-limiter.ts`
+
+### 7. Worker Pool Backpressure
+
+**What it does**: Adaptive polling with concurrency limits prevents queue overload.
+
+**How it works**:
+- Polls for work at configurable intervals (default 100ms)
+- Respects concurrency limits — won't spawn beyond capacity
+- Graceful shutdown drains active workers before terminating
+
+**Source**: `src/server/worker-pool.ts`
+
+### 8. Metrics Aggregator
+
+**What it does**: Per-query metrics collection with token cost tracking.
+
+**Tracks**: input/output tokens, duration, cost per query, aggregate totals for worker lifetime, tool call counts.
+
+**Source**: `src/worker/metrics-aggregator.ts`
+
+### 9. Worker Lifecycle Tracking
+
+**What it does**: Tracks parallel worker execution with unique instance IDs for deduplication and debugging.
+
+**How it works**:
+- Generates unique worker IDs (`agentId-uuid`)
+- Tracks parallel execution per agent
+- Persists worker state to disk
+- Tracks nudge counts and completion frontier
+
+**Source**: `src/worker/worker-lifecycle.ts`
 
 ## Test Mesh
 
