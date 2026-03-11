@@ -1741,18 +1741,22 @@ export class WorkerDispatcher extends EventEmitter {
           }
           // Fall through to normal dispatch
         } else {
-          log.warn('dispatcher', 'Edge limit reached, redirecting to fallback', {
+          const edgeKey = `${senderAgentId}->${agentId}`;
+          const edgeCount = this.edgeCounters.get(edgeKey) || 0;
+          log.info('dispatcher', 'Edge limit reached, redirecting to fallback', {
             originalTarget: agentId,
             fallback: fallbackAgentId,
             sender: senderAgentId,
+            edgeCount,
+            edgeMax,
           });
-          log.activity('guardrail:routing-error:edge-limit', agentId, `Edge limit STRICT REDIRECT (${edgeMax}) ${senderAgentId}→${agentId} → ${fallbackAgentId}`);
+          log.activity('guardrail:routing-error:edge-limit', agentId, `Edge ${senderAgentId}→${agentId} hit limit (${edgeCount}/${edgeMax}), redirecting → ${fallbackAgentId}`);
 
           // Consume the message from the original target's queue
           const msg = this.queue.pollOne(agentId);
           if (msg) {
             // Re-insert to the fallback agent with a system note
-            const systemNote = `[System: Max iterations reached on ${senderAgentId}→${agentId}. Proceeding with current state.]`;
+            const systemNote = `[System: Edge ${senderAgentId}→${agentId} reached iteration limit (${edgeCount}/${edgeMax}). Redirected to ${fallbackAgentId}.]`;
             const body = msg.payload?.body ? `${systemNote}\n\n${msg.payload.body}` : systemNote;
             this.queue.insert({
               from_agent: msg.from_agent,
