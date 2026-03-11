@@ -1147,13 +1147,37 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   dispatcher.on('worker:error', ({ id, error }: { id: string; error: string }) => {
     setTimeout(writeStatusFile, 50);
     const [mesh, agent] = (id || '').split('/');
-    if (mesh) pushWwwStatus(mesh, `${agent || id} error: ${error}`).catch(err => {
-      log.error('injector', 'pushWwwStatus error (worker error)', { error: (err as Error).message });
-    });
+    if (mesh) {
+      pushWwwStatus(mesh, `${agent || id} error: ${error}`).catch(err => {
+        log.error('injector', 'pushWwwStatus error (worker error)', { error: (err as Error).message });
+      });
+      // Clean up outgoing task so inject-response doesn't hang forever
+      const removedTask = removeOutgoingTask(mesh);
+      if (removedTask?.injectResponse) {
+        log.info('injector', 'Worker error: injecting error notification for inject-response task', { mesh, error });
+        // Inject error notification into core session so user knows the mesh died
+        const errorMsg = `[mesh error from ${id}]\n\n${error}`;
+        injectPrompt(tmux.name, errorMsg).catch(err => {
+          log.warn('injector', 'Failed to inject error notification', { error: String(err) });
+          // Fall back to pending
+          appendPendingMessage(-1, '', id, 'error');
+        });
+      }
+    }
   });
   dispatcher.on('mesh:killed', ({ meshName, killed, agents }: { meshName: string; killed: number; agents: string[] }) => {
     log.info('dispatcher', `Mesh killed via control signal`, { meshName, killed, agents });
     setTimeout(writeStatusFile, 50);
+    // Clean up outgoing task on mesh kill too
+    const removedTask = removeOutgoingTask(meshName);
+    if (removedTask?.injectResponse) {
+      log.info('injector', 'Mesh killed: injecting kill notification for inject-response task', { meshName });
+      const killMsg = `[mesh killed: ${meshName}]\n\nKilled ${killed} workers: ${agents.join(', ')}`;
+      injectPrompt(tmux.name, killMsg).catch(err => {
+        log.warn('injector', 'Failed to inject kill notification', { error: String(err) });
+        appendPendingMessage(-1, '', meshName, 'error');
+      });
+    }
     pushWwwStatus(meshName, `Mesh killed (${killed} workers: ${agents.join(', ')})`).catch(err => {
       log.error('injector', 'pushWwwStatus error (mesh killed)', { error: (err as Error).message });
     });
