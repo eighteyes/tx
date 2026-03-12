@@ -1144,7 +1144,21 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       log.error('injector', 'pushWwwStatus error (complete)', { error: (err as Error).message });
     });
   });
-  dispatcher.on('worker:error', ({ id, error }: { id: string; error: string }) => {
+  dispatcher.on('guardrail:kill', ({ agentId, meshName, guardrail, reason }: { agentId: string; meshName: string; guardrail: string; reason: string }) => {
+    setTimeout(writeStatusFile, 50);
+    // Outgoing task cleanup + inject-response
+    const removedTask = removeOutgoingTask(meshName);
+    if (removedTask?.injectResponse) {
+      const msg = `[guardrail kill: ${agentId}] ${guardrail}: ${reason}`;
+      const injected = injectPrompt(tmux, msg);
+      if (!injected) {
+        appendPendingMessage(-1, '', agentId, 'error');
+      }
+    }
+    pushWwwStatus(meshName, `${agentId} killed: ${guardrail}`).catch(() => {});
+  });
+  dispatcher.on('worker:error', ({ id, error, guardrailKill }: { id: string; error: string; guardrailKill?: boolean }) => {
+    if (guardrailKill) return;  // Already handled by guardrail:kill
     setTimeout(writeStatusFile, 50);
     const [mesh, agent] = (id || '').split('/');
     if (mesh) {

@@ -862,6 +862,49 @@ export class WorkerDispatcher extends EventEmitter {
     }
   }
 
+  // ============================================================================
+  // Guardrail Kill Convergence
+  // ============================================================================
+
+  /**
+   * Single convergence point for all guardrail kills.
+   * Runs full cleanup checklist and emits unified event.
+   */
+  private onGuardrailKill(event: {
+    agentId: string;
+    meshName: string;
+    workerId: string;
+    guardrail: string;
+    reason: string;
+    source: 'sdk-hook' | 'dispatcher';
+  }): void {
+    // 1. Remove worker from lifecycle
+    this.workerLifecycle.remove(event.agentId, event.workerId);
+    // 2. Clear suspended session + response buffer for this agent
+    this.sessionManager.clearForAgent(event.agentId);
+    // 3. Persist state
+    this.workerLifecycle.writeState();
+    // 4. Process next queued message (prevent queue stall)
+    this.processNextQueuedMessage(event.agentId);
+    // 5. Unified activity log
+    log.activity('guardrail:kill', event.agentId, `${event.guardrail}: ${event.reason} [${event.source}]`);
+    // 6. Emit for start.ts (outgoing-tasks, inject-response, www status)
+    this.emit('guardrail:kill', event);
+  }
+
+  /**
+   * Map kill reason strings to guardrail names and source types.
+   */
+  private inferGuardrail(reason: string): { guardrail: string; source: 'sdk-hook' | 'dispatcher' } {
+    if (reason.startsWith('Bash guard')) return { guardrail: 'bash-guard', source: 'sdk-hook' };
+    if (reason.startsWith('Write gate')) return { guardrail: 'write-gate', source: 'sdk-hook' };
+    if (reason.startsWith('Read gate')) return { guardrail: 'read-gate', source: 'sdk-hook' };
+    if (reason.startsWith('Identity gate')) return { guardrail: 'identity-gate', source: 'sdk-hook' };
+    if (reason.includes('max_messages')) return { guardrail: 'max_messages', source: 'dispatcher' };
+    if (reason.includes('max_mesh_messages')) return { guardrail: 'max_mesh_messages', source: 'dispatcher' };
+    return { guardrail: 'unknown', source: 'dispatcher' };
+  }
+
   /**
    * Defer worker kill until safe state to avoid SDK abort errors
    * Used for ask-human flow where the worker may still be writing the message file
@@ -2327,6 +2370,17 @@ The system will resume your session when the human responds.`;
           });
           this.removeActiveWorker(agentId, workerId);
           this.writeWorkerState();
+          return;
+        }
+
+        // Guardrail kill convergence — unified cleanup path
+        if (runner.wasGuardrailKill()) {
+          const { guardrail, source } = this.inferGuardrail(runner.getKillReason()!);
+          this.onGuardrailKill({
+            agentId, meshName, workerId,
+            guardrail, reason: runner.getKillReason()!, source,
+          });
+          this.emit('worker:error', { id: agentId, error: error.message, guardrailKill: true });
           return;
         }
 
@@ -4890,6 +4944,17 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             agentId, workerId: errorWorkerId,
           });
           this.removeActiveWorker(agentId, errorWorkerId);
+          return;
+        }
+
+        // Guardrail kill convergence — unified cleanup path
+        if (worker.wasGuardrailKill()) {
+          const { guardrail, source } = this.inferGuardrail(worker.getKillReason()!);
+          this.onGuardrailKill({
+            agentId, meshName: meshName!, workerId: errorWorkerId,
+            guardrail, reason: worker.getKillReason()!, source,
+          });
+          this.emit('worker:error', { ...data, workerId: errorWorkerId, guardrailKill: true });
           return;
         }
 

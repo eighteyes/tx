@@ -413,6 +413,19 @@ export class SessionManager extends EventEmitter {
   // ============================================================================
 
   /**
+   * Clear suspended session and response buffer for a single agent.
+   * Used by guardrail kill convergence to clean up per-agent state.
+   */
+  clearForAgent(agentId: string): void {
+    if (this.suspendedSessions.has(agentId)) {
+      this.suspendedSessions.delete(agentId);
+      this.queue.resumeSession(agentId);
+      log.debug('session-manager', 'Cleared agent session (guardrail kill)', { agentId });
+    }
+    this.askResponseBuffer.delete(agentId);
+  }
+
+  /**
    * Clear all state for a mesh (on completion or reset)
    */
   clearForMesh(meshName: string): { sessions: number; buffers: number } {

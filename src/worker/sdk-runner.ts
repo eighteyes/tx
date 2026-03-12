@@ -864,11 +864,14 @@ export class SdkRunner extends EventEmitter {
     return parts.join('\n');
   }
 
+  private _killReason: string | null = null;
+
   kill(reason?: string): void {
+    this._killReason = reason || 'unspecified';
     const workerId = this.config.id;
     log.warn('sdk-runner', 'Killing worker', {
       workerId,
-      reason: reason || 'unspecified',
+      reason: this._killReason,
       sessionId: this.currentSessionId?.slice(0, 8),
       wasRunning: this.running,
     });
@@ -877,6 +880,9 @@ export class SdkRunner extends EventEmitter {
     }
     this.running = false;
   }
+
+  getKillReason(): string | null { return this._killReason; }
+  wasGuardrailKill(): boolean { return this._killReason !== null; }
 
   /**
    * Get current session ID (for resume/interrupt)
