@@ -15,9 +15,9 @@ import {
 } from '../../src/worker/permissions.ts';
 
 describe('resolvePermissions - Default behavior', () => {
-  it('should use dontAsk mode by default', () => {
+  it('should use default mode by default (HITL permission routing)', () => {
     const result = resolvePermissions(undefined, false);
-    assert.equal(result.mode, 'dontAsk');
+    assert.equal(result.mode, 'default');
   });
 
   it('should use DEFAULT_ALLOWED_TOOLS when no permissions specified', () => {
@@ -211,7 +211,7 @@ describe('resolvePermissions - Edge cases', () => {
       allowedTools: ['Read', 'Write'],
     };
     const result = resolvePermissions(permissions, false);
-    assert.equal(result.mode, 'dontAsk'); // default mode
+    assert.equal(result.mode, 'default'); // default mode (HITL permission routing)
     assert.deepEqual(result.allowedTools, ['Read', 'Write']);
     assert.deepEqual(result.disallowedTools, DEFAULT_DISALLOWED_TOOLS);
   });

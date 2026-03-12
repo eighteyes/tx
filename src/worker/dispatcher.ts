@@ -43,6 +43,7 @@ import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
 import { BashGuard } from './bash-guard.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
+import { GuardrailKillHandler } from './guardrail-kill-handler.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
@@ -99,6 +100,8 @@ export interface DispatcherConfig {
   debug?: boolean;
   /** Enable god mode: bypasses all permissions (unrestricted tool access) */
   godMode?: boolean;
+  /** TX installation root directory (for script resolution via $TX_ROOT env var) */
+  txRoot?: string;
 }
 
 /**
@@ -350,6 +353,8 @@ export class WorkerDispatcher extends EventEmitter {
 
   // Queue-first writer for system-authored messages
   systemWriter!: SystemMessageWriter;
+  // Pending permission asks: agentId → { toolUseID, runner ref }
+  private pendingPermissionAsks: Map<string, { toolUseID: string; runner: SdkRunner }> = new Map();
   // Auto-nudge recovery for stalled routes
   private nudgeDetector?: NudgeDetector;
   // Reliability: circuit breakers, heartbeat, SLI, DLQ, safe-mode
@@ -534,6 +539,21 @@ export class WorkerDispatcher extends EventEmitter {
     // Legacy: singular completion_agent
     if (config.completion_agent) return [config.completion_agent];
     return [];
+  }
+
+  /**
+   * Build environment variables to inject into agent shell.
+   * TX_ROOT enables scripts to reference mesh resources via $TX_ROOT/meshes/...
+   */
+  private buildAgentEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+
+    // TX_ROOT: derive from meshesDir (meshesDir = txRoot/meshes)
+    // or use explicit txRoot from config if provided
+    const txRoot = this.config.txRoot || path.dirname(this.config.meshesDir);
+    env.TX_ROOT = txRoot;
+
+    return env;
   }
 
   /**
@@ -882,13 +902,15 @@ export class WorkerDispatcher extends EventEmitter {
     this.workerLifecycle.remove(event.agentId, event.workerId);
     // 2. Clear suspended session + response buffer for this agent
     this.sessionManager.clearForAgent(event.agentId);
-    // 3. Persist state
+    // 3. Clear pending permission ask (if any)
+    this.pendingPermissionAsks.delete(event.agentId);
+    // 4. Persist state
     this.workerLifecycle.writeState();
-    // 4. Process next queued message (prevent queue stall)
+    // 5. Process next queued message (prevent queue stall)
     this.processNextQueuedMessage(event.agentId);
-    // 5. Unified activity log
+    // 6. Unified activity log
     log.activity('guardrail:kill', event.agentId, `${event.guardrail}: ${event.reason} [${event.source}]`);
-    // 6. Emit for start.ts (outgoing-tasks, inject-response, www status)
+    // 7. Emit for start.ts (outgoing-tasks, inject-response, www status)
     this.emit('guardrail:kill', event);
   }
 
@@ -1059,6 +1081,46 @@ export class WorkerDispatcher extends EventEmitter {
    */
   hasPendingAskHumanForMesh(meshName: string): boolean {
     return this.sessionManager.hasPendingAskHumanForMesh(meshName);
+  }
+
+  /**
+   * Check if any agent in this mesh has a pending permission ask.
+   */
+  private hasPendingPermissionForMesh(meshName: string): boolean {
+    for (const agentId of this.pendingPermissionAsks.keys()) {
+      if (agentId.startsWith(`${meshName}/`)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get the pending permission entry for a mesh (first match).
+   */
+  private getPendingPermissionForMesh(meshName: string): { agentId: string; toolUseID: string; runner: SdkRunner } | undefined {
+    for (const [agentId, entry] of this.pendingPermissionAsks) {
+      if (agentId.startsWith(`${meshName}/`)) {
+        return { agentId, ...entry };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Parse human response to determine allow/deny for permission ask.
+   * Looks for affirmative keywords — anything else is a denial.
+   */
+  private parsePermissionResponse(body: string): boolean {
+    const normalized = body.trim().toLowerCase();
+    const allowPatterns = [
+      /^y(es)?$/,
+      /^allow$/,
+      /^approve$/,
+      /^ok$/,
+      /^go$/,
+      /^do it$/,
+      /^permit$/,
+    ];
+    return allowPatterns.some(p => p.test(normalized));
   }
 
   /**
@@ -1521,6 +1583,54 @@ export class WorkerDispatcher extends EventEmitter {
     const [meshName, agentName] = agentId.split('/');
     if (!meshName || !agentName) {
       log.error('dispatcher', `Invalid agentId format`, { agentId });
+      return;
+    }
+
+    // PERMISSION ASK: Check if any agent in this mesh has a pending permission ask.
+    // The worker is still alive (blocked in canUseTool callback), waiting for human decision.
+    // Route core/core responses to resolve the permission, then un-halt the mesh.
+    if (this.hasPendingPermissionForMesh(meshName)) {
+      const peeked = this.queue.peekOne(agentId);
+      if (peeked && peeked.from_agent === 'core/core') {
+        const pendingEntry = this.getPendingPermissionForMesh(meshName);
+        if (pendingEntry) {
+          const message = this.queue.pollOne(agentId);
+          if (message) {
+            const payload = message.payload || {};
+            const responseBody = typeof payload.body === 'string' ? payload.body : JSON.stringify(payload);
+            const allow = this.parsePermissionResponse(responseBody);
+
+            log.info('dispatcher', `Human permission response — ${allow ? 'ALLOW' : 'DENY'}`, {
+              meshName,
+              agentId: pendingEntry.agentId,
+              toolUseID: pendingEntry.toolUseID,
+              responseBody: responseBody.slice(0, 200),
+            });
+
+            // Resolve the callback (unblocks the SDK process)
+            pendingEntry.runner.resolvePermission(pendingEntry.toolUseID, allow, allow ? undefined : responseBody);
+
+            // Clear halt state
+            this.pendingPermissionAsks.delete(pendingEntry.agentId);
+            this.clearHaltedFile(meshName);
+
+            // Process any queued messages now that mesh is un-halted
+            this.processQueuedMeshMessages(meshName);
+            return;
+          }
+        }
+      }
+
+      // No core/core response yet — keep halted
+      log.debug('dispatcher', 'Mesh halted for permission ask, message queued', {
+        agentId,
+        meshName,
+      });
+      this.emit('mesh:halted-message', {
+        agentId,
+        meshName,
+        reason: 'pending-permission-ask',
+      });
       return;
     }
 
@@ -2245,6 +2355,8 @@ The system will resume your session when the human responds.`;
         sessionId,  // Resume existing session
         permissions: agentConfig.permissions,  // Tool access control from mesh config
         godMode: this.config.godMode,  // God mode from CLI flag
+        systemWriter: this.systemWriter,  // Permission denial notifications to core
+        env: this.buildAgentEnv(),  // Environment variables for agent shell
       };
 
       const runner = new SdkRunner(runnerConfig, this.queue);
@@ -2415,6 +2527,21 @@ The system will resume your session when the human responds.`;
         // Even on error, the mesh is now un-halted - process queued messages
         this.emit('mesh:unhalted', { meshName, reason: 'ask-human-resolved-with-error' });
         this.processQueuedMeshMessages(meshName);
+      });
+
+      // Permission ask handler for resumed sessions
+      runner.on('permission-ask', (data: { id: string; toolName: string; toolUseID: string }) => {
+        log.info('dispatcher', 'Permission ask on resumed session', {
+          agentId: data.id, toolName: data.toolName, meshName,
+        });
+        this.pendingPermissionAsks.set(data.id, { toolUseID: data.toolUseID, runner });
+        if (meshName) {
+          const pendingCount = this.queue.countPending(data.id);
+          this.writeHaltedFile(meshName, agentConfig.name, pendingCount);
+        }
+        this.emit('worker:permission-ask', {
+          agentId: data.id, toolName: data.toolName, meshName,
+        });
       });
 
       // Initialize and start the FSM (use process.pid as the runner pid)
@@ -3708,6 +3835,28 @@ Please advise the agent or check mesh configuration.`;
       const workerRef: { current: SdkRunner | null } = { current: null };
       const preToolUseHooks: unknown[] = [];
 
+      // Create guardrail kill handler for centralized cleanup
+      const killHandler = new GuardrailKillHandler({
+        sessionManager: this.sessionManager,
+        edgeCounters: this.edgeCounters,
+      });
+
+      // Wrapped killRunner that handles cleanup before kill
+      const killRunner = (reason: string) => {
+        if (workerRef.current && sessionId) {          // Cleanup state atomically
+          killHandler.handle(sessionId, meshName!, agentId, reason);
+          // Emit event for side-effect dispatch in start.ts
+          this.emit('guardrail:kill', {
+            sessionId: sessionId,
+            meshName,
+            agentId,
+            reason,
+          });
+        }
+        // Now kill the runner
+        workerRef.current?.kill(reason);
+      };
+
       // Write gate
       if (agentWrites.length > 0) {
         const writePaths = agentWrites.map(e => e.path).filter(p => !p.includes('{'));
@@ -3721,7 +3870,7 @@ Please advise the agent or check mesh configuration.`;
           agentId,
           allowedPaths: writePaths,
           workDir: this.config.workDir,
-          killRunner: (reason) => workerRef.current?.kill(reason),
+          killRunner,
           killThreshold: this.guardrails.getKillThreshold('write_gate', meshName!, agent.name),
           mode: this.guardrails.getMode('write_gate', meshName!, agent.name),
         });
@@ -3740,7 +3889,7 @@ Please advise the agent or check mesh configuration.`;
           agentId,
           allowedPaths: readPaths,
           workDir: this.config.workDir,
-          killRunner: (reason) => workerRef.current?.kill(reason),
+          killRunner,
           killThreshold: this.guardrails.getKillThreshold('read_gate', meshName!, agent.name),
           mode: this.guardrails.getMode('read_gate', meshName!, agent.name),
         });
@@ -3756,7 +3905,7 @@ Please advise the agent or check mesh configuration.`;
       const identityGate = new IdentityGate({
         agentId,
         workDir: this.config.workDir,
-        killRunner: (reason) => workerRef.current?.kill(reason),
+        killRunner,
         killThreshold: this.guardrails.getKillThreshold('identity_gate', meshName!, agent.name),
         mode: this.guardrails.getMode('identity_gate', meshName!, agent.name),
       });
@@ -3784,7 +3933,7 @@ Please advise the agent or check mesh configuration.`;
           agentId,
           workDir: this.config.workDir,
           allowedPaths: bashAllowedPaths,
-          killRunner: (reason) => workerRef.current?.kill(reason),
+          killRunner,
           mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
         });
         preToolUseHooks.push(bashGuard.createHook());
@@ -4113,6 +4262,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         thinking: agent.thinking,  // Extended thinking control (false = disabled)
         permissions: agent.permissions,  // Tool access control from mesh config
         godMode: this.config.godMode,  // God mode from CLI flag
+        systemWriter: this.systemWriter,  // Permission denial notifications to core
+        env: this.buildAgentEnv(),  // Environment variables for agent shell
       };
 
       // Prompt size visibility: ~4 chars per token rough estimate
@@ -4232,6 +4383,35 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         this.emit('worker:init', data);
+      });
+
+      // Permission ask: agent wants to use an unapproved tool, waiting for human decision.
+      // Halts mesh (same as ask-human) and tracks pending permission for response routing.
+      worker.on('permission-ask', (data: { id: string; toolName: string; toolUseID: string }) => {
+        log.info('dispatcher', 'Permission ask — mesh paused for human approval', {
+          agentId: data.id,
+          toolName: data.toolName,
+          toolUseID: data.toolUseID,
+          meshName,
+        });
+
+        // Track pending permission (for response routing)
+        this.pendingPermissionAsks.set(data.id, {
+          toolUseID: data.toolUseID,
+          runner: worker,
+        });
+
+        // Halt mesh (same as ask-human — prevents other workers from spawning)
+        if (meshName) {
+          const pendingCount = this.queue.countPending(data.id);
+          this.writeHaltedFile(meshName, agent.name, pendingCount);
+        }
+
+        this.emit('worker:permission-ask', {
+          agentId: data.id,
+          toolName: data.toolName,
+          meshName,
+        });
       });
 
       // init-anchor: first user message UUID — the earliest persistable anchor point.

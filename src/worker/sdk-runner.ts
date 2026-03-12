@@ -4,7 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import { query, type SDKResultMessage, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKResultMessage, type McpServerConfig, type CanUseTool, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult, QueryMetrics, WorkerMetrics } from '../shared/types.ts';
@@ -17,6 +17,7 @@ import {
 } from './usage-policy-error.ts';
 import type { GuardrailMode } from './guardrail-config.ts';
 import { resolvePermissions, type AgentPermissions } from './permissions.ts';
+import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -70,6 +71,8 @@ export interface SdkRunnerConfig {
   thinking?: boolean;  // Enable extended thinking (default: true). Set false to disable.
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   godMode?: boolean;  // Enable god mode (bypass all permissions)
+  systemWriter?: SystemMessageWriter;  // Queue-first writer for permission denial notifications
+  env?: Record<string, string>;  // Environment variables to inject into agent shell (TX_ROOT, etc.)
 }
 
 export class SdkRunner extends EventEmitter {
@@ -139,6 +142,134 @@ export class SdkRunner extends EventEmitter {
         maxTurns: this.config.maxTurns,
       });
     }
+  }
+
+  // Pending permission callbacks awaiting human response (toolUseID → resolve)
+  private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
+
+  /**
+   * Build canUseTool callback for HITL permission flow.
+   * When the SDK needs approval for an unapproved tool:
+   * 1. Write permission-ask message to core/core
+   * 2. Emit 'permission-ask' event (dispatcher halts mesh)
+   * 3. Block until human responds (approve/deny)
+   * 4. Return decision to SDK
+   */
+  private buildCanUseTool(): CanUseTool | undefined {
+    const writer = this.config.systemWriter;
+    if (!writer) return undefined;
+
+    const agentId = this.config.id;
+
+    return async (
+      toolName: string,
+      input: Record<string, unknown>,
+      options: { signal: AbortSignal; decisionReason?: string; toolUseID: string }
+    ): Promise<PermissionResult> => {
+      const inputSummary = this.summarizeToolInput(toolName, input);
+
+      log.info('sdk-runner', 'Permission ask — waiting for human decision', {
+        workerId: agentId,
+        toolName,
+        toolUseID: options.toolUseID,
+        reason: options.decisionReason,
+      });
+
+      log.activity('permission:ask', agentId, `${toolName}: awaiting human approval`);
+
+      // Write message to core/core (surfaces in tmux via inject)
+      writer.write({
+        to: 'core/core',
+        from: agentId,
+        type: 'permission-ask',
+        headline: `${agentId} requests: ${toolName}`,
+        body: `Agent \`${agentId}\` wants to use \`${toolName}\`.
+
+**Reason**: ${options.decisionReason || 'Tool not in allowedTools'}
+
+**Input**:
+\`\`\`
+${inputSummary}
+\`\`\`
+
+Reply **allow** to approve or **deny** to reject.`,
+        extraFrontmatter: { 'tool-use-id': options.toolUseID },
+      });
+
+      // Emit for dispatcher (halts mesh, tracks pending permission)
+      this.emit('permission-ask', {
+        id: agentId,
+        toolName,
+        toolUseID: options.toolUseID,
+      });
+
+      // Block until human responds or abort fires
+      return new Promise<PermissionResult>((resolve) => {
+        this.pendingPermissions.set(options.toolUseID, resolve);
+
+        // Auto-deny on abort (session kill, guardrail, etc.)
+        options.signal.addEventListener('abort', () => {
+          if (this.pendingPermissions.has(options.toolUseID)) {
+            this.pendingPermissions.delete(options.toolUseID);
+            resolve({
+              behavior: 'deny',
+              message: 'Session aborted while awaiting permission decision.',
+            });
+          }
+        }, { once: true });
+      });
+    };
+  }
+
+  /**
+   * Resolve a pending permission ask with human decision.
+   * Called by dispatcher when human response arrives.
+   */
+  resolvePermission(toolUseID: string, allow: boolean, message?: string): boolean {
+    const resolve = this.pendingPermissions.get(toolUseID);
+    if (!resolve) return false;
+
+    this.pendingPermissions.delete(toolUseID);
+    log.info('sdk-runner', `Permission ${allow ? 'approved' : 'denied'} by human`, {
+      workerId: this.config.id,
+      toolUseID,
+      allow,
+    });
+
+    log.activity(allow ? 'permission:approved' : 'permission:denied', this.config.id,
+      `${allow ? 'Approved' : 'Denied'} by operator`);
+
+    if (allow) {
+      resolve({ behavior: 'allow', updatedInput: {} });
+    } else {
+      resolve({ behavior: 'deny', message: message || 'Denied by operator.' });
+    }
+    return true;
+  }
+
+  /**
+   * Resolve ALL pending permissions (e.g., on worker kill).
+   * Deny-all to unblock the callback and let the SDK exit cleanly.
+   */
+  resolveAllPermissions(message: string = 'Worker terminated.'): void {
+    for (const [toolUseID, resolve] of this.pendingPermissions) {
+      resolve({ behavior: 'deny', message });
+    }
+    this.pendingPermissions.clear();
+  }
+
+  /**
+   * Check if this runner has a pending permission ask.
+   */
+  hasPendingPermission(): boolean {
+    return this.pendingPermissions.size > 0;
+  }
+
+  /**
+   * Get the first pending permission's toolUseID (for routing responses).
+   */
+  getFirstPendingPermissionId(): string | undefined {
+    return this.pendingPermissions.keys().next().value;
   }
 
   /**
@@ -455,6 +586,7 @@ export class SdkRunner extends EventEmitter {
           }
           // Resolve permissions (god mode or agent-specific)
           const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+          const canUseTool = this.buildCanUseTool();
 
           this.currentQuery = query({
             prompt: userPrompt,
@@ -466,6 +598,7 @@ export class SdkRunner extends EventEmitter {
               ...(resolvedPerms.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
               ...(resolvedPerms.allowedTools.length > 0 ? { allowedTools: resolvedPerms.allowedTools } : {}),
               ...(resolvedPerms.disallowedTools ? { disallowedTools: resolvedPerms.disallowedTools } : {}),
+              ...(canUseTool ? { canUseTool } : {}),
               abortController: this.abortController,
               maxTurns: this.getEffectiveMaxTurns(),
               settingSources: ['project'],  // Load project slash commands
@@ -476,6 +609,7 @@ export class SdkRunner extends EventEmitter {
               forkSession: this.config.forkSession,  // Branch into new session
               hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
               ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
+              ...(this.config.env ? { env: { ...process.env, ...this.config.env } } : {}),
             }
           });
         } catch (error) {
@@ -489,6 +623,7 @@ export class SdkRunner extends EventEmitter {
             // Retry without project settings
             // Resolve permissions (god mode or agent-specific)
             const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+            const canUseToolRetry = this.buildCanUseTool();
 
             this.currentQuery = query({
               prompt: userPrompt,
@@ -500,6 +635,7 @@ export class SdkRunner extends EventEmitter {
                 ...(resolvedPerms.allowDangerouslySkipPermissions ? { allowDangerouslySkipPermissions: true } : {}),
                 ...(resolvedPerms.allowedTools.length > 0 ? { allowedTools: resolvedPerms.allowedTools } : {}),
                 ...(resolvedPerms.disallowedTools ? { disallowedTools: resolvedPerms.disallowedTools } : {}),
+                ...(canUseToolRetry ? { canUseTool: canUseToolRetry } : {}),
                 abortController: this.abortController,
                 maxTurns: this.getEffectiveMaxTurns(),
                 mcpServers: this.config.mcpServers,  // Pass MCP server configs
@@ -509,6 +645,7 @@ export class SdkRunner extends EventEmitter {
                 forkSession: this.config.forkSession,  // Branch into new session
                 hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
                 ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
+                ...(this.config.env ? { env: { ...process.env, ...this.config.env } } : {}),
               }
             });
           } else {
@@ -604,6 +741,17 @@ export class SdkRunner extends EventEmitter {
                 cacheReadTokens: resultMsg.usage.cache_read_input_tokens,
                 cacheCreationTokens: resultMsg.usage.cache_creation_input_tokens,
               });
+
+              // Log permission denials summary (post-run visibility)
+              if (resultMsg.permission_denials?.length > 0) {
+                const tools = resultMsg.permission_denials.map(d => d.tool_name);
+                log.info('sdk-runner', 'Permission denials during run', {
+                  workerId,
+                  count: tools.length,
+                  tools,
+                });
+                log.activity('permission:denied-summary', workerId, `${tools.length} denial(s): ${tools.join(', ')}`);
+              }
               break;
 
             case 'user':
@@ -874,7 +1022,10 @@ export class SdkRunner extends EventEmitter {
       reason: this._killReason,
       sessionId: this.currentSessionId?.slice(0, 8),
       wasRunning: this.running,
+      pendingPermissions: this.pendingPermissions.size,
     });
+    // Resolve any pending permission callbacks to unblock the SDK process
+    this.resolveAllPermissions(`Worker killed: ${this._killReason}`);
     if (this.abortController) {
       this.abortController.abort();
     }
@@ -988,6 +1139,7 @@ export class SdkRunner extends EventEmitter {
           resume: sessionId,  // Resume the existing session
           hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
           ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
+          ...(this.config.env ? { env: { ...process.env, ...this.config.env } } : {}),
         }
       });
 

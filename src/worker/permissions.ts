@@ -118,7 +118,9 @@ export function resolvePermissions(
   }
 
   // Normal mode: use agent permissions or safe defaults
-  const mode = permissions?.mode || 'dontAsk';
+  // 'default' mode routes unapproved tools through canUseTool for HITL approval.
+  // 'dontAsk' silently denies — use only when HITL is not wired up.
+  const mode = permissions?.mode || 'default';
   const allowedTools = permissions?.allowedTools || DEFAULT_ALLOWED_TOOLS;
   const disallowedTools = permissions?.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
 
