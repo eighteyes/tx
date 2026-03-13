@@ -13,6 +13,8 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { MessageQueue, type Message } from '../queue/index.ts';
 import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestriction } from './sdk-runner.ts';
+import { ChromeCliRunner } from './chrome-cli-runner.ts';
+import type { Runner } from './runner.ts';
 import type {SemanticModel, WorkerConfig, FSMConfig, EnsembleConfig} from '../shared/types.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { log } from '../shared/logger.ts';
@@ -196,7 +198,7 @@ interface ResumeSessionOptions {
   agentId: string;
   sessionId: string;
   prompt: string;
-  runner: SdkRunner;
+  runner: Runner;
   interrupt?: boolean;
   metadata?: Record<string, unknown>;
 }
@@ -354,7 +356,7 @@ export class WorkerDispatcher extends EventEmitter {
   // Queue-first writer for system-authored messages
   systemWriter!: SystemMessageWriter;
   // Pending permission asks: agentId → { toolUseID, runner ref }
-  private pendingPermissionAsks: Map<string, { toolUseID: string; runner: SdkRunner }> = new Map();
+  private pendingPermissionAsks: Map<string, { toolUseID: string; runner: Runner }> = new Map();
   // Auto-nudge recovery for stalled routes
   private nudgeDetector?: NudgeDetector;
   // Reliability: circuit breakers, heartbeat, SLI, DLQ, safe-mode
@@ -700,14 +702,18 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Edge iteration counting: increment counter for this routing edge
     // Skip core/core — agents should always be able to ask the human
+    // Skip edges that exist in the routing config — configured cycles are intentional
     if (toAgentId !== 'core/core') {
       const edgeKey = `${fromAgentId}->${toAgentId}`;
       const count = (this.edgeCounters.get(edgeKey) || 0) + 1;
       this.edgeCounters.set(edgeKey, count);
 
+      // Check if this edge is an explicitly configured route — exempt from edge limits
+      const isConfiguredEdge = this.isConfiguredRoute(meshName, agentName, toAgentId.split('/')[1]);
+
       // Check if this edge has hit the iteration limit (resolved via guardrail chain)
       const routingFallback = this.guardrails.getRoutingFallback(meshName);
-      if (routingFallback.max && routingFallback.fallback && messageType === 'message' && count >= routingFallback.max) {
+      if (!isConfiguredEdge && routingFallback.max && routingFallback.fallback && messageType === 'message' && count >= routingFallback.max) {
         log.warn('dispatcher', 'Edge iteration limit reached', {
           edge: edgeKey,
           count,
@@ -821,12 +827,43 @@ export class WorkerDispatcher extends EventEmitter {
     const { max, fallback } = this.guardrails.getRoutingFallback(meshName);
     if (!max || !fallback) return null;
 
+    // Configured routes are exempt from edge limits — cycles are intentional
+    const fromAgent = fromAgentId.split('/')[1];
+    const toAgent = toAgentId.split('/')[1];
+    if (this.isConfiguredRoute(meshName, fromAgent, toAgent)) return null;
+
     const edgeKey = `${fromAgentId}->${toAgentId}`;
     const count = this.edgeCounters.get(edgeKey) || 0;
 
     if (count < max) return null;
 
+    // 'core' or 'complete' fallback targets resolve to core/core, not mesh/core
+    if (fallback === 'core' || fallback === 'complete') {
+      return 'core/core';
+    }
     return `${meshName}/${fallback}`;
+  }
+
+  /**
+   * Check if fromAgent→toAgent is an explicitly configured route in the mesh routing config.
+   * Configured edges represent intentional cycles and are exempt from edge limits.
+   */
+  private isConfiguredRoute(meshName: string, fromAgent: string, toAgent: string): boolean {
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (!meshConfig?.routing) return false;
+
+    const routing = meshConfig.routing as Record<string, unknown>;
+    const entry = routing[fromAgent];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+
+    // Branch routing: { message: { oracle: "...", simulator: "..." } }
+    // Check nested values for the target agent name
+    for (const value of Object.values(entry as Record<string, unknown>)) {
+      if (typeof value === 'string' && value === toAgent) return true;
+      if (typeof value === 'object' && value !== null && toAgent in (value as Record<string, unknown>)) return true;
+    }
+
+    return false;
   }
 
   // ============================================================================
@@ -898,6 +935,11 @@ export class WorkerDispatcher extends EventEmitter {
     reason: string;
     source: 'sdk-hook' | 'dispatcher';
   }): void {
+    // 0. Capture session context BEFORE removing the worker (needed for DLQ)
+    const workerInfo = this.getWorkerByWorkerId(event.workerId);
+    const sessionId = workerInfo?.worker.runner.getSessionId() || undefined;
+    const msgsSent = workerInfo?.worker.messagesSent?.length || 0;
+
     // 1. Remove worker from lifecycle
     this.workerLifecycle.remove(event.agentId, event.workerId);
     // 2. Clear suspended session + response buffer for this agent
@@ -912,6 +954,22 @@ export class WorkerDispatcher extends EventEmitter {
     log.activity('guardrail:kill', event.agentId, `${event.guardrail}: ${event.reason} [${event.source}]`);
     // 7. Emit for start.ts (outgoing-tasks, inject-response, www status)
     this.emit('guardrail:kill', event);
+    // 8. Reliability: record failure + route to DLQ for recovery
+    //    Heartbeat kills already recorded failure in ReliabilityManager — skip to avoid double-counting
+    if (this.reliability) {
+      const isHeartbeatKill = event.reason.startsWith('heartbeat dead:');
+      const category = this.guardrailToFailureCategory(event.guardrail, event.reason);
+      if (!isHeartbeatKill) {
+        this.reliability.recordFailure(event.meshName, event.agentId, category,
+          `${event.guardrail}: ${event.reason}`);
+      }
+      this.reliability.deadLetter(event.meshName, event.agentId, category,
+        `${event.guardrail}: ${event.reason}`, {
+          sessionId,
+          messagesSent: msgsSent,
+          toAgent: event.agentId,
+        });
+    }
   }
 
   /**
@@ -925,6 +983,23 @@ export class WorkerDispatcher extends EventEmitter {
     if (reason.includes('max_messages')) return { guardrail: 'max_messages', source: 'dispatcher' };
     if (reason.includes('max_mesh_messages')) return { guardrail: 'max_mesh_messages', source: 'dispatcher' };
     return { guardrail: 'unknown', source: 'dispatcher' };
+  }
+
+  /**
+   * Map guardrail name to FailureCategory for SLI/DLQ tracking.
+   * Single source of truth for guardrail → failure category mapping.
+   */
+  private guardrailToFailureCategory(guardrail: string, reason: string): import('../reliability/sli-tracker.ts').FailureCategory {
+    if (reason.startsWith('heartbeat dead:')) return 'stuck';
+    switch (guardrail) {
+      case 'bash-guard': return 'policy_violation';
+      case 'write-gate': return 'guardrail_kill';
+      case 'read-gate': return 'guardrail_kill';
+      case 'identity-gate': return 'policy_violation';
+      case 'max_messages': return 'guardrail_kill';
+      case 'max_mesh_messages': return 'guardrail_kill';
+      default: return 'crash';
+    }
   }
 
   /**
@@ -1096,7 +1171,7 @@ export class WorkerDispatcher extends EventEmitter {
   /**
    * Get the pending permission entry for a mesh (first match).
    */
-  private getPendingPermissionForMesh(meshName: string): { agentId: string; toolUseID: string; runner: SdkRunner } | undefined {
+  private getPendingPermissionForMesh(meshName: string): { agentId: string; toolUseID: string; runner: Runner } | undefined {
     for (const [agentId, entry] of this.pendingPermissionAsks) {
       if (agentId.startsWith(`${meshName}/`)) {
         return { agentId, ...entry };
@@ -2358,6 +2433,12 @@ The system will resume your session when the human responds.`;
         systemWriter: this.systemWriter,  // Permission denial notifications to core
         env: this.buildAgentEnv(),  // Environment variables for agent shell
       };
+
+      // Chrome agents are fire-and-forget — cannot resume sessions
+      if (agentConfig.chrome) {
+        log.warn('dispatcher', 'Cannot resume chrome agent — fire-and-forget', { agentId });
+        return;
+      }
 
       const runner = new SdkRunner(runnerConfig, this.queue);
 
@@ -3832,7 +3913,7 @@ Please advise the agent or check mesh configuration.`;
 
       // Chaos contract: build gate hooks from manifest
       // workerRef is a mutable reference — populated after SdkRunner construction
-      const workerRef: { current: SdkRunner | null } = { current: null };
+      const workerRef: { current: Runner | null } = { current: null };
       const preToolUseHooks: unknown[] = [];
 
       // Create guardrail kill handler for centralized cleanup
@@ -4281,7 +4362,17 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
-      const worker = new SdkRunner(runnerConfig, this.queue);
+      const worker: Runner = agent.chrome
+        ? new ChromeCliRunner({
+            id: runnerConfig.id,
+            model: runnerConfig.model,
+            systemPrompt: runnerConfig.systemPrompt,
+            workDir: runnerConfig.workDir,
+            msgsDir: runnerConfig.msgsDir,
+            maxTurns: runnerConfig.maxTurns,
+            env: runnerConfig.env,
+          }, this.queue)
+        : new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
 
       // Reliability: register agent for heartbeat monitoring + circuit breaker check
@@ -4294,7 +4385,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           log.activity('reliability:blocked', agentId, spawnCheck.reason || 'blocked');
           return;
         }
-        this.reliability.registerAgent(agentId);
+        // Pass mesh-level heartbeat config overrides (e.g. longer thresholds for slow agents)
+        const meshReliability = meshName ? this.meshConfigs.get(meshName)?.reliability : undefined;
+        this.reliability.registerAgent(agentId, meshReliability?.heartbeat);
       }
 
       // Parity gate: emit session-start for consumer to clear stale pending asks
@@ -6342,7 +6435,7 @@ ${output}
 
     // Check if worker has an active API query (mid-turn correction possible)
     // SdkRunner stores currentQuery as a private property, check if it exists
-    const hasActiveQuery = (activeWorker.runner as any).currentQuery !== null;
+    const hasActiveQuery = 'currentQuery' in activeWorker.runner && (activeWorker.runner as any).currentQuery !== null;
 
     if (hasActiveQuery) {
       log.info('dispatcher', 'Injecting system feedback directly into agent session', {
@@ -6453,7 +6546,7 @@ Routes to \`core/core\` or other meshes are always permitted.`;
 
     // Check if worker has an active API query (mid-turn correction possible)
     // SdkRunner stores currentQuery as a private property, check if it exists
-    const hasActiveQuery = (activeWorker.runner as any).currentQuery !== null;
+    const hasActiveQuery = 'currentQuery' in activeWorker.runner && (activeWorker.runner as any).currentQuery !== null;
 
     if (hasActiveQuery) {
       // Worker is mid-turn — interrupt and inject feedback in real time

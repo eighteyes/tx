@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'node:events';
 import type { WorkerResult } from '../shared/types.ts';
+import type { FileChangeSummary } from '../session/types.ts';
 
 /**
  * Events emitted by all runners (dispatcher subscribes to these):
@@ -32,4 +33,5 @@ export interface Runner extends EventEmitter {
   interrupt(): Promise<void>;
   resume(sessionId: string, feedback: string): Promise<WorkerResult>;
   resolvePermission(toolUseID: string, allow: boolean, message?: string): boolean;
+  getFilesChanged?(): FileChangeSummary;
 }

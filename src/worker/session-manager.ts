@@ -28,6 +28,7 @@ export interface AgentConfigMinimal {
   prompt?: string;
   command?: string;
   permissions?: AgentPermissions;
+  chrome?: boolean;
 }
 
 /**

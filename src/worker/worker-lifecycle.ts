@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { log } from '../shared/logger.ts';
-import type { SdkRunner } from './sdk-runner.ts';
+import type { Runner } from './runner.ts';
 import type { WorkerStateMachine } from '../state-machine/index.ts';
 import type { HookContext } from './hooks.ts';
 
@@ -30,7 +30,7 @@ export interface TrackedMessage {
  */
 export interface ActiveWorker {
   workerId: string;  // Unique instance ID (agentId-uuid) for parallel execution
-  runner: SdkRunner;
+  runner: Runner;
   machine: WorkerStateMachine;
   startedAt: number;
   hookContext: HookContext;  // Lifecycle hook context (includes quality state)
