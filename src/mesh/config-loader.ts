@@ -81,7 +81,7 @@ export interface MeshGuardrailOverrides {
   write_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   read_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
   identity_gate?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
-  bash_guard?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null };
+  bash_guard?: { strict?: boolean; warning?: boolean; kill_threshold?: number | null; allowed_paths?: string[] };
   routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number; routing_retry_max?: number | null; routing_fallback?: string | null };
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
@@ -119,6 +119,7 @@ export interface AgentConfig {
   fork_from?: string;  // Fork from another agent's checkpoint
   orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
+  chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
 }
 
 /**
@@ -153,6 +154,7 @@ export interface MeshConfig {
   manifest_enforcement?: ManifestEnforcementConfig;  // Artifact validation settings
   guardrails?: MeshGuardrailConfig;  // Per-mesh guardrail overrides (mesh-local wins over global)
   parallelism?: ParallelBlock[];  // Parallel execution blocks with fork/join semantics
+  reliability?: import('../reliability/reliability-manager.ts').ReliabilityConfig;  // Per-mesh reliability overrides (heartbeat thresholds, etc.)
   max_mesh_messages?: number | { strict?: boolean; warning?: boolean; limit?: number | null };  // Mesh-wide message cap
   autoInjectManifestFiles?: boolean;  // Auto-preload manifest reads into agent context (default: true)
   disable?: boolean;  // Disable mesh: hidden from prompts, cannot be started
