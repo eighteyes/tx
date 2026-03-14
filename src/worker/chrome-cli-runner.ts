@@ -14,6 +14,7 @@ import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult } from '../shared/types.ts';
 import type { Runner } from './runner.ts';
+import { isGuardrailKill } from './runner.ts';
 import { log } from '../shared/logger.ts';
 
 export interface ChromeCliRunnerConfig {
@@ -65,10 +66,7 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
     const agentId = this.config.id;
     const pending = this.queue.getPendingTasks(agentId);
     if (pending.length === 0) return null;
-
-    const msg = pending[0];
-    if (msg.id !== undefined) this.queue.markProcessed(msg.id);
-    return msg;
+    return pending[0];
   }
 
   async run(): Promise<WorkerResult> {
@@ -89,10 +87,8 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
     this.running = true;
     this.sessionId = `chrome-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    this.emit('start', { id: workerId });
-    this.emit('init', { id: workerId, tools: [], sessionId: this.sessionId });
-
     return new Promise<WorkerResult>((resolve) => {
+      let settled = false;
       const args = this.buildArgs(taskPrompt);
 
       this.process = spawn('claude', args, {
@@ -103,6 +99,9 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+
+      this.emit('start', { id: workerId });
+      this.emit('init', { id: workerId, tools: [], sessionId: this.sessionId });
 
       this.process.stdout!.on('data', (chunk: Buffer) => {
         const text = chunk.toString();
@@ -115,12 +114,17 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
       });
 
       this.process.on('close', (code: number | null) => {
+        if (settled) return;
+        settled = true;
+
         this.running = false;
         this.process = null;
 
         const success = code === 0 && !this._killReason;
 
         if (success) {
+          if (task?.id !== undefined) this.queue.markProcessed(task.id);
+
           log.info('chrome-cli-runner', 'CLI process completed', {
             workerId,
             outputLength: this.output.length,
@@ -162,6 +166,9 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
       });
 
       this.process.on('error', (err: Error) => {
+        if (settled) return;
+        settled = true;
+
         this.running = false;
         this.process = null;
 
@@ -188,6 +195,16 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
 
     if (this.process) {
       this.process.kill('SIGTERM');
+      const proc = this.process;
+      setTimeout(() => {
+        if (proc.exitCode === null) {
+          log.warn('chrome-cli-runner', 'SIGTERM ignored, escalating to SIGKILL', {
+            workerId: this.config.id,
+            pid: proc.pid,
+          });
+          proc.kill('SIGKILL');
+        }
+      }, 5000).unref();
     }
     this.running = false;
   }
@@ -195,12 +212,11 @@ export class ChromeCliRunner extends EventEmitter implements Runner {
   getKillReason(): string | null { return this._killReason; }
 
   wasGuardrailKill(): boolean {
-    if (!this._killReason) return false;
-    if (this._killReason.startsWith('revision:')) return false;
-    if (this._killReason.startsWith('mesh kill:')) return false;
-    if (this._killReason.startsWith('mesh complete')) return false;
-    if (this._killReason.startsWith('mesh shutdown')) return false;
-    return true;
+    return isGuardrailKill(this._killReason);
+  }
+
+  hasActiveQuery(): boolean {
+    return this.running;
   }
 
   getSessionId(): string | null {

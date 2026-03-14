@@ -11,6 +11,16 @@ import type { WorkerResult } from '../shared/types.ts';
 import type { FileChangeSummary } from '../session/types.ts';
 
 /**
+ * Shared kill-reason classifier: returns true if the kill was from a guardrail
+ * (as opposed to operational kills like revision, mesh lifecycle, ask-human, etc.)
+ */
+export function isGuardrailKill(reason: string | null): boolean {
+  if (!reason) return false;
+  const operationalPrefixes = ['revision:', 'mesh kill:', 'mesh complete', 'mesh shutdown', 'ask-human:'];
+  return !operationalPrefixes.some(prefix => reason.startsWith(prefix));
+}
+
+/**
  * Events emitted by all runners (dispatcher subscribes to these):
  * - 'start'           { id: string }
  * - 'init'            { id: string, tools?: string[], sessionId: string }
@@ -34,4 +44,5 @@ export interface Runner extends EventEmitter {
   resume(sessionId: string, feedback: string): Promise<WorkerResult>;
   resolvePermission(toolUseID: string, allow: boolean, message?: string): boolean;
   getFilesChanged?(): FileChangeSummary;
+  hasActiveQuery?(): boolean;
 }

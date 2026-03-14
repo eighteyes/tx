@@ -18,6 +18,7 @@ import {
 import type { GuardrailMode } from './guardrail-config.ts';
 import { resolvePermissions, type AgentPermissions } from './permissions.ts';
 import type { SystemMessageWriter } from '../core/system-message-writer.ts';
+import { isGuardrailKill } from './runner.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -775,6 +776,8 @@ Reply **allow** to approve or **deny** to reject.`,
                   ? resultStr.slice(0, 2000) + '\n... (truncated)'
                   : resultStr;
                 sessionOutput.push(`[Tool Result]\n${truncated}`);
+                // Heartbeat: tool results are activity — keeps worker alive during long tool chains
+                this.emit('output', { id: workerId, data: '[Tool Result]' });
               }
               break;
 
@@ -1033,7 +1036,15 @@ Reply **allow** to approve or **deny** to reject.`,
   }
 
   getKillReason(): string | null { return this._killReason; }
-  wasGuardrailKill(): boolean { return this._killReason !== null; }
+
+  /** True when killed by a guardrail enforcement, false for intentional operational kills */
+  wasGuardrailKill(): boolean {
+    return isGuardrailKill(this._killReason);
+  }
+
+  hasActiveQuery(): boolean {
+    return this.currentQuery !== null;
+  }
 
   /**
    * Get current session ID (for resume/interrupt)
@@ -1198,6 +1209,8 @@ Reply **allow** to approve or **deny** to reject.`,
                 ? resultStr.slice(0, 2000) + '\n... (truncated)'
                 : resultStr;
               sessionOutput.push(`[Tool Result]\n${truncated}`);
+              // Heartbeat: tool results are activity — keeps worker alive during long tool chains
+              this.emit('output', { id: workerId, data: '[Tool Result]' });
             }
             break;
 

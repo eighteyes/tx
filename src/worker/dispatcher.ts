@@ -46,7 +46,8 @@ import { IdentityGate } from './identity-gate.ts';
 import { BashGuard } from './bash-guard.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { GuardrailKillHandler } from './guardrail-kill-handler.ts';
-import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables } from './manifest-validator.ts';
+import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables, resolveManifestPath } from './manifest-validator.ts';
+import { resolveManifestEligibility, formatDeadlockMessage } from './manifest-resolver.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
 import { ReliabilityManager } from '../reliability/reliability-manager.ts';
@@ -320,6 +321,11 @@ export class WorkerDispatcher extends EventEmitter {
   // Avoids stale session.yaml reads during preflight/post-validation
   // Key: mesh name, Value: resolved variable map (game-id, campaign-id, N, etc.)
   private cachedManifestVars: Map<string, Record<string, string>> = new Map();
+
+  // Track written file paths per mesh for manifest routing
+  // Key: mesh instance name, Value: set of resolved absolute paths confirmed written
+  // Reset when entry_point receives a new task
+  private writtenFiles: Map<string, Set<string>> = new Map();
 
   // Last completed session ID per agent — used by routing self-heal to resume
   // conversation context when spawning a correction worker after OAOM kill
@@ -1902,6 +1908,17 @@ export class WorkerDispatcher extends EventEmitter {
           await this.initializeSingleFSM(meshName, meshConfig);
         }
       }
+
+      // Manifest routing: resolve and spawn eligible agents instead of normal flow
+      if (meshConfig.routing_mode === 'manifest' && meshConfig.manifest) {
+        // Reset writtenFiles for new mesh run (unless resuming)
+        if (!resumeMesh && !isFsmDispatch) {
+          this.writtenFiles.set(meshName, new Set());
+        }
+
+        this.resolveAndSpawnManifestAgents(meshName, meshConfig);
+        return; // Manifest mode handles its own spawning
+      }
     }
 
     // Check for FSM ensemble state (both legacy type: ensemble and new ensemble.type: parallel)
@@ -3121,6 +3138,159 @@ The system will resume your session when the human responds.`;
    * Called by consumer when task-complete to core passes parity gate
    * Also called on new run at entry point (unless resume-mesh flag set)
    */
+  /**
+   * Manifest routing: resolve eligible agents and spawn them.
+   * Called at mesh start and after each agent completion.
+   */
+  private resolveAndSpawnManifestAgents(meshName: string, meshConfig: MeshConfig): void {
+    const manifest = meshConfig.manifest!;
+    const agentNames = meshConfig.agents.map(a => a.name);
+    const completed = this.completedAgents.get(meshName) || new Set();
+    const written = this.writtenFiles.get(meshName) || new Set();
+
+    const cachedVars = this.cachedManifestVars.get(meshName);
+    const pathContext = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+
+    const result = resolveManifestEligibility(manifest, agentNames, completed, written, pathContext);
+
+    if (result.deadlock) {
+      const message = formatDeadlockMessage(result);
+      log.error('dispatcher', message, { meshName });
+      log.activity('manifest:deadlock', meshName, message);
+
+      // Send deadlock error to core
+      if (this.systemWriter) {
+        this.systemWriter.write({
+          to: 'core/core',
+          from: `${meshName}/manifest-resolver`,
+          type: 'error',
+          headline: 'Manifest deadlock detected',
+          body: message,
+        });
+      }
+      return;
+    }
+
+    if (result.eligible.length === 0) {
+      // All agents completed — mesh success
+      const completionAgents = this.normalizeCompletionAgents(meshConfig);
+      if (completionAgents.length === 0 || completionAgents.every(a => completed.has(a))) {
+        log.info('dispatcher', `Manifest routing: all agents completed, mesh done`, { meshName });
+        log.activity('manifest:complete', meshName, 'All manifest agents completed');
+
+        // Kill any remaining workers before clearing state
+        this.killMeshWorkers(meshName);
+
+        if (this.systemWriter) {
+          this.systemWriter.write({
+            to: 'core/core',
+            from: `${meshName}/manifest-resolver`,
+            type: 'task-complete',
+            headline: 'Mesh completed',
+            body: 'All manifest pipeline agents have completed successfully.',
+            injectResponse: true,
+          });
+        }
+        this.clearMeshState(meshName);
+      }
+      return;
+    }
+
+    // Spawn all eligible agents
+    for (const agentName of result.eligible) {
+      const agentId = `${meshName}/${agentName}`;
+
+      // OAOM: skip if agent already has active worker
+      if (this.workerLifecycle.hasWorkers(agentId)) {
+        log.debug('dispatcher', `Manifest routing: skipping ${agentName}, worker active`, { meshName });
+        continue;
+      }
+
+      const agentConfig = meshConfig.agents.find(a => a.name === agentName);
+      if (!agentConfig) continue;
+
+      // Build task context for the agent
+      const writesNeeded = manifest
+        .filter(e => e.writes.includes(agentName))
+        .filter(e => {
+          const resolved = resolveManifestPath(e, pathContext);
+          return !resolved || !written.has(resolved);
+        })
+        .map(e => e.id);
+
+      // Write a task message for the agent
+      if (this.systemWriter) {
+        this.systemWriter.write({
+          to: agentId,
+          from: `${meshName}/manifest-resolver`,
+          type: 'task',
+          headline: 'Manifest routing: reads satisfied',
+          body: `Your reads are satisfied. Write: [${writesNeeded.join(', ')}]`,
+        });
+      }
+
+      log.info('dispatcher', `Manifest routing: spawning eligible agent`, {
+        meshName,
+        agentName,
+        writesNeeded,
+      });
+      log.activity('manifest:spawn', agentId, `Eligible — writes needed: ${writesNeeded.join(', ')}`);
+    }
+  }
+
+  /**
+   * Handle manifest routing after an agent completes.
+   * Updates writtenFiles with validated paths and resolves next agents.
+   */
+  private handleManifestCompletion(meshName: string, agentName: string, meshConfig: MeshConfig): void {
+    const manifest = meshConfig.manifest!;
+    const cachedVars = this.cachedManifestVars.get(meshName);
+    const pathContext = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+
+    // Add agent's validated write paths to writtenFiles
+    if (!this.writtenFiles.has(meshName)) {
+      this.writtenFiles.set(meshName, new Set());
+    }
+    const written = this.writtenFiles.get(meshName)!;
+
+    const writeEntries = manifest.filter(e => e.writes.includes(agentName));
+    for (const entry of writeEntries) {
+      const resolved = resolveManifestPath(entry, pathContext);
+      if (resolved) {
+        written.add(resolved);
+      }
+    }
+
+    // Check if completion_agents just finished → immediate mesh completion
+    const completionAgents = this.normalizeCompletionAgents(meshConfig);
+    if (completionAgents.includes(agentName)) {
+      log.info('dispatcher', `Manifest routing: completion agent finished, mesh done`, {
+        meshName,
+        agentName,
+      });
+      log.activity('manifest:complete', meshName, `Completion agent ${agentName} finished`);
+
+      // Kill any sibling workers still running before clearing state
+      this.killMeshWorkers(meshName);
+
+      if (this.systemWriter) {
+        this.systemWriter.write({
+          to: 'core/core',
+          from: `${meshName}/manifest-resolver`,
+          type: 'task-complete',
+          headline: 'Mesh completed',
+          body: `Completion agent '${agentName}' has finished.`,
+          injectResponse: true,
+        });
+      }
+      this.clearMeshState(meshName);
+      return;
+    }
+
+    // Re-resolve and spawn next eligible agents
+    this.resolveAndSpawnManifestAgents(meshName, meshConfig);
+  }
+
   clearMeshState(meshName: string): void {
     // Clear sessions and buffers via SessionManager (handles both in-memory and SQLite)
     const { sessions: clearedSessions, buffers: clearedBuffers } = this.sessionManager.clearForMesh(meshName);
@@ -3178,6 +3348,9 @@ The system will resume your session when the human responds.`;
         this.fanOutGroups.delete(key);
       }
     }
+
+    // Clear manifest routing state
+    this.writtenFiles.delete(meshName);
 
     // Clear halted state file entry
     this.clearHaltedFile(meshName);
@@ -4146,7 +4319,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       let routingConfig: Record<string, Record<string, string>> | undefined;
       let dispatcherRoutingCtx: import('../shared/types.ts').DispatchInjectionContext | undefined;
 
-      if (meshConfig?.routing_mode === 'dispatcher' && meshConfig.routing) {
+      if (meshConfig?.routing_mode === 'manifest') {
+        // Manifest mode: no inter-agent routing — agents write files, resolver handles orchestration
+        log.debug('dispatcher', 'Manifest routing mode — skipping routing injection', { agentId });
+      } else if (meshConfig?.routing_mode === 'dispatcher' && meshConfig.routing) {
         const agentNames = meshConfig.agents.map(a => a.name);
         const router = new DispatchRouter(
           meshName,
@@ -5169,6 +5345,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           // Refresh cached manifest variables from session.yaml (now up-to-date)
           const wsLocations = (meshConfig as any)?.workspace?.locations || {};
           this.cachedManifestVars.set(meshName, this.resolveManifestVariables(meshName, wsLocations));
+
+          // Manifest routing: update writtenFiles and resolve next agents
+          if (meshConfig?.routing_mode === 'manifest' && meshConfig.manifest) {
+            this.handleManifestCompletion(meshName, agent.name, meshConfig);
+          }
 
           // Parallel block handling: spawn parallel agents when entry completes
           if (meshConfig?.parallelism) {
@@ -6434,8 +6615,7 @@ ${output}
     }
 
     // Check if worker has an active API query (mid-turn correction possible)
-    // SdkRunner stores currentQuery as a private property, check if it exists
-    const hasActiveQuery = 'currentQuery' in activeWorker.runner && (activeWorker.runner as any).currentQuery !== null;
+    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
 
     if (hasActiveQuery) {
       log.info('dispatcher', 'Injecting system feedback directly into agent session', {
@@ -6545,8 +6725,7 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     }
 
     // Check if worker has an active API query (mid-turn correction possible)
-    // SdkRunner stores currentQuery as a private property, check if it exists
-    const hasActiveQuery = 'currentQuery' in activeWorker.runner && (activeWorker.runner as any).currentQuery !== null;
+    const hasActiveQuery = activeWorker.runner.hasActiveQuery?.() ?? false;
 
     if (hasActiveQuery) {
       // Worker is mid-turn — interrupt and inject feedback in real time
