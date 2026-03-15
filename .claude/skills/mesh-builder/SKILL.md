@@ -1,6 +1,6 @@
 ---
 name: mesh-builder
-description: Build TX V4 meshes - agent configs, prompts, routing. Use for new meshes, agent roles, or multi-agent workflows. Triggers - mesh, routing, agents, multi-agent, config.yaml
+description: Use when creating, editing, or debugging any mesh — config.yaml, agent prompts, routing, FSM, guardrails, dispatcher, fan-out, ensemble, workspace, lifecycle hooks, parallelism, or permissions. Activate for any work in meshes/ directory or multi-agent workflow design.
 ---
 
 # Mesh Builder
@@ -21,6 +21,7 @@ Every config option added is complexity that can break. The default question for
 | `fsm:` | Routing depends on computed state/counters/file presence — NOT agent judgment | Omit |
 | `parallelism:` | Agents truly run in parallel and need a sync gate | Omit |
 | `routing_mode: dispatcher` | Fan-out to N parallel workers is the core mechanic | Omit |
+| `routing_mode: manifest` | Workflow is a file pipeline — agents produce files that unlock downstream agents | Omit |
 | `type: persistent` / `auto_despawn: false` | Mesh must survive indefinitely (daemon pattern) | Omit |
 | `continuation: false` | You explicitly need cold starts for isolation | Omit (continuation is default-on) |
 | `lifecycle:` hooks | Quality gates or auto-commits are genuinely required | Omit |
@@ -31,6 +32,7 @@ Every config option added is complexity that can break. The default question for
 | `injectOriginalMessage:` | Downstream agents truly need the original task | Omit |
 | `rearmatter:` | FSM routing depends on self-assessment scores | Omit |
 | `guardrails:` | Custom limits differ from system defaults | Omit |
+| `load_claude_md: false` | Mesh agents should not inherit project CLAUDE.md instructions | `true` |
 
 **The minimal working mesh:**
 ```yaml
@@ -104,6 +106,7 @@ tx prompt dev --raw                   # Raw output, no metadata
 |-------|----------|
 | Config fields | `docs/mesh-config.md` |
 | FSM (state tracking) | `.ai/docs/mesh-fsm-config.md` |
+| Manifest routing | `docs/manifest-routing.md` |
 | Available meshes | `docs/meshes.md` |
 | Message format | `docs/message-format.md` |
 
@@ -143,7 +146,7 @@ agents:
 2. Agent config `command:` (default)
 3. No command (just prompt as system prompt)
 
-Requires `settingSources: ['project']` (already enabled by default).
+Commands are prepended to the user prompt at dispatch time — no special SDK options required.
 
 ### Command Template Interpolation
 
@@ -912,6 +915,22 @@ For ensemble `aggregation` field:
 | `max_messages` | number | no | Outbound message limit per invocation |
 | `orchestrator` | boolean | no | Restrict to Read + Write(msgs only). For coordinator agents that route, not implement. |
 | `permissions` | object | no | Tool access control. See Permissions section below. |
+| `postconditions` | object | no | Tool call postconditions. See Postconditions section. |
+| `chrome` | boolean | no | Use `claude --chrome` CLI instead of Agent SDK. Enables browser access. Fire-and-forget: no HITL, no resume, no checkpoint. |
+
+## Chrome Agents (Browser Access)
+
+Set `chrome: true` to spawn `claude --chrome --print` CLI instead of SDK. Fire-and-forget: no HITL, no resume, no checkpoint. SIGTERM → SIGKILL after 5s.
+
+```yaml
+agents:
+  - name: browser
+    model: sonnet
+    prompt: browser.md
+    chrome: true
+```
+
+**Full docs:** `docs/chrome-agents.md` — behavior differences, incompatible fields, chrome vs Playwright decision matrix, troubleshooting.
 
 ## Permissions (Tool Access Control)
 
@@ -954,11 +973,52 @@ agents:
 **Available tools:**
 - File operations: `Read`, `Write`, `Edit`, `Glob`, `Grep`
 - Execution: `Bash` (denied by default)
-- Advanced: `Task`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
+- Advanced: `Task`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
+- **Never grant to mesh agents**: `AskUserQuestion` (no user session — use messaging to `core/core` instead)
 
 **Security principle:** Only grant tools an agent actually needs. Start restrictive, add permissions as required.
 
+**`AskUserQuestion` — never grant to mesh agents.** Mesh agents have no interactive user session. `AskUserQuestion` is an SDK tool for CLI sessions only. When agents need human input, they write a message to `core/core` (which suspends the session until the human responds via core). Prompts that need HITL steps should instruct agents to send a message to core, not use `AskUserQuestion`.
+
 **God mode:** Run `tx start dev --god-mode` to bypass all permissions (unrestricted tool access). Use only when you need it.
+
+## Postconditions
+
+Validate that required tool calls occurred during agent execution. Prevents agents from hallucinating results instead of using tools.
+
+```yaml
+agents:
+  - name: worker
+    model: sonnet
+    prompt: worker.md
+    postconditions:
+      tool_calls:
+        - tool: Bash
+          pattern: "campaign.sh"  # Substring match in command
+          exit_code: 0            # Required exit code (default: 0)
+        - tool: Write
+          pattern: "output.json"  # Substring match in file_path
+          min_calls: 1            # Minimum call count (default: 1)
+```
+
+**Fields**:
+- `tool`: Tool name (Bash, Write, Read, Edit, etc.)
+- `pattern`: Substring to match in command/path (optional)
+- `exit_code`: Required exit code for Bash (default: 0)
+- `min_calls`: Minimum matching calls (default: 1)
+
+**Behavior**:
+- Validation runs after agent completion, before routing
+- All postconditions must pass for the agent to complete successfully
+- Guardrail mode (strict/warning) controlled via `guardrails.postcondition` in mesh or global config
+- Strict mode: kills worker and routes error to core/core
+- Warning mode: injects feedback into agent session, agent continues with corrective instructions
+
+**Use cases**:
+- Enforce that gravity agents run campaign.sh via Bash (not fabricate collisions.yaml)
+- Ensure workers write required output files
+- Validate that scripts exit successfully (exit code 0)
+- Prevent hallucinated tool results
 
 ## Additional Config Fields
 
@@ -978,6 +1038,7 @@ agents:
 | `manifest_enforcement` | object | Artifact validation settings |
 | `max_mesh_messages` | number/object | Mesh-wide message cap (guardrail) |
 | `autoInjectManifestFiles` | boolean | Auto-preload manifest reads (default: true) |
+| `load_claude_md` | boolean | Load project CLAUDE.md into agent system prompt (default: true) |
 
 ## Route Validation
 

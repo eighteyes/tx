@@ -565,6 +565,26 @@ export class WorkerDispatcher extends EventEmitter {
   }
 
   /**
+   * Load project CLAUDE.md from workDir (project-level only, not ~/.claude/).
+   * Checks workDir/CLAUDE.md and workDir/.claude/CLAUDE.md.
+   */
+  private loadProjectClaudeMd(): string | null {
+    const candidates = [
+      path.join(this.config.workDir, 'CLAUDE.md'),
+      path.join(this.config.workDir, '.claude', 'CLAUDE.md'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        try {
+          const content = fs.readFileSync(candidate, 'utf-8').trim();
+          if (content) return `## Project Instructions (CLAUDE.md)\n\n${content}`;
+        } catch {}
+      }
+    }
+    return null;
+  }
+
+  /**
    * Get worker by workerId (delegates to WorkerLifecycleManager)
    */
   private getWorkerByWorkerId(workerId: string): { agentId: string; worker: ActiveWorker } | undefined {
@@ -1916,6 +1936,9 @@ export class WorkerDispatcher extends EventEmitter {
           this.writtenFiles.set(meshName, new Set());
         }
 
+        // Consume the trigger message — resolver handles spawning directly
+        this.queue.pollOne(agentId);
+
         this.resolveAndSpawnManifestAgents(meshName, meshConfig);
         return; // Manifest mode handles its own spawning
       }
@@ -3196,7 +3219,7 @@ The system will resume your session when the human responds.`;
       return;
     }
 
-    // Spawn all eligible agents
+    // Spawn all eligible agents directly — no queue message needed (spec: line 116)
     for (const agentName of result.eligible) {
       const agentId = `${meshName}/${agentName}`;
 
@@ -3209,7 +3232,7 @@ The system will resume your session when the human responds.`;
       const agentConfig = meshConfig.agents.find(a => a.name === agentName);
       if (!agentConfig) continue;
 
-      // Build task context for the agent
+      // Build task context describing what the agent needs to write
       const writesNeeded = manifest
         .filter(e => e.writes.includes(agentName))
         .filter(e => {
@@ -3218,16 +3241,16 @@ The system will resume your session when the human responds.`;
         })
         .map(e => e.id);
 
-      // Write a task message for the agent
-      if (this.systemWriter) {
-        this.systemWriter.write({
-          to: agentId,
-          from: `${meshName}/manifest-resolver`,
-          type: 'task',
+      // Insert a synthetic task message into the queue so spawnWorker can poll it
+      this.queue.insert({
+        from_agent: `${meshName}/manifest-resolver`,
+        to_agent: agentId,
+        type: 'task',
+        payload: {
           headline: 'Manifest routing: reads satisfied',
           body: `Your reads are satisfied. Write: [${writesNeeded.join(', ')}]`,
-        });
-      }
+        },
+      });
 
       log.info('dispatcher', `Manifest routing: spawning eligible agent`, {
         meshName,
@@ -3235,6 +3258,9 @@ The system will resume your session when the human responds.`;
         writesNeeded,
       });
       log.activity('manifest:spawn', agentId, `Eligible — writes needed: ${writesNeeded.join(', ')}`);
+
+      // Spawn directly — no filesystem round-trip
+      this.spawnWorker(meshName, agentConfig);
     }
   }
 
@@ -3247,7 +3273,7 @@ The system will resume your session when the human responds.`;
     const cachedVars = this.cachedManifestVars.get(meshName);
     const pathContext = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
 
-    // Add agent's validated write paths to writtenFiles
+    // Add confirmed write paths to writtenFiles (only if file actually exists on disk)
     if (!this.writtenFiles.has(meshName)) {
       this.writtenFiles.set(meshName, new Set());
     }
@@ -3256,7 +3282,7 @@ The system will resume your session when the human responds.`;
     const writeEntries = manifest.filter(e => e.writes.includes(agentName));
     for (const entry of writeEntries) {
       const resolved = resolveManifestPath(entry, pathContext);
-      if (resolved) {
+      if (resolved && fs.existsSync(resolved)) {
         written.add(resolved);
       }
     }
@@ -4052,12 +4078,19 @@ Please advise the agent or check mesh configuration.`;
       const agentCount = meshConfig?.agents?.length ?? 1;
       const promptSections: string[] = [];
 
+      // 0. Project CLAUDE.md (loaded first so agent instructions can override)
+      if (meshConfig?.load_claude_md !== false) {
+        const claudeMdContent = this.loadProjectClaudeMd();
+        if (claudeMdContent) promptSections.push(claudeMdContent);
+      }
+
       // -- Identity + situation --
       // 1. Preamble (identity, tool guidance, address)
       promptSections.push(this.promptInjector.buildPreambleSection({
         agentCount,
         meshName: meshName!,
         agentName: agent.name,
+        txRoot: this.config.txRoot || process.env.TX_ROOT,
       }));
 
       // 2. FSM context (what phase we're in)
@@ -4521,6 +4554,8 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         godMode: this.config.godMode,  // God mode from CLI flag
         systemWriter: this.systemWriter,  // Permission denial notifications to core
         env: this.buildAgentEnv(),  // Environment variables for agent shell
+        postconditions: agent.postconditions,  // Tool call postconditions from mesh config
+        postconditionsMode: this.guardrails.getMode('postcondition', meshName!, agent.name),  // Guardrail mode
       };
 
       // Prompt size visibility: ~4 chars per token rough estimate
@@ -5058,6 +5093,54 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
                 }
               }
             }
+          }
+        }
+
+        // Postcondition validation: check if worker failed postcondition checks
+        if (data.error && data.error.includes('Postcondition validation failed')) {
+          const postconditionMode = this.guardrails.getMode('postcondition', meshName, agent.name);
+
+          if (postconditionMode.strict) {
+            // Strict mode: halt mesh execution and route error to core/core
+            log.error('dispatcher', 'Postcondition validation failed (strict mode) - halting mesh', {
+              agentId,
+              meshName,
+              error: data.error,
+            });
+
+            log.activity('guardrail:postcondition:halt', agentId, `Postcondition STRICT HALT: ${data.error}`);
+
+            // Notify core/core of the failure
+            this.systemWriter?.write({
+              to: 'core/core',
+              from: agentId,
+              type: 'error',
+              headline: `Postcondition validation failed: ${agent.name}`,
+              body: `Agent \`${agentId}\` failed postcondition validation in strict mode.\n\n**Error**: ${data.error}\n\nThe mesh has been halted. Review the agent's postcondition configuration and ensure the agent performs the required actions.`,
+            });
+
+            // Complete FSM with error (this will mark the worker as errored)
+            await machine.error(data.error);
+
+            // Cleanup worker state
+            this.cleanupWorker(agentId, currentWorkerId);
+
+            // Halt the mesh
+            this.emit('mesh:postcondition-halt', { agentId, meshName, error: data.error });
+            this.clearMeshState(meshName);
+
+            return;
+          } else if (postconditionMode.warning) {
+            // Warning mode: log and continue (feedback already injected by sdk-runner)
+            log.warn('dispatcher', 'Postcondition validation failed (warning mode) - continuing', {
+              agentId,
+              meshName,
+              error: data.error,
+            });
+
+            log.activity('guardrail:postcondition:warning', agentId, `Postcondition warning: ${data.error} (continuing)`);
+
+            // Continue with normal completion (warning feedback already in session output)
           }
         }
 

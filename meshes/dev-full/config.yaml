@@ -1,0 +1,178 @@
+# dev-full mesh
+# Big-feature development: context prep → HITL criteria → implement → test → review → evaluate
+# Combines: dev-know-build (prebuild), dev-brain (learning), dev (quality gates), dev-worktree (isolation)
+# Key pattern: success criteria as independent artifact, evaluated by dedicated agent
+
+mesh: dev-full
+description: "Big-feature development with context prep, HITL success criteria, quality gates, worktree isolation, and learning capture"
+
+
+
+intents:
+  patterns:
+    - build
+    - implement
+    - develop
+    - refactor
+
+agents:
+  - name: prebuild
+    model: haiku
+    command: "/know:prebuild {feature}"
+    prompt: prebuild/prompt.md
+
+  - name: implementer
+    model: sonnet
+    prompt: implementer/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Bash
+
+  - name: tester
+    model: sonnet
+    prompt: tester/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Bash
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+
+  - name: evaluator
+    model: opus
+    prompt: evaluator/prompt.md
+
+entry_point: prebuild
+completion_agents: [evaluator]
+
+routing:
+  prebuild:
+    complete:
+      implementer: "Context and HITL-approved criteria ready"
+    blocked:
+      core: "Criteria need human validation"
+
+  implementer:
+    complete:
+      tester: "Implementation ready for testing"
+    blocked:
+      core: "Need clarification from human"
+
+  tester:
+    complete:
+      reviewer: "Tests passing, ready for review"
+    blocked:
+      implementer: "Tests failing, needs fixes"
+    ask-response:
+      implementer: "Test feedback response"
+
+  reviewer:
+    complete:
+      evaluator: "Code quality approved"
+    blocked:
+      implementer: "Code quality issues, revision needed"
+    ask-response:
+      implementer: "Review feedback response"
+
+  evaluator:
+    complete:
+      core: "All criteria met - feature complete"
+    blocked:
+      implementer: "Criteria gaps found, iteration needed"
+      core: "Max iterations reached, human decision needed"
+
+workspace:
+  path: ".ai/output/dev-full/{task-id}/"
+
+manifest:
+  - id: context
+    location: "{workspace}/context.md"
+    description: "Codebase context: relevant files, patterns, constraints, integration points"
+    writes: [prebuild]
+    reads: [implementer]
+
+  - id: criteria
+    location: "{workspace}/criteria.md"
+    description: "HITL-validated success criteria — the sole evaluation rubric"
+    writes: [prebuild]
+    reads: [implementer, tester, reviewer, evaluator]
+
+  - id: working-notes
+    location: "{workspace}/working-notes.md"
+    description: "Implementation insights, gotchas, patterns discovered"
+    writes: [implementer]
+    reads: [implementer, reviewer]
+    persistent: true
+
+  - id: decisions
+    location: "{workspace}/decisions.md"
+    description: "Key decisions with rationale and trade-offs"
+    writes: [implementer]
+    reads: [implementer, reviewer]
+    persistent: true
+
+  - id: scorecard
+    location: "{workspace}/scorecard.md"
+    description: "Evaluator's criteria assessment scorecard"
+    writes: [evaluator]
+    reads: [implementer, evaluator]
+    persistent: true
+
+lifecycle:
+  post:
+    - commit:auto
+    - brain-update
+# NOTE: worktree:create/cleanup disabled until workspace path uses {feature} instead of {task-id}
+
+rearmatter:
+  required: true
+  schema:
+    status: "complete | blocked | needs-review | needs-iteration"
+    confidence: "1-5 scale"
+    gotchas: "Issues discovered"
+    learnings: "Insights for brain"
+
+guardrails:
+  max_turns:
+    warning: true
+    strict: true
+    limit: 40
+  max_messages:
+    warning: true
+    limit: 30
+
+playbook_notes: |
+  Big-feature mesh combining best patterns from existing dev meshes.
+
+  Sources:
+  - dev-know-build: haiku prebuild phase with /know:prebuild command interpolation
+  - dev-brain: learning capture via working-notes.md + decisions.md manifests + rearmatter
+  - dev/dev-review: quality-gated pipeline with rejection loops
+  - dev-worktree: git worktree isolation via lifecycle hooks
+
+  Key innovation: Success criteria as first-class artifact.
+  - Derived from spec-graph + codebase exploration by prebuild (haiku)
+  - HITL-validated before implementation begins (prebuild → blocked → core → resume)
+  - Injected to ALL agents as shared rubric
+  - Independently evaluated by dedicated evaluator (opus)
+  - Separates code quality (reviewer) from acceptance criteria (evaluator)
+
+  Evaluation loop:
+  - Evaluator checks each criterion: PASS / PARTIAL / FAIL
+  - Failures route back through full pipeline: implementer → tester → reviewer → evaluator
+  - Max 3 iterations tracked in evaluator session context
+  - After 3 failures, escalates to human (blocked → core)
+
+  Cost profile: 1 haiku + 2 sonnet + 2 opus = moderate
+  No FSM needed — iteration tracking is agent-managed via session continuity.

@@ -85,6 +85,7 @@ export interface MeshGuardrailOverrides {
   routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number; routing_retry_max?: number | null; routing_fallback?: string | null };
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
+  postcondition?: { strict?: boolean; warning?: boolean };
 }
 
 export interface MeshGuardrailConfig extends MeshGuardrailOverrides {
@@ -120,6 +121,7 @@ export interface AgentConfig {
   orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
+  postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
 }
 
 /**
@@ -161,6 +163,7 @@ export interface MeshConfig {
   dev_mode?: boolean;  // Override all agent models to haiku for cheap workflow testing
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
+  load_claude_md?: boolean;  // Load project CLAUDE.md into agent system prompt (default: true)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 

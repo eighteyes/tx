@@ -252,6 +252,37 @@ guardrails:
         limit: 30
 ```
 
+### Postcondition
+
+Validates that required tool calls occurred during agent execution.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `strict` | false | Kill worker on failure |
+| `warning` | true | Inject feedback on failure |
+
+Configured per-agent in mesh `config.yaml` under `postconditions:`. Mode configured via `guardrails.postcondition` override chain.
+
+Strict mode: kills worker and routes error to core/core. Warning mode: injects feedback into agent session with corrective instructions, agent continues.
+
+Validation runs after agent completion, before routing. All postconditions must pass for successful completion.
+
+**Example:**
+```yaml
+agents:
+  - name: worker
+    model: sonnet
+    prompt: worker.md
+    postconditions:
+      tool_calls:
+        - tool: Bash
+          pattern: "campaign.sh"
+          exit_code: 0
+        - tool: Write
+          pattern: "output.json"
+          min_calls: 1
+```
+
 ### Violation Escalation
 
 Gate violations inject a steering message that tells the agent what paths are allowed. The message includes guidance to write to `core/core` if the agent believes a path should be allowed — putting escalation in the agent's hands rather than auto-notifying.

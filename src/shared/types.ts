@@ -89,6 +89,7 @@ export interface WorkerResult {
   conversationId?: string;  // Captured from Claude output for resume (legacy)
   sessionId?: string;       // SDK session ID for resume (preferred)
   output?: string;          // Captured session output
+  toolCalls?: import('../worker/postcondition-validator.ts').ToolCallRecord[];  // Tool calls for postcondition validation
 }
 
 // Core types (persistent)
@@ -151,9 +152,9 @@ export interface SessionMetrics {
 // Dispatcher routing types
 
 /**
- * Routing mode: agent-owned (default) or dispatcher-owned (opt-in)
+ * Routing mode: agent-owned (default), dispatcher-owned (opt-in), or manifest-driven (filesystem state)
  */
-export type RoutingMode = 'agent' | 'dispatcher';
+export type RoutingMode = 'agent' | 'dispatcher' | 'manifest';
 
 /**
  * Fan-out options: trailing object in a fan-out array

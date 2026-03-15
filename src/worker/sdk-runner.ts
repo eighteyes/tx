@@ -19,6 +19,7 @@ import type { GuardrailMode } from './guardrail-config.ts';
 import { resolvePermissions, type AgentPermissions } from './permissions.ts';
 import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { isGuardrailKill } from './runner.ts';
+import { PostconditionValidator, type ToolCallRecord } from './postcondition-validator.ts';
 
 const MODEL_MAP: Record<SemanticModel, string> = {
   opus: 'opus',
@@ -74,6 +75,8 @@ export interface SdkRunnerConfig {
   godMode?: boolean;  // Enable god mode (bypass all permissions)
   systemWriter?: SystemMessageWriter;  // Queue-first writer for permission denial notifications
   env?: Record<string, string>;  // Environment variables to inject into agent shell (TX_ROOT, etc.)
+  postconditions?: import('./postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
+  postconditionsMode?: GuardrailMode;  // { strict, warning } for postcondition enforcement
 }
 
 export class SdkRunner extends EventEmitter {
@@ -97,6 +100,8 @@ export class SdkRunner extends EventEmitter {
     deleted: [],
     gitCommits: [],
   };
+  private toolCallRecords: ToolCallRecord[] = [];  // Tool calls for postcondition validation
+  private pendingBashCalls: number[] = [];  // Indices of Bash calls awaiting exit code from results
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -504,13 +509,15 @@ Reply **allow** to approve or **deny** to reject.`,
     log.info('sdk-runner', `Starting worker`, { workerId, model: this.config.model });
     this.running = true;
     this.abortController = new AbortController();
-    // Reset metrics, file tracking, and turn counter for this run
+    // Reset metrics, file tracking, turn counter, and tool call records for this run
     this.queryMetrics = [];
     this.resetFilesChanged();
     this.turnCount = 0;
     this.maxTurnsWarningEmitted = false;
     this.lastResultSubtype = '';
     this.startedAt = Date.now();
+    this.toolCallRecords = [];
+    this.pendingBashCalls = [];
     this.emit('start', { id: workerId });
 
     let totalProcessed = 0;
@@ -602,7 +609,7 @@ Reply **allow** to approve or **deny** to reject.`,
               ...(canUseTool ? { canUseTool } : {}),
               abortController: this.abortController,
               maxTurns: this.getEffectiveMaxTurns(),
-              settingSources: ['project'],  // Load project slash commands
+              // settingSources removed — prevents agents from loading ~/.claude/CLAUDE.md
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               resume: resumeId,  // Resume session if available
@@ -697,6 +704,16 @@ Reply **allow** to approve or **deny** to reject.`,
                   const inputSummary = this.summarizeToolInput(toolUse.name, input);
                   sessionOutput.push(`[Tool Call: ${toolUse.name}]\n${inputSummary}`);
                   this.trackFileOperation(toolUse.name, input);
+                  // Capture for postcondition validation (exit code added later from tool result)
+                  const recordIndex = this.toolCallRecords.length;
+                  this.toolCallRecords.push({
+                    tool: toolUse.name,
+                    input,
+                  });
+                  // Track Bash calls to update exit code when result arrives
+                  if (toolUse.name === 'Bash') {
+                    this.pendingBashCalls.push(recordIndex);
+                  }
                 }
 
                 // Emit output for stuck detection - tool calls are activity
@@ -778,6 +795,16 @@ Reply **allow** to approve or **deny** to reject.`,
                 sessionOutput.push(`[Tool Result]\n${truncated}`);
                 // Heartbeat: tool results are activity — keeps worker alive during long tool chains
                 this.emit('output', { id: workerId, data: '[Tool Result]' });
+
+                // Extract exit code for Bash tool calls (postcondition validation)
+                if (this.pendingBashCalls.length > 0 && typeof msg.tool_use_result === 'object') {
+                  const result = msg.tool_use_result as Record<string, unknown>;
+                  if ('exitCode' in result && typeof result.exitCode === 'number') {
+                    // Update the oldest pending Bash call with this exit code (FIFO)
+                    const recordIndex = this.pendingBashCalls.shift()!;
+                    this.toolCallRecords[recordIndex].exitCode = result.exitCode;
+                  }
+                }
               }
               break;
 
@@ -852,8 +879,55 @@ Reply **allow** to approve or **deny** to reject.`,
       const output = sessionOutput.join('\n\n---\n\n');
       log.info('sdk-runner', `Worker complete`, { workerId, totalProcessed, success: !lastError, sessionId: this.currentSessionId });
 
+      // Postcondition validation: runs after agent completion, before routing
+      if (this.config.postconditions && this.config.postconditionsMode) {
+        const mode = this.config.postconditionsMode;
+
+        // Skip validation entirely if guardrail is disabled
+        if (!mode.strict && !mode.warning) {
+          log.debug('sdk-runner', 'Postcondition validation disabled (both strict and warning false)', { workerId });
+        } else {
+          const validator = new PostconditionValidator({
+            agentId: workerId,
+            mode: this.config.postconditionsMode,
+            sessionId: this.currentSessionId,
+          });
+
+          const validationResult = validator.validate(
+            this.config.postconditions,
+            this.toolCallRecords
+          );
+
+          if (!validationResult.passed) {
+            if (mode.strict) {
+              // Strict mode: kill worker and return error
+              log.error('sdk-runner', 'Postcondition validation failed (strict mode)', {
+                workerId,
+                failures: validationResult.failures,
+              });
+              lastError = `Postcondition validation failed: ${validationResult.failures.join('; ')}`;
+            } else if (mode.warning) {
+              // Warning mode: inject feedback into session output
+              const warningMessage = validator.buildWarningMessage(validationResult.failures);
+              sessionOutput.push(warningMessage);
+              log.warn('sdk-runner', 'Postcondition validation failed (warning mode - feedback injected)', {
+                workerId,
+                failures: validationResult.failures,
+              });
+            }
+          }
+        }
+      }
+
       this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
-      return { success: !lastError, messagesProcessed: totalProcessed, output, error: lastError, sessionId: this.currentSessionId || undefined };
+      return {
+        success: !lastError,
+        messagesProcessed: totalProcessed,
+        output,
+        error: lastError,
+        sessionId: this.currentSessionId || undefined,
+        toolCalls: this.toolCallRecords,
+      };
 
     } catch (error) {
       const err = error as Error & {
@@ -886,7 +960,7 @@ Reply **allow** to approve or **deny** to reject.`,
           turnCount: this.turnCount,
         });
         this.emit('complete', { id: workerId, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId, metrics: this.aggregateMetrics() });
-        return { success: true, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId || undefined };
+        return { success: true, messagesProcessed: totalProcessed, output, sessionId: this.currentSessionId || undefined, toolCalls: this.toolCallRecords };
       }
 
       // Exit code 1 with processed messages: treat as success with warning.
