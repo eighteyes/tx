@@ -45,15 +45,18 @@ export class WorkspaceManager {
   /**
    * Create a workspace for a task
    */
-  createWorkspace(taskId: string, config: WorkspaceConfig | string): WorkspaceInfo {
+  createWorkspace(taskId: string, config: WorkspaceConfig | string, featureName?: string): WorkspaceInfo {
     // Normalize string format to object format
     const normalizedConfig = normalizeWorkspaceConfig(config);
 
     // Determine workspace directory
     let workspaceDir: string;
     if (normalizedConfig.path) {
-      // Use custom path (substitute {task-id} and other variables)
-      const pathTemplate = normalizedConfig.path.replace('{task-id}', taskId);
+      // Use custom path (substitute {task-id}, {feature}, and other variables)
+      let pathTemplate = normalizedConfig.path.replace('{task-id}', taskId);
+      if (featureName) {
+        pathTemplate = pathTemplate.replace('{feature}', featureName);
+      }
       workspaceDir = path.isAbsolute(pathTemplate)
         ? pathTemplate
         : path.join(this.workDir, pathTemplate);

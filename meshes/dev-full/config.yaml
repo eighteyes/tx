@@ -93,7 +93,7 @@ routing:
       core: "Max iterations reached, human decision needed"
 
 workspace:
-  path: ".ai/output/dev-full/{task-id}/"
+  path: ".ai/output/dev-full/{feature}/"
 
 manifest:
   - id: context

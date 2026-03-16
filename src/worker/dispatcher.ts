@@ -363,6 +363,9 @@ export class WorkerDispatcher extends EventEmitter {
   systemWriter!: SystemMessageWriter;
   // Pending permission asks: agentId → { toolUseID, runner ref }
   private pendingPermissionAsks: Map<string, { toolUseID: string; runner: Runner }> = new Map();
+
+  /** Feature name captured from entry message, persisted per mesh run */
+  private meshFeatureNames: Map<string, string> = new Map();
   // Auto-nudge recovery for stalled routes
   private nudgeDetector?: NudgeDetector;
   // Reliability: circuit breakers, heartbeat, SLI, DLQ, safe-mode
@@ -3708,7 +3711,16 @@ Please advise the agent or check mesh configuration.`;
         : `${meshName}-${Date.now()}`;
 
       const taskBody = nextMsg?.payload?.body as string || '';
-      const featureName = nextMsg?.payload?.feature as string | undefined;
+
+      // Feature name: prefer message payload, fall back to stored per-mesh-run value
+      const payloadFeature = nextMsg?.payload?.feature as string | undefined;
+      const featureName = payloadFeature || this.meshFeatureNames.get(meshName);
+
+      // Store feature name on first sight so downstream agents inherit it
+      if (payloadFeature && !this.meshFeatureNames.has(meshName)) {
+        this.meshFeatureNames.set(meshName, payloadFeature);
+        log.info('dispatcher', 'Captured feature name for mesh run', { meshName, featureName: payloadFeature });
+      }
       const hookContext: HookContext = {
         meshInstance,
         meshName,
@@ -3883,7 +3895,7 @@ Please advise the agent or check mesh configuration.`;
 
       // 3. Static workspace config from agent/mesh
       if (workspaceConfig && !resolvedWorkspaceDir) {
-        const workspace = this.workspaceManager.createWorkspace(taskId, workspaceConfig);
+        const workspace = this.workspaceManager.createWorkspace(taskId, workspaceConfig, featureName);
         resolvedWorkspaceDir = workspace.dir;
       }
 
