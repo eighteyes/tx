@@ -23,6 +23,7 @@ agents:
 
   - name: implementer
     model: sonnet
+    command: "/know:build {feature}"
     prompt: implementer/prompt.md
     permissions:
       allowedTools:
@@ -32,6 +33,10 @@ agents:
         - Glob
         - Grep
         - Bash
+    postconditions:
+      tool_calls:
+        - tool: Write
+          min_calls: 1
 
   - name: tester
     model: sonnet
