@@ -986,39 +986,89 @@ agents:
 
 Validate that required tool calls occurred during agent execution. Prevents agents from hallucinating results instead of using tools.
 
+Agents sometimes describe what they would do instead of doing it — generating output inline rather than calling Bash, Write, or Task tools. Postconditions catch this by checking the actual tool call record after the agent completes.
+
 ```yaml
 agents:
-  - name: worker
+  - name: gravity
     model: sonnet
-    prompt: worker.md
+    prompt: gravity/prompt.md
     postconditions:
       tool_calls:
         - tool: Bash
           pattern: "campaign.sh"  # Substring match in command
           exit_code: 0            # Required exit code (default: 0)
+          min_calls: 1            # Minimum matching calls (default: 1)
         - tool: Write
-          pattern: "output.json"  # Substring match in file_path
-          min_calls: 1            # Minimum call count (default: 1)
+          pattern: "collisions.yaml"
+          min_calls: 1
 ```
 
-**Fields**:
-- `tool`: Tool name (Bash, Write, Read, Edit, etc.)
-- `pattern`: Substring to match in command/path (optional)
-- `exit_code`: Required exit code for Bash (default: 0)
-- `min_calls`: Minimum matching calls (default: 1)
+**Fields per entry**:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tool` | string | required | Tool name: `Bash`, `Write`, `Read`, `Edit`, `TaskOutput`, etc. |
+| `pattern` | string | — | Substring match in command (Bash), file_path (Write/Read/Edit), or any string input value (other tools). Omit to match any call to that tool. |
+| `exit_code` | number | 0 | Required exit code. Bash only. Omit to use default (0 = no error). |
+| `min_calls` | number | 1 | Minimum number of matching calls required. |
 
 **Behavior**:
-- Validation runs after agent completion, before routing
+- Validation runs after agent completion, before routing to next agent
 - All postconditions must pass for the agent to complete successfully
-- Guardrail mode (strict/warning) controlled via `guardrails.postcondition` in mesh or global config
-- Strict mode: kills worker and routes error to core/core
-- Warning mode: injects feedback into agent session, agent continues with corrective instructions
+- Guardrail mode (strict/warning) controlled via `guardrails.postcondition` override chain
+- Strict mode: kills worker, routes error to core/core
+- Warning mode: injects corrective feedback into agent session
+- Disabled mode (`strict: false, warning: false`): skips validation entirely
 
-**Use cases**:
-- Enforce that gravity agents run campaign.sh via Bash (not fabricate collisions.yaml)
-- Ensure workers write required output files
-- Validate that scripts exit successfully (exit code 0)
-- Prevent hallucinated tool results
+**Pattern matching**:
+- Bash: substring match on `input.command`
+- Write/Read/Edit: substring match on `input.file_path`
+- Other tools: substring match on any string value in `input`
+- Omit `pattern` to match all calls to that tool type
+
+**Examples**:
+
+Ensure agent runs a script successfully:
+```yaml
+postconditions:
+  tool_calls:
+    - tool: Bash
+      pattern: "campaign.sh"
+      exit_code: 0
+```
+
+Ensure agent uses parallel Tasks (not inline generation):
+```yaml
+postconditions:
+  tool_calls:
+    - tool: TaskOutput
+      min_calls: 3    # Must read results from at least 3 parallel Tasks
+```
+
+Ensure agent writes required output file:
+```yaml
+postconditions:
+  tool_calls:
+    - tool: Write
+      pattern: "report.md"
+```
+
+**Override chain** for mode (strict/warning):
+```yaml
+guardrails:
+  postcondition:
+    strict: false
+    warning: true
+  meshes:
+    narrative-engine-v2:
+      postcondition:
+        strict: true    # Kill gravity if it hallucinates
+      agents:
+        gravity:
+          postcondition:
+            strict: true
+```
 
 ## Additional Config Fields
 

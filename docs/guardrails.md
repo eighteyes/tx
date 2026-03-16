@@ -254,33 +254,60 @@ guardrails:
 
 ### Postcondition
 
-Validates that required tool calls occurred during agent execution.
+Validates that required tool calls occurred during agent execution. Catches agents that hallucinate output instead of using their tools.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `strict` | false | Kill worker on failure |
-| `warning` | true | Inject feedback on failure |
+| `strict` | false | Kill worker on postcondition failure |
+| `warning` | true | Inject corrective feedback on failure |
 
-Configured per-agent in mesh `config.yaml` under `postconditions:`. Mode configured via `guardrails.postcondition` override chain.
+Configured per-agent in mesh `config.yaml` under `postconditions.tool_calls[]`. Mode controlled via `guardrails.postcondition` override chain (agent > mesh > global).
 
-Strict mode: kills worker and routes error to core/core. Warning mode: injects feedback into agent session with corrective instructions, agent continues.
+Validation runs after agent completion, before routing. All postconditions must pass.
 
-Validation runs after agent completion, before routing. All postconditions must pass for successful completion.
+**Tool call entry fields:**
 
-**Example:**
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tool` | string | required | Tool name (`Bash`, `Write`, `TaskOutput`, etc.) |
+| `pattern` | string | — | Substring match in command/path/input |
+| `exit_code` | number | 0 | Required exit code (Bash only) |
+| `min_calls` | number | 1 | Minimum matching call count |
+
+**Examples:**
+
 ```yaml
-agents:
-  - name: worker
-    model: sonnet
-    prompt: worker.md
-    postconditions:
-      tool_calls:
-        - tool: Bash
-          pattern: "campaign.sh"
-          exit_code: 0
-        - tool: Write
-          pattern: "output.json"
-          min_calls: 1
+# Ensure agent runs a script
+postconditions:
+  tool_calls:
+    - tool: Bash
+      pattern: "campaign.sh"
+      exit_code: 0
+
+# Ensure agent uses parallel Tasks
+postconditions:
+  tool_calls:
+    - tool: TaskOutput
+      min_calls: 3
+
+# Ensure agent writes output file
+postconditions:
+  tool_calls:
+    - tool: Write
+      pattern: "collisions.yaml"
+```
+
+**Override mode per mesh/agent:**
+```yaml
+guardrails:
+  postcondition:
+    strict: true    # Kill on hallucinated output
+  meshes:
+    my-mesh:
+      agents:
+        my-agent:
+          postcondition:
+            strict: false   # Warning only for this agent
 ```
 
 ### Violation Escalation

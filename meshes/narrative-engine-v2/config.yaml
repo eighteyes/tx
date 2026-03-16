@@ -41,13 +41,8 @@ agents:
     # Sits between init-turn and architect. Analytical, not creative.
     postconditions:
       tool_calls:
-        - tool: Bash
-          pattern: "campaign.sh"
-          exit_code: 0
-          min_calls: 1
-        - tool: Write
-          pattern: "collisions.yaml"
-          min_calls: 1
+        - tool: TaskOutput
+          min_calls: 3
 
   # RETIRED: prep-coord replaced by direct agent chain routing + state-discovery.sh
   # - name: prep-coord
