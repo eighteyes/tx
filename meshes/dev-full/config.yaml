@@ -33,10 +33,6 @@ agents:
         - Glob
         - Grep
         - Bash
-    postconditions:
-      tool_calls:
-        - tool: Write
-          min_calls: 1
 
   - name: tester
     model: sonnet
