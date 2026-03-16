@@ -39,6 +39,15 @@ agents:
     continuation: false
     # Collision detector — reads all state, finds pressure points, writes collisions.yaml
     # Sits between init-turn and architect. Analytical, not creative.
+    postconditions:
+      tool_calls:
+        - tool: Bash
+          pattern: "campaign.sh"
+          exit_code: 0
+          min_calls: 1
+        - tool: Write
+          pattern: "collisions.yaml"
+          min_calls: 1
 
   # RETIRED: prep-coord replaced by direct agent chain routing + state-discovery.sh
   # - name: prep-coord
@@ -70,12 +79,30 @@ agents:
     read_gate: strict
     # Collapsed entropy pipeline — fates + dramaturg + possibility + system in one session
     # Parallel blind Tasks for world possibilities, inline story shaping and resolution
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
 
-  - name: simulator
+  - name: sim-planner
     model: sonnet
-    prompt: simulator/prompt.md
-    # Beat-by-beat scene simulation — orchestrates blind table-gen and NPC voice Tasks
-    # All table/voice generation is inline via Task tool, not mesh routing
+    prompt: simulator/planner.md
+    continuation: false
+    # Phase 1: Read all inputs, derive psychology, plan beats, extract author params via yq
+    permissions:
+      allowedTools: [Read, Write, Bash, Glob, Grep]
+
+  - name: sim-tables
+    model: sonnet
+    prompt: simulator/tables.md
+    # Phase 2: Per-beat table gen (haiku Tasks) + entropy rolling
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
+
+  - name: sim-voices
+    model: sonnet
+    prompt: simulator/voices.md
+    # Phase 3: Per-beat voice gen (sonnet Tasks) + scene_so_far + scene_script.yaml assembly
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
 
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)
@@ -167,7 +194,7 @@ completion_agents:
 # ROUTING - Phase coordinator architecture
 # ==========================================
 
-routing_fallback: entry
+routing_fallback: core
 routing_retry_max: 3
 
 routing:
@@ -175,7 +202,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → gravity → architect → simulator → oracle ⇄ simulator → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
+  # Phase flow: entry → game-coord|init-turn → gravity → architect → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -214,13 +241,21 @@ routing:
 
   architect:
     message:
-      simulator: "Mechanical resolution complete → simulate scene beats"
+      sim-planner: "Mechanical resolution complete → plan scene beats"
       core: "HITL — action-lock conflict after 3 entropy attempts"
 
-  simulator:
+  sim-planner:
+    message:
+      sim-tables: "Beat plan ready → generate tables"
+
+  sim-tables:
+    message:
+      sim-voices: "Tables resolved → generate voices"
+      core: "HITL — player choice point during simulation"
+
+  sim-voices:
     message:
       oracle: "Scene simulation complete → validate continuity"
-      core: "HITL — player choice point during simulation"
 
   # RETIRED: validate-coord — oracle routes directly (approved → narrator, violations → scene-crafter)
   # validate-coord:
@@ -247,7 +282,7 @@ routing:
   oracle:
     message:
       narrator: "Continuity approved → render prose"
-      simulator: "Continuity violations → fix scene script"
+      sim-voices: "Continuity violations → fix scene script"
 
   scribe:
     message:
@@ -322,7 +357,13 @@ guardrails:
     architect:
       max_messages:
         limit: 15
-    simulator:
+    sim-planner:
+      max_messages:
+        limit: 15
+    sim-tables:
+      max_messages:
+        limit: 25
+    sim-voices:
       max_messages:
         limit: 25
     narrator:
@@ -334,6 +375,16 @@ guardrails:
     calibrator:
       max_messages:
         limit: 30
+
+# ==========================================
+# RELIABILITY
+# ==========================================
+
+reliability:
+  heartbeat:
+    warnMs: 120000
+    staleMs: 300000
+    deadMs: 600000
 
 # ==========================================
 # MANIFEST - File-centric I/O manifest (source of truth)
@@ -354,19 +405,19 @@ manifest:
   - id: context.yaml
     description: Turn context seeded by coordinator, consumed by creative agents
     location: workspace
-    reads: [narrator, scribe, architect, simulator, gravity]
+    reads: [narrator, scribe, architect, sim-planner, gravity]
     writes: [init-turn]
 
   - id: intent.yaml
     description: Single source for player action — raw input, clarified intent, hopes, off-table outcomes
     location: workspace
-    reads: [narrator, architect, simulator, gravity]
+    reads: [narrator, architect, sim-planner, gravity]
     writes: [init-turn]
 
   - id: action-lock.yaml
     description: Locked player action — ground truth, not subject to entropy
     location: workspace
-    reads: [narrator, architect, simulator, gravity]
+    reads: [narrator, architect, sim-planner, gravity]
     writes: [init-turn]
 
   - id: collisions.yaml
@@ -378,7 +429,7 @@ manifest:
   - id: dramaturg-notes.yaml
     description: Story analysis and outcome shapes (no weights)
     location: workspace
-    reads: [narrator, scribe, simulator]
+    reads: [narrator, scribe, sim-planner]
     writes: [architect]
 
   - id: fates.yaml
@@ -390,7 +441,7 @@ manifest:
   - id: entropy-tables.yaml
     description: Weighted probability tables synthesized from fates + dramaturg
     location: workspace
-    reads: [architect, simulator]
+    reads: [architect, sim-tables]
     writes: [architect]
 
   - id: entropy-selection.yaml
@@ -402,20 +453,26 @@ manifest:
   - id: resolution.yaml
     description: Mechanical outcome tables and trait resolution
     location: workspace
-    reads: [narrator, scribe, simulator]
+    reads: [narrator, scribe, sim-planner]
     writes: [architect]
 
   - id: threads.yaml
-    description: Life thread extraction, collisions, and beat guidance — written by architect, consumed by simulator/narrator/scribe
+    description: Life thread extraction, collisions, and beat guidance — written by architect, consumed by sim-planner/narrator/scribe
     location: workspace
-    reads: [simulator, narrator, scribe]
+    reads: [sim-planner, narrator, scribe]
     writes: [architect]
 
-  - id: sim-progress.yaml
-    description: Simulator checkpoint — phase, beat count, thread tracking, scene state
+  - id: sim-plan.yaml
+    description: Beat plan checkpoint — psychology, frames, beat sequence, author params
     location: workspace
-    reads: [simulator]
-    writes: [simulator]
+    reads: [sim-tables, sim-voices]
+    writes: [sim-planner]
+
+  - id: sim-progress.yaml
+    description: Simulator checkpoint — phase, beat count, thread tracking
+    location: workspace
+    reads: [sim-tables, sim-voices]
+    writes: [sim-tables, sim-voices]
 
   - id: pov-resolution.yaml
     description: POV character resolution from Step 3a — intermediate entropy result
@@ -430,16 +487,16 @@ manifest:
     writes: [architect]
 
   - id: beat_tables/
-    description: Per-beat YAML files — complete possibility space with tables, rolls, and voice data. Audit trail.
+    description: Per-beat YAML files — tables, rolls, and voice data. Audit trail.
     location: workspace
-    reads: []
-    writes: [simulator]
+    reads: [sim-voices]
+    writes: [sim-tables, sim-voices]
 
   - id: scene_script.yaml
-    description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by simulator.
+    description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by sim-voices.
     location: workspace
     reads: [narrator, oracle, visual, scribe, lint-temporal]
-    writes: [simulator]
+    writes: [sim-voices]
 
   - id: prose-draft.md
     description: Working prose draft iterated through lint/edit cycle
@@ -508,7 +565,7 @@ manifest:
     description: Author voice profile and stylistic constraints
     location: game
     persistent: true
-    reads: [narrator, editor, visual, calibrator, architect, simulator]
+    reads: [narrator, editor, visual, calibrator, architect, sim-planner]
     writes: [calibrator]
 
   - id: setting.yaml
@@ -520,37 +577,44 @@ manifest:
 
   - id: entities.yaml
     description: Master entity index with traits, relationships, status
-    location: game
+    location: campaign
     persistent: true
     reads: [narrator, oracle, scribe, calibrator]
     writes: [scribe, calibrator]
 
-  - id: game/entities/characters/
-    description: Game-level character templates (baseline traits, foundation)
-    location: game
-    persistent: true
-    reads: [calibrator]
-    writes: [scribe, calibrator]
+  # Game-level templates — calibrator reads/writes these during game creation
+  # Manifest ID = path, and path.join(location, id) must resolve correctly
+  # Game and campaign share the same relative path (entities/characters/)
+  # but resolve against different location roots. Validator requires unique IDs.
+  # Commented out game-level entries — calibrator writes to game_path directly,
+  # doesn't need manifest validation. Campaign entries are what the pipeline uses.
+  #
+  # - id: entities/characters/
+  #   description: Game-level character templates (baseline traits, foundation)
+  #   location: game
+  #   persistent: true
+  #   reads: [calibrator]
+  #   writes: [scribe, calibrator]
+  #
+  # - id: entities/bonds/
+  #   description: Game-level bond templates
+  #   location: game
+  #   persistent: true
+  #   reads: [calibrator]
+  #   writes: [scribe, calibrator]
 
-  - id: campaign/entities/characters/
+  - id: entities/characters/
     description: Campaign-level character entities (enriched — NRE, sexuality, desires, conditions, episodes)
     location: campaign
     persistent: true
-    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, simulator, gravity]
+    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, sim-planner, sim-tables, sim-voices, gravity]
     writes: [scribe, calibrator]
 
-  - id: game/entities/bonds/
-    description: Game-level bond templates
-    location: game
-    persistent: true
-    reads: [calibrator]
-    writes: [scribe, calibrator]
-
-  - id: campaign/entities/bonds/
+  - id: entities/bonds/
     description: Campaign-level bond entities (enriched — conditions, episodes, dimensions)
     location: campaign
     persistent: true
-    reads: [narrator, oracle, scribe, architect, simulator, gravity]
+    reads: [narrator, oracle, scribe, architect, sim-planner, sim-tables, sim-voices, gravity]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt
@@ -594,7 +658,7 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, architect, simulator, lint-temporal, gravity]
+    reads: [init-turn, architect, sim-planner, lint-temporal, gravity]
     writes: [scribe]
 
   - id: trajectories.yaml
@@ -619,26 +683,28 @@ manifest:
     reads: [oracle, scribe, architect]  # Agents query via campaign.sh facts
     writes: [scribe]  # Scribe writes via campaign.sh
 
-  - id: history.md
-    description: Narrative history log of completed turns
-    location: campaign
-    persistent: true
-    reads: []
-    writes: [scribe]
+  # RETIRED: these files were never implemented by scribe
+  # Uncomment and implement if needed in future
+  # - id: history.md
+  #   description: Narrative history log of completed turns
+  #   location: campaign
+  #   persistent: true
+  #   reads: []
+  #   writes: [scribe]
 
-  - id: thread.md
-    description: Active narrative threads and unresolved hooks
-    location: campaign
-    persistent: true
-    reads: []
-    writes: [scribe]
+  # - id: thread.md
+  #   description: Active narrative threads and unresolved hooks
+  #   location: campaign
+  #   persistent: true
+  #   reads: []
+  #   writes: [scribe]
 
-  - id: character-memory.yaml
-    description: Per-character memory and relationship state
-    location: campaign
-    persistent: true
-    reads: []
-    writes: [scribe]
+  # - id: character-memory.yaml
+  #   description: Per-character memory and relationship state
+  #   location: campaign
+  #   persistent: true
+  #   reads: []
+  #   writes: [scribe]
 
   # --- Templates (read-only reference) ---
   - id: arc.template.yaml

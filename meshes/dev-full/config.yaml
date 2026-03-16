@@ -130,10 +130,12 @@ manifest:
     persistent: true
 
 lifecycle:
+  pre:
+    - worktree:create
   post:
     - commit:auto
     - brain-update
-# NOTE: worktree:create/cleanup disabled until workspace path uses {feature} instead of {task-id}
+    - worktree:cleanup
 
 rearmatter:
   required: true
