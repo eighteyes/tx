@@ -397,6 +397,8 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
     }
 
     console.log(`${icon} ${agent} ${chalk.dim(time)} ${chalk.blue(`[${eventName}]`)} ${contentColor(entry.content)}\n`);
+  } else if (entry.event === 'bash:failed') {
+    console.log(`💥 ${agent} ${chalk.dim(time)} ${chalk.red('[bash]')} ${chalk.red(entry.content)}\n`);
   } else if (entry.event.startsWith('guardrail:')) {
     const eventName = entry.event.replace('guardrail:', '');
     let icon = '🛡️';

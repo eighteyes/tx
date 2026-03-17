@@ -796,13 +796,27 @@ Reply **allow** to approve or **deny** to reject.`,
                 // Heartbeat: tool results are activity — keeps worker alive during long tool chains
                 this.emit('output', { id: workerId, data: '[Tool Result]' });
 
-                // Extract exit code for Bash tool calls (postcondition validation)
+                // Extract exit code for Bash tool calls (postcondition validation + failure logging)
                 if (this.pendingBashCalls.length > 0 && typeof msg.tool_use_result === 'object') {
                   const result = msg.tool_use_result as Record<string, unknown>;
                   if ('exitCode' in result && typeof result.exitCode === 'number') {
                     // Update the oldest pending Bash call with this exit code (FIFO)
                     const recordIndex = this.pendingBashCalls.shift()!;
-                    this.toolCallRecords[recordIndex].exitCode = result.exitCode;
+                    const record = this.toolCallRecords[recordIndex];
+                    record.exitCode = result.exitCode;
+
+                    // Log non-zero exit codes
+                    if (result.exitCode !== 0) {
+                      const cmd = String(record.input?.command || '').slice(0, 120);
+                      const stderr = typeof result.stderr === 'string' ? result.stderr.split('\n')[0].slice(0, 200) : '';
+                      log.error('sdk-runner', 'Bash command failed', {
+                        workerId,
+                        exitCode: result.exitCode,
+                        command: cmd,
+                        stderr,
+                      });
+                      log.activity('bash:failed', workerId, `exit ${result.exitCode}: ${cmd}${stderr ? ' — ' + stderr : ''}`);
+                    }
                   }
                 }
               }
@@ -877,6 +891,21 @@ Reply **allow** to approve or **deny** to reject.`,
       }
 
       const output = sessionOutput.join('\n\n---\n\n');
+
+      // Instant-exit detection: agent exited with zero tool calls after processing a message.
+      // This means the SDK resumed a completed session or the agent hallucinated completion.
+      // Mark as failure to prevent downstream routing from proceeding with empty output.
+      const duration = Date.now() - this.startedAt;
+      if (totalProcessed > 0 && this.toolCallRecords.length === 0 && duration < 10_000) {
+        lastError = `Instant-exit detected: processed ${totalProcessed} message(s) but made 0 tool calls in ${duration}ms. Agent likely resumed a completed session or exited without doing work.`;
+        log.error('sdk-runner', 'Instant-exit detected', {
+          workerId, totalProcessed, duration,
+          toolCalls: 0,
+          sessionId: this.currentSessionId,
+        });
+        log.activity('guardrail:instant-exit', workerId, `Instant-exit: ${totalProcessed} msg, 0 tools, ${duration}ms`);
+      }
+
       log.info('sdk-runner', `Worker complete`, { workerId, totalProcessed, success: !lastError, sessionId: this.currentSessionId });
 
       // Postcondition validation: runs after agent completion, before routing
