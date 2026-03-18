@@ -864,6 +864,31 @@ $CAMPAIGN_SCRIPT $CP arc update --phase={phase_name}
 $CAMPAIGN_SCRIPT $CP arc get
 ```
 
+## Post-Write Validation
+
+After completing ALL campaign.sh writes for a turn, validate that campaign files still parse:
+
+```bash
+# Validate arc.yaml parses cleanly
+$CAMPAIGN_SCRIPT $CP arc get > /dev/null 2>&1
+if [[ $? -ne 0 ]]; then
+  echo "VALIDATION FAILED: arc.yaml is malformed YAML"
+  # Read arc.yaml, find the syntax error, fix quoting, re-validate
+fi
+
+# Validate continuity.yaml parses cleanly
+$CAMPAIGN_SCRIPT $CP facts query --term="test" > /dev/null 2>&1
+if [[ $? -ne 0 ]]; then
+  echo "VALIDATION FAILED: continuity.yaml is malformed YAML"
+fi
+```
+
+Run this validation after every turn. If validation fails, fix the file before routing completion.
+
+**Common cause of malformed YAML:** unquoted string values containing colons. Any note, description, or free-text field with a colon mid-text MUST be quoted (single or double quotes). campaign.sh handles quoting automatically — direct yq writes do not.
+
+**If campaign.sh itself fails:** Do NOT fall back to raw yq writes. Report the failure and stop. Raw yq writes without proper quoting break downstream agents that depend on campaign.sh (oracle, gravity, architect).
+
 ## Fates Archival
 
 When `fates.yaml` exists in workspace, archive the world's actions via campaign.sh.

@@ -31,7 +31,6 @@ agents:
 
   - name: implementer
     model: sonnet
-    command: "/know:build {feature}"
     prompt: implementer/prompt.md
     permissions:
       allowedTools:
