@@ -23,6 +23,7 @@ import { mesh } from './mesh.ts';
 import { inbox } from './inbox.ts';
 import { forensics } from './forensics.ts';
 import { agentHelp } from './agent-help.ts';
+import { meshCmd } from './mesh-cmd.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -734,6 +735,10 @@ async function main() {
         output: flags.o as string || flags.output as string,
         json: Boolean(flags.json),
       });
+      break;
+
+    case 'mesh-cmd':
+      await meshCmd(args);
       break;
 
     default:

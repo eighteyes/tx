@@ -68,6 +68,12 @@ interface PostconditionOverride {
   warning?: boolean;
 }
 
+interface MaxForksOverride {
+  strict?: boolean;
+  warning?: boolean;
+  limit?: number | null;
+}
+
 interface AgentOverrides {
   write_gate?: GateOverride;
   read_gate?: GateOverride;
@@ -78,6 +84,7 @@ interface AgentOverrides {
   max_turns?: MaxTurnsOverride | number | null;
   duplicate_target?: DuplicateTargetOverride;
   postcondition?: PostconditionOverride;
+  max_forks?: MaxForksOverride | number | null;
 }
 
 interface MeshOverrides extends AgentOverrides {
@@ -98,6 +105,7 @@ interface GuardrailsSchema {
   max_instances?: MaxInstancesOverride | number | null;
   duplicate_target?: DuplicateTargetOverride;
   postcondition?: PostconditionOverride;
+  max_forks?: MaxForksOverride | number | null;
   meshes?: Record<string, MeshOverrides>;
 }
 
@@ -126,6 +134,7 @@ const GUARDRAIL_DEFAULT_MODES: Record<string, GuardrailMode> = {
   max_mesh_messages:{ strict: true,  warning: true },   // Kill on mesh message limit
   duplicate_target: { strict: false, warning: true },   // Warn on duplicate routing
   postcondition:    { strict: false, warning: true },   // Warn on postcondition failure
+  max_forks:        { strict: false, warning: true },   // Warn on fork limit
 };
 
 const DEFAULTS = {
@@ -138,6 +147,7 @@ const DEFAULTS = {
   max_turns: null as number | null,
   max_mesh_messages: null as number | null,
   max_instances: null as number | null,
+  max_forks: 10 as number | null,
 };
 
 export class GuardrailConfig {
@@ -342,6 +352,32 @@ export class GuardrailConfig {
   }
 
   /**
+   * Resolve max_forks limit for dynaprompt explore operations.
+   * Chain: mesh-local agent > mesh-local mesh > global agent > global mesh > global > default (10).
+   */
+  getMaxForks(meshName: string, agentName: string): number | null {
+    const local = this.meshLocal.get(meshName);
+    const g = this.config.guardrails;
+
+    const localAgent = this.extractLimit(local?.agents?.[agentName]?.max_forks);
+    if (localAgent !== undefined) return localAgent;
+
+    const localMesh = this.extractLimit(local?.max_forks as MaxForksOverride | number | null | undefined);
+    if (localMesh !== undefined) return localMesh;
+
+    const globalAgent = this.extractLimit(g?.meshes?.[meshName]?.agents?.[agentName]?.max_forks);
+    if (globalAgent !== undefined) return globalAgent;
+
+    const globalMesh = this.extractLimit(g?.meshes?.[meshName]?.max_forks);
+    if (globalMesh !== undefined) return globalMesh;
+
+    const globalVal = this.extractLimit(g?.max_forks);
+    if (globalVal !== undefined) return globalVal;
+
+    return DEFAULTS.max_forks;
+  }
+
+  /**
    * Resolve routing fallback config (edge iteration loop prevention).
    * Chain: mesh-local agent > mesh-local mesh > global agent > global mesh > global > default.
    */
@@ -392,7 +428,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target' | 'postcondition',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target' | 'postcondition' | 'max_forks',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -447,9 +483,9 @@ export class GuardrailConfig {
     const g = this.config.guardrails;
     const sources: Array<{ strict?: boolean; warning?: boolean } | undefined> = [];
 
-    // Agent-level guardrails (write_gate, read_gate, identity_gate, bash_guard, routing_error, max_messages, max_turns, duplicate_target, postcondition)
+    // Agent-level guardrails (write_gate, read_gate, identity_gate, bash_guard, routing_error, max_messages, max_turns, duplicate_target, postcondition, max_forks)
     // max_mesh_messages is mesh-level only
-    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'bash_guard', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target', 'postcondition'];
+    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'bash_guard', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target', 'postcondition', 'max_forks'];
     if (agentName && agentGuardrails.includes(guardrail)) {
       // Mesh-local agent
       const localAgentOverrides = local?.agents?.[agentName];
