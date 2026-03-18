@@ -65,6 +65,7 @@ interface MeshConfig {
     pre?: string[];
     post?: string[];
   };
+  load_claude_md?: boolean;  // Load project CLAUDE.md into agent system prompt (default: true)
   _basePath?: string;
 }
 
@@ -75,6 +76,7 @@ export interface HeadlessRunnerConfig {
   msgsDir: string;
   meshesDir: string;
   frontmatter?: Record<string, string>;  // Additional frontmatter (e.g., feature, msg-id)
+  txRoot?: string;  // TX installation root for script resolution via $TX_ROOT
 }
 
 export class HeadlessRunner extends EventEmitter {
@@ -101,6 +103,20 @@ export class HeadlessRunner extends EventEmitter {
     this.queue = queue;
     this.promptInjector = new PromptInjector();
     this.lifecycleHooks = new LifecycleHooks(config.workDir, queue, config.meshesDir);
+  }
+
+  /**
+   * Build environment variables to inject into agent shell.
+   * TX_ROOT enables scripts to reference mesh resources via $TX_ROOT/meshes/...
+   */
+  private buildAgentEnv(): Record<string, string> {
+    const env: Record<string, string> = {};
+
+    // TX_ROOT: use explicit txRoot or derive from meshesDir
+    const txRoot = this.config.txRoot || path.dirname(this.config.meshesDir);
+    env.TX_ROOT = txRoot;
+
+    return env;
   }
 
   /**
@@ -212,12 +228,20 @@ export class HeadlessRunner extends EventEmitter {
     const agentPromptText = this.loadPrompt();
     const promptSections: string[] = [];
 
+    // 0. Project CLAUDE.md (loaded first so agent instructions can override)
+    if (this.meshConfig.load_claude_md !== false) {
+      const claudeMdContent = this.loadProjectClaudeMd();
+      if (claudeMdContent) promptSections.push(claudeMdContent);
+    }
+
     // -- Identity + situation --
     // 1. Preamble
     promptSections.push(this.promptInjector.buildPreambleSection({
       agentCount: this.meshConfig.agents.length,
       meshName: this.config.mesh,
       agentName: this.config.agent,
+      txRoot: this.config.txRoot || process.env.TX_ROOT,
+      allowedTools: (this.agentConfig as any)?.permissions?.allowedTools,
     }));
 
     // 2. FSM context
@@ -292,6 +316,7 @@ export class HeadlessRunner extends EventEmitter {
       msgsDir: this.config.msgsDir,
       mcpServers: this.agentConfig.mcpServers,
       toolRestriction: this.meshConfig.toolRestriction,
+      env: this.buildAgentEnv(),  // Environment variables for agent shell
     };
 
     this.runner = new SdkRunner(runnerConfig, this.queue);
@@ -432,6 +457,8 @@ export class HeadlessRunner extends EventEmitter {
       agentCount: this.meshConfig.agents.length,
       meshName: this.config.mesh,
       agentName: this.config.agent,
+      txRoot: this.config.txRoot || process.env.TX_ROOT,
+      allowedTools: (this.agentConfig as any)?.permissions?.allowedTools,
     }));
 
     // 2. FSM context
@@ -512,6 +539,7 @@ export class HeadlessRunner extends EventEmitter {
       msgsDir: this.config.msgsDir,
       mcpServers: this.agentConfig.mcpServers,
       toolRestriction: this.meshConfig.toolRestriction,
+      env: this.buildAgentEnv(),  // Environment variables for agent shell
     };
 
     this.runner = new SdkRunner(runnerConfig, this.queue);
@@ -811,6 +839,25 @@ ${feedback}
    */
   getAgents(): string[] {
     return this.meshConfig?.agents.map(a => a.name) || [];
+  }
+
+  /**
+   * Load project CLAUDE.md from workDir (project-level only, not ~/.claude/).
+   */
+  private loadProjectClaudeMd(): string | null {
+    const candidates = [
+      path.join(this.config.workDir, 'CLAUDE.md'),
+      path.join(this.config.workDir, '.claude', 'CLAUDE.md'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        try {
+          const content = fs.readFileSync(candidate, 'utf-8').trim();
+          if (content) return `## Project Instructions (CLAUDE.md)\n\n${content}`;
+        } catch {}
+      }
+    }
+    return null;
   }
 
   /**

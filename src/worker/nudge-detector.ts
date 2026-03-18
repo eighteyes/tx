@@ -108,10 +108,36 @@ export class NudgeDetector {
       return;
     }
 
-    // Resolve expected targets for this agent (default outcome = 'complete')
-    const resolved = router.resolve(agentName, 'complete');
+    // Resolve expected targets by trying all valid outcomes for this agent
+    const validOutcomes = router.getValidOutcomes(agentName);
+    let resolved: ReturnType<typeof router.resolve> = null;
+
+    if (validOutcomes === null) {
+      // Linear/fan-out — any outcome accepted, try 'complete'
+      resolved = router.resolve(agentName, 'complete');
+    } else if (validOutcomes.length > 0) {
+      // Branch routing — try each valid outcome, collect all unique targets
+      for (const oc of validOutcomes) {
+        resolved = router.resolve(agentName, oc);
+        if (resolved) break;
+      }
+    } else {
+      // Terminal agent — try 'complete'
+      resolved = router.resolve(agentName, 'complete');
+    }
+
     if (!resolved) {
-      log.debug('nudge-detector', 'No route resolved, skipping nudge', { agentId });
+      log.warn('nudge-detector', 'No route resolved for any outcome, escalating to core', {
+        agentId,
+        validOutcomes,
+      });
+      this.writer.write({
+        to: 'core/core',
+        from: 'system/nudge-detector',
+        type: 'system',
+        headline: `Routing failure: ${agentId} has no resolvable route`,
+        body: `Agent \`${agentId}\` completed but no route could be resolved for any outcome.\n\nValid outcomes: ${JSON.stringify(validOutcomes)}\n\nThis likely indicates a mesh config issue — the agent's routing entry doesn't match what the agent actually emits.`,
+      });
       return;
     }
 
@@ -123,14 +149,32 @@ export class NudgeDetector {
       return;
     }
 
-    // Check each target: did the agent already send to it, or is there pending work?
-    const sentTo = new Set(messagesSent.map(m => m.to));
+    // If the agent sent ANY message, it made a routing decision — respect it.
+    // Nudges are for agents that complete silently without forwarding work at all.
+    // An agent that sent back to a prior step (e.g., B→A for clarification in an A→B→C chain)
+    // is not stalled — it chose a different branch intentionally.
+    if (messagesSent.length > 0) {
+      log.debug('nudge-detector', 'Agent sent messages, skipping nudge', {
+        agentId,
+        sentTo: messagesSent.map(m => m.to),
+        expectedTargets,
+      });
+      return;
+    }
 
+    // Check if agent indicated a blocked state in its output
+    // Blocked agents escalate to core/core but don't appear in messagesSent
+    // because they use systemWriter.write() which bypasses worker message tracking
+    const outputLower = (snapshot.output || '').toLowerCase();
+    if (outputLower.includes('status: blocked') ||
+        (outputLower.includes('blocked') && outputLower.includes('core/core'))) {
+      log.info('nudge-detector', 'Agent output indicates blocked state, skipping nudge', { agentId });
+      return;
+    }
+
+    // Agent completed without sending anything — check if expected targets have pending work
     for (const target of expectedTargets) {
       if (target === 'core/core') continue;
-
-      // Already sent
-      if (sentTo.has(target)) continue;
 
       // Check queue for pending messages
       const pendingCount = this.queue.countPending(target);
@@ -141,7 +185,6 @@ export class NudgeDetector {
         agentId,
         target,
         expectedTargets,
-        messagesSent: messagesSent.map(m => m.to),
       });
 
       await this.sendNudge(snapshot, target);

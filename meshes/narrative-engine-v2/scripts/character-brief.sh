@@ -57,7 +57,11 @@ with open(char_file) as f:
 brief = {}
 
 # Identity
-brief['name'] = char.get('name', char_id)
+name_field = char.get('name', char_id)
+if isinstance(name_field, dict):
+    brief['name'] = name_field.get('first', char_id)
+else:
+    brief['name'] = name_field
 brief['id'] = char.get('id', char_id)
 
 # Appearance (observable)

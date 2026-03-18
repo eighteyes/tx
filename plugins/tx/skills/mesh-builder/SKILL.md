@@ -61,7 +61,7 @@ agents:
 2. Agent config `command:` (default)
 3. No command (just prompt as system prompt)
 
-Requires `settingSources: ['project']` (already enabled by default).
+Commands are prepended to the user prompt at dispatch time — no special SDK options required.
 
 ### Command Template Interpolation
 
@@ -720,6 +720,7 @@ For ensemble `aggregation` field:
 | `manifest_enforcement` | object | Artifact validation settings |
 | `max_mesh_messages` | number/object | Mesh-wide message cap (guardrail) |
 | `autoInjectManifestFiles` | boolean | Auto-preload manifest reads (default: true) |
+| `load_claude_md` | boolean | Load project CLAUDE.md into agent system prompt (default: true) |
 
 ## Route Validation
 

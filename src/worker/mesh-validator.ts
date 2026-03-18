@@ -148,7 +148,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   keepalive: { type: 'boolean' },
   grace_period_ms: { type: 'number', minimum: 0, maximum: 60000 },
   topology: { type: 'string', enum: ['static', 'dynamic'] },
-  routing_mode: { type: 'string', enum: ['agent', 'dispatcher'] },
+  routing_mode: { type: 'string', enum: ['agent', 'dispatcher', 'manifest'] },
   routing: { type: 'object' },
   rearmatter: { type: 'object' },
   workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
@@ -328,13 +328,13 @@ export class MeshValidator {
       errors.push(`FSM requires 'routing' configuration${context}`);
     }
 
-    // Validate multi-agent mesh routing (skip for dispatcher mode — handled by validateDispatcherRouting)
-    if (Array.isArray(cfg.agents) && cfg.agents.length > 1 && cfg.routing_mode !== 'dispatcher') {
+    // Validate multi-agent mesh routing (skip for dispatcher/manifest mode)
+    if (Array.isArray(cfg.agents) && cfg.agents.length > 1 && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest') {
       this.validateMultiAgentRouting(cfg, errors, warnings, context);
     }
 
-    // Validate FSM state agent routing (skip for dispatcher mode — routing shape differs)
-    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher') {
+    // Validate FSM state agent routing (skip for dispatcher/manifest mode)
+    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest') {
       this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
     }
 
@@ -355,6 +355,39 @@ export class MeshValidator {
         cfg.workspace,
         cfg.fsm
       );
+    }
+
+    // Validate manifest routing mode
+    if (cfg.routing_mode === 'manifest') {
+      // Error: manifest mode without manifest section
+      if (!cfg.manifest || !Array.isArray(cfg.manifest) || cfg.manifest.length === 0) {
+        errors.push(`routing_mode 'manifest' requires a non-empty 'manifest' section${context}`);
+      }
+
+      // Error: agent with zero manifest entries in manifest mode
+      if (Array.isArray(cfg.agents) && Array.isArray(cfg.manifest)) {
+        for (const agent of cfg.agents) {
+          const agentName = typeof agent === 'string' ? agent : agent.name;
+          if (!agentName) continue;
+          const hasEntry = cfg.manifest.some((entry: any) =>
+            (entry.reads && entry.reads.includes(agentName)) ||
+            (entry.writes && entry.writes.includes(agentName))
+          );
+          if (!hasEntry) {
+            errors.push(`Agent '${agentName}' has no manifest entries (reads or writes) but routing_mode is 'manifest'${context}`);
+          }
+        }
+      }
+
+      // Warning: manifest mode with routing section (ignored at runtime)
+      if (cfg.routing) {
+        warnings.push(`routing_mode 'manifest' ignores 'routing' configuration${context}. Manifest declarations drive orchestration.`);
+      }
+
+      // Warning: manifest mode with fsm section (ignored at runtime)
+      if (cfg.fsm) {
+        warnings.push(`routing_mode 'manifest' ignores 'fsm' configuration${context}. Manifest declarations drive orchestration.`);
+      }
     }
 
     // Validate feature incompatibilities

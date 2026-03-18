@@ -209,7 +209,8 @@ if [[ -d "$workspace" ]]; then
       suffix=$(echo "$suffix" | tr 'a-y' 'b-z')
     done
 
-    mv "$workspace" "${workspace}${suffix}"
+    ARCHIVE_DIR="${workspace}${suffix}"
+    mv "$workspace" "$ARCHIVE_DIR"
     pollution_status="archived:turn-${new_turn}${suffix}"
     warn "Archived polluted workspace → turn-${new_turn}${suffix} ($pipeline_files artifacts)"
   fi
@@ -221,6 +222,12 @@ fi
 
 mkdir -p "$workspace"
 vlog "Workspace: $workspace"
+
+# Preserve player input files from archived workspace
+if [[ -n "${ARCHIVE_DIR:-}" && -f "${ARCHIVE_DIR}/director-notes.yaml" ]]; then
+  cp "${ARCHIVE_DIR}/director-notes.yaml" "${workspace}/director-notes.yaml"
+  vlog "Preserved director-notes.yaml from ${ARCHIVE_DIR}"
+fi
 
 # ─────────────────────────────────────────────
 # 6b. STAMP RAW PLAYER ACTION (tamper-proof)
@@ -356,7 +363,14 @@ yq -n "
 # --- Protagonist block ---
 # Core fields from primary entity
 protag_id=$(yq -r '.id // "unknown"' "$protagonist_file")
-protag_name=$(yq -r '.name // "unknown"' "$protagonist_file")
+
+# Name can be string or object {first, surname}. Handle both.
+name_type=$(yq -r '.name | type' "$protagonist_file" 2>/dev/null || echo "string")
+if [[ "$name_type" == "!!map" ]]; then
+  protag_name=$(yq -r '.name.first // "unknown"' "$protagonist_file")
+else
+  protag_name=$(yq -r '.name // "unknown"' "$protagonist_file")
+fi
 
 yq -i "
   .protagonist.id = \"$protag_id\" |

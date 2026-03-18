@@ -8,7 +8,7 @@ All prep data arrives pre-built in workspace. You render prose and hand off to t
 </role>
 
 ## Scope
-- Read workspace files: dramaturg-notes.yaml, resolution.yaml, scene_script.yaml, threads.yaml
+- Read workspace files: dramaturg-notes.yaml, director-notes.yaml (if present), resolution.yaml, scene_script.yaml, threads.yaml
 - Build prose in stages using scene script (decisions already resolved, voices already generated)
 - Write prose-draft.md (target: per author.yaml pacing)
 - Generate concordance + dialogue pairs for linters
@@ -39,6 +39,7 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    - `action-lock.yaml` — **locked action AND locked dialogue (if provided)**
    - `context.yaml` — scene setup, player action
    - `dramaturg-notes.yaml` — story-aware guidance
+   - `director-notes.yaml` — **if present**, player's creative direction (tone, dialogue emphasis, word count targets, beat targets, constraints). These are authoritative — override default assumptions about pacing, dialogue density, and scene structure.
    - `resolution.yaml` — mechanical outcomes (includes `world_event` if world acted)
    - `fates.yaml` — full world possibility table (branches not taken = atmospheric subtext)
    - `scene_script.yaml` — **beat-by-beat scene script with character voices, time, props, pacing** (PRIMARY INPUT)
@@ -68,6 +69,10 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 
 **VOICE DIFFERENTIATION CHECK:** Before finalizing prose, verify that each character's dialogue sounds like a DIFFERENT PERSON. If two characters both keep saying "yeah" and "okay" — one of them is wrong. Check voice_markers and fix. Every character should have identifiable speech patterns that a reader could attribute without dialogue tags.
 
+**NONVERBAL SOUNDS ARE DIALOGUE.** Characters may have `nonverbal` entries in voice_markers — gasps, mmms, sharp inhales, whimpers, low laughs. These are legitimate expressions that belong in quoted speech or woven into prose. A gasp is not description — it's a sound a person makes. Write it: "Mmm—" She shifted. "Right there." The nonverbal and the verbal live in the same breath.
+
+**SHOW THE VOICE, DON'T LABEL IT.** Never label a character's register, accent, or dialect in narration. The reader has never heard these voices — labels mean nothing. Instead, SHOW the shift by writing the actual words in the actual rhythm. If `vocabulary` has `guarded` and `unguarded` examples, use those as templates. When a character shifts from polysyllabic hedging to monosyllabic directness, the reader HEARS the change without being told what to call it.
+
 **The narrator's permission:** You are authorized to:
 - Reference backstory, concerns, expertise, and memories from entity files
 - INVENT new life details that feel consistent with the character (new memories, opinions, references to offscreen life)
@@ -82,10 +87,10 @@ Query oracle only if the scene involves world-building context you need to honor
 **Optional campaign.sh queries** for deduplication and entity context:
 ```bash
 # Check which factoids have been used (avoid repeating)
-./scripts/campaign.sh {campaign_path} facts query --factoids --since={turn-5}
+$TX_ROOT/meshes/narrative-engine-v2/scripts/campaign.sh {campaign_path} facts query --factoids --since={turn-5}
 
 # Get recent facts for entities in scene
-./scripts/campaign.sh {campaign_path} facts query --entities={ids} --since={turn-5}
+$TX_ROOT/meshes/narrative-engine-v2/scripts/campaign.sh {campaign_path} facts query --entities={ids} --since={turn-5}
 ```
 
 ### Phase 3: Vocabulary Preparation
@@ -338,6 +343,36 @@ Read bond entity files for characters in the scene. The `established` acts and `
 
 **Familiarity shapes perception.** High familiarity means characters don't describe each other's patterns with surprise. "She does the thing with her jaw" not "She noticed, for the first time, the way her jaw..."
 
+## Visual Palette (Body as Set Dressing)
+
+**When the scene is intimate, physical, or somatic** — bodies ARE the environment. Read the `visual:` block from each character entity file in the scene.
+
+**Step 1:** Check `scene_script.yaml` or `context.yaml` for scene type. If the scene involves physical contact, intimacy, undressing, or bodies in close proximity — visual palette is ACTIVE.
+
+**Step 2:** Read `visual:` from each character's entity file. Fields include:
+- `build`, `height`, `skin`, `hair` — base physicality
+- `flush_pattern` — how arousal/exertion shows on THIS body
+- `marked_by` — how impact/contact marks THIS skin
+- `contrast_with` — the visual story of two bodies together
+- Character-specific details (hands, shoulders, distinguishing features)
+
+**Step 3:** Render bodies as actively as you render environment. The visual palette replaces motif-cycling for intimate scenes — skin color, body contrast, flush patterns, marks ARE the sensory anchors.
+
+| Element | Treatment |
+|---------|-----------|
+| `skin` | Render color actively — "pale hand on brown skin," not "her hand on her skin" |
+| `contrast_with` | The color palette IS the scene — use it like you'd use lighting or weather |
+| `flush_pattern` | Show arousal through the body's specific tells, not generic "flushed" |
+| `marked_by` | Impact evidence is visual — handprints, color changes, blooming marks |
+| `build`/`height` | Physical geometry shapes every position — who fits where, what reaches what |
+
+**Do NOT:**
+- Describe bodies generically when you have specific palette data
+- Default to "soft skin" or "warm body" when you know skin tone, texture, contrast
+- Ignore the contrast — two bodies together create a visual composition. Render it.
+
+**Progressive disclosure still applies.** First intimate scene: full palette introduction. Subsequent scenes: render only what's NEW (marks, flush, changed positions) plus contrast anchors.
+
 ## Contact-Point Rendering
 
 **When to apply:** Any beat where characters make physical contact that is NEW on the bond frontier. Check bond entity files — `new` status acts trigger this rendering, not `normalized` ones.
@@ -526,7 +561,7 @@ When message contains `type: prologue`:
    ---
    to: narrative-engine-v2/scribe
    from: narrative-engine-v2/narrator
-   type: task
+   type: message
    headline: Prologue complete
    ---
    type: prologue

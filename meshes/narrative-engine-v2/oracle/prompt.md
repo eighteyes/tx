@@ -13,14 +13,14 @@ You validate. You remember.
 - Catch contradictions: dead characters, impossible physics, unjustified knowledge
 - Answer knowledge queries from narrator (knowledge mode)
 - Synthesize entity data across multiple sources
-- Route based on verdict: approved → narrator, violations → simulator
+- Route based on verdict: approved → narrator, violations → sim-voices
 
 ## Campaign Data Queries
 
 **Query campaign data via `campaign.sh` — never read continuity.yaml directly.**
 
 ```bash
-CAMPAIGN_SCRIPT="./scripts/campaign.sh"
+CAMPAIGN_SCRIPT="$TX_ROOT/meshes/narrative-engine-v2/scripts/campaign.sh"
 CP="{campaign_path}"
 ```
 
@@ -50,7 +50,7 @@ $CAMPAIGN_SCRIPT $CP facts query --factoids --since={N}
 <instructions>
 **Primary directive:** Return a verdict (approved/violations) for validation, or synthesized knowledge for queries.
 
-### For Validation (from simulator)
+### For Validation (from sim-voices)
 1. Receive message with workspace path
 2. Read `scene_script.yaml` from workspace
 3. **Query campaign data via campaign.sh:**

@@ -186,6 +186,14 @@ export class MessageQueue {
         completion_agent TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_mesh_runs_name_status ON mesh_runs(mesh_name, status);
+
+      CREATE TABLE IF NOT EXISTS instant_exit_failures (
+        agent_id TEXT PRIMARY KEY,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_failure_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_instant_exit_failures_updated ON instant_exit_failures(updated_at);
     `);
   }
 
@@ -213,6 +221,17 @@ export class MessageQueue {
         completion_agent TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_mesh_runs_name_status ON mesh_runs(mesh_name, status);
+    `);
+
+    // Ensure instant_exit_failures table exists (for existing databases)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS instant_exit_failures (
+        agent_id TEXT PRIMARY KEY,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        last_failure_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_instant_exit_failures_updated ON instant_exit_failures(updated_at);
     `);
   }
 
@@ -1312,6 +1331,91 @@ export class MessageQueue {
       SET status = 'completed', completed_at = ?
       WHERE status = 'running'
     `).run(Date.now());
+    return result.changes;
+  }
+
+  // ============================================
+  // Instant-Exit Failure Tracking
+  // ============================================
+
+  /**
+   * Increment the instant-exit failure count for an agent
+   * @param agentId - The agent ID that instant-exited
+   * @returns The new failure count
+   */
+  incrementInstantExitFailure(agentId: string): number {
+    const now = Date.now();
+    const existing = this.getInstantExitFailureCount(agentId);
+    const newCount = existing + 1;
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO instant_exit_failures
+        (agent_id, consecutive_failures, last_failure_at, updated_at)
+      VALUES (?, ?, ?, ?)
+    `).run(agentId, newCount, now, now);
+
+    return newCount;
+  }
+
+  /**
+   * Get the current instant-exit failure count for an agent
+   * @param agentId - The agent ID to query
+   * @returns The consecutive failure count (0 if not found or expired)
+   */
+  getInstantExitFailureCount(agentId: string): number {
+    const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+    const cutoff = Date.now() - COOLDOWN_MS;
+
+    const row = this.db.prepare(`
+      SELECT consecutive_failures, last_failure_at
+      FROM instant_exit_failures
+      WHERE agent_id = ?
+    `).get(agentId) as { consecutive_failures: number; last_failure_at: number } | undefined;
+
+    if (!row) return 0;
+
+    // Reset if cooldown period has elapsed
+    if (row.last_failure_at < cutoff) {
+      this.clearInstantExitFailure(agentId);
+      return 0;
+    }
+
+    return row.consecutive_failures;
+  }
+
+  /**
+   * Reset the instant-exit failure count for an agent
+   * @param agentId - The agent ID to reset
+   */
+  clearInstantExitFailure(agentId: string): void {
+    this.db.prepare('DELETE FROM instant_exit_failures WHERE agent_id = ?').run(agentId);
+  }
+
+  /**
+   * Clear instant-exit failures for a mesh (on mesh completion or new run)
+   * @param meshName - The mesh name
+   */
+  clearInstantExitFailuresForMesh(meshName: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM instant_exit_failures WHERE agent_id LIKE ?'
+    ).run(`${meshName}/%`);
+    return result.changes;
+  }
+
+  /**
+   * Clean up expired instant-exit failure records (older than 30 minutes)
+   * Called periodically or on startup
+   * @returns Number of records cleaned up
+   */
+  cleanupExpiredInstantExitFailures(): number {
+    const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+    const cutoff = Date.now() - COOLDOWN_MS;
+
+    const result = this.db.prepare(`
+      DELETE FROM instant_exit_failures
+      WHERE last_failure_at < ?
+    `).run(cutoff);
+
     return result.changes;
   }
 }

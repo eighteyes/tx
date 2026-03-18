@@ -209,8 +209,8 @@ Use tools for data gathering and research. Tools are CLI commands, not meshes.
   Use when user wants to: "what sources", "available providers", "search engines"
 
 - \`tx agent-help [topic]\` - **Your reference manual.** Run this whenever you're unsure about message format, how to do something, or how to debug.
-  Topics: \`messages\`, \`parallel\`, \`routing\`, \`workflows\`, \`debugging\`, \`operator\`
-  Examples: \`tx agent-help messages\` (frontmatter fields), \`tx agent-help workflows\` (how to send, interrupt, stop, debug), \`tx agent-help debugging\` (file paths, CLI commands, troubleshooting).
+  Topics: \`messages\`, \`parallel\`, \`routing\`, \`workflows\`, \`recovery\`, \`debugging\`, \`operator\`
+  Examples: \`tx agent-help messages\` (frontmatter fields), \`tx agent-help recovery\` (session resume, DLQ, checkpoints), \`tx agent-help debugging\` (file paths, CLI commands, troubleshooting).
 
 **IMPORTANT**: Tools are for data gathering only. DO NOT write task messages to tools. Execute tools yourself when gathering information for the user.
 
@@ -223,12 +223,12 @@ When meshes get stuck, blocked, or need intervention, use these commands:
 - \`tx mesh clear <mesh>\` - Clear SQLite state (suspended sessions, pending asks, FSM)
 - \`tx mesh kill <mesh> [agent]\` - Kill workers (all in mesh, or specific agent)
 - \`tx mesh resolve <msg-id> "<response>"\` - Answer a stuck ask-human message
-- \`tx mesh fsm <mesh> jump <state>\` - Force FSM to a specific state
+- \`tx mesh fsm-goto <mesh> <state>\` - Force FSM to a specific state
 
 **When to use:**
 - \`ask-human\` messages piling up → \`tx mesh resolve\`
 - Agent stuck/spinning → \`tx mesh kill\`
-- FSM in wrong state → \`tx mesh fsm jump\`
+- FSM in wrong state → \`tx mesh fsm-goto\`
 - Need fresh start → \`tx mesh clear\`
 
 **Example: Resolve a stuck ask-human:**
@@ -239,11 +239,36 @@ tx mesh resolve ask-123 "Approved, continue with the plan"
 
 ## Reliability & Recovery
 
-When mesh work fails, the system captures failures in a Dead Letter Queue (DLQ) with session context. You can recover failed work and rewind to specific checkpoints.
-
 **CRITICAL: Recovery requires human approval.** Never trigger recovery silently. Always diagnose, present options, and get explicit user confirmation first.
 
-### Recovery Workflow (Always Follow These Steps)
+For full reference: \`tx agent-help recovery\`
+
+### Session Resumption
+
+Sessions are the primary recovery primitive. The system preserves conversation history so agents can pick up where they left off.
+
+**Automatic** (no action needed):
+- **Continuation**: Within a mesh run, agents resume their last session automatically (default: enabled)
+- **Crash recovery**: On restart, suspended sessions restore from SQLite and buffered responses auto-resume
+- **Ask-human suspend/resume**: When an agent asks for human input, the session suspends. Your response resumes it at the exact point
+
+**Manual session resume** — force dispatch to a known session:
+\`\`\`markdown
+---
+to: <mesh>/<agent>
+from: core/core
+session-id: sess_abc123
+msg-id: resume-${timestampMs}
+headline: Continue previous session
+timestamp: ${timestamp}
+---
+
+Pick up where you left off.
+\`\`\`
+
+### DLQ Recovery Workflow (Always Follow These Steps)
+
+When mesh work fails, the Dead Letter Queue captures failures with session context.
 
 **Step 1: Diagnose** — Run these and present findings to the user:
 \`\`\`bash
@@ -254,7 +279,7 @@ tx mesh dlq <mesh>         # Failed entries: what failed, why, recovery mode
 **Step 2: Present options** — Tell the user:
 - What failed and why (failure category, reason)
 - How many DLQ entries exist
-- Recovery modes available (session_resume vs requeue)
+- Recovery modes available: session_resume (continue from crash), requeue (fresh dispatch), manual (retries exhausted)
 - Available checkpoints if FSM mesh (state names the user can rewind to)
 
 Example: "The verify step failed after 3 retries (model_error). There's 1 DLQ entry with session_resume available. Checkpoints exist for: analyze, build. Options:
@@ -308,12 +333,19 @@ tx mesh clear <mesh>       # Full state reset
 - Recovery resumes that exact session — full conversation history preserved
 - The agent picks up where it left off, skipping the failed work
 
-### CLI equivalents (for reference)
+### Circuit Breakers & Safe Mode
+
+**Circuit breakers** block spawns when an agent fails repeatedly. Auto-recover after cooldown (30s default). Check with \`tx mesh health\`.
+
+**Safe mode** escalates on sustained failures: normal → cautious → restricted → lockdown. Lockdown blocks all spawns. **Never auto-de-escalates** — present metrics and get human approval to step down.
+
+### CLI equivalents
 \`\`\`bash
 tx mesh recover <mesh>                    # Resume from crash point
 tx mesh recover <mesh> --rewind-to=build  # Rewind to state checkpoint
-tx mesh health                            # Overall reliability dashboard
+tx mesh health                            # SLI, breakers, safe mode
 tx mesh dlq                               # All DLQ entries
+tx mesh resolve <msg-id> "response"       # Resume stuck ask-human
 \`\`\`
 
 ### Human Review Gates (Apply to ALL Reliability Events)

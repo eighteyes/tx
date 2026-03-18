@@ -14,8 +14,16 @@
 
 Human-scale AI Augmentation / Orchestration Hydra
 
+## Terms
+- `mesh` - a collection of agents with a defined workflow
+- `message` - core unit of interaction between meshes and agents
+- `core` - the session identifier you use to interact with the `tx` system
+
 ## Usage
 `tx` is operated via CLI and launches you into a `tmux` wrapped Claude Code.
+
+### Make a new mesh
+
 ```
 > tx start
 
@@ -30,10 +38,12 @@ Human-scale AI Augmentation / Orchestration Hydra
 > run bug-hunt on @buglist.csv 
 ```
 
+### Borrow ideas
 ```
 > karpathy's llm council looks neat, can you make one for me?
 ```
 
+### Chain meshes
 ```
 > research what it takes to run a coffee shop, build agents to help me manage one
 ```
@@ -41,10 +51,11 @@ Human-scale AI Augmentation / Orchestration Hydra
 ## Objective
 Create and collaborate with distributed, observable, composable agentic AI workflows using plain language, tooling and workspaces, via a conversational interface. Provide for reliability using logical wrappers around non-deterministic LLM calls.
 
-## Terms
-- `mesh` - a collection of agents with a defined workflow
-- `message` - core unit of interaction between meshes and agents
-- `core` - the AI you use to interact with the tx system
+## Sibling Projects
+[know](https://github.com/eighteyes/know) - product-driven software development knowledge graph
+[tx-lite](https://github.com/eighteyes/tx-lite) - Inter-agent, cross-project local messaging. `tx` and `claude` sessions can communicate. 
+[safe-claude](https://github.com/eighteyes/safe-claude) - quick docker sandbox for agenticentic development
+
 
 ## Start
 After install, run `tx start` in a new, or existing project directory. You will drop into a `claude-code` environment, wrapped by `tmux`with a status bar. Use plain language, "make a hypothesis about bird migration", "add a feature to support xml workflows" or invoke meshes explicitly "ask brain about project structure". 
@@ -52,10 +63,12 @@ After install, run `tx start` in a new, or existing project directory. You will 
 The core agent has instructions to write a file with frontmatter formatting, which triggers the agentic mesh. The file system is essentially an API being used for communication. When complete, or if more information is needed, that agent will write a file which is injected into the `core` session. It is then read and presented to the user for response.
 
 ## Responses
-The mesh agents interact with your core session in the following ways. `--inbox=` and global config provides override options. 
+Mesh agents interact with your core session in the following ways. `--inbox=` and global config provides override options. 
 
-`hook` - ( default ) new messages are injected into context automatically
-`inject` - direct response added to your session, can be triggered explicitly.
+`hook` - new messages are injected into context automatically
+
+`inject` - ( default ) direct response added to your session, can be triggered explicitly.
+
 `ask` - new messages must be retrieved with `tx inbox` 
 
 
@@ -79,17 +92,17 @@ The mesh agents interact with your core session in the following ways. `--inbox=
 ### Mesh Features
 
 #### Mesh Configuration Options
-`agents` - agent definitions, name, description, prompt file, options
-`routing` - which agents talk to others and when
-`manifest` - what files to read/write per agent
-`workspace` - where to save files and artifacts
-`fsm` - ( beta ) state machine, variables, gates, scripts wrapping your agents
-`guiderails` - settings for automatic steering behavior, see Chaos Contracts below
-`pre/post hooks` - scripts / agents to run before or after the mesh, carries independent context
+- `agents` - agent definitions, name, description, prompt file, options
+- `routing` - which agents talk to others and when
+- `manifest` - what files to read/write per agent
+- `workspace` - where to save files and artifacts
+- `fsm` - ( beta ) state machine, variables, gates, scripts wrapping your agents
+- `guiderails` - settings for automatic steering behavior, see Chaos Contracts below
+- `pre/post hooks` - scripts / agents to run before or after the mesh, carries independent context
 
 ### Router Types
-`normal` - default operation, agent topology is fixed
-`dispatch` - central dispatch agent, dynamic agent topologies
+- `normal` - default operation, agent topology is fixed
+- `dispatch` - central dispatch agent, for dynamic agent topologies
 
 
 ### Chaos Contracts
@@ -116,9 +129,12 @@ See [Guardrails Reference](docs/guardrails.md) for full configuration details.
 ### Windows notes
 - If `npm install` fails during native rebuilds, ensure you are on Node >= 20.19.0 (via nvm-windows is fine).
 
+### Security & Safety
+`tx` runs each mesh with 
+
 ## Quick Start
 > [!IMPORTANT]
-> `tx` uses `dontAsk` permission mode with [workDir boundary enforcement](docs/permissions.md) — no Docker required. For unrestricted access, use `tx start --god-mode`.
+> `tx` uses `dontAsk` permission mode with [workDir boundary enforcement](docs/permissions.md) just— no Docker required. For unrestricted access, use `tx start --god-mode`.
 
 ```bash
 git clone git@github.com:eighteyes/tx.git

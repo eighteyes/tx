@@ -712,6 +712,21 @@ check_queue_on_complete: true
 check_queue_on_complete: false
 ```
 
+### `load_claude_md`
+- **Type**: `boolean`
+- **Default**: `true`
+- **Behavior**: When `true`, the project-level `CLAUDE.md` is loaded into the agent's system prompt as the first section. Looks for `CLAUDE.md` or `.claude/CLAUDE.md` in the working directory. Only loads project-level files — never the user's global `~/.claude/CLAUDE.md`.
+
+```yaml
+# Default: project CLAUDE.md is loaded into agent prompts
+load_claude_md: true
+
+# Disable for meshes that should not inherit project instructions
+load_claude_md: false
+```
+
+**When to disable**: Meshes that operate independently of project conventions, or when CLAUDE.md instructions conflict with mesh agent behavior.
+
 ### `autoInjectManifestFiles`
 - **Type**: `boolean`
 - **Required**: No

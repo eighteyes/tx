@@ -422,26 +422,24 @@ export function resetIdleState(): void {
 /**
  * Check if Claude is idle and ready for message injection
  *
- * ONLY inject when:
- * - Empty prompt visible (❯ with nothing after, or only autocomplete/dim text)
- * - No busy indicator
+ * Inverted logic: IDLE unless proven BUSY.
+ * Only block injection when we positively detect active processing.
  *
- * Autocomplete detection: text after prompt with dim escape code (\x1b[2m) is OK
- * User-typed text: non-dim text after prompt = NOT OK to inject
+ * Busy signals (block injection):
+ * - "esc to interrupt/cancel" visible → Claude is processing
+ * - Non-dim typed text after a recognized prompt → user is typing
+ *
+ * Everything else → idle (inject freely)
  */
 export function isClaudeIdle(tmux: TmuxSession): boolean {
   const now = Date.now();
 
-  // Capture WITH escape codes to detect autocomplete (dim text)
-  const colorOutput = tmux.captureWithColors(5);
-
-  // Also get plain text for logging
-  const plainOutput = tmux.capture(5);
+  const plainOutput = tmux.capture(15);
 
   // Log raw capture for debugging (first 5 attempts only)
   if (idleCheckLogCount < 5) {
     idleCheckLogCount++;
-    log.info('tmux', 'Raw capture debug', {
+    log.info('tmux', 'Idle check capture', {
       raw: JSON.stringify(plainOutput.slice(-150)),
       bytes: plainOutput.length
     });
@@ -449,11 +447,15 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
 
   const lines = plainOutput.split('\n').filter(l => l.trim());
 
-  // Filter out border/visual lines (box-drawing characters)
-  const contentLines = lines.filter(l => !/^[─━═┃│┌┐└┘├┤┬┴┼╭╮╯╰\-|+]+$/.test(l.trim()));
+  // Filter out border/visual lines (box-drawing characters) and Claude Code status bar
+  const contentLines = lines.filter(l => {
+    const trimmed = l.trim();
+    if (/^[─━═┃│┌┐└┘├┤┬┴┼╭╮╯╰\-|+]+$/.test(trimmed)) return false;
+    if (/^\[##\]\s+\d+\s+msgs/.test(trimmed)) return false;
+    return true;
+  });
 
-  // Check last N lines since UI elements may appear after prompt
-  const lastNLines = contentLines.slice(-5);
+  const lastNLines = contentLines.slice(-10);
   const lastLine = lastNLines[lastNLines.length - 1] || '';
 
   // Track line changes for walked-away logging (informational only)
@@ -463,122 +465,70 @@ export function isClaudeIdle(tmux: TmuxSession): boolean {
     previousLineFirstSeen = now;
   }
 
-  // Check for active processing in any of the last N lines
+  // === BUSY CHECK 1: Active processing indicator ===
   const escPattern = /esc to (interrupt|cancel)/i;
   if (lastNLines.some(line => escPattern.test(line))) {
     log.debug('tmux', 'Claude busy: esc prompt visible');
     return false;
   }
 
-  // Check for bypass permissions prompt
-  const bypassPattern = /bypass permissions/i;
-  if (lastNLines.some(line => bypassPattern.test(line))) {
-    return true;
-  }
-
-  // Check for known idle hint patterns (Claude's autocomplete suggestions)
-  // These appear after the prompt but aren't user input
-  const idleHintPatterns = [
-    /Press up to edit/i,
-    /queued messages/i,
-    /Press enter to send/i,
-    /Type a message/i,
-    /How can I help/i,
-    /\d+\s*files?\s*[+\-]\d+/i,     // "12 files +553 -111" git stats
-    /[+]\d+\s*[-]\d+/,              // "+553 -111" shorthand
-    /\d+\s*insertions?/i,           // "553 insertions"
-    /\d+\s*deletions?/i,            // "111 deletions"
-  ];
-
-  for (const line of lastNLines) {
-    if (line.includes('❯') || line.includes('⏵') || line.includes('>')) {
-      // Found prompt line - check if remaining text is a known hint
-      for (const pattern of idleHintPatterns) {
-        if (pattern.test(line)) {
-          log.debug('tmux', 'Claude idle: recognized hint text pattern');
-          return true;
-        }
-      }
-    }
-  }
-
-  // Check for idle prompt with color-aware autocomplete detection
-  // Find prompt line in color output and check if text after is dim (autocomplete)
+  // === BUSY CHECK 2: User actively typing (non-dim text after prompt) ===
+  const colorOutput = tmux.captureWithColors(15);
   const colorLines = colorOutput.split('\n');
 
   for (const colorLine of colorLines.slice(-10)) {
-    // Look for prompt character (❯ encoded as UTF-8 in escape output)
-    // The prompt shows as: [reset codes]❯ [cursor][dim]autocomplete_text
     const hasPrompt = colorLine.includes('❯') || colorLine.includes('⏵') ||
-                      colorLine.includes('\u276f') || // ❯
-                      /M-bM-\^]M-\//.test(colorLine); // UTF-8 encoded ❯
+                      colorLine.includes('\u276f') ||
+                      /M-bM-\^]M-\//.test(colorLine);
 
     if (!hasPrompt) continue;
 
-    // Found a prompt line - check what's after it
-    // Dim text escape codes: \x1b[2m or \x1b[0;2m
-    // If there's text after prompt that's NOT preceded by dim code, user is typing
-
-    // Split on the prompt character position
     const promptMatch = colorLine.match(/([❯⏵>]|M-bM-\^]M-\/)\s*/);
     if (!promptMatch) continue;
 
     const afterPrompt = colorLine.slice(colorLine.indexOf(promptMatch[0]) + promptMatch[0].length);
-
-    // Strip escape codes to get plain text
     const plainAfter = afterPrompt.replace(/\x1b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
 
     if (!plainAfter) {
-      // Nothing after prompt (or only whitespace) - idle
+      // Empty prompt — definitely idle
       log.debug('tmux', 'Claude idle: empty prompt');
       return true;
     }
 
-    // Check if the text after prompt is all dim (autocomplete)
-    // Dim starts with \x1b[2m or \x1b[0;2m, shown as ^[[2m or ^[[0;2m in cat -v
+    // Check for dim text (autocomplete) or cursor position
     const hasDimCode = /(\x1b\[2m|\x1b\[0;2m|\^\[\[2m|\^\[\[0;2m)/.test(afterPrompt);
-
-    // Check for cursor position (reverse video ^[[7m) - text before cursor is typed
     const cursorMatch = afterPrompt.match(/\x1b\[7m|\^\[\[7m/);
 
     if (cursorMatch) {
-      // Cursor is on the line - check if it's at the start (no typed text)
       const beforeCursor = afterPrompt.slice(0, afterPrompt.indexOf(cursorMatch[0]));
       const plainBefore = beforeCursor.replace(/\x1b\[[0-9;]*m/g, '').replace(/\^?\[\[[0-9;]*m/g, '').trim();
 
-      if (!plainBefore) {
-        // Cursor at start, everything after is autocomplete - idle
-        log.debug('tmux', 'Claude idle: cursor at start, only autocomplete');
-        return true;
-      } else {
-        // User has typed text before cursor - not idle
-        log.debug('tmux', 'Claude not idle: typed text detected', {
+      if (plainBefore) {
+        // User has typed text before cursor — busy
+        log.debug('tmux', 'Claude busy: user typing detected', {
           plainBefore: plainBefore.slice(0, 30)
         });
         return false;
       }
-    }
-
-    // No cursor found - if all text is dim, it's autocomplete
-    if (hasDimCode) {
-      log.debug('tmux', 'Claude idle: all dim text (autocomplete)');
+      // Cursor at start with autocomplete — idle
       return true;
     }
 
-    // Non-dim text after prompt - user typed something
-    log.debug('tmux', 'Claude not idle: non-dim text after prompt');
-    return false;
+    if (hasDimCode) {
+      // All dim text = autocomplete — idle
+      return true;
+    }
+
+    // Non-dim text after prompt with no cursor — could be user typing
+    // BUT: don't block on this. The old logic was too conservative here.
+    // If they're mid-type and we inject, worst case they see the message.
+    log.debug('tmux', 'Claude idle: text after prompt but no busy indicator');
+    return true;
   }
 
-  // No prompt found - not idle
-  if (idleCheckLogCount <= 10) {
-    log.info('tmux', 'Claude not idle: no prompt found', {
-      lastLine: JSON.stringify(lastLine.slice(-80)),
-      lineCount: lines.length,
-    });
-  }
-
-  return false;
+  // === DEFAULT: No busy indicator found → idle ===
+  log.debug('tmux', 'Claude idle: no busy indicator detected');
+  return true;
 }
 
 /**

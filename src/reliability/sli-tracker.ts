@@ -88,6 +88,8 @@ export class SLITracker {
    */
   recordSuccess(meshName: string, agentId: string, durationMs?: number): void {
     const now = Date.now();
+    const prevSnapshot = this.events.length > 0 ? this.calculateNines(this.currentSuccessRate()) : null;
+
     this.events.push({
       timestamp: now,
       meshName,
@@ -99,9 +101,26 @@ export class SLITracker {
     // MTTR: if this agent had a recent failure, record recovery time
     const lastFailure = this.lastFailureByAgent.get(agentId);
     if (lastFailure) {
-      this.mttrSamples.push(now - lastFailure);
+      const mttr = now - lastFailure;
+      this.mttrSamples.push(mttr);
       this.lastFailureByAgent.delete(agentId);
+      log.info('sli', 'Agent recovered', {
+        meshName, agentId,
+        mttrMs: mttr,
+      });
     }
+
+    // Detect nines level transition
+    const newNines = this.calculateNines(this.currentSuccessRate());
+    if (prevSnapshot && newNines !== prevSnapshot) {
+      log.info('sli', 'Nines level changed', {
+        from: prevSnapshot,
+        to: newNines,
+        totalEvents: this.events.length,
+      });
+    }
+
+    log.debug('sli', 'Success recorded', { meshName, agentId, durationMs });
 
     this.gc();
   }
@@ -116,6 +135,8 @@ export class SLITracker {
     reason?: string
   ): void {
     const now = Date.now();
+    const prevNines = this.events.length > 0 ? this.calculateNines(this.currentSuccessRate()) : null;
+
     this.events.push({
       timestamp: now,
       meshName,
@@ -133,6 +154,16 @@ export class SLITracker {
       category,
       reason,
     });
+
+    // Detect nines level degradation
+    const newNines = this.calculateNines(this.currentSuccessRate());
+    if (prevNines && newNines !== prevNines) {
+      log.warn('sli', 'Nines level degraded', {
+        from: prevNines,
+        to: newNines,
+        totalEvents: this.events.length,
+      });
+    }
 
     this.gc();
   }
@@ -213,6 +244,15 @@ export class SLITracker {
     if (rate >= 0.99) return '99% (2 nines)';
     if (rate >= 0.9) return '90% (1 nine)';
     return `${(rate * 100).toFixed(1)}% (< 1 nine)`;
+  }
+
+  /**
+   * Current success rate across all events in retention window
+   */
+  private currentSuccessRate(): number {
+    if (this.events.length === 0) return 1;
+    const successes = this.events.filter(e => e.success).length;
+    return successes / this.events.length;
   }
 
   /**

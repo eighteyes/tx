@@ -34,9 +34,9 @@
  *    - System service manipulation (systemctl, reboot)
  *    - Raw disk operations (dd, mkfs)
  *
- * 3. **Subagent Spawning** (Task):
+ * 3. **Subagent Spawning** (Agent):
  *    - Denied by default to prevent uncontrolled agent proliferation
- *    - Meshes that need Task must explicitly allow it
+ *    - Meshes that need Agent must explicitly allow it
  */
 
 // Default allowed tools for safe operation (when no permissions block specified)

@@ -1,0 +1,136 @@
+# conditions.yaml - Absolute narrative constraints
+# Copy this template to .ai/games/{game-id}/conditions.yaml
+# These are not lint rules — they are principles the narrator follows and the editor validates.
+# Conditions are reserved for ABSOLUTE constraints that must never be violated.
+
+conditions:
+
+  # ═══════════════════════════════════════════════════════════
+  # NO NAMING PSYCHOLOGICAL FRAMEWORKS IN PROSE
+  # ═══════════════════════════════════════════════════════════
+
+  - id: no-psych-frameworks
+    name: "No naming psychological frameworks"
+    scope: narrator
+    severity: absolute
+
+    description: |
+      The narrator must never name psychological frameworks, academic terminology,
+      or clinical labels in prose. Show phenomena through character experience,
+      not through taxonomy.
+
+    forbidden_vocabulary:
+      # Relationship/attachment terminology
+      - NRE
+      - new relationship energy
+      - attachment style
+      - attachment theory
+      - avoidant
+      - anxious attachment
+      - secure attachment
+      - anxious-avoidant
+      - dismissive-avoidant
+      - fearful-avoidant
+      - codependent
+      - codependency
+      - enmeshment
+      - limerence
+      - limerent
+      - compersion
+      - metamour
+
+      # Trauma/therapy terminology
+      - trauma response
+      - trauma bond
+      - triggered
+      - triggering
+      - flashback
+      - dissociation
+      - dissociating
+      - hypervigilance
+      - hyperarousal
+      - fight-or-flight
+      - fawn response
+      - freeze response
+      - nervous system regulation
+      - dysregulation
+      - somatic experiencing
+      - inner child
+      - wounded inner child
+      - reparenting
+      - PTSD
+      - CPTSD
+      - complex trauma
+
+      # Personality/diagnostic terminology
+      - narcissist
+      - narcissistic
+      - gaslighting
+      - lovebombing
+      - love bombing
+      - boundaries (as jargon)
+      - toxic positivity
+      - emotional labor
+      - weaponized incompetence
+      - enmeshment
+      - triangulation
+      - splitting
+      - projection
+      - projecting
+      - transference
+      - countertransference
+
+      # Pop psychology terminology
+      - introvert
+      - extrovert
+      - empath
+      - highly sensitive person
+      - HSP
+      - neurodivergent
+      - neurotypical
+      - executive dysfunction
+      - rejection sensitive
+      - people pleaser
+      - perfectionist (as identity)
+      - imposter syndrome
+      - self-sabotage
+      - core wound
+      - shadow work
+      - inner critic
+
+    exception: |
+      Characters MAY use these terms in dialogue IF it is in-character:
+      - An academic character might reference attachment theory
+      - A therapy-literate character might name their own patterns
+      - A character quoting a book or article they read
+
+      The narrator's prose must NEVER use this vocabulary.
+      Only character dialogue, when justified by characterization.
+
+    enforcement: |
+      NARRATOR: When writing prose, show the phenomenon through:
+      - Physical sensation (the chest-tightening, the urge to check their phone)
+      - Behavioral pattern (they always leave before being left)
+      - Dialogue that dances around the thing without naming it
+      - Internal voice that doesn't have the vocabulary
+
+      EDITOR: Flag any instance of forbidden vocabulary in narrator prose.
+      If found in dialogue, verify it matches character voice profile (entity file).
+      If character has no established therapy/academic literacy, flag as violation.
+
+    examples:
+      wrong: |
+        She recognized the limerence for what it was — that intoxicating early
+        attachment, the way NRE floods the system with neurochemicals.
+
+      right: |
+        She couldn't stop checking her phone. Couldn't stop noticing the specific
+        shape of her name in the notification preview, the way those letters
+        rearranged something in her chest every time.
+
+      wrong: |
+        His dismissive-avoidant attachment style made closeness feel like a threat.
+
+      right: |
+        Closeness had a weight to it, pressing against him. The closer she got,
+        the more his body remembered all the ways it knew how to leave.

@@ -10,7 +10,7 @@
  */
 
 import type { WorkspaceInfo } from './manager.ts';
-import { MESSAGING_PROTOCOL } from './messaging-protocol.ts';
+import { MESSAGING_PROTOCOL, DISPATCHER_MESSAGING_PROTOCOL } from './messaging-protocol.ts';
 import type { FSMStateConfig } from '../shared/types.ts';
 import type { DispatchInjectionContext } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -36,6 +36,8 @@ export interface PreambleContext {
   agentCount: number;  // Number of agents in the mesh
   meshName: string;    // Mesh this agent belongs to
   agentName: string;   // Agent name within the mesh
+  txRoot?: string;     // TX installation root (for $TX_ROOT script references)
+  allowedTools?: string[];  // Agent's permitted tools from config (determines Task tool guidance)
 }
 
 /**
@@ -81,15 +83,29 @@ You run automatically without a user watching. If you need user input, send a me
 # Multi-Agent Mesh
 This mesh has multiple agents. Coordinate via message files in .ai/tx/msgs/, not the Task tool.`;
 
+const PREAMBLE_MULTI_AGENT_WITH_TASK = `You are a Claude agent, built on Anthropic's Claude Agent SDK.
+
+# Autonomous Operation
+You run automatically without a user watching. If you need user input, send a message to \`core/core\`.
+
+# Use of Explore and Agent
+- Freely use Explore for parallelized workflows, exceptional at lightweight answers and lots of Bash.
+- Use Agent tool for parallel subprocesses within your session. Use TaskOutput to read background results.
+
+# Multi-Agent Mesh
+This mesh has multiple agents. Coordinate via message files in .ai/tx/msgs/.
+Use Agent tool for parallel subprocesses within your session. Use messages for cross-agent routing.`;
+
 export class PromptInjector {
   /**
    * Inject preamble with tool guidance
-   * Multi-agent meshes get guidance to NOT use Task tool
+   * Multi-agent meshes get Task tool guidance based on agent permissions
    */
   injectPreamble(basePrompt: string, context: PreambleContext): string {
-    const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
+    const preamble = this.selectPreamble(context);
     const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
-    return `${preamble}${identity}\n\n${basePrompt}`;
+    const txRootHint = context.txRoot ? `\n\n# Environment\nRun \`export TX_ROOT="${context.txRoot}"\` before any script that references \`$TX_ROOT\`. This path is the TX installation root.` : '';
+    return `${preamble}${identity}${txRootHint}\n\n${basePrompt}`;
   }
 
   /**
@@ -98,6 +114,18 @@ export class PromptInjector {
    */
   injectMessagingProtocol(basePrompt: string): string {
     return `${basePrompt}\n${MESSAGING_PROTOCOL}`;
+  }
+
+
+  /**
+   * Select the appropriate preamble based on agent count and tool permissions
+   */
+  private selectPreamble(context: PreambleContext): string {
+    if (context.agentCount <= 1) return PREAMBLE_SINGLE_AGENT;
+
+    const agentTools = ['Agent', 'TaskOutput'];
+    const hasAgentTools = context.allowedTools?.some(t => agentTools.includes(t)) ?? false;
+    return hasAgentTools ? PREAMBLE_MULTI_AGENT_WITH_TASK : PREAMBLE_MULTI_AGENT;
   }
 
   /**
@@ -550,9 +578,10 @@ existing work.
    * Returns the section string without wrapping a base prompt
    */
   buildPreambleSection(context: PreambleContext): string {
-    const preamble = context.agentCount > 1 ? PREAMBLE_MULTI_AGENT : PREAMBLE_SINGLE_AGENT;
+    const preamble = this.selectPreamble(context);
     const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
-    return `${preamble}${identity}`;
+    const txRootHint = context.txRoot ? `\n\n# Environment\nRun \`export TX_ROOT="${context.txRoot}"\` before any script that references \`$TX_ROOT\`. This path is the TX installation root.` : '';
+    return `${preamble}${identity}${txRootHint}`;
   }
 
   /**
@@ -680,8 +709,9 @@ This instance is isolated from other instances of \`${baseMesh}\`. Your work is 
   }): string {
     const parts: string[] = [];
 
-    // Messaging protocol (filename format, frontmatter, status)
-    parts.push(MESSAGING_PROTOCOL.trim());
+    // Messaging protocol — dispatcher-mode agents get a variant that omits core/core
+    const protocol = config.dispatcherRouting ? DISPATCHER_MESSAGING_PROTOCOL : MESSAGING_PROTOCOL;
+    parts.push(protocol.trim());
 
     // Routing destinations (appended to messaging for cohesion)
     if (config.dispatcherRouting) {
@@ -797,19 +827,40 @@ Reference past sessions by number: "What did we discuss in session 3?"
     const parts: string[] = [];
     const hasOutgoing = context.outgoingAsks.length > 0;
     const hasIncoming = context.incomingAsks.length > 0;
-    const hasTasks = context.pendingTasks.length > 0;
+
+    // Check for pending dynaprompt fragments
+    const pendingFragments = context.pendingTasks.filter(
+      m => m.from_agent === 'system/dynaprompt'
+    );
+    const hasPendingFragments = pendingFragments.length > 0;
+
+    // Filter out dynaprompt messages from normal tasks
+    const normalTasks = context.pendingTasks.filter(
+      m => m.from_agent !== 'system/dynaprompt'
+    );
+    const hasTasks = normalTasks.length > 0;
 
     // Skip if nothing to inject
-    if (!hasOutgoing && !hasIncoming && !hasTasks) {
+    if (!hasOutgoing && !hasIncoming && !hasTasks && !hasPendingFragments) {
       return basePrompt;
     }
 
     parts.push('# Situational Awareness\n');
     parts.push('**IMPORTANT**: Review your current obligations before proceeding.\n');
 
+    // Pending dynaprompt fragments
+    if (hasPendingFragments) {
+      parts.push('## Active Prompt Fragments\n');
+      parts.push('The following dynamic prompt fragments have been activated for this session:\n');
+      for (const frag of pendingFragments) {
+        const fragBody = (frag as any).payload?.body || '';
+        parts.push(`---\n${fragBody}\n---\n`);
+      }
+    }
+
     // Current task (first pending task)
     if (hasTasks) {
-      const currentTask = context.pendingTasks[0];
+      const currentTask = normalTasks[0];
       parts.push('## Current Task\n');
       parts.push(`- **From**: \`${currentTask.from_agent}\``);
       if (currentTask.payload?.headline) {
@@ -818,8 +869,8 @@ Reference past sessions by number: "What did we discuss in session 3?"
       const taskAge = this.formatAge(currentTask.created_at || Date.now());
       parts.push(`- **Queued**: ${taskAge}`);
 
-      if (context.pendingTasks.length > 1) {
-        parts.push(`\n*+${context.pendingTasks.length - 1} more task(s) queued*`);
+      if (normalTasks.length > 1) {
+        parts.push(`\n*+${normalTasks.length - 1} more task(s) queued*`);
       }
       parts.push('');
     }

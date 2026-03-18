@@ -20,6 +20,14 @@ agents:
     model: haiku
     command: "/know:prebuild {feature}"
     prompt: prebuild/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Glob
+        - Grep
+        - Bash
+        - Skill
 
   - name: implementer
     model: sonnet
@@ -32,6 +40,7 @@ agents:
         - Edit
         - Glob
         - Grep
+        - Skill
         - Bash
 
   - name: tester
@@ -56,6 +65,7 @@ agents:
 
 entry_point: prebuild
 completion_agents: [evaluator]
+continuation: false
 
 routing:
   prebuild:
@@ -149,10 +159,11 @@ rearmatter:
 guardrails:
   max_turns:
     warning: true
-    strict: true
+    strict: false
     limit: 40
   max_messages:
     warning: true
+    strict: false
     limit: 30
 
 playbook_notes: |

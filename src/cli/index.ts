@@ -23,6 +23,7 @@ import { mesh } from './mesh.ts';
 import { inbox } from './inbox.ts';
 import { forensics } from './forensics.ts';
 import { agentHelp } from './agent-help.ts';
+import { dynaprompt } from './dynaprompt.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -119,7 +120,8 @@ Commands:
   tx prompt         Show built prompt for agent
   tx tool           Search and web utilities
   tx forensics      Analyze mesh execution sessions
-  tx agent-help      Agent-friendly reference (messages, parallel, routing, workflows, debugging)
+  tx dynaprompt     Dynamic prompt fragment management
+  tx agent-help      Agent-friendly reference (messages, routing, recovery, workflows, debugging)
   tx login          Authenticate with tx-server
   tx logout         Clear stored credentials
   tx deploy         Deploy mesh to Cloud Run
@@ -722,6 +724,10 @@ async function main() {
     case 'agent-help':
       const helpTopic = args.filter(a => !a.startsWith('-'))[0];
       agentHelp(helpTopic);
+      break;
+
+    case 'dynaprompt':
+      await dynaprompt(args);
       break;
 
     case 'forensics':

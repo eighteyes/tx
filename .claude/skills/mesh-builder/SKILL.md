@@ -973,8 +973,10 @@ agents:
 **Available tools:**
 - File operations: `Read`, `Write`, `Edit`, `Glob`, `Grep`
 - Execution: `Bash` (denied by default)
-- Advanced: `Task`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
+- Advanced: `Agent`, `TaskOutput`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
 - **Never grant to mesh agents**: `AskUserQuestion` (no user session — use messaging to `core/core` instead)
+
+**Preamble behavior:** Multi-agent meshes tell agents "not the Agent tool" by default to prevent subprocess chaos. When `Agent` or `TaskOutput` appear in `allowedTools`, the preamble switches to encourage Agent tool usage for parallel subprocesses within the session, while still routing cross-agent work via messages.
 
 **Security principle:** Only grant tools an agent actually needs. Start restrictive, add permissions as required.
 
@@ -986,7 +988,7 @@ agents:
 
 Validate that required tool calls occurred during agent execution. Prevents agents from hallucinating results instead of using tools.
 
-Agents sometimes describe what they would do instead of doing it — generating output inline rather than calling Bash, Write, or Task tools. Postconditions catch this by checking the actual tool call record after the agent completes.
+Agents sometimes describe what they would do instead of doing it — generating output inline rather than calling Bash, Write, or Agent tools. Postconditions catch this by checking the actual tool call record after the agent completes.
 
 ```yaml
 agents:

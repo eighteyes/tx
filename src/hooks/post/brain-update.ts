@@ -10,6 +10,16 @@ import { log } from '../../shared/logger.ts';
 import type { HookDefinition, HookContext, HookUtils } from '../types.ts';
 
 const handler = async (context: HookContext, utils: HookUtils): Promise<void> => {
+  // IMPORTANT: brain-update now fires on mesh completion, not per-agent
+  // This hook is kept for backward compatibility but is a no-op
+  // The real brain update happens in dispatcher.finalizeMeshCompletion()
+  log.debug('hooks', 'brain-update post-hook called (no-op, fires on mesh completion instead)', {
+    meshInstance: context.meshInstance,
+    agentName: context.agentName,
+  });
+  return;
+
+  // Legacy implementation below (kept for reference, unreachable)
   const brainWorkDir = context.worktreePath || utils.workDir;
 
   log.info('hooks', 'Sending work analysis to brain mesh', {

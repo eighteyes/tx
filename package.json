@@ -9,6 +9,8 @@
     "build": "tsc",
     "test": "node --import tsx --test test/unit/**/*.test.ts test/*.test.ts",
     "test:e2e": "node --import tsx --test test/e2e/*.test.ts",
+    "test:e2e:infra": "node --import tsx --test test/e2e/28-parallel-spawn-infra.test.ts test/e2e/29-fanout-infra.test.ts test/e2e/30-guardrails-infra.test.ts test/e2e/31-ensemble-infra.test.ts test/e2e/32-mesh-completion-infra.test.ts test/e2e/33-routing-errors-infra.test.ts test/e2e/34-crash-recovery-infra.test.ts test/e2e/35-revision-infra.test.ts test/e2e/36-dispatch-router-infra.test.ts",
+    "test:e2e:llm": "node --import tsx --test test/e2e/real-llm/02-ask-human.test.ts test/e2e/real-llm/08-parallelism.test.ts test/e2e/real-llm/09-fanout.test.ts test/e2e/real-llm/10-guardrails.test.ts test/e2e/real-llm/11-ensemble.test.ts test/e2e/real-llm/12-mesh-completion.test.ts test/e2e/real-llm/13-revision.test.ts",
     "test:all": "node --import tsx --test test/**/*.test.ts",
     "test:frontend": "cd frontend && npx playwright test",
     "start": "node --import tsx src/cli/index.ts start",

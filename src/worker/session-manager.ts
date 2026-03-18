@@ -560,17 +560,22 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Build a resume prompt with human response
+   * Optionally includes routing reminder so agents don't forget their next steps.
    */
-  buildHumanResponsePrompt(content: string, headline?: string): string {
+  buildHumanResponsePrompt(content: string, headline?: string, routingReminder?: string): string {
     const header = headline
       ? `## Human Response: ${headline}`
       : `## Human Response`;
+
+    const routingBlock = routingReminder
+      ? `\n\n${routingReminder}`
+      : '';
 
     return `${header}
 
 ${content}
 
 ---
-Your session was suspended while waiting for this response. Incorporate the answer above and continue your task. Do NOT re-send the question or repeat prior work.`;
+Your session was suspended while waiting for this response. Incorporate the answer above and continue your task. Do NOT re-send the question or repeat prior work.${routingBlock}`;
   }
 }

@@ -170,9 +170,13 @@ export class BashGuard {
           return { decision: 'approve' } as HookJSONOutput;
         }
 
+        // Strip heredoc content — heredoc bodies are data, not executable commands.
+        // Matching words like "halt", "shutdown", "service" in narrative text is a false positive.
+        const commandToCheck = command.replace(/<<-?\s*'?([A-Za-z_]+)'?\s*\n[\s\S]*?\n\s*\1\b/g, '<<HEREDOC_STRIPPED');
+
         // Check catastrophic patterns first
         for (const { pattern, reason } of CATASTROPHIC_PATTERNS) {
-          if (pattern.test(command)) {
+          if (pattern.test(commandToCheck)) {
             this.violations++;
             return this.handleViolation('catastrophic', command, reason);
           }
@@ -203,8 +207,10 @@ export class BashGuard {
    * This catches "cd /tmp && rm -rf *" where rm * is relative but destructive.
    */
   private checkCdThenDestroy(command: string): string | null {
+    // Strip heredoc content before analysis
+    const stripped = command.replace(/<<-?\s*'?([A-Za-z_]+)'?\s*\n[\s\S]*?\n\s*\1\b/g, '<<HEREDOC_STRIPPED');
     // Split on command separators (;, &&, ||, |)
-    const parts = command.split(/[;&|]+/).map(p => p.trim()).filter(Boolean);
+    const parts = stripped.split(/[;&|]+/).map(p => p.trim()).filter(Boolean);
 
     let outsideCd: string | null = null;
 
@@ -252,7 +258,7 @@ export class BashGuard {
       const resolved = this.resolvePath(extractedPath);
 
       // Check if resolved path is outside workDir
-      if (!this.isWithinWorkDir(resolved)) {
+      if (!this.isWithinWorkDir(resolved) && !this.isSpecialPath(resolved)) {
         return `File system access outside workDir: ${extractedPath} → ${resolved}`;
       }
     }
@@ -266,12 +272,18 @@ export class BashGuard {
   private extractPaths(command: string): string[] {
     const paths = new Set<string>();
 
+    // Strip heredoc content before path extraction — heredoc bodies are data, not commands.
+    // Matches <<'EOF' ... EOF, <<"EOF" ... EOF, <<EOF ... EOF, <<-EOF ... EOF
+    const strippedCommand = command.replace(/<<-?\s*'?([A-Za-z_]+)'?\s*\n[\s\S]*?\n\s*\1\b/g, '<<HEREDOC_STRIPPED');
+
     // NOTE: We do NOT extract all absolute paths generically.
     // Reads are allowed anywhere (cat /etc/hosts is fine).
     // Only PATH_PATTERNS (write operations) + home/env var patterns are checked.
 
     // Extract home-relative paths (~/... or bare ~)
-    const homePaths = command.match(/~(\/[^\s|;&"'`]*)?/g) || [];
+    // First strip git revision syntax so HEAD~5, main~3, etc. don't match as home paths
+    const gitRevisionSafe = strippedCommand.replace(/\b[A-Za-z0-9_./:-]*[~^]\d*\b/g, 'GIT_REV_STRIPPED');
+    const homePaths = gitRevisionSafe.match(/~(\/[^\s|;&"'`]*)?/g) || [];
     for (const p of homePaths) {
       // Skip ~ inside URLs or other non-path contexts
       if (p === '~' || p.startsWith('~/')) {
@@ -280,31 +292,31 @@ export class BashGuard {
     }
 
     // Extract $HOME references ($HOME, $HOME/, $HOME/path)
-    const homeVarPaths = command.match(/\$HOME(\/[^\s|;&"'`]*)?/g) || [];
+    const homeVarPaths = strippedCommand.match(/\$HOME(\/[^\s|;&"'`]*)?/g) || [];
     for (const p of homeVarPaths) {
       paths.add(p);
     }
 
     // Extract ${HOME} references
-    const homeVarBracePaths = command.match(/\$\{HOME\}(\/[^\s|;&"'`]*)?/g) || [];
+    const homeVarBracePaths = strippedCommand.match(/\$\{HOME\}(\/[^\s|;&"'`]*)?/g) || [];
     for (const p of homeVarBracePaths) {
       paths.add(p);
     }
 
     // Extract other dangerous env vars ($TMPDIR, $OLDPWD, etc.)
-    const dangerousEnvVars = command.match(/\$(TMPDIR|OLDPWD|TMP|TEMP)(\/[^\s|;&"'`]*)?/g) || [];
+    const dangerousEnvVars = strippedCommand.match(/\$(TMPDIR|OLDPWD|TMP|TEMP)(\/[^\s|;&"'`]*)?/g) || [];
     for (const p of dangerousEnvVars) {
       paths.add(p);
     }
 
     // Extract ${VAR} versions too
-    const dangerousEnvVarsBrace = command.match(/\$\{(TMPDIR|OLDPWD|TMP|TEMP)\}(\/[^\s|;&"'`]*)?/g) || [];
+    const dangerousEnvVarsBrace = strippedCommand.match(/\$\{(TMPDIR|OLDPWD|TMP|TEMP)\}(\/[^\s|;&"'`]*)?/g) || [];
     for (const p of dangerousEnvVarsBrace) {
       paths.add(p);
     }
 
     // Extract relative paths with parent directory (..)
-    const parentPaths = command.match(/\.\.\/[^\s|;&"'`]*/g) || [];
+    const parentPaths = strippedCommand.match(/\.\.\/[^\s|;&"'`]*/g) || [];
     for (const p of parentPaths) {
       paths.add(p);
     }
@@ -312,7 +324,7 @@ export class BashGuard {
     // Extract paths from specific command patterns
     for (const { pattern, captureGroup } of PATH_PATTERNS) {
       let patternMatch;
-      while ((patternMatch = pattern.exec(command)) !== null) {
+      while ((patternMatch = pattern.exec(strippedCommand)) !== null) {
         const captured = patternMatch[captureGroup];
         if (captured && captured.trim()) {
           // Skip if it looks like a URL
@@ -353,10 +365,10 @@ export class BashGuard {
       return true;
     }
 
-    // /tmp is allowed for temporary file operations within commands
-    // BUT we still check if it resolves outside workDir (paranoid mode)
-    // Actually no — Docker doesn't let you write to host /tmp either
-    // Block /tmp writes to maintain Docker parity
+    // /tmp is allowed for temporary file operations
+    if (p === '/tmp' || p.startsWith('/tmp/')) {
+      return true;
+    }
 
     return false;
   }
@@ -450,7 +462,7 @@ export class BashGuard {
       }
       // Warning: approve with gentle feedback
       log.info('bash-guard', 'Bash security violation (warning mode, allowed)', logData);
-      log.activity('guardrail:bash-guard:warning', this.config.agentId, `Bash guard warning: ${reason} (allowed)`);
+      log.activity('guardrail:bash-guard:warning', this.config.agentId, `Bash guard warning: ${reason} | cmd: ${command.substring(0, 200)}`);
       return {
         decision: 'approve',
         systemMessage: `Note: The command violates security policy (${reason}). ` +
@@ -460,7 +472,7 @@ export class BashGuard {
 
     // Strict mode: block the command
     log.error('bash-guard', 'Bash security violation blocked (strict mode)', logData);
-    log.activity('guardrail:bash-guard', this.config.agentId, `Bash guard BLOCKED: ${reason}`);
+    log.activity('guardrail:bash-guard', this.config.agentId, `Bash guard BLOCKED: ${reason} | cmd: ${command.substring(0, 200)}`);
 
     // Kill threshold: 3 violations = terminate
     if (this.violations >= 3) {
@@ -468,7 +480,7 @@ export class BashGuard {
         ...logData,
         killThreshold: 3,
       });
-      log.activity('guardrail:bash-guard', this.config.agentId, `Bash guard KILL: ${this.violations} violations`);
+      log.activity('guardrail:bash-guard', this.config.agentId, `Bash guard KILL: ${this.violations} violations | cmd: ${command.substring(0, 200)}`);
       this.config.killRunner(`Bash guard: ${this.violations} security violations`);
     }
 

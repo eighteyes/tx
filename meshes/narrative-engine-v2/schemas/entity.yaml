@@ -94,9 +94,14 @@ character:
     desires_beyond_plot: []          # What they want that isn't about the story
     # - "{desire}"
 
-    voice_markers:                   # How they actually talk
-      vocabulary: "{register, code-switching patterns}"
+    voice_markers:                   # How they actually talk — SHOW, don't label
+      vocabulary:
+        guarded: "{EXAMPLE LINE with armor on — actual words in their rhythm}"
+        unguarded: "{EXAMPLE LINE with armor off — show the shift}"
+        the_shift: "{What changes mechanically — not labels like 'accent' or 'register'}"
       rhythm: "{sentence patterns under different states}"
+      nonverbal: []                  # Sounds that aren't words — gasps, hums, laughs, breaths
+      # - "{sound + where it comes from in the body + what it signals}"
       verbal_habits: []              # Signature speech patterns
       # - "{habit}"
       never_says: "{words or phrases they avoid and why}"

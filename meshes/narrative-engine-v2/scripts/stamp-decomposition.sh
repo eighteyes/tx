@@ -51,6 +51,7 @@ SCOPE="" ; SCOPE_SOURCE="stated"
 GOAL="" ; GOAL_SOURCE="stated"
 TEMPO="scene" ; TEMPO_SOURCE="inferred"
 ACTION_WEIGHT="0.5"
+ENTROPY_MODE="random"
 CLARIFICATION=""
 LOCK_DESCRIPTION=""
 
@@ -80,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --tempo) TEMPO="$2"; shift 2 ;;
     --tempo-source) TEMPO_SOURCE="$2"; shift 2 ;;
     --action-weight) ACTION_WEIGHT="$2"; shift 2 ;;
+    --entropy-mode) ENTROPY_MODE="$2"; shift 2 ;;
     --clarification) CLARIFICATION="$2"; shift 2 ;;
     --lock-description) LOCK_DESCRIPTION="$2"; shift 2 ;;
     --player-hopes) PLAYER_HOPES+=("$2"); shift 2 ;;
@@ -122,7 +124,8 @@ export _CLARIFICATION="$CLARIFICATION"
 
 yq -i '
   .interpreted_action = strenv(_INTERP) |
-  .action_weight = '"$ACTION_WEIGHT"'
+  .action_weight = '"$ACTION_WEIGHT"' |
+  .entropy_mode = "'"$ENTROPY_MODE"'"
 ' "$INTENT_FILE"
 
 # Decomposition block — all via env() for safe escaping

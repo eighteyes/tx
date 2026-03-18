@@ -323,6 +323,9 @@ export class DeadLetterQueue {
       DELETE FROM dead_letter_queue
       WHERE recovered_at IS NOT NULL AND recovered_at < ?
     `).run(cutoff);
+    if (result.changes > 0) {
+      log.info('dlq', 'GC cleared recovered entries', { deleted: result.changes });
+    }
     return result.changes;
   }
 }

@@ -489,6 +489,9 @@ export class MessageConsumer extends EventEmitter {
     // Already fully qualified
     if (to.includes('/')) return to;
 
+    // Bare 'core' always means core/core (human), never mesh-name/core
+    if (to === 'core') return 'core/core';
+
     // Extract sender's mesh from "mesh/agent" format
     const fromParts = from.split('/');
     const senderMesh = fromParts.length > 1 ? fromParts[0] : null;

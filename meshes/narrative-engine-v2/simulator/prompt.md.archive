@@ -162,6 +162,7 @@ For each character present in the scene (protagonist AND NPCs):
 3. **Read bond entity** — intensity, **dimensions**, **established baselines**, pattern for each relationship in the scene (see Bond Dimensions below)
 4. **Read resolution outcome** — what entropy decided, how it mechanically affects this character
 5. **Read dramaturg-notes.yaml** — emotional momentum, payoff windows, suggested tones
+6. **Read director-notes.yaml** (if present) — player's creative direction: tone, dialogue emphasis, beat targets, word count, constraints. These are authoritative — shape beat planning, dialogue density, and scene structure to match.
 
 **Life context shapes psychology.** A character worried about a thesis deadline has that running underneath the scene. A character who cooks notices food-related details. Expertise and concerns leak into how people talk and what they notice. Include relevant life context in the psychology block.
 
@@ -630,7 +631,7 @@ Every beat produces voice data from one of three tiers. The tiers have different
 For protagonist AND NPC. After rolling entropy, if a **character speaks, acts, or has a significant internal moment**, fire a sonnet voice Task. Run `character-brief.sh` first to extract an information-isolated character brief:
 
 ```bash
-meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root_from_file_contract}
+$TX_ROOT/meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root_from_file_contract}
 ```
 
 This outputs a YAML character brief containing only what the character knows — traits, wounds, voice_layers, bonds. No story-level context leaks.
@@ -850,7 +851,7 @@ other:
 After getting tables from all three Tasks, write the CHARACTER table to `entropy-tables.yaml` (for the entropy-resolver script), then roll:
 
 ```bash
-meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
+$TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable sim_beat_{N}_character
 ```
 
 **Table format for entropy-tables.yaml** (append, exact format required):
@@ -1347,7 +1348,7 @@ All scripts are at: `meshes/narrative-engine-v2/scripts/`
 - EVERY beat has entropy rolls via script (character) and bash (environment, complication)
 - EVERY active character in a beat gets their own table Task AND voice Task — all in parallel
 - EVERY beat where the world acts with agency gets an "Other" block (written by you)
-- Run `meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root}` for EACH character before their voice generation (game_root from File Contract)
+- Run `$TX_ROOT/meshes/narrative-engine-v2/scripts/character-brief.sh {character_id} {game_root}` for EACH character before their voice generation (game_root from File Contract)
 - Fire a character behavior table for EACH active character — not just one per beat
 - Maintain `scene_so_far` — the cumulative record of all observable events (including "Other") — and pass to every voice Task
 - No beat cap — let the scene breathe

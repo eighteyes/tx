@@ -48,7 +48,7 @@ workspace: {workspace}
 
 ```bash
 # Script location — use this path in all calls
-CAMPAIGN_SCRIPT="./scripts/campaign.sh"
+CAMPAIGN_SCRIPT="$TX_ROOT/meshes/narrative-engine-v2/scripts/campaign.sh"
 CP="{campaign_path}"  # e.g., .ai/games/{game-id}/campaigns/{campaign-id}
 ```
 

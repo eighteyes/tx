@@ -135,7 +135,7 @@ export function buildDispatcherRoutingSection(
   lines.push('');
 
   if (availableAgents.length > 0) {
-    lines.push('Override routing with `route_to:` in frontmatter (valid agents):');
+    lines.push('Use `route_to:` in frontmatter to direct your message to a specific agent:');
     for (const agent of availableAgents) {
       lines.push(`- \`${agent}\``);
     }

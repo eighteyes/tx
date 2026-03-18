@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import YAML from 'yaml';
 import { MessageQueue, type Message } from '../../src/queue/index.ts';
 import { MessageConsumer } from '../../src/core/consumer.ts';
 import { WorkerDispatcher } from '../../src/worker/dispatcher.ts';
@@ -214,7 +215,6 @@ export function createTestMesh(
   fs.mkdirSync(meshDir, { recursive: true });
 
   // Write config.yaml
-  const YAML = require('yaml');
   fs.writeFileSync(
     path.join(meshDir, 'config.yaml'),
     YAML.stringify(meshSetup.config)

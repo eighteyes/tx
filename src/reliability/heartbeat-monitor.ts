@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: HeartbeatConfig = {
 type HeartbeatCallback = (health: AgentHealth) => void;
 
 export class HeartbeatMonitor {
-  private agents: Map<string, { lastOutputAt: number; startedAt: number }> = new Map();
+  private agents: Map<string, { lastOutputAt: number; startedAt: number; config?: Partial<HeartbeatConfig> }> = new Map();
   private config: HeartbeatConfig;
   private checkInterval: ReturnType<typeof setInterval> | null = null;
   private onStale: HeartbeatCallback | null = null;
@@ -69,11 +69,20 @@ export class HeartbeatMonitor {
 
   /**
    * Register an agent for monitoring
+   * Optional per-agent config overrides mesh/global thresholds
    */
-  register(agentId: string): void {
+  register(agentId: string, agentConfig?: Partial<HeartbeatConfig>): void {
     const now = Date.now();
-    this.agents.set(agentId, { lastOutputAt: now, startedAt: now });
+    this.agents.set(agentId, { lastOutputAt: now, startedAt: now, config: agentConfig });
     this.notified.delete(agentId);
+    if (agentConfig) {
+      log.debug('heartbeat', 'Registered with custom thresholds', {
+        agentId,
+        warnMs: agentConfig.warnMs ?? this.config.warnMs,
+        staleMs: agentConfig.staleMs ?? this.config.staleMs,
+        deadMs: agentConfig.deadMs ?? this.config.deadMs,
+      });
+    }
   }
 
   /**
@@ -157,12 +166,17 @@ export class HeartbeatMonitor {
   private classify(
     agentId: string,
     silenceMs: number,
-    entry: { lastOutputAt: number; startedAt: number }
+    entry: { lastOutputAt: number; startedAt: number; config?: Partial<HeartbeatConfig> }
   ): AgentHealth {
+    // Per-agent config wins over global
+    const deadMs = entry.config?.deadMs ?? this.config.deadMs;
+    const staleMs = entry.config?.staleMs ?? this.config.staleMs;
+    const warnMs = entry.config?.warnMs ?? this.config.warnMs;
+
     let status: HealthStatus = 'healthy';
-    if (silenceMs >= this.config.deadMs) status = 'dead';
-    else if (silenceMs >= this.config.staleMs) status = 'stale';
-    else if (silenceMs >= this.config.warnMs) status = 'warn';
+    if (silenceMs >= deadMs) status = 'dead';
+    else if (silenceMs >= staleMs) status = 'stale';
+    else if (silenceMs >= warnMs) status = 'warn';
 
     return {
       agentId,

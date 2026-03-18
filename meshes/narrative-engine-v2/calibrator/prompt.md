@@ -218,9 +218,13 @@ For each significant NPC, extract same structure (lighter — may omit some fiel
 **6f: Voice Profiles (REQUIRED)**
 For protagonist AND significant NPCs:
 - "How does this character TALK?"
+- "Give me a line they'd say when guarded — full armor on."
+- "Now a line when armor drops — unguarded, honest, maybe surprised by what came out."
 - "What words do they overuse? Never say?"
-- "Read me one line that IS them."
+- "What sounds do they make that aren't words? Specific gasps, laughs, hums, silences — describe the sound, where it comes from in the body."
 - **For EACH trait:** "When their {TRAIT} speaks internally, what does it sound like?"
+
+**VOICE EXTRACTION RULE:** Never accept geographic labels ("Southern drawl"), class labels ("working-class"), or academic labels ("formal register") as voice descriptions. Push for EXAMPLE DIALOGUE — actual words in actual rhythm. If the player says "she talks academic," ask: "Give me a sentence she'd say in that mode." If they say "drops to working-class," ask: "What does that SOUND like — give me the line."
 
 **VALIDATION:** Every trait in `traits.starting` MUST have a `voices` entry.
 
@@ -278,9 +282,15 @@ life:
   desires_beyond_plot:
     - "{what they want that isn't about the central relationship/conflict}"
   voice_markers:
-    vocabulary: "{register, code-switching, diction — describe the SOUND, not the geography}"
-    rhythm: "{sentence patterns under different emotional states}"
-    register_shift: "{HOW the voice changes when armor drops — what happens to sentence structure, vowel shape, syllable count, self-correction. NOT 'working-class Boston' — describe the mechanics: sentences stop hedging, Latinate words disappear, the mouth stops performing}"
+    vocabulary:
+      guarded: "{EXAMPLE LINE of how they talk with armor on — actual words in their actual rhythm}"
+      unguarded: "{EXAMPLE LINE of how they talk with armor off — show the shift, don't label it}"
+      the_shift: "{What changes mechanically — syllable count drops, self-correction stops, hedging disappears. NOT 'Southern drawl' or 'academic register' — describe what happens to the SENTENCES}"
+    rhythm: "{sentence patterns under different emotional states — clipped when X, longer when Y, fragments when Z}"
+    register_shift: "{HOW the voice changes when armor drops — what happens to sentence structure, word choice, self-correction. Describe mechanics, not geography or class labels}"
+    nonverbal:
+      - "{specific sound this character makes — a gasp, a hum, a laugh, a breath. Describe the physical production: where it comes from (chest, nose, throat), what it signals}"
+      - "{another nonverbal — whimper, whistle, sharp inhale, silence-as-sound. These are legitimate dialogue, not just stage directions}"
     verbal_habits:
       - "{specific speech pattern — catchphrase, reformulation habit, verbal tic}"
     never_says: "{words or phrases this character would never use}"
@@ -570,7 +580,7 @@ On Phase 9 confirmation, send to init-turn to create campaign-1 and render prolo
 ---
 to: narrative-engine-v2/init-turn
 from: narrative-engine-v2/calibrator
-type: task
+type: message
 headline: Initialize first campaign
 ---
 type: new-game
@@ -614,8 +624,10 @@ Write session.yaml before sending task to narrator.
 | `traits.voices.{TRAIT}.speaks_as` | First-person voice, not description |
 | `layers.first_glance` | At least 2 items |
 | `life` | REQUIRED — at minimum: active_concerns (2+), expertise (2+ fields), social_web (2+ people), voice_markers |
-| `life.voice_markers` | Must include vocabulary, rhythm, register_shift, verbal_habits (1+), never_says |
-| `life.voice_markers.register_shift` | Describe the MECHANICS of how voice changes — sentence structure, word choice, self-correction patterns. NOT geographic labels ("working-class X", "Y casual"). The narrator needs to RENDER the shift, not name it. |
+| `life.voice_markers` | Must include vocabulary (with guarded/unguarded/the_shift), rhythm, register_shift, nonverbal (2+), verbal_habits (1+), never_says |
+| `life.voice_markers.vocabulary` | Must contain EXAMPLE DIALOGUE for guarded and unguarded states — actual words the character would say, not labels. The narrator renders from these templates. |
+| `life.voice_markers.nonverbal` | At least 2 entries. Sounds the body makes — gasps, hums, laughs, breaths, silences. Describe physical production (chest, nose, throat). These are legitimate dialogue, not stage directions. |
+| `life.voice_markers.register_shift` | Describe the MECHANICS of how voice changes — sentence structure, word choice, self-correction patterns. NOT geographic labels ("working-class X", "Y casual"), NOT class labels ("academic register"), NOT accent names. The narrator needs to RENDER the shift, not name it. |
 | `life.social_web` | At least 2 named people who aren't in the main cast |
 
 **Voice profile validation:**

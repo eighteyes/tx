@@ -609,7 +609,7 @@ Reply **allow** to approve or **deny** to reject.`,
               ...(canUseTool ? { canUseTool } : {}),
               abortController: this.abortController,
               maxTurns: this.getEffectiveMaxTurns(),
-              // settingSources removed — prevents agents from loading ~/.claude/CLAUDE.md
+              ...(this.config.command ? { settingSources: ['project'] as const } : {}),  // Load .claude/commands/ when agent has slash command
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               resume: resumeId,  // Resume session if available

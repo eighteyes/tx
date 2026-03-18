@@ -40,6 +40,7 @@ import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type Ad
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
+import { buildRoutingSection, buildDispatcherRoutingSection } from '../prompt/sections/routing.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
@@ -330,6 +331,11 @@ export class WorkerDispatcher extends EventEmitter {
   // Last completed session ID per agent — used by routing self-heal to resume
   // conversation context when spawning a correction worker after OAOM kill
   private lastCompletedSessionIds: Map<string, string> = new Map();
+
+  // Cascade halt: track consecutive failures per agent to stop infinite respawn loops.
+  // Persisted to SQLite queue to survive mesh restarts.
+  // Reset on successful completion (messagesProcessed > 0 and no error).
+  private static readonly CASCADE_HALT_THRESHOLD = 3;
 
   // Session checkpoints for forking — saves session state for start/end forks
   // Key: `${meshName}/${agentName}`, Value: CheckpointEntry with sessionId + optional initMessageUuid
@@ -1690,6 +1696,41 @@ export class WorkerDispatcher extends EventEmitter {
       return;
     }
 
+    // DYNAPROMPT: Check if this is a system/dynaprompt message for fragment injection
+    const pendingMsg = this.queue.peekOne(agentId);
+    if (pendingMsg?.from_agent === 'system/dynaprompt') {
+      // Dynamic prompt injection — resume active session with fragment content
+      const activeWorker = this.workerLifecycle.getWorker(agentId);
+      if (activeWorker?.runner && activeWorker.sessionId) {
+        const message = this.queue.pollOne(agentId);
+        if (message) {
+          const payload = message.payload || {};
+          const fragmentContent = typeof payload.body === 'string' ? payload.body : '';
+          const fragmentName = typeof payload.headline === 'string' ? payload.headline : undefined;
+
+          log.info('dispatcher', 'Injecting dynaprompt fragment into active session', {
+            agentId,
+            sessionId: activeWorker.sessionId,
+            fragmentName,
+          });
+
+          await this.resumeSession({
+            reason: 'system-feedback',
+            agentId,
+            sessionId: activeWorker.sessionId,
+            prompt: fragmentContent,
+            runner: activeWorker.runner,
+            metadata: { source: 'dynaprompt', fragment: fragmentName },
+          });
+
+          this.queue.markDelivered(message.id || 0);
+        }
+      } else {
+        log.warn('dispatcher', 'Dynaprompt received but no active session', { agentId });
+      }
+      return;
+    }
+
     // PERMISSION ASK: Check if any agent in this mesh has a pending permission ask.
     // The worker is still alive (blocked in canUseTool callback), waiting for human decision.
     // Route core/core responses to resolve the permission, then un-halt the mesh.
@@ -2460,8 +2501,12 @@ The system will resume your session when the human responds.`;
       // Remove from suspended (via SessionManager - handles both in-memory and SQLite)
       this.sessionManager.markResumed(agentId);
 
-      // Build the resume prompt with human response
-      const resumePrompt = this.sessionManager.buildHumanResponsePrompt(responseContent, headline);
+      // Build routing reminder so agent remembers its next steps after HITL suspension
+      const meshConfig = this.meshConfigs.get(meshName);
+      const routingReminder = this.buildRoutingReminder(meshName, agentConfig.name, meshConfig);
+
+      // Build the resume prompt with human response + routing context
+      const resumePrompt = this.sessionManager.buildHumanResponsePrompt(responseContent, headline, routingReminder);
 
       // Create new runner config (minimal - session has system prompt)
       const runnerConfig: SdkRunnerConfig = {
@@ -2485,8 +2530,7 @@ The system will resume your session when the human responds.`;
 
       const runner = new SdkRunner(runnerConfig, this.queue);
 
-      // Create a new FSM for the resumed worker
-      const meshConfig = this.meshConfigs.get(meshName);
+      // Create a new FSM for the resumed worker (meshConfig already fetched above for routing reminder)
       const isCompletionAgent = this.normalizeCompletionAgents(meshConfig).includes(agentConfig.name);
       const workerConfig: WorkerConfig = {
         id: agentId,
@@ -2598,7 +2642,7 @@ The system will resume your session when the human responds.`;
         this.processQueuedMeshMessages(meshName);
       });
 
-      runner.on('error', (error) => {
+      runner.on('error', (data) => {
         // Suppress error handling for workers killed intentionally (ask-human / ask-agent suspend)
         if (this.sessionManager.isSuspended(agentId)) {
           log.info('dispatcher', 'Suppressing error for suspended worker', {
@@ -2616,13 +2660,13 @@ The system will resume your session when the human responds.`;
             agentId, meshName, workerId,
             guardrail, reason: runner.getKillReason()!, source,
           });
-          this.emit('worker:error', { id: agentId, error: error.message, guardrailKill: true });
+          this.emit('worker:error', { ...data, id: agentId, guardrailKill: true });
           return;
         }
 
         // Check if recovery will handle this (queued work exists)
         const hasQueuedWork = this.queue.countPending(agentId) > 0;
-        const errorMsg = error?.message || String(error);
+        const errorMsg = data?.error || String(data);
         const isAbortError = errorMsg.includes('aborted by user') ||
                             errorMsg.includes('process aborted');
 
@@ -2637,12 +2681,12 @@ The system will resume your session when the human responds.`;
           log.error('dispatcher', `Resumed worker error`, {
             agentId,
             workerId,
-            error: error.message,
+            error: data.error,
           });
         }
 
         this.removeActiveWorker(agentId, workerId);
-        this.emit('worker:error', { id: agentId, error: error.message });
+        this.emit('worker:error', { ...data, id: agentId });
         this.writeWorkerState();
 
         // OAOM: Check queue for next message on error too
@@ -3350,7 +3394,10 @@ The system will resume your session when the human responds.`;
       clearedNamedConversations = this.queue.clearNamedConversationsForMesh(meshName);
     }
 
-    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedPendingMsgs > 0 || clearedConversations > 0 || clearedNamedConversations > 0 || clearedGateFiles > 0) {
+    // Clear instant-exit failure counts for this mesh
+    const clearedInstantExitFailures = this.queue.clearInstantExitFailuresForMesh(meshName);
+
+    if (clearedSessions > 0 || clearedBuffers > 0 || clearedDbSessions > 0 || clearedPendingMsgs > 0 || clearedConversations > 0 || clearedNamedConversations > 0 || clearedGateFiles > 0 || clearedInstantExitFailures > 0) {
       log.info('dispatcher', `Cleared mesh state on completion`, {
         meshName,
         clearedSessions,
@@ -3360,6 +3407,7 @@ The system will resume your session when the human responds.`;
         clearedConversations,
         clearedNamedConversations,
         clearedGateFiles,
+        clearedInstantExitFailures,
         clearedFSM: !!fsm,
       });
     }
@@ -3960,6 +4008,15 @@ Please advise the agent or check mesh configuration.`;
         const wsLocations = (meshConfig as any).workspace?.locations || {};
         const wsBase = (meshConfig as any).workspace?.path || '';
         const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
+        // Inject runtime values so manifest path templates resolve correctly
+        // {feature} comes from message frontmatter, not the manifest system
+        if (featureName) {
+          varMap['feature'] = featureName;
+        }
+        log.info('dispatcher', 'Manifest varMap after feature inject', {
+          agentId, featureName, wsBase,
+          varMap: Object.fromEntries(Object.entries(varMap)),
+        });
         const meshAutoInject = meshConfig.autoInjectManifestFiles !== false;
 
         for (const entry of meshConfig.manifest) {
@@ -4103,6 +4160,7 @@ Please advise the agent or check mesh configuration.`;
         meshName: meshName!,
         agentName: agent.name,
         txRoot: this.config.txRoot || process.env.TX_ROOT,
+        allowedTools: agent.permissions?.allowedTools,
       }));
 
       // 2. FSM context (what phase we're in)
@@ -4531,16 +4589,38 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         const suspended = this.sessionManager.get(agentId);
         const hasSuspendedSession = suspended?.sessionId;
 
-        if (hasSuspendedSession
-            || this.shouldContinueAgent(agent.name, meshConfig?.continuation)
-            || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
+        if (hasSuspendedSession) {
+          // HITL resume: always honor — agent asked human a question, human responded
           const existingSession = this.queue.getConversationId(agentId);
           if (existingSession) {
             sessionId = existingSession;
             log.info('dispatcher', `Resuming session for ${agentId}`, {
               sessionId: sessionId.slice(0, 8) + '...',
-              reason: hasSuspendedSession ? 'hitl-resume' : 'continuation',
+              reason: 'hitl-resume',
             });
+          }
+        } else if (this.shouldContinueAgent(agent.name, meshConfig?.continuation)
+            || this.shouldPersistAgent(agent.name, meshConfig?.persistence)) {
+          // Continuation/persistence: only resume if agent has an active (non-completed) session.
+          // Completed sessions cause instant-exit: SDK resumes a finished conversation,
+          // sees nothing to do, exits with 0 tokens in <10ms.
+          const existingSession = this.queue.getConversationId(agentId);
+          if (existingSession) {
+            const lastCompleted = this.lastCompletedSessionIds.get(agentId);
+            if (lastCompleted === existingSession) {
+              // This session already completed — starting fresh to avoid instant-exit
+              log.info('dispatcher', `Skipping stale completed session for ${agentId}`, {
+                sessionId: existingSession.slice(0, 8) + '...',
+                reason: 'completed-session-skip',
+              });
+              this.queue.clearConversationId(agentId);
+            } else {
+              sessionId = existingSession;
+              log.info('dispatcher', `Resuming session for ${agentId}`, {
+                sessionId: sessionId.slice(0, 8) + '...',
+                reason: 'continuation',
+              });
+            }
           }
         }
       }
@@ -5154,6 +5234,58 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
             // Continue with normal completion (warning feedback already in session output)
           }
+        }
+
+        // Instant-exit detection: sdk-runner flagged this as a zero-work completion.
+        // Halt the agent to prevent infinite respawn loops (nudge → instant-exit → nudge).
+        if (data.error && data.error.includes('Instant-exit detected')) {
+          const failCount = this.queue.incrementInstantExitFailure(agentId);
+
+          log.warn('dispatcher', `Instant-exit failure ${failCount}/${WorkerDispatcher.CASCADE_HALT_THRESHOLD}`, {
+            agentId, failCount, error: data.error,
+          });
+
+          if (failCount >= WorkerDispatcher.CASCADE_HALT_THRESHOLD) {
+            log.error('dispatcher', `CASCADE HALT: ${agentId} failed ${failCount} consecutive times — halting mesh`, {
+              agentId, meshName, failCount,
+            });
+            log.activity('guardrail:cascade-halt', agentId, `CASCADE HALT: ${failCount} consecutive instant-exits — mesh halted`);
+
+            this.systemWriter?.write({
+              to: 'core/core',
+              from: agentId,
+              type: 'error',
+              headline: `Cascade halt: ${agent.name} instant-exited ${failCount} times`,
+              body: `Agent \`${agentId}\` has instant-exited ${failCount} consecutive times (0 tool calls, <10s duration).\n\n` +
+                `The mesh has been halted to prevent infinite respawn loops.\n\n` +
+                `**Last error**: ${data.error}\n\n` +
+                `Options:\n` +
+                `1. \`tx mesh clear ${meshName}\` — reset and try again\n` +
+                `2. Check the agent's prompt and command configuration\n` +
+                `3. Check if the agent's session is stuck in a completed state`,
+            });
+
+            await machine.error(data.error);
+            this.cleanupWorker(agentId, currentWorkerId);
+            this.clearMeshState(meshName);
+            return;
+          }
+
+          // Below threshold: route as error so downstream doesn't proceed with empty output
+          await machine.error(data.error);
+          this.cleanupWorker(agentId, currentWorkerId);
+          this.emit('worker:error', {
+            ...data,
+            workerId: currentWorkerId,
+            transitionName: 'error',
+            instantExit: true,
+          });
+          return;
+        }
+
+        // Successful completion — reset cascade failure counter
+        if (!data.error && data.messagesProcessed > 0) {
+          this.queue.clearInstantExitFailure(agentId);
         }
 
         // Complete the FSM (after post-hooks pass or exhausted)
@@ -5949,6 +6081,43 @@ ${output}
   // injectRoutingInstructions moved to prompt/sections/routing.ts (Phase 2)
 
   /**
+   * Build a compact routing reminder for session resume.
+   * Re-injects routing context so agents remember their next steps after HITL suspension.
+   */
+  private buildRoutingReminder(meshName: string, agentName: string, meshConfig?: MeshConfig): string | undefined {
+    if (!meshConfig) return undefined;
+
+    if (meshConfig.routing_mode === 'manifest' && meshConfig.manifest) {
+      // Manifest mode: remind agent of its pending writes
+      const writes = meshConfig.manifest
+        .filter(e => e.writes?.includes(agentName))
+        .map(e => e.id);
+      if (writes.length === 0) return undefined;
+      return `## Routing Reminder\nYou are in manifest routing mode. Write your output files to complete your task:\n${writes.map(w => `- \`${w}\``).join('\n')}\nThe system spawns the next agent when your files exist on disk.`;
+    }
+
+    if (meshConfig.routing_mode === 'dispatcher' && meshConfig.routing) {
+      // Dispatcher mode: remind agent of sentinel address and outcomes
+      const agentNames = meshConfig.agents.map(a => a.name);
+      const router = new DispatchRouter(
+        meshName,
+        meshConfig.routing as import('../shared/types.ts').DispatcherRoutingConfig,
+        agentNames,
+      );
+      const ctx = router.getInjectionContext(agentName);
+      return buildDispatcherRoutingSection(ctx.sentinel, ctx.validOutcomes, ctx.availableAgents, ctx.isTerminal, ctx.peers);
+    }
+
+    // Agent mode: remind agent of its routing table
+    const routingConfig = this.extractAgentRouting(meshName, agentName, meshConfig);
+    if (routingConfig && Object.keys(routingConfig).length > 0) {
+      return buildRoutingSection(routingConfig, meshName);
+    }
+
+    return undefined;
+  }
+
+  /**
    * Get total active worker count across all agents
    */
   getActiveWorkerCount(): number {
@@ -6620,6 +6789,105 @@ ${output}
   }
 
   /**
+   * Send brain-update on mesh completion (mesh-level aggregation)
+   * Only fires once per mesh, with combined git diff and all agent outputs
+   */
+  private sendBrainUpdateOnMeshComplete(meshName: string, meshInstance: string, session: import('../shared/types.ts').SessionMetrics): void {
+    log.info('dispatcher', 'Sending mesh-level brain update', {
+      meshName,
+      meshInstance,
+      workerCount: session.workerCount,
+    });
+
+    try {
+      const { execSync } = require('node:child_process');
+
+      // Get git diff for the entire mesh run
+      let gitDiff = '';
+      try {
+        gitDiff = execSync('git diff --cached', { cwd: this.config.workDir, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+        if (!gitDiff.trim()) {
+          gitDiff = execSync('git diff HEAD', { cwd: this.config.workDir, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+        }
+      } catch (error) {
+        log.warn('dispatcher', 'Failed to get git diff for brain update', {
+          error: (error as Error).message,
+        });
+        gitDiff = '(Unable to retrieve git diff)';
+      }
+
+      // Aggregate all agent outputs from session transcripts
+      const sessionsDir = path.join(this.config.workDir, '.ai', 'tx', 'sessions');
+      let aggregatedOutput = '';
+
+      for (const worker of session.workers) {
+        const agentDir = path.join(sessionsDir, worker.agentId.replace('/', '-'));
+        if (fs.existsSync(agentDir)) {
+          // Get the most recent output for this agent
+          const files = fs.readdirSync(agentDir).filter(f => f.endsWith('.md')).sort().reverse();
+          if (files.length > 0) {
+            const content = fs.readFileSync(path.join(agentDir, files[0]), 'utf-8');
+            // Extract just the output (skip header)
+            const outputMatch = content.match(/---\n\n([\s\S]+)$/);
+            if (outputMatch) {
+              aggregatedOutput += `\n## ${worker.agentId}\n${outputMatch[1]}\n`;
+            }
+          }
+        }
+      }
+
+      if (!aggregatedOutput.trim()) {
+        aggregatedOutput = '(No agent outputs available)';
+      }
+
+      // Build task message for brain
+      const taskBody = `# Mesh Work Analysis Request
+
+## Mesh Context
+- **Mesh**: ${meshName}
+- **Instance**: ${meshInstance}
+- **Workers**: ${session.workerCount}
+- **Duration**: ${session.totalDurationMs}ms
+- **Cost**: $${session.totalCostUsd.toFixed(4)}
+
+## Agent Outputs
+${aggregatedOutput}
+
+## Git Diff
+\`\`\`diff
+${gitDiff}
+\`\`\`
+
+---
+
+Analyze this mesh run and document in your workspace:
+- **Learnings**: Patterns, insights, and knowledge worth preserving
+- **Side Effects**: Unintended consequences, breaking changes, performance/security implications
+- **Opportunities**: Refactoring, generalization, related features to add
+- **Tech Debt**: TODOs, missing error handling, testing gaps, code smells
+
+Update BRAIN.md with any critical learnings that should persist across sessions.
+`;
+
+      this.systemWriter.write({
+        to: 'brain/brain',
+        from: 'core/core',
+        type: 'task',
+        headline: `Analyze mesh run - ${meshName}`,
+        body: taskBody,
+      });
+
+      log.info('dispatcher', 'Mesh-level brain update sent', { meshName, meshInstance });
+    } catch (error) {
+      log.error('dispatcher', 'Failed to send mesh-level brain update', {
+        meshName,
+        meshInstance,
+        error: (error as Error).message,
+      });
+    }
+  }
+
+  /**
    * Finalize mesh completion — log analytics and clean up
    */
   private finalizeMeshCompletion(meshName: string, completionAgent: string): void {
@@ -6650,6 +6918,12 @@ ${output}
     // Re-fetch session to get updated timestamps
     const finalSession = this.metricsAggregator.getSession(sessionKey);
     if (!finalSession) return;
+
+    // Check if brain-update is configured in mesh lifecycle hooks
+    const meshConfig = this.meshConfigs.get(meshName);
+    if (meshConfig?.lifecycle?.post?.includes('brain-update')) {
+      this.sendBrainUpdateOnMeshComplete(meshName, sessionKey, finalSession);
+    }
 
     // Log mesh-run boundary for flow splitting
     log.info('mesh-run', 'Mesh run completed', {

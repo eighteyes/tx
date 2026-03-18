@@ -11,6 +11,7 @@
  *   tx agent-help parallel         Parallel instance spawning
  *   tx agent-help routing          Routing and outcomes
  *   tx agent-help workflows        Common workflows (send, interrupt, stop, debug)
+ *   tx agent-help recovery         Session resumption, DLQ, checkpoints, crash recovery
  *   tx agent-help operator         Operator tools for stuck meshes
  *   tx agent-help debugging        Logs, forensics, troubleshooting
  */
@@ -411,9 +412,184 @@ Commands for fixing stuck meshes:
 - Queue jammed → tx mesh drain <mesh>
 - Need full picture → tx mesh dump <mesh>
 `,
-};
 
-const ALL_TOPICS_ORDER = ['messages', 'parallel', 'routing', 'workflows', 'debugging', 'operator'];
+  recovery: `# Recovery & Session Resumption
+
+## Recovery Mechanisms Overview
+
+TX has layered recovery: session continuation (automatic), DLQ (failure capture),
+checkpoint rewind (FSM meshes), and crash recovery (startup restore).
+
+## 1. Session Continuation (Automatic)
+
+Within a single mesh run, agents resume their conversation from the last turn.
+No action needed — the dispatcher loads the previous session ID automatically.
+
+Config (mesh config.yaml):
+\`\`\`yaml
+continuation: true          # Default: all agents resume sessions within a run
+continuation: [analyst]     # Only these agents get session reuse
+continuation: false         # Fresh session every dispatch
+\`\`\`
+
+## 2. Session Persistence (Cross-Run)
+
+Sessions survive across mesh runs (restarts). Disabled by default.
+
+\`\`\`yaml
+persistence: true           # All agents keep sessions across runs
+persistence: [oracle]       # Only these agents persist
+\`\`\`
+
+## 3. Resume a Specific Session
+
+Force dispatch to a known session ID via frontmatter:
+
+\`\`\`markdown
+---
+to: dev/worker
+from: core/core
+session-id: sess_abc123
+msg-id: resume-{timestamp}
+headline: Continue from previous session
+timestamp: {ISO-8601}
+---
+
+Pick up where you left off.
+\`\`\`
+
+## 4. Dead Letter Queue (DLQ)
+
+Failed work is captured with session context for later recovery.
+
+### Diagnose
+\`\`\`bash
+tx mesh health <mesh>       # SLI rate, circuit breakers, safe mode level
+tx mesh dlq <mesh>          # Failed entries: agent, category, recovery mode
+\`\`\`
+
+### Recovery Modes (auto-determined)
+| Mode | When | Effect |
+|------|------|--------|
+| session_resume | Session ID captured | Resume conversation from crash point |
+| requeue | No session available | Re-inject original message as fresh dispatch |
+| manual | Retries exhausted | Requires human decision |
+
+### Trigger Recovery
+Write a message with \`recover: true\`:
+
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+msg-id: recover-{timestamp}
+headline: Recover failed work
+timestamp: {ISO-8601}
+---
+
+Recover from DLQ.
+\`\`\`
+
+### Clear Recovered Entries
+\`\`\`bash
+tx mesh dlq clear           # GC entries marked recovered
+tx mesh clear <mesh>        # Full state reset (nuclear option)
+\`\`\`
+
+## 5. Checkpoint Rewind (FSM Meshes)
+
+Every FSM state transition saves a checkpoint (state name → session ID).
+Rewind replays from a previous state's session instead of the crash point.
+
+### View Checkpoints
+\`\`\`bash
+tx mesh status <mesh>       # Shows FSM state + available checkpoints
+\`\`\`
+
+### Trigger Rewind
+Add \`rewind-to\` alongside \`recover\`:
+
+\`\`\`markdown
+---
+to: <mesh>/<entry-point>
+from: core/core
+recover: true
+rewind-to: build
+msg-id: recover-{timestamp}
+headline: Rewind to build checkpoint
+timestamp: {ISO-8601}
+---
+
+Verify step failed. Rewind to after build completed.
+\`\`\`
+
+CLI equivalent:
+\`\`\`bash
+tx mesh recover <mesh> --rewind-to=build
+\`\`\`
+
+## 6. Crash Recovery (Automatic on Startup)
+
+On restart, the dispatcher:
+1. Restores suspended sessions from SQLite
+2. Resumes sessions where responses arrived before the crash
+3. Recovers pending DLQ entries
+
+No action needed — this happens automatically.
+
+## 7. Circuit Breaker Recovery
+
+When an agent fails repeatedly, the circuit breaker blocks new spawns.
+
+\`\`\`bash
+tx mesh health <mesh>       # Check breaker state (closed/open/half-open)
+\`\`\`
+
+Circuit breakers auto-recover after cooldown (default: 30s). Half-open state
+allows one test request through. On success → closed. On failure → re-open.
+
+## 8. Safe Mode Escalation
+
+Failure rate triggers automatic safe mode levels:
+
+| Level | Trigger | Effect |
+|-------|---------|--------|
+| normal | Default | Full autonomy |
+| cautious | Failure rate rising | Extra logging |
+| restricted | Sustained failures | Limited tool access via PreToolUse hooks |
+| lockdown | Critical failure rate | All spawns blocked |
+
+\`\`\`bash
+tx mesh health <mesh>       # Shows current safe mode level
+\`\`\`
+
+Safe mode never auto-de-escalates. Requires human approval to step down.
+
+## 9. Ask-Human Suspension & Resume
+
+When an agent writes to core/core without \`status: complete\`, the session suspends.
+The agent's session is preserved in SQLite. When the human responds, the dispatcher
+resumes the exact session with the response injected.
+
+\`\`\`bash
+tx mesh status <mesh>       # Shows pending ask-human messages
+tx mesh resolve <msg-id> "response"   # Resume the suspended session
+\`\`\`
+
+## Recovery Decision Tree
+
+1. Agent stuck/no output → Check heartbeat status → \`tx mesh kill\` if dead
+2. Agent failed/error → Check DLQ → \`recover: true\` message or \`--rewind-to\`
+3. Agent asking for input → Check pending asks → \`tx mesh resolve\`
+4. Circuit breaker open → Wait for cooldown or \`tx mesh clear\`
+5. Safe mode lockdown → \`tx mesh health\`, present to user, get approval to de-escalate
+6. FSM wrong state → \`tx mesh fsm-goto <mesh> <state>\`
+7. Complete reset needed → \`tx mesh clear <mesh>\` + send new task
+`,
+
+};
+const ALL_TOPICS_ORDER = ['messages', 'parallel', 'routing', 'workflows', 'recovery', 'debugging', 'operator'];
 
 export function agentHelp(topic?: string): void {
   if (topic && TOPICS[topic]) {

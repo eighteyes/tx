@@ -231,7 +231,7 @@ This core agent is running in the web interface. The UI will display ask-human r
           ...permissionOptions,
           abortController: this.abortController,
           maxTurns: 50,  // Allow more turns for complex tasks
-          settingSources: ['project'],
+          // settingSources removed — prevents agents from loading ~/.claude/CLAUDE.md
           resume: this.currentSessionId || undefined,
         }
       });

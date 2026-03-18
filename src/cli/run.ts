@@ -75,7 +75,12 @@ export async function run(options: RunOptions = {}): Promise<void> {
 
   const workDir = process.env.TX_CWD || process.cwd();
   const msgsDir = path.join(workDir, '.ai', 'tx', 'msgs');
-  const meshesDir = path.join(workDir, 'meshes');
+  // TX_ROOT for script resolution - same logic as start.ts
+  const __filename = new URL(import.meta.url).pathname;
+  const __dirname = path.dirname(__filename);
+  const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
+  process.env.TX_ROOT = txRoot;
+  const meshesDir = path.join(txRoot, 'meshes');
   const dbPath = path.join(workDir, '.ai', 'tx', 'data', 'queue.db');
 
   // Ensure directories exist
@@ -99,6 +104,7 @@ export async function run(options: RunOptions = {}): Promise<void> {
     msgsDir,
     meshesDir,
     frontmatter: Object.keys(frontmatter).length > 0 ? frontmatter : undefined,
+    txRoot,  // TX installation root for script resolution via $TX_ROOT
   }, queue);
 
   try {

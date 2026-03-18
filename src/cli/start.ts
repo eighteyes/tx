@@ -168,6 +168,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const txRoot = process.env.TX_ROOT || path.resolve(__dirname, '..', '..');
+  process.env.TX_ROOT = txRoot;
 
   // Set TX_GOD_MODE environment variable if god mode is enabled
   if (options?.godMode) {
@@ -408,6 +409,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     sessionStore,  // Pass session store for session awareness
     debug: options?.debug,  // Enable forensics and verbose logging
     godMode: options?.godMode,  // Enable god mode (bypass permissions)
+    txRoot,  // TX installation root for script resolution via $TX_ROOT
   }, queue);
 
   // Register SIGUSR2 control handler now that dispatcher exists
@@ -434,6 +436,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     // Surface error to core user session
     injectSystemError(id, error, { stack, stderr, code });
   });
+  // NOTE: guardrail:kill inject-response handled by consolidated handler below (near worker:error)
   dispatcher.on('error', ({ agentId, error }: { agentId: string; error: string }) => {
     log.error('dispatcher', `Dispatcher error for agent: ${agentId}`, { error });
 
@@ -817,7 +820,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   };
 
   // Active injection: persistent poll drains queue whenever Claude is idle
-  const injectionQueue: Array<{ id: number; filepath: string; from: string; queuedAt: number }> = [];
+  const injectionQueue: Array<{ id: number; filepath: string; from: string; queuedAt: number; inlineMessage?: string; retries?: number }> = [];
   let injectionPollTimer: ReturnType<typeof setInterval> | null = null;
   const INJECTION_POLL_MS = 2000;
   const INJECTION_STALE_MS = 5 * 60 * 1000; // 5 minutes — give up on stale entries
@@ -844,12 +847,18 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     }
 
     try {
-      const content = fs.readFileSync(head.filepath, 'utf-8');
-      const bodyMatch = content.split(/^---$/m);
-      const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
+      let message: string;
+      if (head.inlineMessage) {
+        message = head.inlineMessage;
+      } else {
+        const content = fs.readFileSync(head.filepath, 'utf-8');
+        const bodyMatch = content.split(/^---$/m);
+        const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
+        message = `[mesh response from ${head.from}]\n\n${body}`;
+      }
 
-      const message = `[mesh response from ${head.from}]\n\n${body}`;
       const injected = injectPrompt(tmux, message);
+      head.retries = (head.retries || 0) + 1;
 
       if (injected) {
         injectionQueue.shift();
@@ -857,29 +866,42 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
           id: head.id,
           from: head.from,
           waitMs: now - head.queuedAt,
+          retries: head.retries,
           queued: injectionQueue.length,
         });
 
         // Mark as read in hook-state so tx inbox doesn't show injected messages
-        try {
-          const hookStatePath = path.join(dataDir, 'hook-state.json');
-          fs.writeFileSync(hookStatePath, JSON.stringify({
-            lastSeenId: head.id,
-            updatedAt: new Date().toISOString(),
-          }, null, 2));
-        } catch {
-          // Non-fatal
+        if (head.id >= 0) {
+          try {
+            const hookStatePath = path.join(dataDir, 'hook-state.json');
+            fs.writeFileSync(hookStatePath, JSON.stringify({
+              lastSeenId: head.id,
+              updatedAt: new Date().toISOString(),
+            }, null, 2));
+          } catch {
+            // Non-fatal
+          }
+        }
+      } else {
+        // Log every 5th retry to avoid spam but maintain visibility
+        if (head.retries % 5 === 0) {
+          log.warn('injector', 'Injection blocked — Claude busy', {
+            from: head.from,
+            retries: head.retries,
+            waitMs: now - head.queuedAt,
+            queued: injectionQueue.length,
+          });
         }
       }
-      // If not injected, leave at head — next poll will retry
     } catch (err) {
       log.warn('injector', 'Active injection read error', { from: head.from, error: String(err) });
       injectionQueue.shift(); // Remove bad entry
     }
   };
 
-  const tryInjectResponse = (id: number, filepath: string, from: string) => {
-    injectionQueue.push({ id, filepath, from, queuedAt: Date.now() });
+  const tryInjectResponse = (id: number, filepath: string, from: string, inlineMessage?: string) => {
+    injectionQueue.push({ id, filepath, from, queuedAt: Date.now(), inlineMessage });
+    log.info('injector', 'Queued for injection', { id, from, inline: !!inlineMessage, queued: injectionQueue.length });
 
     // Start polling if not already running
     if (!injectionPollTimer) {
@@ -1146,14 +1168,10 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   });
   dispatcher.on('guardrail:kill', ({ agentId, meshName, guardrail, reason }: { agentId: string; meshName: string; guardrail: string; reason: string }) => {
     setTimeout(writeStatusFile, 50);
-    // Outgoing task cleanup + inject-response
     const removedTask = removeOutgoingTask(meshName);
     if (removedTask?.injectResponse) {
       const msg = `[guardrail kill: ${agentId}] ${guardrail}: ${reason}`;
-      const injected = injectPrompt(tmux, msg);
-      if (!injected) {
-        appendPendingMessage(-1, '', agentId, 'error');
-      }
+      tryInjectResponse(-1, '', agentId, msg);
     }
     pushWwwStatus(meshName, `${agentId} killed: ${guardrail}`).catch(() => {});
   });
@@ -1168,29 +1186,20 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       // Clean up outgoing task so inject-response doesn't hang forever
       const removedTask = removeOutgoingTask(mesh);
       if (removedTask?.injectResponse) {
-        log.info('injector', 'Worker error: injecting error notification for inject-response task', { mesh, error });
-        // Inject error notification into core session so user knows the mesh died
         const errorMsg = `[mesh error from ${id}]\n\n${error}`;
-        injectPrompt(tmux.name, errorMsg).catch(err => {
-          log.warn('injector', 'Failed to inject error notification', { error: String(err) });
-          // Fall back to pending
-          appendPendingMessage(-1, '', id, 'error');
-        });
+        tryInjectResponse(-1, '', id, errorMsg);
       }
     }
   });
+  // NOTE: duplicate guardrail:kill handler removed — consolidated into single handler above
   dispatcher.on('mesh:killed', ({ meshName, killed, agents }: { meshName: string; killed: number; agents: string[] }) => {
     log.info('dispatcher', `Mesh killed via control signal`, { meshName, killed, agents });
     setTimeout(writeStatusFile, 50);
     // Clean up outgoing task on mesh kill too
     const removedTask = removeOutgoingTask(meshName);
     if (removedTask?.injectResponse) {
-      log.info('injector', 'Mesh killed: injecting kill notification for inject-response task', { meshName });
       const killMsg = `[mesh killed: ${meshName}]\n\nKilled ${killed} workers: ${agents.join(', ')}`;
-      injectPrompt(tmux.name, killMsg).catch(err => {
-        log.warn('injector', 'Failed to inject kill notification', { error: String(err) });
-        appendPendingMessage(-1, '', meshName, 'error');
-      });
+      tryInjectResponse(-1, '', meshName, killMsg);
     }
     pushWwwStatus(meshName, `Mesh killed (${killed} workers: ${agents.join(', ')})`).catch(err => {
       log.error('injector', 'pushWwwStatus error (mesh killed)', { error: (err as Error).message });

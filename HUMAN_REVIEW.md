@@ -1,5 +1,332 @@
 # Human Review
 
+## HITL Routing Reinject
+Date: 2026-03-16
+Session: (current)
+
+### Problem
+Agents forget routing instructions after HITL suspension. `buildHumanResponsePrompt()` only injected the human's answer + "continue your task" — no routing table, no sentinel address, no manifest writes reminder.
+
+### Files Modified
+- `src/worker/dispatcher.ts` — New `buildRoutingReminder()` method (covers agent/dispatcher/manifest modes); passes routing context to resume prompt; removed duplicate `meshConfig` declaration
+- `src/worker/session-manager.ts` — `buildHumanResponsePrompt()` accepts optional `routingReminder` param
+- `src/prompt/sections/routing.ts` — (imported, not modified)
+
+### Verification Steps
+
+#### 1. Compilation check
+```bash
+npx tsx --eval "import { SessionManager } from './src/worker/session-manager.ts'; console.log('OK')"
+```
+- [ ] Prints OK
+
+#### 2. Infra tests pass (no API key needed)
+```bash
+npx tsx --test test/e2e/37-manifest-routing-infra.test.ts
+npx tsx --test test/e2e/32-mesh-completion-infra.test.ts
+```
+- [ ] All 19 manifest tests pass
+- [ ] All 6 mesh completion tests pass
+- [ ] Note: process hangs after tests complete (SQLite cleanup), exit 143 from manual kill is expected
+
+#### 3. Live HITL test (requires running mesh)
+```bash
+tx start
+tx msg narrative-engine-v2 "new game: test routing"
+# Wait for calibrator to ask-human
+# Answer the question
+# Check if calibrator remembers its routing destinations
+```
+- [ ] After HITL response, agent routes correctly without confusion
+- [ ] Check logs for routing reminder presence:
+```bash
+tx logs -c dispatcher | rg "routing reminder\|buildRoutingReminder"
+```
+
+#### 4. Manifest mode HITL test
+- [ ] Run a manifest mesh where an agent does ask-human
+- [ ] After response, agent should see reminder of pending file writes
+- [ ] Agent completes and writes output files (not lost in routing confusion)
+
+---
+
+## Known Test Infrastructure Quirk: Exit Code 143
+
+E2E infra tests using `WorkerDispatcher` + `MessageQueue` hang after all tests pass. The SQLite handle doesn't close cleanly. Workaround: kill the process after tests complete.
+
+```bash
+# Pattern: run tests, kill after completion
+npx tsx --test test/e2e/37-manifest-routing-infra.test.ts 2>&1 &
+PID=$!
+sleep 30
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+```
+
+Exit 143 = SIGTERM (128 + signal 15). **This is expected.** Check the output above the exit code — all `✔` marks indicate passing tests. No `✖` means no failures.
+
+---
+
+## Chrome CLI Runner (`chrome: true` agents)
+Date: 2026-03-13
+Session: e9ced2e6-7308-48ac-88db-0e3d7241ec64
+Commits: a27ff50, bcb6c5b, 09138d3
+
+### Files Created
+- `src/worker/runner.ts` — Shared Runner interface (extracted from SdkRunner)
+- `src/worker/chrome-cli-runner.ts` — CLI wrapper: spawns `claude --chrome --print`
+- `test/unit/chrome-cli-runner.test.ts` — 9 unit tests
+
+### Files Modified
+- `src/mesh/config-loader.ts` — `chrome?: boolean` on AgentConfig
+- `src/worker/dispatcher.ts` — spawn branch, type widening, resume guard, hasActiveQuery
+- `src/worker/worker-lifecycle.ts` — Runner type import
+- `src/worker/session-manager.ts` — chrome field on AgentConfigMinimal
+- `src/worker/sdk-runner.ts` — shared isGuardrailKill, hasActiveQuery method
+
+### Verification Steps
+
+#### 1. Unit tests pass
+```bash
+npx vitest run test/unit/chrome-cli-runner.test.ts
+```
+- [ ] All 9 tests pass
+
+#### 2. TypeScript compiles clean
+```bash
+npx tsc --noEmit 2>&1 | grep -E '(runner|chrome-cli|dispatcher|sdk-runner)\.ts'
+```
+- [ ] No output (no errors)
+
+#### 3. Config field recognized
+```bash
+cat > /tmp/test-chrome-config.yaml << 'EOF'
+name: test-chrome
+agents:
+  - name: browser
+    model: sonnet
+    prompt: test.md
+    chrome: true
+EOF
+```
+- [ ] Config loads without validation errors
+
+#### 4. Smoke test (requires `claude` CLI authenticated)
+Create a minimal mesh with `chrome: true`:
+```yaml
+name: chrome-test
+agents:
+  - name: browser
+    model: sonnet
+    prompt: browser.md
+    chrome: true
+```
+```bash
+tx msg chrome-test "Navigate to https://example.com and describe the page"
+```
+- [ ] Worker spawns as CLI process (not SDK)
+- [ ] Logs show `chrome-cli-runner` prefix (not `sdk-runner`)
+- [ ] Response message appears in `.ai/tx/msgs/`
+
+#### 5. Kill escalation works
+- [ ] Kill a chrome worker mid-run
+- [ ] Confirm SIGTERM sent first, then SIGKILL after 5s if needed:
+```bash
+tx logs -c chrome-cli-runner | rg "SIGTERM\|SIGKILL"
+```
+
+#### 6. Resume guard
+- [ ] Confirm chrome agents cannot be resumed:
+```bash
+tx logs -c dispatcher | rg "Cannot resume chrome agent"
+```
+
+---
+
+## Manifest Routing Mode (`routing_mode: 'manifest'`)
+Date: 2026-03-13
+Session: d233a77f-9bf9-44aa-a87d-6fa6381c15c9
+
+### Files Created
+- `src/worker/manifest-resolver.ts` — Pure resolver: eligibility check + deadlock detection
+- `test/unit/manifest-resolver.test.ts` — 13 unit tests for resolver
+- `docs/superpowers/specs/2026-03-13-manifest-routing-design.md` — Design spec
+
+### Files Modified
+- `src/shared/types.ts` — Added `'manifest'` to `RoutingMode`
+- `src/worker/mesh-validator.ts` — Manifest mode config validation (errors + warnings)
+- `src/worker/dispatcher.ts` — Mesh start/complete branching, `writtenFiles` tracking, completion cleanup
+
+### Verification Steps
+
+#### 1. Unit tests pass (no API key needed, <1s)
+```bash
+node --import tsx --test test/unit/manifest-resolver.test.ts
+```
+- [ ] All 13 tests pass
+
+#### 2. TypeScript compiles clean
+```bash
+npx tsc --noEmit 2>&1 | grep -E '(manifest-resolver|dispatcher|mesh-validator|types)\.ts'
+```
+- [ ] No output (no errors)
+
+#### 3. Config validation catches errors
+Create a test config with `routing_mode: manifest` but no `manifest` section:
+```bash
+cat > /tmp/test-manifest-config.yaml << 'EOF'
+name: test
+routing_mode: manifest
+agents:
+  - name: worker
+    model: haiku
+    prompt: test.md
+EOF
+```
+- [ ] Config loader reports error about missing manifest section
+
+#### 4. Config validation warns about conflicting sections
+```yaml
+routing_mode: manifest
+routing:
+  worker: reviewer
+manifest:
+  - id: output.md
+    reads: []
+    writes: [worker]
+```
+- [ ] Warning about routing section being ignored in manifest mode
+
+#### 5. Existing tests still pass
+```bash
+node --import tsx --test test/unit/permissions.test.ts
+```
+- [ ] All 31 tests pass (no regression)
+
+## E2E Test Scale-Up — Two-Tier Pattern (59 Infra + 6 Real-LLM Tests)
+Date: 2026-03-12
+Session: 7071cd5f-aa4f-46ee-b39e-c785af6e62a7
+
+### Files Created
+- `test/utils/copy-mesh.ts` — Reusable mesh copy utility
+- `test/e2e/29-fanout-infra.test.ts` — 7 tests: fan-out group registration, gating, completion, re-engagement
+- `test/e2e/30-guardrails-infra.test.ts` — 9 tests: max_messages, max_turns, max_mesh_messages, duplicate_target, edge counting, override chain
+- `test/e2e/31-ensemble-infra.test.ts` — 6 tests: ensemble config, coordinator start/aggregate/fault-tolerance, FSM context injection
+- `test/e2e/32-mesh-completion-infra.test.ts` — 6 tests: handleMeshComplete, deferred completion, killMeshWorkers, clearMeshState
+- `test/e2e/33-routing-errors-infra.test.ts` — 5 tests: routing error events, escalation, edge counting, edge:limit-reached
+- `test/e2e/34-crash-recovery-infra.test.ts` — 5 tests: restoreSuspendedSessions, killMeshWorkers, clearMeshState
+- `test/e2e/35-revision-infra.test.ts` — 4 tests: interrupt/append/replace, mock runner kill tracking
+- `test/e2e/36-dispatch-router-infra.test.ts` — 17 tests: linear/branch/fan-out/terminal/escalation/override routing
+- `test/e2e/real-llm/09-fanout.test.ts` — 1 test: full fan-out lifecycle with real haiku workers
+- `test/e2e/real-llm/10-guardrails.test.ts` — 2 tests: bash guard kill + max_turns cap
+- `test/e2e/real-llm/11-ensemble.test.ts` — 1 test: FSM ensemble full lifecycle
+- `test/e2e/real-llm/12-mesh-completion.test.ts` — 1 test: task → worker → task-complete to core
+- `test/e2e/real-llm/13-revision.test.ts` — 1 test: revision interrupt during active worker
+
+### Files Modified
+- `test/utils/event-harness.ts` — Added `waitForEvents()` and `getEventPayloads()`
+- `test/utils/test-env.ts` — Fixed ESM import (replaced `require('yaml')` with top-level import)
+
+### Verification Steps
+
+#### 1. Run all infra tests (no API key needed, <10s total)
+```bash
+node --import tsx --test test/e2e/29-fanout-infra.test.ts test/e2e/30-guardrails-infra.test.ts test/e2e/31-ensemble-infra.test.ts test/e2e/32-mesh-completion-infra.test.ts test/e2e/33-routing-errors-infra.test.ts test/e2e/34-crash-recovery-infra.test.ts test/e2e/35-revision-infra.test.ts test/e2e/36-dispatch-router-infra.test.ts
+```
+- [ ] All 59 tests pass
+- [ ] Note: process may hang after tests complete (pre-existing timer cleanup issue)
+
+#### 2. Run dispatch router tests individually (pure unit, ~150ms)
+```bash
+node --import tsx --test test/e2e/36-dispatch-router-infra.test.ts
+```
+- [ ] All 17 tests pass instantly (no dispatcher needed)
+
+#### 3. Run real-LLM mesh-completion test (MUST run from terminal, NOT Claude Code sandbox)
+```bash
+node --import tsx --test test/e2e/real-llm/12-mesh-completion.test.ts
+```
+- [ ] Passes in ~6s (single haiku echo worker)
+- [ ] Requires: `claude` CLI authenticated, sandbox disabled
+
+#### 4. Run all real-LLM tests (MUST run from terminal, NOT Claude Code sandbox)
+```bash
+node --import tsx --test test/e2e/real-llm/02-ask-human.test.ts test/e2e/real-llm/08-parallelism.test.ts test/e2e/real-llm/09-fanout.test.ts test/e2e/real-llm/10-guardrails.test.ts test/e2e/real-llm/11-ensemble.test.ts test/e2e/real-llm/12-mesh-completion.test.ts test/e2e/real-llm/13-revision.test.ts
+```
+- [ ] 02-ask-human passes (~10s, HITL flow — haiku may skip ask-human gracefully)
+- [ ] 08-parallelism passes (~65s, FSM parallel: preload → 3 agents → synthesizer)
+- [ ] 09-fanout passes (~28s, 3 parallel reviewer workers)
+- [ ] 10-guardrails passes (~29s, bash guard kill + max_turns cap)
+- [ ] 11-ensemble passes (~11s, 3 parallel ensemble workers + aggregation)
+- [ ] 12-mesh-completion passes (~6s, single-hop echo)
+- [ ] 13-revision passes (~36s, revision interrupt during active worker)
+- [ ] Requires: `claude` CLI authenticated, sandbox disabled
+
+#### 5. Real-LLM test status
+**Passing (7/7):**
+- `02-ask-human.test.ts` — ✅ HITL flow (~10s, haiku may skip ask-human gracefully)
+- `08-parallelism.test.ts` — ✅ FSM parallel lifecycle (~65s)
+- `09-fanout.test.ts` — ✅ 3 parallel reviewers spawned + completed (~28s)
+- `10-guardrails.test.ts` — ✅ Bash guard + max_turns (~29s)
+- `11-ensemble.test.ts` — ✅ FSM ensemble with 3 haiku workers (~11s)
+- `12-mesh-completion.test.ts` — ✅ Single-hop echo (~6s)
+- `13-revision.test.ts` — ✅ Revision interrupt + resume (~36s)
+
+**Root causes found and fixed:**
+1. ~~Chokidar EMFILE~~ — Fixed: queue.insert() + consumer.emit() bypasses chokidar
+2. ~~Sandbox EPERM~~ — Fixed: run from terminal (not Claude Code sandbox)
+3. ~~godMode missing~~ — Fixed: `godMode: true` on WorkerDispatcher for all test envs
+4. ~~FSM transitions need consumer~~ — Fixed: force-transition + direct handleEnsembleState for ensemble test
+5. ~~Dispatcher-mode routing leak~~ — Fixed: getReachableAgents() scoping + DISPATCHER_MESSAGING_PROTOCOL
+6. ~~Fan-out test race condition~~ — Fixed: bypass planner, spawn reviewers directly (test fan-out execution, not prompt compliance)
+
+#### 5. EventHarness reused across all tests
+```bash
+rg 'EventHarness' test/ --files-with-matches
+```
+- [ ] Imported by all infra test files (28-36) plus original parallelism tests
+
+#### 6. copy-mesh utility reused
+```bash
+rg 'copyTestMesh' test/ --files-with-matches
+```
+- [ ] Imported by fan-out, ensemble, and other tests that use real mesh configs
+
+---
+
+## Parallelism E2E Test Suite (Vertical Slice)
+Date: 2026-03-12
+Session: cd03d402-37d7-4469-9376-b63838e761ca
+
+### Files Created
+- `test/utils/event-harness.ts` — Reusable event collector wrapping dispatcher via emit() monkeypatch
+- `test/e2e/28-parallel-spawn-infra.test.ts` — 8 infra tests: fork/join logic, gating, event sequence (no LLM)
+- `test/e2e/real-llm/08-parallelism.test.ts` — Full lifecycle test with real haiku workers
+
+### Verification Steps
+
+#### 1. Infra tests pass (no API key needed, <1s)
+```bash
+node --import tsx --test test/e2e/28-parallel-spawn-infra.test.ts
+```
+- [ ] All 8 tests pass
+- [ ] Note: process hangs after tests complete (pre-existing cleanup issue, same as test-07)
+
+#### 2. Real LLM test runs (needs `claude` CLI authenticated, ~60-120s)
+```bash
+node --import tsx --test test/e2e/real-llm/08-parallelism.test.ts
+```
+- [ ] Test does NOT skip (detects `claude` CLI)
+- [ ] parallel:spawn fires with 3 agents
+- [ ] parallel:complete fires after all agents finish
+- [ ] Synthesizer produces non-empty output
+
+#### 3. Event harness is reusable
+```bash
+rg 'EventHarness' test/ --files-with-matches
+```
+- [ ] Imported by both test files
+
 ## Bug Finder Mesh
 Date: 2026-03-06
 Commit: 1c6c23f
@@ -415,6 +742,62 @@ npx vitest run
 ## inject-response fix
 - [ ] Send task with `inject-response: true` (no explicit `type: task`), confirm `outgoing-tasks.json` has `injectResponse: true`
 - [ ] On mesh completion in hook mode, confirm log: `inject-response: actively injecting`
+
+## isClaudeIdle() Inverted Logic + TX_ROOT Prompt Injection
+Date: 2026-03-13
+
+### Problem 1: Injection not landing
+`isClaudeIdle()` in `src/core/tmux.ts` relied on detecting Claude Code's prompt character (❯/⏵/>) via regex. When CC updates its UI, detection fails → "not idle" → messages rot in queue for 5 min → dropped as stale. Log confirmed: `Claude not idle: non-dim text after prompt`.
+
+### Fix 1: Inverted idle detection
+Rewrote `isClaudeIdle()` with inverted logic: **idle unless proven busy**. Only two things block injection:
+- `esc to interrupt/cancel` visible → Claude is processing
+- Non-dim typed text before cursor → user is actively typing
+
+Everything else → idle. No more fragile prompt detection fallthrough.
+
+### Problem 2: TX_ROOT intermittently unavailable to agents
+Agents reference `$TX_ROOT/meshes/.../scripts/...` in bash commands. The env var is set via `process.env` and SDK `env` option, but intermittently not available to the agent's Bash tool.
+
+### Fix 2: Belt and suspenders
+Added TX_ROOT to agent system prompt preamble: `export TX_ROOT="..."` instruction injected so agents can set it explicitly if the env var is missing.
+
+### Files Modified
+- `src/core/tmux.ts` — Rewrote `isClaudeIdle()` with inverted logic
+- `src/workspace/injector.ts` — `txRoot` on `PreambleContext`, inject export hint
+- `src/worker/dispatcher.ts` — Pass `txRoot` to preamble context
+- `src/worker/headless-runner.ts` — Pass `txRoot` to preamble context (2 sites)
+
+### Verification Steps
+
+#### 1. TypeScript compiles clean
+```bash
+npx tsc --noEmit 2>&1 | grep -E '(tmux|injector|dispatcher|headless)\.ts'
+```
+- [ ] No output
+
+#### 2. Injection works reliably
+```bash
+tx start
+```
+- [ ] Send a task to any mesh, wait for completion
+- [ ] Message injects into core session (not just shows in `tx inbox`)
+- [ ] Check logs:
+```bash
+tx logs -c tmux | rg "idle|busy"
+```
+
+#### 3. Busy detection still blocks injection
+- [ ] While Claude is processing (esc to interrupt visible), injection should NOT happen
+
+#### 4. TX_ROOT in agent prompt
+```bash
+tx prompt narrative-engine-v2 architect --raw 2>&1 | rg TX_ROOT
+```
+- [ ] Shows `export TX_ROOT="..."` in prompt preamble
+
+#### 5. Scripts execute successfully
+- [ ] Run narrative-engine-v2 mesh, confirm entropy-resolver.sh executes without "TX_ROOT not set" errors
 
 ---
 

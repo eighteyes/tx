@@ -287,7 +287,7 @@ export class DispatchRouter {
     const ctx: DispatchInjectionContext = {
       sentinel: `${this.meshName}/dispatch`,
       validOutcomes: this.getValidOutcomes(agentName),
-      availableAgents: [...this.agentNames],
+      availableAgents: this.getReachableAgents(agentName),
       isTerminal: this.isTerminal(agentName),
     };
 
@@ -298,5 +298,61 @@ export class DispatchRouter {
     }
 
     return ctx;
+  }
+
+  /**
+   * Get agents reachable from this agent's routing config.
+   * Only exposes agents the routing table can actually send to,
+   * preventing agents from bypassing the dispatch sentinel by
+   * writing directly to agents they shouldn't know about.
+   */
+  private getReachableAgents(agentName: string): string[] {
+    const reachable = new Set<string>();
+    const entry = this.routing[agentName];
+
+    if (entry !== undefined) {
+      if (typeof entry === 'string') {
+        // Linear: single target
+        if (!CORE_KEYWORDS.has(entry)) reachable.add(entry);
+      } else if (Array.isArray(entry)) {
+        // Fan-out source: target agents from the array
+        const group = this.fanOutGroups.get(agentName);
+        if (group) {
+          for (const agent of group.agents) {
+            if (!CORE_KEYWORDS.has(agent)) reachable.add(agent);
+          }
+        }
+      } else {
+        // Branch: all possible target agents from the outcome map
+        for (const [key, value] of Object.entries(entry)) {
+          if (key === 'default') continue;
+          const target = typeof value === 'string' ? value : Object.keys(value)[0];
+          if (target && !CORE_KEYWORDS.has(target)) reachable.add(target);
+        }
+        // Include default target
+        const defaultValue = (entry as Record<string, unknown>)['default'];
+        if (defaultValue) {
+          const target = typeof defaultValue === 'string' ? defaultValue : Object.keys(defaultValue as Record<string, unknown>)[0];
+          if (target && !CORE_KEYWORDS.has(target)) reachable.add(target);
+        }
+      }
+    }
+
+    // Fan-out members: peers (for discuss) + join agent (for complete)
+    const memberGroup = this.fanOutMembers.get(agentName);
+    if (memberGroup) {
+      // Peers for discuss routing
+      if (memberGroup.options.discuss) {
+        for (const peer of memberGroup.agents) {
+          if (peer !== agentName) reachable.add(peer);
+        }
+      }
+      // Join agent for complete routing
+      if (memberGroup.options.complete && !CORE_KEYWORDS.has(memberGroup.options.complete)) {
+        reachable.add(memberGroup.options.complete);
+      }
+    }
+
+    return [...reachable];
   }
 }

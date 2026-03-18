@@ -75,7 +75,7 @@ agents:
     # Collapsed entropy pipeline — fates + dramaturg + possibility + system in one session
     # Parallel blind Tasks for world possibilities, inline story shaping and resolution
     permissions:
-      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Agent, TaskOutput]
 
   - name: sim-planner
     model: sonnet
@@ -90,14 +90,14 @@ agents:
     prompt: simulator/tables.md
     # Phase 2: Per-beat table gen (haiku Tasks) + entropy rolling
     permissions:
-      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Agent, TaskOutput]
 
   - name: sim-voices
     model: sonnet
     prompt: simulator/voices.md
     # Phase 3: Per-beat voice gen (sonnet Tasks) + scene_so_far + scene_script.yaml assembly
     permissions:
-      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskOutput, TaskStop]
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Agent, TaskOutput]
 
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)

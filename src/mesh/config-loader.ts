@@ -122,6 +122,7 @@ export interface AgentConfig {
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
   postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
+  fragments?: Record<string, string> | string;  // Fragment map { name: path } or directory path
 }
 
 /**
@@ -427,6 +428,19 @@ export class MeshConfigLoader extends EventEmitter {
         // Normalize checkpoint: true → 'start' (backward compat)
         if (agent.checkpoint === true) {
           (agent as any).checkpoint = 'start';
+        }
+
+        // Normalize fragments to absolute paths
+        if (typeof agent.fragments === 'string') {
+          // Directory path — resolved relative to mesh base
+          (agent as any).fragments = path.resolve(basePath, agent.fragments);
+        } else if (agent.fragments && typeof agent.fragments === 'object') {
+          // Map of name → path — resolve each
+          const resolved: Record<string, string> = {};
+          for (const [name, fragPath] of Object.entries(agent.fragments)) {
+            resolved[name] = path.resolve(basePath, fragPath);
+          }
+          (agent as any).fragments = resolved;
         }
       }
 

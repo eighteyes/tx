@@ -19,7 +19,8 @@ export const colors = {
   yellowBright: '\x1b[93m',
   blueBright: '\x1b[94m',
   magentaBright: '\x1b[95m',
-  cyanBright: '\x1b[96m'
+  cyanBright: '\x1b[96m',
+  bgRed: '\x1b[41m',
 };
 
 // Chalk-style helper functions
@@ -40,4 +41,5 @@ export const chalk = {
   blueBright: (text: string) => `${colors.blueBright}${text}${colors.reset}`,
   magentaBright: (text: string) => `${colors.magentaBright}${text}${colors.reset}`,
   cyanBright: (text: string) => `${colors.cyanBright}${text}${colors.reset}`,
+  bgRed: (text: string) => `${colors.bgRed}${text}${colors.reset}`,
 };

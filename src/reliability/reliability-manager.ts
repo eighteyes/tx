@@ -143,7 +143,8 @@ export class ReliabilityManager {
       this.recordFailure(meshName, health.agentId, 'stuck',
         `No output for ${Math.round(health.silenceMs / 1000)}s`);
 
-      // Kill the stuck worker
+      // Kill the stuck worker — runner.kill() triggers wasGuardrailKill() → onGuardrailKill()
+      // which handles DLQ capture via the unified convergence point
       const killed = this.bindings!.killAgent(health.agentId, `heartbeat dead: ${Math.round(health.silenceMs / 1000)}s silent`);
       log.warn('reliability', `Killed stuck agent`, {
         agentId: health.agentId,
@@ -200,12 +201,14 @@ export class ReliabilityManager {
     // Circuit breaker check
     if (!this.circuitBreaker.canExecute(agentId)) {
       this.sli.recordFailure(meshName, agentId, 'circuit_open', 'Circuit breaker is open');
+      log.warn('reliability', 'Spawn blocked: circuit breaker open', { meshName, agentId });
       return { allowed: false, reason: `Circuit breaker OPEN for ${agentId}` };
     }
 
     // Safe mode check
     const safeLevel = this.safeMode.getLevel(meshName);
     if (safeLevel === 'lockdown') {
+      log.warn('reliability', 'Spawn blocked: safe mode lockdown', { meshName, agentId });
       return { allowed: false, reason: `Safe mode LOCKDOWN for mesh ${meshName}` };
     }
 
@@ -214,9 +217,10 @@ export class ReliabilityManager {
 
   /**
    * Register agent for heartbeat monitoring (call on spawn)
+   * Optional heartbeat config overrides global/runtime thresholds (from mesh config)
    */
-  registerAgent(agentId: string): void {
-    this.heartbeat.register(agentId);
+  registerAgent(agentId: string, heartbeatConfig?: Partial<import('./heartbeat-monitor.ts').HeartbeatConfig>): void {
+    this.heartbeat.register(agentId, heartbeatConfig);
   }
 
   /**
@@ -233,6 +237,10 @@ export class ReliabilityManager {
     this.sli.recordSuccess(meshName, agentId, durationMs);
     this.circuitBreaker.recordSuccess(agentId);
     this.heartbeat.unregister(agentId);
+
+    log.info('reliability', 'Agent completed successfully', {
+      meshName, agentId, durationMs,
+    });
   }
 
   /**
@@ -250,7 +258,17 @@ export class ReliabilityManager {
 
     // Auto-evaluate safe mode after each failure
     const snapshot = this.sli.getSnapshot(300_000); // 5 min window
+    const prevLevel = this.safeMode.getLevel(meshName);
     this.safeMode.evaluateSLI(snapshot.successRate, meshName);
+    const newLevel = this.safeMode.getLevel(meshName);
+
+    log.warn('reliability', 'Agent failure recorded', {
+      meshName, agentId, category, reason,
+      sliRate: snapshot.successRate,
+      nines: snapshot.ninesLevel,
+      safeMode: newLevel,
+      safeModeEscalated: newLevel !== prevLevel ? `${prevLevel} → ${newLevel}` : undefined,
+    });
   }
 
   /**
@@ -282,6 +300,9 @@ export class ReliabilityManager {
       messages_sent: ctx?.messagesSent,
       output_snapshot: ctx?.outputSnapshot,
     });
+
+    // Agent is dead — stop heartbeat monitoring to prevent ghost callbacks
+    this.heartbeat.unregister(agentId);
   }
 
   /**

@@ -85,12 +85,24 @@ export class CheckpointLog {
    * This is what `rewind-to: <state>` resolves against.
    */
   lookup(meshName: string, stateName: string): Checkpoint | null {
-    return this.db.prepare(`
+    const result = this.db.prepare(`
       SELECT * FROM checkpoint_log
       WHERE mesh_name = ? AND state_name = ?
       ORDER BY created_at DESC
       LIMIT 1
     `).get(meshName, stateName) as Checkpoint | null;
+
+    if (result) {
+      log.info('checkpoint', 'Lookup hit', {
+        mesh: meshName, state: stateName,
+        session: result.session_id.slice(0, 8),
+        agent: result.agent_id,
+      });
+    } else {
+      log.warn('checkpoint', 'Lookup miss', { mesh: meshName, state: stateName });
+    }
+
+    return result;
   }
 
   /**
@@ -132,6 +144,9 @@ export class CheckpointLog {
     const result = this.db.prepare(
       `DELETE FROM checkpoint_log WHERE mesh_name = ?`
     ).run(meshName);
+    if (result.changes > 0) {
+      log.info('checkpoint', 'Cleared for mesh', { mesh: meshName, deleted: result.changes });
+    }
     return result.changes;
   }
 
@@ -154,6 +169,9 @@ export class CheckpointLog {
         )
       `).run(mesh_name, mesh_name, keepPerMesh);
       total += result.changes;
+    }
+    if (total > 0) {
+      log.info('checkpoint', 'GC pruned old entries', { deleted: total });
     }
     return total;
   }

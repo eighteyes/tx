@@ -59,6 +59,8 @@ export class WorktreeManager {
       log.info('worktree', `Worktree already exists for ${featureName}, reusing`, {
         path: worktreePath,
       });
+      // Ensure symlinks exist (may be missing from older worktrees)
+      this.symlinkSharedDirs(worktreePath);
       return worktreePath;
     }
 
@@ -113,6 +115,10 @@ export class WorktreeManager {
         branch: branchName,
       });
 
+      // Symlink shared directories into worktree so agents can access
+      // spec-graph, feature docs, and runtime state from worktree CWD
+      this.symlinkSharedDirs(worktreePath);
+
       return worktreePath;
     } catch (error) {
       const errorMsg = (error as Error).message;
@@ -120,6 +126,47 @@ export class WorktreeManager {
         error: errorMsg,
       });
       throw new Error(`Failed to create worktree: ${errorMsg}`);
+    }
+  }
+
+  /**
+   * Symlink shared directories from main repo into worktree.
+   * Agents running in worktrees need access to spec-graph, feature docs,
+   * and tx runtime state which live in the main repo's .ai/ directory.
+   */
+  private symlinkSharedDirs(worktreePath: string): void {
+    const sharedDirs = [
+      '.ai/know',     // Spec-graph, feature docs, generated specs
+      '.ai/tx',       // Runtime state, messages, sessions, logs
+      '.ai/output',   // Workspace output (shared across agents)
+    ];
+
+    const worktreeAiDir = path.join(worktreePath, '.ai');
+    if (!fs.existsSync(worktreeAiDir)) {
+      fs.mkdirSync(worktreeAiDir, { recursive: true });
+    }
+
+    for (const dir of sharedDirs) {
+      const sourcePath = path.join(this.workDir, dir);
+      const targetPath = path.join(worktreePath, dir);
+
+      // Skip if source doesn't exist
+      if (!fs.existsSync(sourcePath)) continue;
+
+      // Skip if target already exists (reuse case)
+      if (fs.existsSync(targetPath)) continue;
+
+      try {
+        fs.symlinkSync(sourcePath, targetPath, 'dir');
+        log.debug('worktree', `Symlinked ${dir} into worktree`, {
+          source: sourcePath,
+          target: targetPath,
+        });
+      } catch (error) {
+        log.warn('worktree', `Failed to symlink ${dir} into worktree`, {
+          error: (error as Error).message,
+        });
+      }
     }
   }
 

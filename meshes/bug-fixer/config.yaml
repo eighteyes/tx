@@ -156,22 +156,7 @@ fsm:
 guardrails:
   strict: false
   warning: true
-  agents:
-    researcher:
-      max_turns:
-        limit: 15
-        strict: true
-        warning: true
-    fixer:
-      max_turns:
-        limit: 30
-        strict: true
-        warning: true
-    validator:
-      max_turns:
-        limit: 20
-        strict: true
-        warning: true
+  agents: {}
 
 playbook_notes: |
   Bug-fixer combines two proven patterns:
