@@ -2,7 +2,8 @@
  * AgentProgressStore unit tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentProgressStore } from '../stores/progress-store.ts';
@@ -29,11 +30,22 @@ describe('AgentProgressStore', () => {
 
   afterEach(() => {
     store.close();
+
+    // Clean up test database
+    if (fs.existsSync(TEST_DB_PATH)) {
+      fs.unlinkSync(TEST_DB_PATH);
+    }
+    if (fs.existsSync(`${TEST_DB_PATH}-shm`)) {
+      fs.unlinkSync(`${TEST_DB_PATH}-shm`);
+    }
+    if (fs.existsSync(`${TEST_DB_PATH}-wal`)) {
+      fs.unlinkSync(`${TEST_DB_PATH}-wal`);
+    }
   });
 
   describe('save()', () => {
     it('creates progress signal', () => {
-      expect(() => {
+      assert.doesNotThrow(() => {
         store.save({
           mesh_instance: 'test-mesh',
           agent_id: 'test-agent',
@@ -41,11 +53,11 @@ describe('AgentProgressStore', () => {
           total: 5,
           label: 'test progress',
         });
-      }).not.toThrow();
+      });
     });
 
     it('accepts valid step/total ranges', () => {
-      expect(() => {
+      assert.doesNotThrow(() => {
         store.save({
           mesh_instance: 'mesh',
           agent_id: 'agent',
@@ -53,9 +65,9 @@ describe('AgentProgressStore', () => {
           total: 1,
           label: null,
         });
-      }).not.toThrow();
+      });
 
-      expect(() => {
+      assert.doesNotThrow(() => {
         store.save({
           mesh_instance: 'mesh',
           agent_id: 'agent',
@@ -63,7 +75,7 @@ describe('AgentProgressStore', () => {
           total: 5,
           label: null,
         });
-      }).not.toThrow();
+      });
     });
   });
 
@@ -91,20 +103,20 @@ describe('AgentProgressStore', () => {
       });
 
       const latest = store.latest(agentId);
-      expect(latest).toBeDefined();
-      expect(latest?.step).toBe(2);
-      expect(latest?.label).toBe('second');
+      assert.ok(latest);
+      assert.strictEqual(latest?.step, 2);
+      assert.strictEqual(latest?.label, 'second');
     });
 
     it('returns null for unknown agent', () => {
       const latest = store.latest('unknown-agent');
-      expect(latest).toBeNull();
+      assert.strictEqual(latest, null);
     });
   });
 
   describe('listForAgent()', () => {
-    it('returns chronologically sorted signals', () => {
-      const agentId = 'test-agent';
+    it('returns chronologically sorted signals', async () => {
+      const agentId = 'test-agent-list';
 
       store.save({
         mesh_instance: 'mesh',
@@ -114,6 +126,9 @@ describe('AgentProgressStore', () => {
         label: 'first',
       });
 
+      // Small delay to ensure different timestamps
+      await new Promise(resolve => setTimeout(resolve, 5));
+
       store.save({
         mesh_instance: 'mesh',
         agent_id: agentId,
@@ -121,6 +136,8 @@ describe('AgentProgressStore', () => {
         total: 5,
         label: 'second',
       });
+
+      await new Promise(resolve => setTimeout(resolve, 5));
 
       store.save({
         mesh_instance: 'mesh',
@@ -131,15 +148,15 @@ describe('AgentProgressStore', () => {
       });
 
       const signals = store.listForAgent(agentId);
-      expect(signals).toHaveLength(3);
-      expect(signals[0].step).toBe(1);
-      expect(signals[1].step).toBe(2);
-      expect(signals[2].step).toBe(3);
+      assert.strictEqual(signals.length, 3);
+      assert.strictEqual(signals[0].step, 1);
+      assert.strictEqual(signals[1].step, 2);
+      assert.strictEqual(signals[2].step, 3);
     });
 
     it('returns empty array for unknown agent', () => {
       const signals = store.listForAgent('unknown-agent');
-      expect(signals).toEqual([]);
+      assert.deepStrictEqual(signals, []);
     });
   });
 });

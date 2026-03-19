@@ -2,7 +2,8 @@
  * AgentCheckpointStore unit tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentCheckpointStore } from '../stores/checkpoint-store.ts';
@@ -43,7 +44,7 @@ describe('AgentCheckpointStore', () => {
         summary: null,
       });
 
-      expect(id).toMatch(/^ckpt-\d+-\w+$/);
+      assert.match(id, /^ckpt-\d+-\w+$/);
     });
 
     it('is idempotent with same ID', () => {
@@ -62,11 +63,11 @@ describe('AgentCheckpointStore', () => {
       const id1 = store.save(checkpoint);
       const id2 = store.save({ ...checkpoint, label: 'Second save' });
 
-      expect(id1).toBe(id);
-      expect(id2).toBe(id);
+      assert.strictEqual(id1, id);
+      assert.strictEqual(id2, id);
 
       const retrieved = store.get(id);
-      expect(retrieved?.label).toBe('Second save');
+      assert.strictEqual(retrieved?.label, 'Second save');
     });
 
     it('returns checkpoint ID', () => {
@@ -80,8 +81,8 @@ describe('AgentCheckpointStore', () => {
         summary: null,
       });
 
-      expect(typeof id).toBe('string');
-      expect(id.length).toBeGreaterThan(0);
+      assert.strictEqual(typeof id, 'string');
+      assert.ok(id.length > 0);
     });
   });
 
@@ -98,18 +99,18 @@ describe('AgentCheckpointStore', () => {
       });
 
       const checkpoint = store.get(id);
-      expect(checkpoint).toBeDefined();
-      expect(checkpoint?.id).toBe(id);
-      expect(checkpoint?.mesh_instance).toBe('test-mesh');
-      expect(checkpoint?.agent_id).toBe('test-agent');
-      expect(checkpoint?.conversation_id).toBe('conv-123');
-      expect(checkpoint?.label).toBe('test-label');
-      expect(checkpoint?.summary).toBe('test summary');
+      assert.ok(checkpoint);
+      assert.strictEqual(checkpoint?.id, id);
+      assert.strictEqual(checkpoint?.mesh_instance, 'test-mesh');
+      assert.strictEqual(checkpoint?.agent_id, 'test-agent');
+      assert.strictEqual(checkpoint?.conversation_id, 'conv-123');
+      assert.strictEqual(checkpoint?.label, 'test-label');
+      assert.strictEqual(checkpoint?.summary, 'test summary');
     });
 
     it('returns null for missing checkpoint', () => {
       const checkpoint = store.get('nonexistent-id');
-      expect(checkpoint).toBeNull();
+      assert.strictEqual(checkpoint, null);
     });
   });
 
@@ -144,13 +145,13 @@ describe('AgentCheckpointStore', () => {
       });
 
       const meshACheckpoints = store.listForMesh('mesh-a');
-      expect(meshACheckpoints).toHaveLength(2);
-      expect(meshACheckpoints.every(c => c.mesh_instance === 'mesh-a')).toBe(true);
+      assert.strictEqual(meshACheckpoints.length, 2);
+      assert.ok(meshACheckpoints.every(c => c.mesh_instance === 'mesh-a'));
     });
 
     it('returns empty array for unknown mesh', () => {
       const checkpoints = store.listForMesh('unknown-mesh');
-      expect(checkpoints).toEqual([]);
+      assert.deepStrictEqual(checkpoints, []);
     });
   });
 
@@ -185,8 +186,8 @@ describe('AgentCheckpointStore', () => {
       });
 
       const agent1Checkpoints = store.listForAgent('agent-1');
-      expect(agent1Checkpoints).toHaveLength(2);
-      expect(agent1Checkpoints.every(c => c.agent_id === 'agent-1')).toBe(true);
+      assert.strictEqual(agent1Checkpoints.length, 2);
+      assert.ok(agent1Checkpoints.every(c => c.agent_id === 'agent-1'));
     });
   });
 
@@ -234,8 +235,8 @@ describe('AgentCheckpointStore', () => {
       });
 
       const children = store.children(parentId);
-      expect(children).toHaveLength(2);
-      expect(children.map(c => c.id).sort()).toEqual([child1Id, child2Id].sort());
+      assert.strictEqual(children.length, 2);
+      assert.deepStrictEqual(children.map(c => c.id).sort(), [child1Id, child2Id].sort());
     });
 
     it('returns empty for leaf checkpoint', () => {
@@ -250,7 +251,7 @@ describe('AgentCheckpointStore', () => {
       });
 
       const children = store.children(leafId);
-      expect(children).toEqual([]);
+      assert.deepStrictEqual(children, []);
     });
   });
 
@@ -287,17 +288,17 @@ describe('AgentCheckpointStore', () => {
       });
 
       const tree = store.tree(rootId);
-      expect(tree).toBeDefined();
-      expect(tree?.checkpoint.id).toBe(rootId);
-      expect(tree?.children).toHaveLength(1);
-      expect(tree?.children[0].checkpoint.id).toBe(child1Id);
-      expect(tree?.children[0].children).toHaveLength(1);
-      expect(tree?.children[0].children[0].checkpoint.id).toBe(grandchildId);
+      assert.ok(tree);
+      assert.strictEqual(tree?.checkpoint.id, rootId);
+      assert.strictEqual(tree?.children.length, 1);
+      assert.strictEqual(tree?.children[0].checkpoint.id, child1Id);
+      assert.strictEqual(tree?.children[0].children.length, 1);
+      assert.strictEqual(tree?.children[0].children[0].checkpoint.id, grandchildId);
     });
 
     it('returns null for missing root', () => {
       const tree = store.tree('nonexistent-id');
-      expect(tree).toBeNull();
+      assert.strictEqual(tree, null);
     });
   });
 
@@ -344,7 +345,7 @@ describe('AgentCheckpointStore', () => {
       });
 
       const total = store.totalForks(rootId);
-      expect(total).toBe(3); // 2 children + 1 grandchild
+      assert.strictEqual(total, 3); // 2 children + 1 grandchild
     });
 
     it('returns 0 for leaf checkpoint', () => {
@@ -359,7 +360,7 @@ describe('AgentCheckpointStore', () => {
       });
 
       const total = store.totalForks(leafId);
-      expect(total).toBe(0);
+      assert.strictEqual(total, 0);
     });
   });
 
@@ -394,8 +395,8 @@ describe('AgentCheckpointStore', () => {
 
       store.gc(7); // Remove older than 7 days
 
-      expect(store.get(oldId)).toBeNull();
-      expect(store.get(recentId)).not.toBeNull();
+      assert.strictEqual(store.get(oldId), null);
+      assert.ok(store.get(recentId) !== null);
     });
 
     it('preserves recent checkpoints', () => {
@@ -411,7 +412,7 @@ describe('AgentCheckpointStore', () => {
 
       store.gc(1); // Remove older than 1 day
 
-      expect(store.get(recentId)).not.toBeNull();
+      assert.ok(store.get(recentId) !== null);
     });
   });
 });

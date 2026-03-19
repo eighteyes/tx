@@ -2,7 +2,8 @@
  * WorkspaceSnapshotter unit tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { WorkspaceSnapshotter } from '../workspace-snapshotter.ts';
@@ -46,25 +47,26 @@ describe('WorkspaceSnapshotter', () => {
       const checkpointId = 'test-checkpoint-123';
       const tarballPath = await snapshotter.snapshot(TEST_WORKSPACE_DIR, checkpointId);
 
-      expect(fs.existsSync(tarballPath)).toBe(true);
-      expect(tarballPath).toBe(path.join(TEST_SNAPSHOTS_DIR, `${checkpointId}.tar.gz`));
+      assert.strictEqual(fs.existsSync(tarballPath), true);
+      assert.strictEqual(tarballPath, path.join(TEST_SNAPSHOTS_DIR, `${checkpointId}.tar.gz`));
     });
 
     it('returns tarball path', async () => {
       const checkpointId = 'test-checkpoint-456';
       const tarballPath = await snapshotter.snapshot(TEST_WORKSPACE_DIR, checkpointId);
 
-      expect(typeof tarballPath).toBe('string');
-      expect(tarballPath.endsWith('.tar.gz')).toBe(true);
+      assert.strictEqual(typeof tarballPath, 'string');
+      assert.ok(tarballPath.endsWith('.tar.gz'));
     });
 
     it('fails if workspace does not exist', async () => {
       const checkpointId = 'test-checkpoint-789';
       const nonexistentPath = path.join(process.cwd(), '.ai/tx/nonexistent-workspace');
 
-      await expect(
-        snapshotter.snapshot(nonexistentPath, checkpointId)
-      ).rejects.toThrow(/does not exist/);
+      await assert.rejects(
+        async () => await snapshotter.snapshot(nonexistentPath, checkpointId),
+        /does not exist/
+      );
     });
   });
 
@@ -82,8 +84,8 @@ describe('WorkspaceSnapshotter', () => {
       await snapshotter.restore(checkpointId, TEST_WORKSPACE_DIR);
 
       // Verify files restored
-      expect(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'file1.txt'))).toBe(true);
-      expect(fs.readFileSync(path.join(TEST_WORKSPACE_DIR, 'file1.txt'), 'utf-8')).toBe('content1');
+      assert.strictEqual(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'file1.txt')), true);
+      assert.strictEqual(fs.readFileSync(path.join(TEST_WORKSPACE_DIR, 'file1.txt'), 'utf-8'), 'content1');
     });
 
     it('preserves directory structure', async () => {
@@ -99,17 +101,18 @@ describe('WorkspaceSnapshotter', () => {
       await snapshotter.restore(checkpointId, TEST_WORKSPACE_DIR);
 
       // Verify subdirectory structure
-      expect(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'subdir'))).toBe(true);
-      expect(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'subdir', 'file2.txt'))).toBe(true);
-      expect(fs.readFileSync(path.join(TEST_WORKSPACE_DIR, 'subdir', 'file2.txt'), 'utf-8')).toBe('content2');
+      assert.strictEqual(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'subdir')), true);
+      assert.strictEqual(fs.existsSync(path.join(TEST_WORKSPACE_DIR, 'subdir', 'file2.txt')), true);
+      assert.strictEqual(fs.readFileSync(path.join(TEST_WORKSPACE_DIR, 'subdir', 'file2.txt'), 'utf-8'), 'content2');
     });
 
     it('fails if tarball does not exist', async () => {
       const checkpointId = 'nonexistent-checkpoint';
 
-      await expect(
-        snapshotter.restore(checkpointId, TEST_WORKSPACE_DIR)
-      ).rejects.toThrow(/not found/);
+      await assert.rejects(
+        async () => await snapshotter.restore(checkpointId, TEST_WORKSPACE_DIR),
+        /not found/
+      );
     });
   });
 
@@ -118,11 +121,11 @@ describe('WorkspaceSnapshotter', () => {
       const checkpointId = 'test-has-123';
       await snapshotter.snapshot(TEST_WORKSPACE_DIR, checkpointId);
 
-      expect(snapshotter.hasSnapshot(checkpointId)).toBe(true);
+      assert.strictEqual(snapshotter.hasSnapshot(checkpointId), true);
     });
 
     it('returns false for missing snapshot', () => {
-      expect(snapshotter.hasSnapshot('nonexistent-checkpoint')).toBe(false);
+      assert.strictEqual(snapshotter.hasSnapshot('nonexistent-checkpoint'), false);
     });
   });
 });
