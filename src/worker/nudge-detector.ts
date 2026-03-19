@@ -149,9 +149,14 @@ export class NudgeDetector {
       return;
     }
 
-    // If the agent sent ANY message, it made a routing decision — respect it.
-    if (messagesSent.length > 0) {
-      log.debug('nudge-detector', 'Agent sent messages, skipping nudge', {
+    // Check if the agent sent a routing message to an expected target.
+    // HITL asks to core/core don't count — an agent can ask core a question
+    // mid-session then still fail to send its final routing message.
+    const sentToExpected = messagesSent.some(m =>
+      expectedTargets.includes(m.to) || expectedTargets.includes(m.to.split('/').pop()!)
+    );
+    if (sentToExpected) {
+      log.debug('nudge-detector', 'Agent routed to expected target, skipping nudge', {
         agentId,
         sentTo: messagesSent.map(m => m.to),
         expectedTargets,

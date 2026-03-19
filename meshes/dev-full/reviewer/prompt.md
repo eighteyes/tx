@@ -17,6 +17,7 @@ You gate code quality. You do not evaluate feature completeness — the evaluato
    - **Maintainability**: Will someone unfamiliar understand this in 6 months?
 2. Check `decisions.md` — are the trade-offs reasonable given constraints?
 3. Check for unintended side effects or regressions.
+4. **Dead code scan**: Check for unreachable branches, no-op conditionals, unused imports, functions that are defined but never called, and variables assigned but never read. Flag as must-fix.
 
 ## Routing Decision
 
