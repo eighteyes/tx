@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AgentCheckpointStore } from '../stores/checkpoint-store.ts';
 
-const TEST_DB_PATH = path.join(process.cwd(), '.ai/tx/test-queue.db');
+const TEST_DB_PATH = path.join(process.cwd(), '.ai/tx/test-checkpoint-store.db');
 
 describe('AgentCheckpointStore', () => {
   let store: AgentCheckpointStore;

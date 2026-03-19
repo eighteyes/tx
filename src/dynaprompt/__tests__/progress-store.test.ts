@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AgentProgressStore } from '../stores/progress-store.ts';
 
-const TEST_DB_PATH = path.join(process.cwd(), '.ai/tx/test-queue.db');
+const TEST_DB_PATH = path.join(process.cwd(), '.ai/tx/test-progress-store.db');
 
 describe('AgentProgressStore', () => {
   let store: AgentProgressStore;
@@ -68,7 +68,7 @@ describe('AgentProgressStore', () => {
   });
 
   describe('latest()', () => {
-    it('returns most recent progress', () => {
+    it('returns most recent progress', async () => {
       const agentId = 'test-agent';
 
       store.save({
@@ -80,25 +80,20 @@ describe('AgentProgressStore', () => {
       });
 
       // Wait 1ms to ensure different timestamp
-      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      await new Promise(resolve => setTimeout(resolve, 10));
 
-      setTimeout(() => {
-        store.save({
-          mesh_instance: 'mesh',
-          agent_id: agentId,
-          step: 2,
-          total: 5,
-          label: 'second',
-        });
-      }, 10);
+      store.save({
+        mesh_instance: 'mesh',
+        agent_id: agentId,
+        step: 2,
+        total: 5,
+        label: 'second',
+      });
 
-      // Give time for second save
-      setTimeout(() => {
-        const latest = store.latest(agentId);
-        expect(latest).toBeDefined();
-        expect(latest?.step).toBe(2);
-        expect(latest?.label).toBe('second');
-      }, 20);
+      const latest = store.latest(agentId);
+      expect(latest).toBeDefined();
+      expect(latest?.step).toBe(2);
+      expect(latest?.label).toBe('second');
     });
 
     it('returns null for unknown agent', () => {

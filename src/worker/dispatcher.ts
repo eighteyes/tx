@@ -51,6 +51,8 @@ import { resolveManifestEligibility, formatDeadlockMessage } from './manifest-re
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
 import { ReliabilityManager } from '../reliability/reliability-manager.ts';
+import { AgentCheckpointStore } from '../dynaprompt/stores/checkpoint-store.ts';
+import { AgentProgressStore } from '../dynaprompt/stores/progress-store.ts';
 import YAML from 'yaml';
 
 /**
@@ -290,6 +292,10 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionStore?: SessionStore;
   private sessionSummarizer?: SessionSummarizer;
 
+  // Dynaprompt stores (lazy-initialized)
+  private checkpointStore?: AgentCheckpointStore;
+  private progressStore?: AgentProgressStore;
+
   // Extracted managers (Phase 1 refactoring)
   private workerLifecycle: WorkerLifecycleManager;
   private sessionManager: SessionManager;
@@ -406,6 +412,30 @@ export class WorkerDispatcher extends EventEmitter {
       log.debug('dispatcher', 'Session awareness enabled');
     }
 
+  }
+
+  /**
+   * Lazy-initialize checkpoint store (singleton per dispatcher)
+   */
+  private getCheckpointStore(): AgentCheckpointStore {
+    if (!this.checkpointStore) {
+      const dbPath = path.join(this.config.workDir, '.ai', 'tx', 'queue.db');
+      this.checkpointStore = new AgentCheckpointStore(dbPath);
+      log.debug('dispatcher', 'Checkpoint store initialized', { dbPath });
+    }
+    return this.checkpointStore;
+  }
+
+  /**
+   * Lazy-initialize progress store (singleton per dispatcher)
+   */
+  private getProgressStore(): AgentProgressStore {
+    if (!this.progressStore) {
+      const dbPath = path.join(this.config.workDir, '.ai', 'tx', 'queue.db');
+      this.progressStore = new AgentProgressStore(dbPath);
+      log.debug('dispatcher', 'Progress store initialized', { dbPath });
+    }
+    return this.progressStore;
   }
 
   /**

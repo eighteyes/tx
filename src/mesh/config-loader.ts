@@ -122,6 +122,7 @@ export interface AgentConfig {
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
   postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
+  fragments?: Record<string, string>;  // Dynaprompt: prompt fragments for adaptive injection
 }
 
 /**
@@ -164,6 +165,7 @@ export interface MeshConfig {
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
   load_claude_md?: boolean;  // Load project CLAUDE.md into agent system prompt (default: true)
+  fragments?: Record<string, string>;  // Dynaprompt: mesh-level prompt fragments
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 
