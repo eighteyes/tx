@@ -150,9 +150,6 @@ export class NudgeDetector {
     }
 
     // If the agent sent ANY message, it made a routing decision — respect it.
-    // Nudges are for agents that complete silently without forwarding work at all.
-    // An agent that sent back to a prior step (e.g., B→A for clarification in an A→B→C chain)
-    // is not stalled — it chose a different branch intentionally.
     if (messagesSent.length > 0) {
       log.debug('nudge-detector', 'Agent sent messages, skipping nudge', {
         agentId,
@@ -162,25 +159,30 @@ export class NudgeDetector {
       return;
     }
 
-    // Check if agent indicated a blocked state in its output
-    // Blocked agents escalate to core/core but don't appear in messagesSent
-    // because they use systemWriter.write() which bypasses worker message tracking
-    const outputLower = (snapshot.output || '').toLowerCase();
-    if (outputLower.includes('status: blocked') ||
-        (outputLower.includes('blocked') && outputLower.includes('core/core'))) {
-      log.info('nudge-detector', 'Agent output indicates blocked state, skipping nudge', { agentId });
+    // Agent completed without sending ANY message — core is the agent of last resort.
+    // Forward the agent's last output to core so the human always sees what happened.
+    if (snapshot.output && snapshot.output.trim().length > 0) {
+      log.warn('nudge-detector', 'Agent completed without sending messages, forwarding output to core', {
+        agentId,
+        outputLength: snapshot.output.length,
+      });
+      this.writer.write({
+        to: 'core/core',
+        from: `system/nudge-detector`,
+        type: 'task-complete',
+        headline: `${agentId} completed (auto-forwarded)`,
+        body: `Agent \`${agentId}\` completed without writing a routing message. Last output:\n\n${snapshot.output.slice(0, 4000)}`,
+      });
       return;
     }
 
-    // Agent completed without sending anything — check if expected targets have pending work
+    // No output and no messages — check if expected targets have pending work
     for (const target of expectedTargets) {
       if (target === 'core/core') continue;
 
-      // Check queue for pending messages
       const pendingCount = this.queue.countPending(target);
       if (pendingCount > 0) continue;
 
-      // Target has no work — trigger nudge
       log.warn('nudge-detector', 'Stalled route detected, sending nudge', {
         agentId,
         target,

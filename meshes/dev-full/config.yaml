@@ -155,15 +155,7 @@ rearmatter:
     gotchas: "Issues discovered"
     learnings: "Insights for brain"
 
-guardrails:
-  max_turns:
-    warning: true
-    strict: false
-    limit: 40
-  max_messages:
-    warning: true
-    strict: false
-    limit: 30
+guardrails: {}
 
 playbook_notes: |
   Big-feature mesh combining best patterns from existing dev meshes.
