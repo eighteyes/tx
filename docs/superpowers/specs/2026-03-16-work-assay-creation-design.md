@@ -283,7 +283,7 @@ The "Source" column clarifies responsibility. System fields are populated automa
 
 ### Intent Freezing
 
-The intent file is written by the consumer when the first message to a mesh's `entry_point` agent is processed. It captures the original human ask verbatim. Once written, it is never overwritten. For mesh instances with unique IDs, the path includes the instance ID.
+The consumer writes `intent.md` on first message to a mesh — simple file existence check: if `.ai/tx/assay/[mesh]/intent.md` doesn't exist, write it from the message body. If it exists, skip. Ephemeral artifact — cleaned up with the rest of the assay directory when the mesh completes.
 
 ## 4. Routing Integration
 

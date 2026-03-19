@@ -12,6 +12,7 @@
 #   episode    — entity episode management (append + query)
 #   trajectory — Chekhov's guns (add, fire, interrupt, list)
 #   condition  — mutable temporal states (set, get, list, resolve) — REPLACE semantics
+#   validate   — check all campaign YAML files parse cleanly
 
 set -euo pipefail
 
@@ -42,6 +43,7 @@ Domains:
   episode    append|list|traits
   trajectory add|fire|interrupt|list
   condition  set|get|list|resolve
+  validate   (no action required — checks all YAML files)
 
 Run: campaign.sh <campaign_path> <domain> --help for domain-specific usage.
 EOF
@@ -1187,11 +1189,11 @@ condition_resolve() {
 # MAIN
 # ==========================================
 
-[[ $# -lt 3 ]] && usage
+[[ $# -lt 2 ]] && usage
 
 CAMPAIGN_PATH="$1"; shift
 DOMAIN="$1"; shift
-ACTION="$1"; shift
+ACTION="${1:-}"; [[ -n "$ACTION" ]] && shift
 
 # Validate campaign path
 [[ ! -d "$CAMPAIGN_PATH" ]] && die "Campaign path not found: $CAMPAIGN_PATH"
@@ -1218,6 +1220,66 @@ declare -A PACE_THRESHOLDS=(
   [glacial]=90
 )
 
+# ==========================================
+# VALIDATE — check all campaign YAML files parse cleanly
+# ==========================================
+
+cmd_validate() {
+  local errors=0
+  local files_checked=0
+
+  echo "Validating campaign YAML files in: $CAMPAIGN_PATH"
+  echo "---"
+
+  # Core campaign files
+  for f in arc.yaml continuity.yaml timeline.yaml trajectories.yaml; do
+    local fpath="$CAMPAIGN_PATH/$f"
+    if [[ -f "$fpath" ]]; then
+      files_checked=$((files_checked + 1))
+      if ! yq '.' "$fpath" > /dev/null 2>&1; then
+        local err
+        err=$(yq '.' "$fpath" 2>&1 || true)
+        echo "FAIL: $f"
+        echo "  $err"
+        errors=$((errors + 1))
+      else
+        echo "  OK: $f"
+      fi
+    fi
+  done
+
+  # Entity files
+  for dir in entities/characters entities/bonds entities/props entities/locations; do
+    local dirpath="$CAMPAIGN_PATH/$dir"
+    if [[ -d "$dirpath" ]]; then
+      for f in "$dirpath"/*.yaml; do
+        [[ -f "$f" ]] || continue
+        files_checked=$((files_checked + 1))
+        local relpath="${f#$CAMPAIGN_PATH/}"
+        if ! yq '.' "$f" > /dev/null 2>&1; then
+          local err
+          err=$(yq '.' "$f" 2>&1 || true)
+          echo "FAIL: $relpath"
+          echo "  $err"
+          errors=$((errors + 1))
+        else
+          echo "  OK: $relpath"
+        fi
+      done
+    fi
+  done
+
+  echo "---"
+  echo "Files checked: $files_checked"
+  if [[ $errors -gt 0 ]]; then
+    echo "ERRORS: $errors files failed validation"
+    return 1
+  else
+    echo "All files valid"
+    return 0
+  fi
+}
+
 case "$DOMAIN" in
   arc)        cmd_arc "$ACTION" "$@" ;;
   facts)      cmd_facts "$ACTION" "$@" ;;
@@ -1225,5 +1287,6 @@ case "$DOMAIN" in
   episode)    cmd_episode "$ACTION" "$@" ;;
   trajectory) cmd_trajectory "$ACTION" "$@" ;;
   condition)  cmd_condition "$ACTION" "$@" ;;
+  validate)   cmd_validate ;;
   *)          usage ;;
 esac

@@ -1,5 +1,64 @@
 # Human Review
 
+## Work Assay Creation (Spec Phase)
+Date: 2026-03-16
+Session: (current)
+
+### What Was Done
+Design spec for three-stage post-completion pipeline: rearmatter → summarizer → assay. No code written — spec and graph registration only.
+
+### Files Created
+- `docs/superpowers/specs/2026-03-16-work-assay-creation-design.md` — Full design spec
+- `.ai/input/rearmatter-spec.md` — Rearmatter block format (7 fields, inline YAML)
+- `.ai/input/summarizer-prompt.md` — Mesh boundary summarizer prompt
+- `.ai/input/assay-schema.ts` — Assay TypeScript type definitions
+- `.ai/know/features/work-assay-creation/` — Feature directory (overview, qa, todo, plan, spec)
+
+### Verification Steps
+
+#### 1. Spec-graph feature registered
+```bash
+know -g .ai/know/spec-graph.json get feature:work-assay-creation
+```
+- [ ] Feature exists with description mentioning three-stage pipeline
+
+#### 2. Feature linked to objectives
+```bash
+know -g .ai/know/spec-graph.json graph uses feature:work-assay-creation --recursive
+```
+- [ ] Shows observe-behavior, augmented-thinking, reproducible-workflows, user:ai-enthusiast
+
+#### 3. References registered
+```bash
+know -g .ai/know/spec-graph.json graph used-by feature:work-assay-creation
+```
+- [ ] Shows: configuration:work-assay-config, data-model:rearmatter-block, data-model:assay-record, business_logic:post-completion-injection, acceptance_criterion:assay-delivery, constraint:rearmatter-field-invariant
+
+#### 4. Phase assignment
+```bash
+know -g .ai/know/spec-graph.json phases list | grep work-assay
+```
+- [ ] Shows in Phase III with status build-ready
+
+#### 5. Input specs readable
+```bash
+head -5 .ai/input/rearmatter-spec.md
+head -5 .ai/input/summarizer-prompt.md
+head -5 .ai/input/assay-schema.ts
+```
+- [ ] All three files present and readable
+
+#### 6. Design spec review
+```bash
+cat docs/superpowers/specs/2026-03-16-work-assay-creation-design.md | head -30
+```
+- [ ] Review: rearmatter uses `---` delimiter (not fenced blocks)
+- [ ] Review: delivery is synchronous (summarizer blocks with timeout)
+- [ ] Review: user-facing messages get inline rearmatter/assay, internal get links
+- [ ] Review: summarizer config uses named definitions (`summarizers:` block)
+
+---
+
 ## HITL Routing Reinject
 Date: 2026-03-16
 Session: (current)
