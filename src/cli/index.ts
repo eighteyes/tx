@@ -24,6 +24,7 @@ import { inbox } from './inbox.ts';
 import { forensics } from './forensics.ts';
 import { agentHelp } from './agent-help.ts';
 import { meshCmd } from './mesh-cmd.ts';
+import { dynapromptCli } from './dynaprompt.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -739,6 +740,10 @@ async function main() {
 
     case 'mesh-cmd':
       await meshCmd(args);
+      break;
+
+    case 'dynaprompt':
+      await dynapromptCli(args);
       break;
 
     default:

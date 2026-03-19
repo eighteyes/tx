@@ -556,6 +556,33 @@ existing work.
   }
 
   /**
+   * Build fragment catalog section for dynaprompt
+   * Lists available prompt fragments with descriptions
+   */
+  buildFragmentCatalogSection(fragments: Array<{ name: string; description: string | null }>): string {
+    if (fragments.length === 0) {
+      return '';
+    }
+
+    const parts: string[] = [];
+    parts.push('# Available Prompt Fragments\n');
+    parts.push('You have access to adaptive prompt fragments that can be injected mid-session via `tx dynaprompt inject`.\n');
+    parts.push('**Fragment Catalog:**\n');
+
+    for (const fragment of fragments) {
+      if (fragment.description) {
+        parts.push(`- **${fragment.name}**: ${fragment.description}`);
+      } else {
+        parts.push(`- **${fragment.name}**`);
+      }
+    }
+
+    parts.push('\nTo inject a fragment during execution:\n```bash\ntx dynaprompt inject <mesh> <agent> <fragment-name>\n```');
+
+    return parts.join('\n');
+  }
+
+  /**
    * Build consolidated file section: manifest contract + preloaded file contents
    * Deduplicates content that appears in both manifest reads and preloaded files
    */

@@ -53,6 +53,7 @@ import { NudgeDetector } from './nudge-detector.ts';
 import { ReliabilityManager } from '../reliability/reliability-manager.ts';
 import { AgentCheckpointStore } from '../dynaprompt/stores/checkpoint-store.ts';
 import { AgentProgressStore } from '../dynaprompt/stores/progress-store.ts';
+import { FragmentRegistry } from '../dynaprompt/fragment-registry.ts';
 import YAML from 'yaml';
 
 /**
@@ -3853,6 +3854,38 @@ Please advise the agent or check mesh configuration.`;
       //        messaging+routing (END)
       // ============================================================
 
+      // --- Load fragment catalog for dynaprompt (if configured) ---
+      const fragmentRegistry = new FragmentRegistry();
+      let fragmentCatalogSection = '';
+
+      if (meshConfig && agent) {
+        // Determine fragment directories
+        const meshDir = meshConfig._basePath
+          ? path.join(meshConfig._basePath, 'fragments')
+          : path.join(this.config.workDir, 'meshes', meshName, 'fragments');
+        const agentDir = meshConfig._basePath
+          ? path.join(meshConfig._basePath, 'agents', agent.name, 'fragments')
+          : path.join(this.config.workDir, 'meshes', meshName, 'agents', agent.name, 'fragments');
+
+        fragmentRegistry.load(
+          { fragments: meshConfig.fragments },
+          { fragments: agent.fragments },
+          meshDir,
+          agentDir
+        );
+
+        const fragments = fragmentRegistry.list();
+        if (fragments.length > 0) {
+          fragmentCatalogSection = this.promptInjector.buildFragmentCatalogSection(
+            fragments.map((f) => ({ name: f.name, description: f.description }))
+          );
+          log.info('dispatcher', 'Fragment catalog loaded for agent', {
+            agentId,
+            fragmentCount: fragments.length,
+          });
+        }
+      }
+
       // --- Load raw agent prompt ---
       let agentPromptText: string;
 
@@ -4154,6 +4187,11 @@ Please advise the agent or check mesh configuration.`;
       // -- Instructions --
       // 7. Agent prompt (with template tokens already replaced)
       promptSections.push(agentPromptText);
+
+      // 7.5. Fragment catalog (dynaprompt)
+      if (fragmentCatalogSection) {
+        promptSections.push(fragmentCatalogSection);
+      }
 
       // 8-10. Rearmatter, parallel instance, messaging+routing — appended below after gates
 

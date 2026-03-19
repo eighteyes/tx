@@ -815,7 +815,8 @@ export class MessageConsumer extends EventEmitter {
       }
 
       const targetMesh = toAgent.split('/')[0];
-      if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/')) {
+      // Allow system/dynaprompt messages (fragment injections) through
+      if (toAgent.startsWith('system/') && !fromAgent?.startsWith('system/') && fromAgent !== 'system/dynaprompt') {
         log.warn('consumer', 'Dropped message to system/* (routing mistake)', {
           from: fromAgent,
           to: toAgent,
