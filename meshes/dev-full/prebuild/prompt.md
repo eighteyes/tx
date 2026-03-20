@@ -40,7 +40,25 @@ Every criterion must be observable and binary. No subjective language.
 
 ## Step 4: Request human approval
 
-Send a message to `core/core` with `status: blocked`. Include the full criteria in the message body so the human can review without reading a separate file.
+Send a message to `core/core` with `status: blocked`. The message MUST include:
+
+### Feature Overview (required)
+
+Before the criteria, include a plain-english overview the human can scan in 30 seconds:
+
+1. **What it does** — 2-3 sentences explaining the feature in non-technical terms
+2. **How it works** — A step-by-step flow or ASCII diagram showing the pipeline/lifecycle
+3. **What gets built** — List of new files/components with one-line descriptions
+4. **Scope** — Number of criteria, estimated complexity (small/medium/large)
+
+Example flow format:
+```
+trigger → stage 1 (what) → stage 2 (what) → output (where)
+```
+
+### Criteria Summary
+
+After the overview, include a grouped summary of criteria counts by category. The human should be able to approve from this message alone without reading separate files.
 
 ## Step 5: Handoff
 

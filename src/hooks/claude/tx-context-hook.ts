@@ -192,14 +192,16 @@ function outputStatusBar(): void {
 // ─── Hook context mode (default) ──────────────────────────────────────
 
 function outputHookContext(): void {
-  // 1. Check runtime config — only fire for 'hook' inbox mode
+  // 1. Check runtime config — fire for 'hook' and 'inject' modes
+  //    In 'inject' mode the hook acts as fallback: successful injections
+  //    advance hook-state.json, so only un-injected messages surface here.
   const runtime = readRuntime();
   if (!runtime) {
     process.exit(0);
   }
   // Backward compat: old runtime.json has inject:true/false, new has inbox:'hook'|'inject'|'ask'
   const inboxMode = runtime.inbox ?? (runtime.inject ? 'hook' : 'ask');
-  if (inboxMode !== 'hook') {
+  if (inboxMode === 'ask') {
     process.exit(0);
   }
 
