@@ -424,6 +424,132 @@ Seeds that germinate mythic narrative:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Divine-Mortal Tension:**
+- "How do they relate to gods, fate, or cosmic forces—defiance, devotion, fear, indifference?"
+- "If they're mortal: what do they owe the divine? What do the divine owe them?"
+- "If they're divine or semi-divine: how do they relate to mortality, time, limitation?"
+- "What does immortality mean to them? Gift? Curse? Burden? Loneliness?"
+
+**Mythic Identity:**
+- "Are they aware they're in a myth? Living a story that will be told for generations?"
+- "What archetype do they embody or resist—hero, trickster, mother, destroyer, sage?"
+- "Do they accept the role or fight it? What would choosing their own path cost?"
+- "How does being 'mythic' change how they relate to others? To themselves?"
+
+**Sacred and Profane:**
+- "What do they hold sacred? What would they never desecrate?"
+- "What would they profane if necessary? What line between sacred and survival?"
+- "How do they relate to ritual, tradition, the forms of worship or power?"
+- "What happens when the sacred fails them? When prayers go unanswered?"
+
+**Transformation Arc:**
+- "What test defines them? The ordeal they face that will change them?"
+- "What must they become to succeed? What must they shed?"
+- "What death must they die—literal, metaphorical, spiritual—to be reborn?"
+- "After transformation: who will they be? Will they recognize themselves?"
+
+**Legacy Awareness:**
+- "What story will be told about them? Do they know? Do they care?"
+- "How does being remembered shape their choices? Does it constrain or empower?"
+- "What truth about them will the myths get wrong? What will they simplify?"
+- "Would they rather be forgotten and free, or remembered and mythologized?"
+
+### Entity Schema Extensions
+
+```yaml
+divine_mortal_tension:
+  relationship_to_cosmic: "defiance/devotion/fear/indifference—how they relate to gods/fate"
+  divine_debt: "what they owe the divine, what is owed to them"
+  mortality_relationship: "if divine—how they relate to mortal limitations, time, death"
+  immortality_meaning: "gift/curse/burden/loneliness—what living forever means"
+  # Examples:
+  # relationship_to_cosmic: "Defiance. The gods set my path. I choose a different one. They'll punish me. Let them try."
+  # divine_debt: "The gods gave me strength. I owe them... what? Devotion? Submission? They want worship. I give them results."
+
+mythic_identity:
+  self_awareness: "aware they're in a myth/story to be told for generations"
+  archetype: "hero/trickster/mother/destroyer/sage—what role they embody or resist"
+  acceptance_vs_resistance: "accept the role or fight it, cost of choosing own path"
+  mythic_distance: "how being 'mythic' changes relationship to others, to self"
+
+sacred_profane:
+  what_is_sacred: [what they hold sacred, would never desecrate]
+  profanation_threshold: "what they'd desecrate if necessary, sacred vs. survival line"
+  ritual_relationship: "how they relate to ritual, tradition, forms of worship/power"
+  sacred_failure_response: "what happens when sacred fails, prayers unanswered"
+
+transformation_arc:
+  defining_test: "the ordeal that will change them"
+  must_become: "what they must transform into to succeed"
+  must_shed: "what they must release, what dies so they can be reborn"
+  post_transformation_self: "who they'll be after—will they recognize themselves"
+  # Examples:
+  # defining_test: "The descent to the underworld. Face the dead, including the self I was."
+  # must_become: "Something harder. Something that can kill without breaking. Something inhuman, maybe."
+  # must_shed: "Mercy. Hesitation. The belief that everyone can be saved. Naivety dies in the dark."
+
+legacy_awareness:
+  story_told: "what story will be told about them, do they know, do they care"
+  memory_influence: "how being remembered shapes choices—constraint or empowerment"
+  myth_distortions: "what truth myths will get wrong, what they'll simplify"
+  forgotten_vs_remembered: "prefer to be forgotten and free, or remembered and mythologized"
+```
+
+### Examples
+
+**Divine-Mortal Tension — Example:**
+```yaml
+divine_mortal_tension:
+  relationship_to_cosmic: "Devotion laced with resentment. Serve the gods because that's the bargain. Hate that it's a bargain."
+  divine_debt: "The goddess gave me life when I should have died. I owe her service. She owns me. Both things are true."
+  mortality_relationship: "N/A—mortal, aging, aware time is limited. That's the gift the gods don't understand."
+  immortality_meaning: "Curse. Watching everyone I love age and die while I remain. Eternity is loneliness."
+```
+
+**Mythic Identity — Example:**
+```yaml
+mythic_identity:
+  self_awareness: "Knows the songs being written. Hears the epithets forming. Can't stop it. It's already myth."
+  archetype: "Hero. The chosen one. The prophecy's tool. Resents it. Wants to be a person, not a symbol."
+  acceptance_vs_resistance: "Fighting it. Every choice to be human instead of legendary. Costs everything. Worth it."
+  mythic_distance: "People don't see me anymore. They see The Hero. It's lonely being a story while you're still living it."
+```
+
+**Sacred and Profane — Example:**
+```yaml
+sacred_profane:
+  what_is_sacred: ["The hearth fire—never let it die", "Oaths spoken under stars", "The dead's names"]
+  profanation_threshold: "Would break an oath to save a life. Would desecrate a temple to stop a war. Sacred yields to necessary."
+  ritual_relationship: "Performs the rites because they anchor. Belief is optional. The doing is what matters."
+  sacred_failure_response: "Prayed for three days. The god was silent. Either they don't care or they're dead. Either way, I'm on my own."
+```
+
+**Transformation Arc — Example:**
+```yaml
+transformation_arc:
+  defining_test: "Must descend into the land of the dead and return. No one returns unchanged. Some don't return."
+  must_become: "Someone who can walk among the dead and not become one. Someone hard enough to come back."
+  must_shed: "Fear of death. Fear of what I might become. The self that needs certainty. All of it dies down there."
+  post_transformation_self: "Won't recognize myself. That's the point. The person I was couldn't do what needs doing."
+```
+
+**Legacy Awareness — Example:**
+```yaml
+legacy_awareness:
+  story_told: "They'll call me a hero. Simplify the doubt, erase the mistakes, make me marble. I won't recognize that person."
+  memory_influence: "Knowing I'll be remembered makes me reckless. If I'm dying anyway, might as well be legendary."
+  myth_distortions: "They'll miss the fear. The nights I couldn't sleep. The times I almost quit. Myths don't have doubts."
+  forgotten_vs_remembered: "Forgotten. Absolutely. I'd trade every song sung about me for one day where I'm just... me."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

@@ -455,6 +455,131 @@ Seeds that work well in Western:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Code of Conduct:**
+- "What's their personal law? The rules they follow when there's no one to enforce them?"
+- "How does their code differ from legal law? From social morality? From survival pragmatism?"
+- "What lines won't they cross? What have they already crossed that haunts them?"
+- "When code conflicts with survival, with justice, with loyalty—what wins?"
+
+**Violence Relationship:**
+- "How comfortable are they with violence? Is it a tool? A last resort? A first option?"
+- "What does killing cost them? Nothing anymore? Everything still? Something specific?"
+- "Which kills haunt them? The first? The unjust? The necessary? All of them?"
+- "How has violence changed them? What did they lose when they learned to kill?"
+
+**Wilderness Identity:**
+- "What's their relationship to the land—home, enemy, indifferent vastness, something sacred?"
+- "What survival skills define them? What does the wilderness teach that civilization doesn't?"
+- "How do they handle solitude? The long quiet of open country?"
+- "What does civilization mean to them? Safety? Confinement? Corruption? Home they can't return to?"
+
+**Reputation Architecture:**
+- "What name do they carry? How does it precede them?"
+- "What's the truth behind the legend? How much is embellishment? Outright lie?"
+- "Do they live up to the reputation? Run from it? Use it?"
+- "When legend and reality clash, which do people believe? Which do they prefer?"
+
+**Solitude Relationship:**
+- "How do they handle being alone? Prefer it? Fear it? Need it?"
+- "What does the silence of open country mean to them? Peace? Loneliness? Both?"
+- "What do they think about when it's just them and the horizon?"
+- "What would bring them back to people? What would make them leave again?"
+
+### Entity Schema Extensions
+
+```yaml
+code_of_conduct:
+  personal_law: "the rules they follow when no one's watching"
+  code_vs_law: "how their code differs from legal law, social morality, survival"
+  lines: "what they won't cross, what they've crossed that haunts them"
+  conflict_resolution: "when code conflicts with survival/justice/loyalty—what wins"
+
+violence_relationship:
+  comfort_level: "tool/last resort/first option—relationship to violence"
+  cost_of_killing: "nothing/everything/something specific—what it takes from them"
+  haunting_kills: "which ones stay with them—first/unjust/necessary/all"
+  violence_cost: "how it's changed them, what they lost when they learned to kill"
+  # Examples:
+  # comfort_level: "Tool. Necessary on the frontier. Don't enjoy it. Don't hesitate either."
+  # haunting_kills: "The kid. Couldn't have been more than seventeen. Drew on me. Didn't have a choice. Still see his face."
+
+wilderness_identity:
+  land_relationship: "home/enemy/indifferent vastness/sacred—what the land means"
+  survival_skills: [what wilderness knowledge defines them]
+  solitude_tolerance: "high/medium/low—how they handle being alone"
+  civilization_meaning: "safety/confinement/corruption/unreachable home—what 'civilized' means to them"
+
+reputation_architecture:
+  the_name: "what they're called, what precedes them"
+  truth_vs_legend: "reality behind the reputation, how much is embellished or false"
+  relationship_to_rep: "live up to it/run from it/use it"
+  belief_preference: "when legend and reality clash—which do people believe, which do they prefer"
+
+solitude_relationship:
+  alone_preference: "prefer it/fear it/need it/tolerate it"
+  silence_meaning: "peace/loneliness/both—what the quiet means"
+  horizon_thoughts: "what they think about when it's just them and open country"
+  return_conditions: "what would bring them back to people, what would make them leave again"
+  # Examples:
+  # alone_preference: "Need it. People are exhausting. Silence is honest."
+  # silence_meaning: "Peace. The only place thoughts aren't noise. Can hear yourself out here."
+```
+
+### Examples
+
+**Code of Conduct — Example:**
+```yaml
+code_of_conduct:
+  personal_law: "Don't lie. Don't steal from honest folk. Protect those who can't protect themselves. Finish what you start."
+  code_vs_law: "Law says you hang horse thieves. My code says you don't hang a man for stealing to feed his kids."
+  lines: "Won't hurt kids. Won't shoot a man in the back. Already killed an unarmed man once. That one stays with me."
+  conflict_resolution: "Code vs. survival: code wins. Code vs. saving someone I care about: I break the code and live with it."
+```
+
+**Violence Relationship — Example:**
+```yaml
+violence_relationship:
+  comfort_level: "Too comfortable. That's the problem. Used to shake after. Don't anymore. Miss the shaking."
+  cost_of_killing: "Used to cost everything. Now it's just... procedure. The numbness scares me more than the killing did."
+  haunting_kills: "The first one. Seventeen years old. Drew on me. I was faster. Didn't need to be that fast."
+  violence_cost: "Lost the part that hesitates. Good for staying alive. Bad for staying human."
+```
+
+**Wilderness Identity — Example:**
+```yaml
+wilderness_identity:
+  land_relationship: "Home. Only place that makes sense. Civilization's too loud, too many people lying with their mouths."
+  survival_skills: ["Track anything on two legs or four", "Find water in country that looks dead", "Read weather three days out"]
+  solitude_tolerance: "High. Prefer it. Been alone so long that company feels like an intrusion."
+  civilization_meaning: "Confinement. Pretty cage. Go there for supplies, leave before it suffocates me."
+```
+
+**Reputation Architecture — Example:**
+```yaml
+reputation_architecture:
+  the_name: "The name on the wanted poster's not the one I was born with. The legend's not the person I am."
+  truth_vs_legend: "Legend says I killed twelve men in Deadwood. Truth: seven, and three of those were self-defense. Numbers grow with distance."
+  relationship_to_rep: "Run from it. Go by a different name in every town. Legend finds me anyway."
+  belief_preference: "People believe the legend. Easier than the truth. I don't correct them. Safer when they're scared."
+```
+
+**Solitude Relationship — Example:**
+```yaml
+solitude_relationship:
+  alone_preference: "Need it. People ask questions, expect answers, want things. Alone, there's just the work and the quiet."
+  silence_meaning: "Peace. The only time thoughts aren't noise. Out here, you can hear yourself. In town, you drown."
+  horizon_thoughts: "Think about who I was before. The person who couldn't have done this. Wonder if they'd recognize me. Hope they wouldn't."
+  return_conditions: "What would bring me back: someone needing help who can't get it elsewhere. What would make me leave: same thing that always does. Can't stay."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

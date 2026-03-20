@@ -398,6 +398,131 @@ Seeds that work well in historical fiction:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Period Constraints:**
+- "What social rules govern their life? What can't they say, do, or be in this era?"
+- "How does their gender, class, race, religion limit or empower them in this time and place?"
+- "What freedoms do they lack that they're aware of? What freedoms do they not even know to want?"
+- "What would ruin them socially? Economically? Legally? Spiritually?"
+
+**Social Performance:**
+- "What's their public persona vs. private self? How wide is the gap?"
+- "What mask does this era demand they wear? How well do they wear it?"
+- "When are they performing propriety, and when are they actually believing it?"
+- "What would happen if the mask slipped? Who would see? Who would care?"
+
+**Forbidden Desires:**
+- "What do they want that the era won't permit? Love? Knowledge? Freedom? Power?"
+- "How do they pursue it despite prohibition? Secretly? Defiantly? Through proxies?"
+- "What's the cost of wanting the forbidden? Reputation? Safety? Soul?"
+- "If they could have it, would it be worth what they'd lose?"
+
+**Class Consciousness:**
+- "How aware are they of their station? Comfortable? Resentful? Striving to rise or fall?"
+- "How do they navigate hierarchy—deference, defiance, manipulation, performance?"
+- "What class assumptions do they carry? What prejudices about those above or below?"
+- "What would losing their position mean? What would gaining one cost?"
+
+**Temporal Knowledge:**
+- "What skills/knowledge are specific to this period that define them?"
+- "What daily rituals of the era structure their life? Morning routines? Religious observance?"
+- "What do they know how to do that's becoming obsolete? That's newly essential?"
+- "How fluent are they in the material culture of the time—clothes, food, tools, transport?"
+
+### Entity Schema Extensions
+
+```yaml
+period_constraints:
+  social_rules: "what they cannot say/do/be in this era"
+  axis_of_constraint: "how gender/class/race/religion limits or empowers them"
+  unfreedoms: "what they know they lack vs. what they can't imagine having"
+  ruin_conditions: "what would destroy them—socially/economically/legally/spiritually"
+
+social_performance:
+  public_vs_private: "the gap between performed self and actual self"
+  the_mask: "what persona this era demands, how well they wear it"
+  belief_vs_performance: "when they're acting propriety vs. actually believing it"
+  slip_consequences: "what happens if the mask falls, who sees, who cares"
+  # Examples:
+  # public_vs_private: "Public: dutiful daughter of the house. Private: reads philosophy, argues theology, resents her confinement."
+  # the_mask: "Perfect lady. Never raises voice. Smiles when dismissed. Seethes internally."
+
+forbidden_desires:
+  what_they_want: "the thing the era forbids (love/knowledge/freedom/power)"
+  how_they_pursue: "secretly/defiantly/through proxies—method of pursuing the forbidden"
+  cost: "reputation/safety/soul—what wanting costs them"
+  worth_calculation: "if they could have it, would it be worth the cost"
+
+class_consciousness:
+  station_awareness: "comfortable/resentful/striving/falling—how they relate to their position"
+  hierarchy_navigation: "deference/defiance/manipulation/performance—how they move through rank"
+  class_assumptions: [prejudices about those above or below them]
+  position_stakes: "what losing station means, what gaining it would cost"
+
+temporal_knowledge:
+  period_skills: [skills/knowledge specific to this era that define them]
+  daily_rituals: [morning routines, religious observance, era-specific habits]
+  obsolescence_awareness: "what they know that's dying, what's newly essential"
+  material_fluency: "how well they navigate clothes/food/tools/transport of the time"
+  # Examples:
+  # period_skills: ["Letter writing with proper court etiquette", "Needlework (expected, resented)", "Latin (not expected, secret pride)"]
+  # daily_rituals: ["Morning prayers (performed for household)", "Chaperoned walks (only freedom)", "Evening reading (actual solace)"]
+```
+
+### Examples
+
+**Period Constraints — Example:**
+```yaml
+period_constraints:
+  social_rules: "Cannot own property. Cannot testify in court. Cannot refuse a husband chosen by father."
+  axis_of_constraint: "Woman of middling gentry. Gender closes every door except marriage. Class gives education but not autonomy."
+  unfreedoms: "Knows she can't vote, own, or choose. Can't imagine a world where she could. (But beginning to.)"
+  ruin_conditions: "Scandal would destroy her. Refusal of suitable match would impoverish her. Speaking her mind publicly would end her."
+```
+
+**Social Performance — Example:**
+```yaml
+social_performance:
+  public_vs_private: "Public: accomplished, agreeable, ornamental. Private: sharp-tongued, opinionated, hungry for more."
+  the_mask: "The perfect lady. Wears it well because the punishment for dropping it is too high."
+  belief_vs_performance: "Performs modesty, doesn't believe in it. Actually believes in duty to family (conflicted about that)."
+  slip_consequences: "If the mask slipped: family humiliated, marriage prospects ruined, might be sent away. Aunt would see. Aunt suspects already."
+```
+
+**Forbidden Desires — Example:**
+```yaml
+forbidden_desires:
+  what_they_want: "To study medicine. To use their mind for something beyond managing a household."
+  how_they_pursue: "Secretly. Reads her brother's medical texts. Attends lectures dressed as a man. It's insane and she can't stop."
+  cost: "If discovered: ruin, exile, possibly institutionalized for 'hysteria.' Already risking everything."
+  worth_calculation: "Yes. Even if it destroys her. The alternative is dying slowly of boredom and calling it propriety."
+```
+
+**Class Consciousness — Example:**
+```yaml
+class_consciousness:
+  station_awareness: "Resentful but pragmatic. Born to middle gentry, not high enough to matter, too high to work honestly."
+  hierarchy_navigation: "Performance with superiors (perfect deference). Defiance with equals (subtle). Kindness with inferiors (genuine)."
+  class_assumptions: ["Aristocracy: corrupt, useless, powerful", "Servants: more honest than employers", "Merchants: vulgar but free in ways gentry aren't"]
+  position_stakes: "Losing station: poverty, labor, freedom (paradoxically). Gaining: more gilded cage, less truth."
+```
+
+**Temporal Knowledge — Example:**
+```yaml
+temporal_knowledge:
+  period_skills: ["Court etiquette (hated necessity)", "Herbal medicine (secret passion)", "Proper correspondence (uses to smuggle real thoughts)"]
+  daily_rituals: ["Morning: prayers (hollow), dressing (armor)", "Afternoon: calls (performance)", "Evening: needlework (thinks while hands are busy)"]
+  obsolescence_awareness: "Letter writing dying to telegrams. Glad. Formal correspondence is a prison."
+  material_fluency: "Navigates corsets, calling cards, chaperonage. Knows which fork. Loathes knowing."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

@@ -44,7 +44,19 @@ workspace: {workspace}
 
 ## Campaign Data Access
 
-**All campaign YAML writes go through `campaign.sh`.** Never write directly to arc.yaml, continuity.yaml, or trajectories.yaml. Timeline.md remains a manual markdown append.
+**CRITICAL: NEVER use yq to write to campaign-level files. ALL writes go through campaign.sh.**
+
+This includes:
+- arc.yaml — use `campaign.sh arc update`
+- continuity.yaml — use `campaign.sh facts`
+- trajectories.yaml — use `campaign.sh trajectory`
+- Bond files — use `campaign.sh bond update` or `campaign.sh bond episode`
+- Character trait pressures — use `campaign.sh entity traits`
+- Conditions — use `campaign.sh condition set` or `campaign.sh condition mutate`
+
+Timeline.md remains a manual markdown append (not managed by campaign.sh).
+
+**Why this matters:** Direct yq writes produce malformed YAML (unquoted colons, unescaped apostrophes, entries appended to wrong sections). campaign.sh handles all quoting and validation automatically.
 
 ```bash
 # Script location — use this path in all calls
@@ -72,6 +84,15 @@ $CAMPAIGN_SCRIPT $CP facts add-factoid --turn=N --factoid="Factoid used" --conte
 # Entity episodes
 $CAMPAIGN_SCRIPT $CP episode append {entity_file} --turn=N --event="5-15 word description" --trait-changes="DESPERATE:+1,WARM:-1"
 
+# Entity traits
+$CAMPAIGN_SCRIPT $CP entity traits --entity=character_id --trait=PROTECTIVE --pressure=8 --note="breakthrough via architecture"
+
+# Bond updates
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=power --h=7 --k=3
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=sexual --value=6
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --normalized-add="gamified reward architecture"
+$CAMPAIGN_SCRIPT $CP bond episode --bond=heather_kaitlin --turn=93 --event="Library breakthrough" --dimension-changes="power h:7/k:3 sustained"
+
 # Trajectories
 $CAMPAIGN_SCRIPT $CP trajectory add --id=trajectory_id --desc="Outcome when fires" --deadline=N --source="Source"
 $CAMPAIGN_SCRIPT $CP trajectory fire --id=trajectory_id --turn=N --outcome="What happened"
@@ -81,6 +102,8 @@ $CAMPAIGN_SCRIPT $CP trajectory interrupt --id=trajectory_id --turn=N --reason="
 $CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --type=TYPE --phase=PHASE --intensity=TEXT
 $CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --phase=NEW_PHASE --physical="new state" --behavioral="new behavior"
 $CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --field=manifestations.speech --value="new speech pattern"
+$CAMPAIGN_SCRIPT $CP condition mutate --entity=heather_kaitlin --condition=nre --field=behavioral --value="gamified productivity architecture"
+$CAMPAIGN_SCRIPT $CP condition mutate --entity=kaitlin --condition=thesis_pressure --field=intensity --value="4/10"
 $CAMPAIGN_SCRIPT $CP condition get {entity_file} --id=ID
 $CAMPAIGN_SCRIPT $CP condition list {entity_file} --active
 $CAMPAIGN_SCRIPT $CP condition resolve {entity_file} --id=ID --turn=N --resolved-into="what it became"
@@ -309,7 +332,7 @@ Then append prologue as Turn 0, Day 1.
 
 ## Bond Management
 
-When relationship intensity changes this turn, update the bond entity.
+When relationship intensity or dynamics change this turn, update the bond entity via campaign.sh.
 
 ### Bond Entity Location
 ```
@@ -320,11 +343,28 @@ When relationship intensity changes this turn, update the bond entity.
 
 ### When to Update
 
-| Trigger | Update |
-|---------|--------|
-| Resolution shows bond intensity change | Update `intensity` field |
-| Significant relationship event | Append to `episodes[]` |
-| Bond-specific trait emerges | Add to `traits.evolved` |
+| Trigger | Update Command |
+|---------|----------------|
+| Bond dimension changes (power, sexual, trust, familiarity) | `campaign.sh bond update` |
+| New normalized act emerges | `campaign.sh bond update --normalized-add` |
+| Significant relationship event | `campaign.sh bond episode` |
+
+### Update Commands
+
+```bash
+# Update bond dimensions
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=power --h=7 --k=3
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=sexual --value=6
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=trust --bilateral=5
+
+# Add normalized act
+$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --normalized-add="gamified reward architecture"
+
+# Append episode
+$CAMPAIGN_SCRIPT $CP bond episode --bond=heather_kaitlin --turn=93 \
+  --event="Library breakthrough — bratting weaponized into thesis productivity" \
+  --dimension-changes="power h:7/k:3 sustained, trust deepens"
+```
 
 ### Bond Entity Format
 
@@ -332,19 +372,21 @@ When relationship intensity changes this turn, update the bond entity.
 id: npc_protagonist
 entity_type: bond
 participants: [npc, protagonist]
-intensity: {new intensity value}
 
-traits:
-  evolved:
-    "{BOND_TRAIT}": {pressure: N}
-  voices:
-    "{BOND_TRAIT}":
-      speaks_as: "How this bond dynamic voices itself"
+dimensions:
+  power: {h: 7, k: 3}        # asymmetric
+  sexual: 6                   # simple value
+  trust: {bilateral: 5}       # symmetric
+  familiarity: {bilateral: 5}
+
+normalized_acts:
+  - "public hand-holding"
+  - "gamified reward architecture"
 
 episodes:
   - turn: {N}
     event: "{what happened to the bond}"
-    intensity_change: "{before} → {after}"
+    dimension_changes: "{power h:7/k:3, trust deepens}"
 ```
 
 ### Creating New Bonds
@@ -352,7 +394,7 @@ episodes:
 If a bond entity doesn't exist for a relationship that changes:
 1. Create `entities/bonds/` directory if needed
 2. Create bond file with alphabetical naming
-3. Initialize with current intensity and first episode
+3. Initialize manually with basic structure, then use campaign.sh to populate
 
 ## Prop Management
 
@@ -625,15 +667,23 @@ $CAMPAIGN_SCRIPT $CP condition set {entity_file} \
   --phase={new_phase} --intensity="{new}" \
   --physical="{updated body state}"
 
-# Mutate a specific nested field
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
-  --id={condition_id} --turn={N} \
-  --field=manifestations.speech --value="{new speech pattern}"
+# Mutate a specific field (simpler syntax, auto-finds entity file)
+$CAMPAIGN_SCRIPT $CP condition mutate --entity={character_or_bond_id} \
+  --condition={condition_id} --field={field_path} --value="{new value}"
+# Examples:
+$CAMPAIGN_SCRIPT $CP condition mutate --entity=heather_kaitlin --condition=nre \
+  --field=behavioral --value="gamified productivity architecture"
+$CAMPAIGN_SCRIPT $CP condition mutate --entity=kaitlin --condition=thesis_pressure \
+  --field=intensity --value="4/10"
 
 # Resolve when condition ends
 $CAMPAIGN_SCRIPT $CP condition resolve {entity_file} \
   --id={condition_id} --turn={N} --resolved-into="{what it became}"
 ```
+
+**When to use `condition mutate` vs `condition set`:**
+- Use `mutate` for quick single-field updates (simpler, auto-finds entity)
+- Use `set` for multi-field updates or when you need turn tracking
 
 ### Phase Evolution Guidelines
 
@@ -755,8 +805,12 @@ episodes:
    - Appends to `episodes[]`
    - Creates/updates `traits.evolved` entries with pressure, baseline, decay_type, last_pressured
    - Only updates `last_pressured` when pressure increases
-3. For trait changes NOT covered by episode append (voice evolution, metaphor codification):
-   - Update entity file directly via yq
+3. For trait pressure updates without episode context:
+   ```bash
+   $CAMPAIGN_SCRIPT $CP entity traits --entity={id} --trait={TRAIT} --pressure={N} --note="optional context"
+   ```
+4. For trait changes NOT covered by episode append or entity traits (voice evolution, metaphor codification):
+   - Update entity file directly via yq (these are rare, structural changes to trait definitions)
 
 ## Emergent Vocabulary Codification
 
@@ -869,23 +923,16 @@ $CAMPAIGN_SCRIPT $CP arc get
 After completing ALL campaign.sh writes for a turn, validate that campaign files still parse:
 
 ```bash
-# Validate arc.yaml parses cleanly
-$CAMPAIGN_SCRIPT $CP arc get > /dev/null 2>&1
-if [[ $? -ne 0 ]]; then
-  echo "VALIDATION FAILED: arc.yaml is malformed YAML"
-  # Read arc.yaml, find the syntax error, fix quoting, re-validate
-fi
-
-# Validate continuity.yaml parses cleanly
-$CAMPAIGN_SCRIPT $CP facts query --term="test" > /dev/null 2>&1
-if [[ $? -ne 0 ]]; then
-  echo "VALIDATION FAILED: continuity.yaml is malformed YAML"
-fi
+# Run full campaign validation as LAST step before completion
+$CAMPAIGN_SCRIPT $CP validate
 ```
 
-Run this validation after every turn. If validation fails, fix the file before routing completion.
+If ANY file fails validation, fix it before routing completion. Read the failing file, find the syntax error, fix it, re-run validate.
 
-**Common cause of malformed YAML:** unquoted string values containing colons. Any note, description, or free-text field with a colon mid-text MUST be quoted (single or double quotes). campaign.sh handles quoting automatically — direct yq writes do not.
+**Common causes of malformed YAML:**
+1. **Unquoted colons** — `note: Turn 50 reframe — 'sex as weapon'` breaks because of the colon after `reframe`. Quote the value.
+2. **Unescaped apostrophes** — `'hasn't'` must be `'hasn''t'` inside single quotes.
+3. **Appending to wrong section** — episode entries inside conditions, factoids inside appearances. Always verify the target key path before appending.
 
 **If campaign.sh itself fails:** Do NOT fall back to raw yq writes. Report the failure and stop. Raw yq writes without proper quoting break downstream agents that depend on campaign.sh (oracle, gravity, architect).
 

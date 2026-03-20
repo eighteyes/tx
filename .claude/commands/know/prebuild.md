@@ -10,6 +10,8 @@ Validate graph completeness by round-trip spec generation before building.
 
 Validate that spec-graph contains all information needed for build by generating specs from graph and comparing with HITL baseline (.md files). Ensures `/know:build` can work purely from `know gen spec --format xml` without reading .md files.
 
+**Arguments**: `$ARGUMENTS` — feature name (e.g., `/know:prebuild authentication`)
+
 **Prerequisites**
 - Feature exists in spec-graph with full dependency chain
 - Feature directory exists at `.ai/know/features/<feature>/` (from `/know:add`)

@@ -472,6 +472,134 @@ Seeds that work well in high fantasy:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Destiny Relationship:**
+- "How do they relate to prophecy or fate—do they resist, embrace, deny its existence?"
+- "If they're 'chosen': do they want this? Did they ask for it? What did prophecy cost them?"
+- "If they're NOT chosen: how do they feel about the one who is? Resentment? Relief? Protectiveness?"
+- "What do they think about free will vs. fate? Has experience taught them anything about that?"
+
+**Magical Identity:**
+- "What's their connection to magic? Born with it? Learned? Stolen? Refused?"
+- "How does magic manifest for them specifically? What does it look/feel/cost?"
+- "What's their relationship to magical power—fear, wonder, tool, curse, birthright?"
+- "What does using magic cost them? What happens when they overextend?"
+
+**Cultural Roots:**
+- "What race, kingdom, faction, culture shaped them? How does it show?"
+- "What traditions do they maintain? Which have they rejected? Why?"
+- "How do they relate to their people's history—proud inheritor, shameful descendant, indifferent individual?"
+- "What cultural assumptions do they carry that they don't even see as assumptions?"
+
+**Honor Architecture:**
+- "What oaths have they taken? To whom? What do those oaths demand?"
+- "What code do they follow—knightly? Religious? Personal? Tribal?"
+- "What would make them break their word? What's unbreakable no matter what?"
+- "When does honor conflict with survival? With love? With the greater good? What do they choose?"
+
+**Quest Psychology:**
+- "What drives them forward when hope fails? Duty? Stubbornness? Love? Spite?"
+- "What memory do they carry that sustains them in the dark?"
+- "What would make them abandon the quest? What line would have to be crossed?"
+- "Who are they doing this for—the world, themselves, someone specific, the dead?"
+
+### Entity Schema Extensions
+
+```yaml
+destiny_relationship:
+  stance: "resist/embrace/deny—how they relate to prophecy or fate"
+  chosen_burden: "if chosen—do they want this, what did it cost them"
+  relationship_to_chosen: "if NOT chosen—how they feel about the one who is"
+  free_will_belief: "what they believe about choice vs. fate, how experience shaped that"
+
+magical_identity:
+  connection_source: "born with it/learned/stolen/refused/awakened"
+  manifestation: "how magic appears for them specifically (visual, sensory, internal)"
+  power_relationship: "fear/wonder/tool/curse/birthright—emotional stance"
+  cost_of_use: "what magic takes from them, consequences of overextension"
+  # Examples:
+  # manifestation: "Silver light that pours from their hands. Smells like ozone and burnt sugar. Leaves them shaking."
+  # cost_of_use: "Physical exhaustion. Major workings require blood. Overuse causes nosebleeds, memory gaps."
+
+cultural_roots:
+  origin_culture: "race/kingdom/faction/people that shaped them"
+  traditions_kept: [which cultural practices they maintain]
+  traditions_rejected: [which they've abandoned and why]
+  historical_relationship: "proud/ashamed/indifferent—how they relate to their people's past"
+  unconscious_assumptions: [cultural blind spots they don't recognize]
+
+honor_architecture:
+  oaths_taken: [specific vows, to whom, what they demand]
+  code_followed: "knightly/religious/personal/tribal—the rules they live by"
+  breaking_point: "what would make them break their word"
+  the_unbreakable: "the oath that holds no matter what"
+  honor_vs_conflict: "when honor conflicts with survival/love/greater good—what wins"
+
+quest_psychology:
+  driving_force: "duty/stubbornness/love/spite/hope—what keeps them moving"
+  sustaining_memory: "the memory they return to in darkness"
+  abandonment_threshold: "what would make them walk away from the quest"
+  who_its_for: "the world/themselves/someone specific/the dead—who they're doing this for"
+```
+
+### Examples
+
+**Destiny Relationship — Example:**
+```yaml
+destiny_relationship:
+  stance: "Resist. Prophecies are excuses for powerful people to manipulate the desperate."
+  chosen_burden: "Not chosen, thank the gods. Watches the chosen one crumble under weight they didn't ask for."
+  relationship_to_chosen: "Protective. Angry. Someone has to keep them alive since fate clearly doesn't care about the details."
+  free_will_belief: "Used to believe in pure choice. Seen too many prophecies come true. Now believes fate sets the destination but the path is theirs."
+```
+
+**Magical Identity — Example:**
+```yaml
+magical_identity:
+  connection_source: "Born with it. Family gift going back six generations. Skipped their sibling, landed on them."
+  manifestation: "Green fire that doesn't burn. Smells like forest after rain. Leaves their hands tingling for hours."
+  power_relationship: "Birthright and burden. It's who they are, but it's also why they can never be normal."
+  cost_of_use: "Minor spells: fatigue. Major workings: nosebleeds, tremors. Nearly died once pushing too far—won't forget that."
+```
+
+**Cultural Roots — Example:**
+```yaml
+cultural_roots:
+  origin_culture: "Northern Clans, mountain folk. Harsh winters breed hard people."
+  traditions_kept: ["Never break guest-right", "Braid a token for the dead", "First hunt at thirteen"]
+  traditions_rejected: ["Blood feuds—watched them destroy their village", "Men don't heal—learned herbcraft anyway"]
+  historical_relationship: "Proud of resilience. Ashamed of insularity. Wish the clans had accepted help before the famine."
+  unconscious_assumptions: ["Loud voices mean honesty", "Silence means deception", "City folk are soft", "Comfort is weakness"]
+```
+
+**Honor Architecture — Example:**
+```yaml
+honor_architecture:
+  oaths_taken:
+    - "Knightly vow: protect the weak, speak truth, show mercy"
+    - "Personal vow: find who killed their mentor"
+  code_followed: "Knightly code learned young, but interpreted through experience—mercy doesn't mean stupidity"
+  breaking_point: "Would break oath to protect innocent lives. Honor's meaningless if everyone's dead."
+  the_unbreakable: "Never harm a child. Never. That's where the line is."
+  honor_vs_conflict: "Honor vs. survival: honor usually wins. Honor vs. saving someone they love: love wins and they hate themselves for it."
+```
+
+**Quest Psychology — Example:**
+```yaml
+quest_psychology:
+  driving_force: "Stubbornness and spite. The darkness said they'd fail. Determined to prove it wrong."
+  sustaining_memory: "Their mentor's last words: 'Finish what I started.' Haven't failed them yet."
+  abandonment_threshold: "If completing the quest meant becoming the villain—they'd walk away. Won't save the world by destroying their soul."
+  who_its_for: "Started for the mentor. Continued for the world. Now? For everyone who said they couldn't."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

@@ -150,15 +150,24 @@ export class NudgeDetector {
     }
 
     // Check if the agent sent a routing message to an expected target.
-    // HITL asks to core/core don't count — an agent can ask core a question
-    // mid-session then still fail to send its final routing message.
-    const sentToExpected = messagesSent.some(m =>
+    // Use both the snapshot AND a fresh queue check — the snapshot may miss
+    // messages written just before the SDK runner completed (race condition
+    // between file watcher tracking and runner completion).
+    const snapshotSentToExpected = messagesSent.some(m =>
       expectedTargets.includes(m.to) || expectedTargets.includes(m.to.split('/').pop()!)
     );
-    if (sentToExpected) {
+
+    // Fresh check: did any message FROM this agent land in the queue since completion?
+    const recentFromAgent = this.queue.getRecentMessagesFrom(agentId, 30_000);
+    const freshSentToExpected = recentFromAgent.some(m =>
+      expectedTargets.includes(m.to_agent) || expectedTargets.includes(m.to_agent.split('/').pop()!)
+    );
+
+    if (snapshotSentToExpected || freshSentToExpected) {
       log.debug('nudge-detector', 'Agent routed to expected target, skipping nudge', {
         agentId,
-        sentTo: messagesSent.map(m => m.to),
+        snapshotSent: messagesSent.map(m => m.to),
+        freshSent: recentFromAgent.map(m => m.to_agent),
         expectedTargets,
       });
       return;

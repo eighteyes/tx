@@ -12,12 +12,14 @@ Check if codebase changes since feature creation warrant revisiting the plan.
 
 **Auto-creates**: `config.json` if missing (touch it = track it)
 
+**Arguments**: `$ARGUMENTS` — feature name (e.g., `/know:validate user-authentication`)
+
 **Workflow**
 
 ### 1. Identify Feature
 
 **Steps**:
-1. Extract feature name from command argument
+1. Extract feature name from `$ARGUMENTS` or prompt user if not provided
 2. Verify feature directory exists:
    ```bash
    ls -la .ai/know/features/<feature-name>/
@@ -104,6 +106,19 @@ Changed Files:
 
 Recommendation: <based on risk counts>
 ```
+
+### 6b. Reference Drift Detection
+
+Check if specification references linked to this feature may be stale:
+
+1. List feature's references:
+   ```bash
+   know -g .ai/know/spec-graph.json graph uses feature:<feature-name>
+   ```
+2. For each non-code-link reference (data-model, interface, business-logic):
+   - Compare reference description against current code state
+   - Flag references that may be invalidated by detected changes
+   - Report as additional MEDIUM risk items if drift is suspected
 
 ### 7. User Decision
 

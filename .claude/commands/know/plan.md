@@ -6,6 +6,8 @@ tags: [know, planning, qa, vision]
 ---
 Interactive QA-based planning to build product vision and populate spec-graph.
 
+**Arguments**: `$ARGUMENTS` — optional mode number or name to jump to (e.g., `/know:plan`, `/know:plan architect`, `/know:plan 3`)
+
 **Main Objective**
 
 Guide user through interactive QA sessions to build a complete product vision with technical decisions, generating both documentation artifacts and populating spec-graph.json.
@@ -139,14 +141,14 @@ Also read `.ai/know/input.md` and any existing README/docs.
 **Agent 5 — Data Models** (→ `data-model:*` references)
 > "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `data-model` reference entries. Ask about: what are the primary data entities (name each and list 3-5 key fields), what are the relationships between those entities (one-to-one, one-to-many, many-to-many), what data must be persisted vs can be computed on the fly, which data entity is the most central and what is its lifecycle (created → updated → deleted/archived), and what data is owned by one feature vs shared across features. Format as a numbered list. Do NOT ask about scale, load, or performance."
 
-**Agent 6 — Interfaces & API Contracts** (→ `interface:*`, `api_contract:*` references)
-> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `interface` and `api_contract` reference entries. Ask about: what are the main screens or views (name each and describe its primary content and user goal), what are the main API endpoints (path, method, key request/response fields), what data does each screen display and where does it come from, what forms exist and what fields do they contain, and how does the system expose or consume any external APIs. Format as a numbered list. Do NOT ask about scale, load, or performance."
+**Agent 6 — Interfaces & API Contracts** (→ `interface:*`, `api-contract:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `interface` and `api-contract` reference entries. Ask about: what are the main screens or views (name each and describe its primary content and user goal), what are the main API endpoints (path, method, key request/response fields), what data does each screen display and where does it come from, what forms exist and what fields do they contain, and how does the system expose or consume any external APIs. Format as a numbered list. Do NOT ask about scale, load, or performance."
 
-**Agent 7 — Business Logic & Security** (→ `business_logic:*`, `security-spec:*` references)
-> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `business_logic` and `security-spec` reference entries. Ask about: what are the non-obvious domain rules that govern system behavior (validation rules, approval gates, state machine transitions), who can access each feature and under what conditions (role-based, ownership-based), what data is sensitive and how must it be handled or protected, what audit trail or activity log is required, and what are the edge cases in the most complex user workflow. Format as a numbered list. Do NOT ask about scale, load, or performance."
+**Agent 7 — Business Logic & Security** (→ `business-logic:*`, `security-spec:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `business-logic` and `security-spec` reference entries. Ask about: what are the non-obvious domain rules that govern system behavior (validation rules, approval gates, state machine transitions), who can access each feature and under what conditions (role-based, ownership-based), what data is sensitive and how must it be handled or protected, what audit trail or activity log is required, and what are the edge cases in the most complex user workflow. Format as a numbered list. Do NOT ask about scale, load, or performance."
 
-**Agent 8 — Configuration & Constraints** (→ `configuration:*`, `constraint:*`, `acceptance_criterion:*` references)
-> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `configuration`, `constraint`, and `acceptance_criterion` reference entries. Ask about: what runtime settings or environment variables does the system need, what feature flags or toggles are anticipated, what are the hard invariants that must never be violated (data integrity rules, required fields, state preconditions), what does a working v1 look like from each user's perspective (acceptance criteria), and what are the deployment or environment assumptions. Format as a numbered list. Do NOT ask about scale, load, or performance."
+**Agent 8 — Configuration & Constraints** (→ `configuration:*`, `constraint:*`, `acceptance-criterion:*` references)
+> "You are helping build a spec-graph for a project described as: '[project description]'. Generate 5 questions whose answers will directly become `configuration`, `constraint`, and `acceptance-criterion` reference entries. Ask about: what runtime settings or environment variables does the system need, what feature flags or toggles are anticipated, what are the hard invariants that must never be violated (data integrity rules, required fields, state preconditions), what does a working v1 look like from each user's perspective (acceptance criteria), and what are the deployment or environment assumptions. Format as a numbered list. Do NOT ask about scale, load, or performance."
 
 **Step 3 — Collect and write to `.ai/know/qa/plan-questions.md`:**
 
@@ -169,13 +171,13 @@ _Each answer maps to a graph entity or reference. See type hints per section._
 ## 5. Data Models  [→ data-model:*]
 21. ...
 
-## 6. Interfaces & API Contracts  [→ interface:*, api_contract:*]
+## 6. Interfaces & API Contracts  [→ interface:*, api-contract:*]
 26. ...
 
-## 7. Business Logic & Security  [→ business_logic:*, security-spec:*]
+## 7. Business Logic & Security  [→ business-logic:*, security-spec:*]
 31. ...
 
-## 8. Configuration & Constraints  [→ configuration:*, constraint:*, acceptance_criterion:*]
+## 8. Configuration & Constraints  [→ configuration:*, constraint:*, acceptance-criterion:*]
 36. ...
 
 ---
@@ -352,7 +354,7 @@ For each assumption: confidence ≥95% → state and proceed. <95% → ask user.
   ```
 
 - Spec-graph references:
-  - `business_logic:*` - Business rules
+  - `business-logic:*` - Business rules
   - `data-models:*` - Core data structures
   - `tech-stack:*` - Technology choices
 

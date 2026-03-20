@@ -30,10 +30,12 @@ This is NOT just a code review. The assistant should:
 - `.ai/know/<feature>/QA_STEPS.md` must exist
 - **Application must be running and ready to test**
 
+**Arguments**: `$ARGUMENTS` — feature name (e.g., `/know:review user-authentication`)
+
 **Usage**
 
 ```
-/know:review <feature-name>
+/know:review $ARGUMENTS
 ```
 
 **Workflow**
@@ -41,7 +43,7 @@ This is NOT just a code review. The assistant should:
 ### 1. Extract Feature Name
 
 **Steps**:
-1. Extract feature name from conversation context or prompt user
+1. Extract feature name from `$ARGUMENTS` or prompt user if not provided
 2. Verify feature directory exists at `.ai/know/<feature>/`
 
 ### 2. Execute Review Command
@@ -103,6 +105,20 @@ Step 1: [PASS/FAIL/SKIP]
    - Record response
 3. Calculate pass rate:
    - Passed steps / Total steps (excluding skipped)
+
+### 4b. Reference Accuracy Check
+
+After QA test steps, verify that specification references are still accurate:
+
+1. List all references linked to the feature:
+   ```bash
+   know -g .ai/know/spec-graph.json graph uses feature:<name>
+   ```
+2. For each non-code-link reference (data-model, interface, business-logic, requirement):
+   - Display the reference content
+   - Ask: "Is this reference still accurate post-implementation? [Yes/Outdated/Remove]"
+3. If "Outdated": update via `know nodes update <ref-type>:<ref-key> '{"description":"..."}'`
+4. If "Remove": flag for removal after review completes
 
 ### 5. Final Decision
 

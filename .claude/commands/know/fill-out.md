@@ -6,6 +6,8 @@ tags: [know, fill-out, expand, coverage]
 ---
 Expand and interconnect spec-graph and code-graph to achieve 100% coverage.
 
+**Arguments**: `$ARGUMENTS` — optional scope: `spec`, `code`, or `both` (e.g., `/know:fill-out spec` — defaults to `both`)
+
 **Main Objective**
 
 Take existing spec-graph.json and code-graph.json and expand them comprehensively with:
@@ -205,7 +207,41 @@ know -g .ai/know/spec-graph.json link component:graph-operations operation:add_e
 know -g .ai/know/spec-graph.json link component:graph-operations operation:get_entity_dependencies
 ```
 
-#### 3G. Validate Spec-Graph
+#### 3G. Add References for Each Feature
+
+**Gate**: A feature with zero non-code-link reference dependencies is under-specified.
+
+For each feature, check what reference types exist:
+```bash
+know -g .ai/know/spec-graph.json graph uses feature:<name>
+```
+
+If the feature lacks specification references, add them. Look up available types:
+```bash
+know check ref-types                    # table with descriptions
+know check ref-types --filter <term>    # filter by name or description
+know gen rules describe <type>          # detail on a specific type
+```
+
+Common reference types for features:
+
+| Reference Type | When to Add |
+|---|---|
+| `data-model` | Feature reads/writes structured data |
+| `interface` | Feature exposes an API, CLI, or UI surface |
+| `business-logic` | Feature enforces rules or policies |
+| `requirement` | Feature has non-functional requirements (performance, security) |
+
+```bash
+# Add references
+know -g .ai/know/spec-graph.json add data-model <model-key> '{"description":"..."}'
+know -g .ai/know/spec-graph.json add interface <interface-key> '{"description":"..."}'
+
+# Link features to references
+know -g .ai/know/spec-graph.json link feature:<name> data-model:<model-key> interface:<interface-key>
+```
+
+#### 3H. Validate Spec-Graph
 
 ```bash
 know -g .ai/know/spec-graph.json validate

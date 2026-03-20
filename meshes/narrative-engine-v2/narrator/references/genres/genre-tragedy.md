@@ -407,6 +407,129 @@ Seeds that work well in tragedy:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Hubris Architecture:**
+- "What's their greatest strength? How does that strength become the flaw that destroys them?"
+- "What skill or quality do they lean on too hard? Where's the reliance become rigidity?"
+- "What do they trust about themselves that they shouldn't? What blindness does confidence create?"
+- "What makes them think they're exempt from the rules, fate, consequences that govern others?"
+
+**Fatal Awareness:**
+- "Do they see the fall coming? Fully? Partially? Through a glass darkly?"
+- "What warnings do they ignore? Who tries to tell them and why don't they listen?"
+- "At what point do they realize the truth? Is it too late? Was it always too late?"
+- "How does partial knowledge make it worse? What would full knowledge have changed?"
+
+**Sacrifice Inventory:**
+- "What have they already given up to get where they are?"
+- "What are they about to lose? What will the fall take from them?"
+- "What do they cling to as everything collapses? What's the last thing to go?"
+- "After the fall: what remains? Is there anything that survives intact?"
+
+**Denial Patterns:**
+- "What truth won't they face? Why? What would facing it cost?"
+- "How do they evade reality—rationalization, blaming others, doubling down?"
+- "What would force confrontation? What can't be denied anymore?"
+- "When denial breaks, what does the recognition look like? What do they finally see?"
+
+**The Thing They Won't Release:**
+- "What grip is killing them? What should they let go of but can't?"
+- "Is it a person? A principle? A grudge? A dream? A vision of who they are?"
+- "Why can't they release it? Love? Pride? Fear? The belief they'd be nothing without it?"
+- "Would releasing it save them? Or is the inability to release the nature of their doom?"
+
+### Entity Schema Extensions
+
+```yaml
+hubris_architecture:
+  greatest_strength: "what they excel at, what defines them"
+  strength_becomes_flaw: "how that strength becomes the weakness that destroys them"
+  over_reliance: "what they lean on too hard, where skill becomes rigidity"
+  false_exemption: "what makes them think they're above the rules/fate/consequences"
+
+fatal_awareness:
+  do_they_see_it_coming: "fully/partially/not at all—awareness of the fall"
+  ignored_warnings: [who warned them, why they didn't listen]
+  recognition_moment: "when they realize the truth, is it too late"
+  partial_knowledge_cost: "how knowing some but not all makes it worse"
+  # Examples:
+  # do_they_see_it_coming: "Partially. Knows something's wrong. Thinks they can fix it. That's the hubris."
+  # recognition_moment: "The moment the blade enters. Too late to stop. Just enough time to understand."
+
+denial_patterns:
+  the_refused_truth: "what they won't face, why, what it would cost"
+  evasion_tactics: "rationalization/blaming others/doubling down—how they avoid reality"
+  forced_confrontation: "what breaks denial, what can't be ignored"
+  recognition_moment: "when denial shatters—what they finally see"
+
+sacrifice_inventory:
+  already_given: [what they sacrificed to get where they are]
+  about_to_lose: [what the fall will take from them]
+  last_thing_held: "what they cling to as everything collapses"
+  what_survives: "after the fall—what remains, if anything"
+
+the_thing_they_wont_release:
+  the_grip: "what hold is killing them—person/principle/grudge/dream/identity"
+  why_they_cant_let_go: "love/pride/fear/belief they'd be nothing without it"
+  would_release_save_them: "if they let go, would they survive, or is inability to release the doom itself"
+  # Examples:
+  # the_grip: "Their vision of who they should be. The perfect leader. The savior. The one who doesn't break."
+  # why_they_cant_let_go: "If they're not that, what are they? The mask is all that's left. Can't remove it or there's nothing underneath."
+```
+
+### Examples
+
+**Hubris Architecture — Example:**
+```yaml
+hubris_architecture:
+  greatest_strength: "Brilliant strategist. Sees patterns others miss. Ten steps ahead. Always."
+  strength_becomes_flaw: "So convinced of their own foresight that they can't adapt when the pattern breaks. Rigidity disguised as vision."
+  over_reliance: "Trusts their mind absolutely. When intuition says one thing and evidence says another, intuition wins. Until it doesn't."
+  false_exemption: "Believes they're smart enough to avoid consequences others face. Rules are for people who don't see the angles."
+```
+
+**Fatal Awareness — Example:**
+```yaml
+fatal_awareness:
+  do_they_see_it_coming: "Partially. Knows allies are disappearing. Thinks it's coincidence. It's not."
+  ignored_warnings: ["Advisor said 'you're going too far'—dismissed as cowardice", "Lover said 'I don't recognize you'—dismissed as lack of vision"]
+  recognition_moment: "When their closest ally turns the blade. Too late to stop. Just enough time to understand they did this to themselves."
+  partial_knowledge_cost: "Knew something was wrong. Thought they could out-think it. Hubris again. The knowing made them careless."
+```
+
+**Denial Patterns — Example:**
+```yaml
+denial_patterns:
+  the_refused_truth: "That they're becoming the tyrant they swore to oppose. Can't face it. Would shatter their identity."
+  evasion_tactics: "Rationalization: 'I'm doing what's necessary.' Blaming: 'They forced my hand.' Doubling down: 'I'll prove I was right.'"
+  forced_confrontation: "Their child looks at them with fear instead of love. Can't deny what that means."
+  recognition_moment: "Looks in mirror. Sees the enemy's face. It's their own. Always was."
+```
+
+**Sacrifice Inventory — Example:**
+```yaml
+sacrifice_inventory:
+  already_given: ["Friendships for power", "Ethics for expediency", "Love for ambition"]
+  about_to_lose: ["The power they sacrificed everything for", "Their child's respect", "Their life"]
+  last_thing_held: "The belief it was worth it. That the sacrifice meant something. That they were right."
+  what_survives: "Nothing. Not even the certainty. Especially not that."
+```
+
+**The Thing They Won't Release — Example:**
+```yaml
+the_thing_they_wont_release:
+  the_grip: "The vision of themselves as savior. The one who makes the hard choices. The necessary evil. The identity."
+  why_they_cant_let_go: "If they release it, they're just a tyrant. No justification. No nobility in the suffering. Just cruelty."
+  would_release_save_them: "Maybe. If they admitted it early. Too late now. The grip is all they have. Without it, they're already dead."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

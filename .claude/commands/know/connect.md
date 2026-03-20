@@ -6,6 +6,8 @@ tags: [know, connect, coverage, cross-link]
 ---
 Connect disconnected entities and cross-link spec-graph with code-graph.
 
+**Arguments**: `$ARGUMENTS` — optional scope: `spec`, `cross`, or entity ID to start from (e.g., `/know:connect spec`, `/know:connect cross`, `/know:connect feature:auth`)
+
 # Graph Connection Workflow
 
 Your goal is to:
@@ -78,6 +80,23 @@ Your goal is to:
     know link feature:graph-viz action:parse-graph
 12. Check coverage: 100% ✓
 ```
+
+## Reference Orphan Check
+
+After achieving entity coverage, check for orphaned references:
+
+```bash
+# Find references with no parent entity depending on them
+know -g .ai/know/spec-graph.json check orphans
+
+# Show reference usage stats
+know -g .ai/know/spec-graph.json check usage
+```
+
+For each orphaned reference:
+1. Identify which feature or action should depend on it
+2. Connect it: `know link feature:<name> <ref-type>:<ref-key>`
+3. If the reference is stale, remove it: `know nodes delete <ref-type>:<ref-key> -y`
 
 ## Important Notes (Spec-Graph Connection)
 

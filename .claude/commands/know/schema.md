@@ -14,10 +14,12 @@ Guide an LLM through designing a custom schema (entity types, dependency rules, 
 - Understanding of the domain you want to model
 - Knowledge of what entities and relationships exist in that domain
 
+**Arguments**: `$ARGUMENTS` — schema name in kebab-case (e.g., `/know:schema conversation-memory`)
+
 **Usage**
 
 ```
-/know:schema <schema-name>
+/know:schema $ARGUMENTS
 ```
 
 **Workflow**

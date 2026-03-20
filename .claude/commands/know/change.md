@@ -14,10 +14,12 @@ Create a structured change request for a feature (enhancement, improvement, or m
 - Activate the know-tool skill for graph operations
 - Feature directory must exist at `.ai/know/features/<feature>/`
 
+**Arguments**: `$ARGUMENTS` — feature name (e.g., `/know:change user-authentication`)
+
 **Usage**
 
 ```
-/know:change <feature-name>
+/know:change $ARGUMENTS
 ```
 
 **Workflow**
@@ -25,8 +27,9 @@ Create a structured change request for a feature (enhancement, improvement, or m
 ### 1. Initialization
 
 **Steps**:
-1. Verify feature directory exists at `.ai/know/features/<feature>/`
-2. Create changes directory if it doesn't exist: `.ai/know/features/<feature>/changes/`
+1. Extract feature name from `$ARGUMENTS` or prompt user if not provided
+2. Verify feature directory exists at `.ai/know/features/<feature>/`
+3. Create changes directory if it doesn't exist: `.ai/know/features/<feature>/changes/`
 3. Determine next change number by reading existing change files
 4. Check current feature status in spec-graph (using **haiku agent**):
    - `know -g .ai/know/spec-graph.json show feature:<name>`
@@ -122,13 +125,23 @@ Create a structured change request for a feature (enhancement, improvement, or m
 2. The requirement will be linked to the feature automatically
 3. Track progress with: `know req status requirement:<feature>-change-NNN in-progress`
 
-### 5. Update Spec-Graph (Optional)
+### 5. Reactivate Feature
 
 **If feature status is "done" or "review-ready"**:
-- Ask user: "This feature is marked as done/review-ready. Change status to 'changes-planned'? [Yes/No]"
-- If Yes (using **haiku agent**):
-  - Update `meta.phases` status to "changes-planned"
-  - Validate: `know graph check validate`
+- Set status to `in-progress`. The graph reflects current state, not original scope:
+  ```bash
+  know meta set phases.<phase>.feature:<name>.status in-progress
+  ```
+- Phase stays where it is. Only the status changes.
+- Validate: `know graph check validate`
+
+**If feature is archived** (`.ai/know/archive/<name>/` exists, `.ai/know/features/<name>/` does not):
+- Create minimal feature directory for the change work:
+  ```bash
+  mkdir -p .ai/know/features/<name>/changes
+  ```
+- Do NOT restore the full archive. The archive is history.
+- Create a fresh `todo.md` scoped to the change only.
 
 ### 6. Confirmation
 
@@ -139,7 +152,7 @@ Type: [Enhancement/Modification/Refactor/Polish]
 Priority: [Level]
 Location: .ai/know/features/<feature>/changes/NNN-slug.md
 Requirement: requirement:<feature>-change-NNN
-Status: [Updated to changes-planned / Kept as <current>]
+Status: [Set to in-progress / Kept as <current>]
 
 Next steps:
 - Start implementation: `know req status requirement:<feature>-change-NNN in-progress`
@@ -154,7 +167,8 @@ Next steps:
 
 - `.ai/know/features/<feature>/changes/NNN-slug.md` - Structured change request
 - New requirement in spec-graph: `requirement:<feature>-change-NNN`
-- Updated spec-graph status (if changed to changes-planned)
+- Updated spec-graph status (set to in-progress if was done/review-ready)
+- Minimal feature directory (if feature was archived)
 
 ---
 
@@ -193,7 +207,11 @@ Assistant: Found feature at .ai/know/features/user-authentication/
 - **Automatic numbering**: Changes are numbered sequentially (001, 002, 003...)
 - **Slug generation**: File names are human-readable slugs from change titles
 - **Requirement tracking**: Changes tracked as requirements in spec-graph (`know req list <feature>`)
-- **Status management**: Uses "changes-planned" status for features with pending changes
+- **Status management**: Sets feature back to "in-progress" — the graph is current state, not original scope
 - **Haiku agents**: Graph operations use haiku for speed and cost efficiency
 - **Different from bugs**: Bugs are defects; changes are intentional improvements
 - **Related to /know:review**: Changes can be created during review or independently
+
+---
+`r2` - Replaced "changes-planned" with "in-progress"; added archived feature handling; graph is current state not original scope
+`r1`

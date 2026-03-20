@@ -452,6 +452,128 @@ Seeds that work well in horror:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Fear Architecture:**
+- "What terrifies them specifically—not horror in general, but their particular nightmare?"
+- "How does fear manifest in their body? Freeze? Flight? Fight? Collapse?"
+- "What childhood fear never left them? What new fear did adulthood add?"
+- "What's the difference between being scared and being terrified for them?"
+
+**Survival Instincts:**
+- "How pragmatic do they get under pressure? What morality survives real danger?"
+- "What would they do to live? What line would they cross? What wouldn't they?"
+- "Who do they save first—themselves, loved ones, strangers, the group?"
+- "What survival choice haunts them? What did they do that they can't undo?"
+
+**Sanity Markers:**
+- "How do they track their own grip on reality? What tells them they're still sane?"
+- "What do they refuse to believe even when evidence mounts? Where's their denial wall?"
+- "What would it take for them to accept the impossible? Or have they already?"
+- "When reality breaks, what do they cling to? Logic? Faith? Routine? Another person?"
+
+**Trauma Patterns:**
+- "What past wound makes them vulnerable to THIS specific horror?"
+- "What did they survive before this? How did it shape their coping mechanisms?"
+- "What triggers them—sights, sounds, smells, situations that send them back?"
+- "What did fear teach them that's wrong? What survival instinct is actually self-destruction?"
+
+**Darkness Relationship:**
+- "What do they do alone in the dark—literal and metaphorical?"
+- "What truth comes out at 3am that daylight lets them deny?"
+- "What part of themselves do they keep in shadow? What would happen if someone saw it?"
+- "Are they more afraid of what's in the dark, or what the dark reveals about them?"
+
+### Entity Schema Extensions
+
+```yaml
+fear_architecture:
+  specific_terror: "their particular nightmare—what form horror takes for them"
+  body_response: "freeze/flight/fight/collapse—how fear manifests physically"
+  childhood_fear: "the one that never left, even grown"
+  scared_vs_terrified: "what crosses the line from afraid to can't-function terror"
+
+survival_instincts:
+  pragmatism_under_pressure: "how much morality survives real danger"
+  crossing_threshold: "what they'd do to live, what line they'd cross"
+  save_order: "themselves/loved ones/strangers/the group—who first"
+  haunting_choice: "the survival decision that they can't undo or forget"
+  # Examples:
+  # pragmatism_under_pressure: "Idealist until the monster comes. Then it's cold math—who's fastest, who's expendable."
+  # crossing_threshold: "Would steal, lie, hurt someone to survive. Wouldn't kill a stranger. Wouldn't abandon a child."
+
+sanity_markers:
+  reality_checks: "how they confirm they're still sane—routines, logic, grounding techniques"
+  denial_wall: "what they refuse to believe despite evidence"
+  acceptance_threshold: "what it would take to believe the impossible—or have they already"
+  crisis_anchor: "when reality breaks: logic/faith/routine/person—what they hold onto"
+
+trauma_patterns:
+  vulnerability_wound: "past trauma that makes them susceptible to this horror"
+  prior_survival: "what they survived before, how it shaped them"
+  triggers: [sights/sounds/smells/situations that send them spiraling]
+  wrong_lessons: "what fear taught them that's actually harmful, self-destructive survival instinct"
+
+darkness_relationship:
+  alone_in_dark: "what they do when no one can see—literal or metaphorical"
+  3am_truth: "what emerges at 3am that daylight lets them deny"
+  shadow_self: "the part they keep hidden, what happens if it's revealed"
+  fear_source: "afraid of what's in the dark, or what darkness shows about themselves"
+```
+
+### Examples
+
+**Fear Architecture — Example:**
+```yaml
+fear_architecture:
+  specific_terror: "Being trapped. Small spaces, locked rooms, no escape route. Doesn't matter what's chasing—the cage is the nightmare."
+  body_response: "Freeze first. Everything stops—breath, thought, movement. Then flight if freeze fails. Never fight."
+  childhood_fear: "The thing in the closet. Still can't sleep facing an open door."
+  scared_vs_terrified: "Scared: elevated heart rate, can still think. Terrified: dissociation, autopilot, memory gaps after."
+```
+
+**Survival Instincts — Example:**
+```yaml
+survival_instincts:
+  pragmatism_under_pressure: "Principles are luxury goods. When death is real, survival is the only ethic that matters."
+  crossing_threshold: "Would sacrifice a stranger to save themselves. Did it once. Still sees their face."
+  save_order: "Themselves first. Then the kid. Then whoever's closest. Group comes last. It's ugly but it's honest."
+  haunting_choice: "Left someone behind when the door was closing. Hears them screaming in nightmares. Would do it again."
+```
+
+**Sanity Markers — Example:**
+```yaml
+sanity_markers:
+  reality_checks: "Counts things. Prime numbers. Recites poems memorized in school. If they can remember, they're still real."
+  denial_wall: "Refuses to believe it's supernatural. There's always a rational explanation. Clinging to that even as it crumbles."
+  acceptance_threshold: "Saw it kill someone. Can't deny what left that body. Reality is broken now."
+  crisis_anchor: "Routine. Same breakfast. Same route. If the world still makes small sense, maybe they're not losing it."
+```
+
+**Trauma Patterns — Example:**
+```yaml
+trauma_patterns:
+  vulnerability_wound: "Father was unpredictably violent. Learned to read micro-expressions, anticipate danger. Makes them see threat everywhere now."
+  prior_survival: "House fire at twelve. Got out. Little brother didn't. Survival came with guilt they've carried since."
+  triggers: ["Smell of smoke", "Locked doors", "Screaming", "Being grabbed from behind", "Enclosed spaces"]
+  wrong_lessons: "Learned: staying quiet keeps you safe. Actually: makes you unable to ask for help when you need it."
+```
+
+**Darkness Relationship — Example:**
+```yaml
+darkness_relationship:
+  alone_in_dark: "Paces. Can't sit still. Checks locks obsessively. Talks to themselves to prove they're still there."
+  3am_truth: "Thinks about dying. Not suicide—just the relief of not having to be afraid anymore."
+  shadow_self: "The part that wants to hurt something before it hurts them. The part that understands the monster."
+  fear_source: "Afraid of the dark revealing they're not as good as they pretend. That fear makes them cruel. That they'd become the monster to survive."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

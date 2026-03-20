@@ -14,10 +14,12 @@ Create a structured bug report for a feature, automatically numbering it, adding
 - Activate the know-tool skill for graph operations
 - Feature directory must exist at `.ai/know/features/<feature>/`
 
+**Arguments**: `$ARGUMENTS` — feature name (e.g., `/know:bug user-authentication`)
+
 **Usage**
 
 ```
-/know:bug <feature-name>
+/know:bug $ARGUMENTS
 ```
 
 **Workflow**
@@ -25,8 +27,9 @@ Create a structured bug report for a feature, automatically numbering it, adding
 ### 1. Initialization
 
 **Steps**:
-1. Verify feature directory exists at `.ai/know/features/<feature>/`
-2. Create bugs directory if it doesn't exist: `.ai/know/features/<feature>/bugs/`
+1. Extract feature name from `$ARGUMENTS` or prompt user if not provided
+2. Verify feature directory exists at `.ai/know/features/<feature>/`
+3. Create bugs directory if it doesn't exist: `.ai/know/features/<feature>/bugs/`
 3. Determine next bug number by reading existing bug files
 4. Check current feature status in spec-graph (using **haiku agent**):
    - `know -g .ai/know/spec-graph.json show feature:<name>`
@@ -120,14 +123,23 @@ Create a structured bug report for a feature, automatically numbering it, adding
    ```
 3. If multiple bugs exist, keep them grouped and sorted by number
 
-### 5. Update Spec-Graph (Optional)
+### 5. Reactivate Feature
 
 **If feature status is "done" or "review-ready"**:
-- Ask user: "This feature is marked as done/review-ready. Change status to 'in-progress'? [Yes/No]"
-- If Yes (using **haiku agent**):
-  - Update `meta.phases` to move feature back to "in-progress" phase
-  - Update `meta.feature_specs.<feature>.status` to "in-progress"
-  - Validate: `know graph check validate`
+- Set status to `in-progress`. The graph reflects current state, not original scope:
+  ```bash
+  know meta set phases.<phase>.feature:<name>.status in-progress
+  ```
+- Phase stays where it is. Only the status changes.
+- Validate: `know graph check validate`
+
+**If feature is archived** (`.ai/know/archive/<name>/` exists, `.ai/know/features/<name>/` does not):
+- Create minimal feature directory for the bug work:
+  ```bash
+  mkdir -p .ai/know/features/<name>/bugs
+  ```
+- Do NOT restore the full archive. The archive is history.
+- Create a fresh `todo.md` scoped to the bug fix only.
 
 ### 6. Confirmation
 
@@ -188,10 +200,12 @@ Assistant: Found feature at .ai/know/features/user-authentication/
 - **Automatic numbering**: Bugs are numbered sequentially (001, 002, 003...)
 - **Slug generation**: File names are human-readable slugs from bug titles
 - **Todo integration**: Bug fix tasks automatically added to todo.md for tracking
-- **Status management**: Can reopen features marked as done/review-ready
+- **Status management**: Sets feature back to "in-progress" — the graph is current state, not original scope
+- **Archived features**: Creates minimal feature dir for bug work without restoring full archive
 - **Haiku agents**: Graph operations use haiku for speed and cost efficiency
 - **Resolution tracking**: Bug files include a Resolution section to document fixes
 - **Related to /know:review**: Bugs can be created during review or independently
 
 ---
+`r2` - Replaced optional status ask with direct "in-progress"; added archived feature handling; graph is current state not original scope
 `r1`

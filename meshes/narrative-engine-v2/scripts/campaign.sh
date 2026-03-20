@@ -11,7 +11,9 @@
 #   timeline   — structured time tracking (append + query)
 #   episode    — entity episode management (append + query)
 #   trajectory — Chekhov's guns (add, fire, interrupt, list)
-#   condition  — mutable temporal states (set, get, list, resolve) — REPLACE semantics
+#   condition  — mutable temporal states (set, get, list, resolve, mutate) — REPLACE semantics
+#   bond       — bond dimension/episode management (update, episode)
+#   entity     — entity-level operations (traits)
 #   validate   — check all campaign YAML files parse cleanly
 
 set -euo pipefail
@@ -42,7 +44,9 @@ Domains:
   timeline   add|current|get|range
   episode    append|list|traits
   trajectory add|fire|interrupt|list
-  condition  set|get|list|resolve
+  condition  set|get|list|resolve|mutate
+  bond       update|episode
+  entity     traits
   validate   (no action required — checks all YAML files)
 
 Run: campaign.sh <campaign_path> <domain> --help for domain-specific usage.
@@ -853,6 +857,190 @@ trajectory_list() {
 }
 
 # ==========================================
+# BOND DOMAIN — bond dimension/episode management
+# ==========================================
+
+bond_usage() {
+  cat <<'EOF'
+bond domain — bond dimension and episode management
+
+Bond files: $CP/entities/bonds/{bond_id}.yaml
+
+  campaign.sh $CP bond update --bond=ID --dimension=DIM --h=N --k=N
+  campaign.sh $CP bond update --bond=ID --dimension=DIM --value=N
+  campaign.sh $CP bond update --bond=ID --dimension=DIM --bilateral=N
+  campaign.sh $CP bond update --bond=ID --normalized-add="ACT"
+  campaign.sh $CP bond episode --bond=ID --turn=N --event="TEXT" [--dimension-changes="TEXT"]
+
+update: Update bond dimensions (power, sexual, trust, familiarity) or add normalized acts.
+  Dimension formats:
+    --dimension=power --h=7 --k=3         (asymmetric power)
+    --dimension=sexual --value=6          (simple value)
+    --dimension=trust --bilateral=5       (symmetric)
+  Normalized acts:
+    --normalized-add="public hand-holding"
+
+episode: Append episode to bond file.
+  --turn=N --event="Description" --dimension-changes="power h:7/k:3, trust deepens"
+EOF
+  exit 1
+}
+
+cmd_bond() {
+  local action="$1"; shift
+  case "$action" in
+    update)   bond_update "$@" ;;
+    episode)  bond_episode "$@" ;;
+    --help|-h) bond_usage ;;
+    *)        bond_usage ;;
+  esac
+}
+
+bond_update() {
+  parse_options "$@"
+  local bond_id=$(opt_or_die "bond")
+  local bond_file="$CAMPAIGN_PATH/entities/bonds/${bond_id}.yaml"
+
+  [[ ! -f "$bond_file" ]] && die "Bond file not found: $bond_file"
+
+  local dimension=$(opt "dimension")
+  local normalized_add=$(opt "normalized-add")
+
+  # Update dimension
+  if [[ -n "$dimension" ]]; then
+    local h=$(opt "h")
+    local k=$(opt "k")
+    local value=$(opt "value")
+    local bilateral=$(opt "bilateral")
+
+    # Ensure dimensions map exists
+    local has_dims=$(yq '.dimensions // "null"' "$bond_file")
+    [[ "$has_dims" == "null" ]] && yq -i '.dimensions = {}' "$bond_file"
+
+    if [[ -n "$h" && -n "$k" ]]; then
+      # Asymmetric (power)
+      yq -i ".dimensions.\"$dimension\" = {\"h\": $h, \"k\": $k}" "$bond_file"
+      echo "OK: $dimension dimension updated to h:$h/k:$k on $bond_id"
+    elif [[ -n "$bilateral" ]]; then
+      # Symmetric (trust, familiarity)
+      yq -i ".dimensions.\"$dimension\" = {\"bilateral\": $bilateral}" "$bond_file"
+      echo "OK: $dimension dimension updated to bilateral:$bilateral on $bond_id"
+    elif [[ -n "$value" ]]; then
+      # Simple value (sexual)
+      yq -i ".dimensions.\"$dimension\" = $value" "$bond_file"
+      echo "OK: $dimension dimension updated to $value on $bond_id"
+    else
+      die "Dimension update requires --h/--k, --bilateral, or --value"
+    fi
+  fi
+
+  # Add normalized act
+  if [[ -n "$normalized_add" ]]; then
+    # Ensure normalized_acts array exists
+    local has_acts=$(yq '.normalized_acts // "null"' "$bond_file")
+    [[ "$has_acts" == "null" ]] && yq -i '.normalized_acts = []' "$bond_file"
+
+    # Export value for safe quoting
+    export NORM_ACT="$normalized_add"
+    yq -i '.normalized_acts += [strenv(NORM_ACT)]' "$bond_file"
+    unset NORM_ACT
+    echo "OK: normalized act added to $bond_id"
+  fi
+}
+
+bond_episode() {
+  parse_options "$@"
+  local bond_id=$(opt_or_die "bond")
+  local turn=$(opt_or_die "turn")
+  local event=$(opt_or_die "event")
+  local dim_changes=$(opt "dimension-changes")
+
+  local bond_file="$CAMPAIGN_PATH/entities/bonds/${bond_id}.yaml"
+  [[ ! -f "$bond_file" ]] && die "Bond file not found: $bond_file"
+
+  # Ensure episodes array exists
+  local has_episodes=$(yq '.episodes // "null"' "$bond_file")
+  [[ "$has_episodes" == "null" ]] && yq -i '.episodes = []' "$bond_file"
+
+  # Build episode entry using env vars for safe quoting
+  export EP_EVENT="$event"
+  yq -i ".episodes += [{\"turn\": $turn, \"event\": strenv(EP_EVENT)}]" "$bond_file"
+  unset EP_EVENT
+
+  # Add dimension_changes if provided
+  if [[ -n "$dim_changes" ]]; then
+    export DIM_CHANGES="$dim_changes"
+    local idx=$(($(yq '.episodes | length' "$bond_file") - 1))
+    yq -i ".episodes[$idx].dimension_changes = strenv(DIM_CHANGES)" "$bond_file"
+    unset DIM_CHANGES
+  fi
+
+  echo "OK: episode appended to bond $bond_id"
+}
+
+# ==========================================
+# ENTITY DOMAIN — entity-level operations
+# ==========================================
+
+entity_usage() {
+  cat <<'EOF'
+entity domain — entity-level operations
+
+  campaign.sh $CP entity traits --entity=ID --trait=TRAIT --pressure=N [--note="TEXT"]
+
+traits: Update trait pressure on character entity.
+  Updates current_state.trait_pressures.{TRAIT} and optionally appends note.
+  Entity file: $CP/entities/characters/{entity_id}.yaml
+EOF
+  exit 1
+}
+
+cmd_entity() {
+  local action="$1"; shift
+  case "$action" in
+    traits)    entity_traits "$@" ;;
+    --help|-h) entity_usage ;;
+    *)         entity_usage ;;
+  esac
+}
+
+entity_traits() {
+  parse_options "$@"
+  local entity_id=$(opt_or_die "entity")
+  local trait=$(opt_or_die "trait")
+  local pressure=$(opt_or_die "pressure")
+  local note=$(opt "note")
+
+  local entity_file="$CAMPAIGN_PATH/entities/characters/${entity_id}.yaml"
+  [[ ! -f "$entity_file" ]] && die "Character file not found: $entity_file"
+
+  # Ensure current_state.trait_pressures exists
+  local has_cs=$(yq '.current_state // "null"' "$entity_file")
+  [[ "$has_cs" == "null" ]] && yq -i '.current_state = {}' "$entity_file"
+
+  local has_tp=$(yq '.current_state.trait_pressures // "null"' "$entity_file")
+  [[ "$has_tp" == "null" ]] && yq -i '.current_state.trait_pressures = {}' "$entity_file"
+
+  # Update pressure
+  yq -i ".current_state.trait_pressures.\"$trait\" = $pressure" "$entity_file"
+
+  # Add note if provided
+  if [[ -n "$note" ]]; then
+    # Ensure notes array exists on the trait
+    local has_trait_notes=$(yq ".current_state.trait_pressures.\"$trait\".notes // \"null\"" "$entity_file" 2>/dev/null)
+    if [[ "$has_trait_notes" == "null" ]]; then
+      yq -i ".current_state.trait_pressures.\"$trait\" = {\"value\": $pressure, \"notes\": []}" "$entity_file"
+    fi
+
+    export TRAIT_NOTE="$note"
+    yq -i ".current_state.trait_pressures.\"$trait\".notes += [strenv(TRAIT_NOTE)]" "$entity_file"
+    unset TRAIT_NOTE
+  fi
+
+  echo "OK: trait $trait pressure updated to $pressure on $entity_id"
+}
+
+# ==========================================
 # CONDITION DOMAIN — mutable temporal states
 # ==========================================
 
@@ -864,6 +1052,7 @@ Conditions live inside entity files (characters or bonds) under `conditions:`.
 Unlike episodes (append-only), conditions use REPLACE semantics — fields overwrite.
 
   campaign.sh $CP condition set <entity_file> --id=ID [--type=TYPE] [--phase=PHASE] [--onset=N] [--intensity=TEXT] [--field=PATH --value=TEXT]...
+  campaign.sh $CP condition mutate --entity=ENTITY --condition=ID --field=FIELD --value=VALUE
   campaign.sh $CP condition get <entity_file> --id=ID
   campaign.sh $CP condition list <entity_file> [--active] [--type=TYPE]
   campaign.sh $CP condition resolve <entity_file> --id=ID --turn=N [--resolved-into=TEXT]
@@ -875,6 +1064,11 @@ set: upsert — creates if new, replaces specified fields if existing.
   Manifestation shorthand: --physical=TEXT --cognitive=TEXT --behavioral=TEXT --speech=TEXT
   Evolution shorthand: --advances=CSV --regresses=CSV --resolves-into=TEXT
   Always updates last_updated to current --turn (required)
+
+mutate: update specific field on existing condition, preserving everything else.
+  Entity can be a character OR bond — checks entities/characters/ first, then entities/bonds/.
+  --entity=heather_kaitlin --condition=nre --field=behavioral --value="new text"
+  --entity=kaitlin --condition=thesis_pressure --field=intensity --value="4/10"
 
 get: read a single condition.
 
@@ -889,6 +1083,7 @@ cmd_condition() {
   local action="$1"; shift
   case "$action" in
     set)     condition_set "$@" ;;
+    mutate)  condition_mutate "$@" ;;
     get)     condition_get "$@" ;;
     list)    condition_list "$@" ;;
     resolve) condition_resolve "$@" ;;
@@ -1124,6 +1319,38 @@ condition_set() {
   done
 }
 
+condition_mutate() {
+  parse_options "$@"
+  local entity=$(opt_or_die "entity")
+  local condition_id=$(opt_or_die "condition")
+  local field=$(opt_or_die "field")
+  local value=$(opt_or_die "value")
+
+  # Check entities/characters first, then entities/bonds
+  local entity_file=""
+  local char_file="$CAMPAIGN_PATH/entities/characters/${entity}.yaml"
+  local bond_file="$CAMPAIGN_PATH/entities/bonds/${entity}.yaml"
+
+  if [[ -f "$char_file" ]]; then
+    entity_file="$char_file"
+  elif [[ -f "$bond_file" ]]; then
+    entity_file="$bond_file"
+  else
+    die "Entity not found: $entity (checked characters/ and bonds/)"
+  fi
+
+  # Check if condition exists
+  local exists=$(yq ".conditions.\"$condition_id\" // \"null\"" "$entity_file")
+  [[ "$exists" == "null" ]] && die "Condition '$condition_id' not found on $entity"
+
+  # Update the specified field using strenv for safe quoting
+  export COND_VALUE="$value"
+  yq -i ".conditions.\"$condition_id\".$field = strenv(COND_VALUE)" "$entity_file"
+  unset COND_VALUE
+
+  echo "OK: condition '$condition_id' field '$field' mutated on $entity"
+}
+
 condition_get() {
   local entity_file="$1"; shift
   [[ ! -f "$entity_file" ]] && die "Entity file not found: $entity_file"
@@ -1287,6 +1514,8 @@ case "$DOMAIN" in
   episode)    cmd_episode "$ACTION" "$@" ;;
   trajectory) cmd_trajectory "$ACTION" "$@" ;;
   condition)  cmd_condition "$ACTION" "$@" ;;
+  bond)       cmd_bond "$ACTION" "$@" ;;
+  entity)     cmd_entity "$ACTION" "$@" ;;
   validate)   cmd_validate ;;
   *)          usage ;;
 esac

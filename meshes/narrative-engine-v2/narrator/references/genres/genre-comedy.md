@@ -430,32 +430,145 @@ Comedy often follows:
 
 ---
 
-## Voice Modifiers for Comedy
+## Character Depth Extensions
 
-When extracting character voice (Phase 6b), add these dimensions for comedic characters:
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Comedic Engine:**
+- "What makes them funny? Wit? Awkwardness? Obliviousness? Timing? Absurdity?"
+- "Are they the source of comedy or the reactor to it? Both?"
+- "What's their comedy function: straight man, fool, trickster, deadpan, chaos goblin?"
+- "Do they know they're funny? Are they trying to be? Or is the humor in their earnestness?"
+
+**Embarrassment Tolerance:**
+- "What humiliates them? How do they handle humiliation—deflect, spiral, own it?"
+- "What would mortify them beyond recovery? What's the nightmare scenario?"
+- "How much dignity do they cling to? How easily is it stripped away?"
+- "When embarrassed, do they double down, retreat, laugh it off, or burn everything down?"
+
+**The Serious Underneath:**
+- "What's the real pain beneath the jokes? What are they using humor to avoid?"
+- "When does humor fail them? What can't they joke their way through?"
+- "What do they want that they're afraid to admit, even to themselves?"
+- "If stripped of humor, what's left? Who is the person under the punchlines?"
+
+**Running Gags:**
+- "What situations keep happening to them? What's their recurring nightmare?"
+- "What catchphrase or verbal tic defines them? Do they realize they do it?"
+- "What thing always goes wrong for them? Why does it keep going wrong?"
+- "What's the one joke the universe keeps playing on them specifically?"
+
+**Comedic Timing:**
+- "How do they set up and deliver? The pause? The pivot? The escalation?"
+- "What's their rhythm—rapid-fire, deliberate, improvised, practiced?"
+- "Are they better with words or with physical comedy? Both?"
+- "When do they go for the joke vs. let the moment breathe? What's their instinct?"
+
+### Entity Schema Extensions
 
 ```yaml
-voice:
-  # Standard fields plus:
+comedic_engine:
+  what_makes_them_funny: "wit/awkwardness/obliviousness/timing/absurdity"
+  source_or_reactor: "source of comedy/reactor to it/both"
+  comedy_function: "straight man/fool/trickster/deadpan/chaos goblin/lovable disaster"
+  self_awareness: "know they're funny/trying to be/humor is in earnestness"
+  # Examples:
+  # what_makes_them_funny: "Obliviousness. Says the exact wrong thing with total sincerity. Doesn't understand why everyone's staring."
+  # comedy_function: "Fool. Not stupid—just operates on a different logic that happens to be hilarious."
 
-  comedy_function:
-    role: "straight man / fool / trickster / deadpan / etc."
-    targets: [what they find absurd, mock, or misunderstand]
-    blind_spots: [what they can't see about themselves]
+embarrassment_tolerance:
+  humiliation_trigger: "what embarrasses them, how they handle it"
+  mortification_threshold: "what would destroy them, the nightmare scenario"
+  dignity_quotient: "how much they cling to, how easily it's stripped"
+  embarrassment_response: "double down/retreat/laugh it off/burn it all down"
 
-  comedic_rhythm:
-    tempo: "rapid-fire / deliberate / variable"
-    style: "verbal / physical / situational / reactive"
-    signature_pattern: [catchphrases, recurring bits, verbal tics]
+serious_underneath:
+  real_pain: "what hurt they're using humor to avoid"
+  humor_failure_point: "when jokes don't work, what they can't laugh through"
+  hidden_want: "what they want but won't admit"
+  stripped_self: "who they are without the humor—what's left"
+  # Examples:
+  # real_pain: "Lonely. Uses humor to connect but it keeps people at arm's length. Can't stop performing long enough to be real."
+  # humor_failure_point: "When someone they care about is genuinely hurt. Jokes die in their throat. Don't know what to do without them."
 
-  dignity_vulnerabilities:
-    embarrassment_trigger: "what humiliates them"
-    pretension: "what they pretend to be"
-    crack_point: "where the facade breaks"
+running_gags:
+  recurring_situations: [what keeps happening to them]
+  catchphrase_tic: "verbal tic or catchphrase, do they realize they do it"
+  what_always_fails: "what consistently goes wrong for them"
+  the_cosmic_joke: "the joke the universe keeps playing on them"
+  # Examples:
+  # recurring_situations: ["Locked out. Every building. Every time. Keys exist in a parallel dimension to them."]
+  # catchphrase_tic: "Says 'That's fine' when nothing is fine. Everyone knows. They don't."
+  # what_always_fails: "Technology. Computers crash. Phones die. Apps malfunction. They're cursed."
 
-  straight_man_dynamics:
-    who_grounds_them: "if chaos agent, who reacts"
-    who_they_ground: "if straight man, who they anchor"
+comedic_timing:
+  setup_delivery: "how they construct jokes—the pause, the pivot, the escalation"
+  rhythm: "rapid-fire/deliberate/improvised/practiced"
+  verbal_vs_physical: "better with words or physical comedy or both"
+  instinct: "when they go for joke vs. let moment breathe"
+
+comedy_function:
+  role: "straight man / fool / trickster / deadpan / etc."
+  targets: [what they find absurd, mock, or misunderstand]
+  blind_spots: [what they can't see about themselves]
+
+dignity_vulnerabilities:
+  embarrassment_trigger: "what humiliates them"
+  pretension: "what they pretend to be"
+  crack_point: "where the facade breaks"
+
+straight_man_dynamics:
+  who_grounds_them: "if chaos agent, who reacts"
+  who_they_ground: "if straight man, who they anchor"
+```
+
+### Examples
+
+**Comedic Engine — Example:**
+```yaml
+comedic_engine:
+  what_makes_them_funny: "Extreme competence in one area, total disaster in everything else. Brilliant surgeon, can't make toast."
+  source_or_reactor: "Source when they're outside their domain. Reactor when professionals do things wrong."
+  comedy_function: "Lovable disaster trying to be straight man. Fails at both. That's the comedy."
+  self_awareness: "Knows they're a mess. Trying very hard not to be. The trying is what makes it funnier."
+```
+
+**Embarrassment Tolerance — Example:**
+```yaml
+embarrassment_tolerance:
+  humiliation_trigger: "Public failure. Especially in front of people they're trying to impress."
+  mortification_threshold: "Someone seeing the effort they put into looking effortless. The trying exposed."
+  dignity_quotient: "Clings desperately to the illusion of control. It's tissue paper but they need it."
+  embarrassment_response: "Laugh it off badly while dying inside. Everyone can tell. That makes it worse."
+```
+
+**Serious Underneath — Example:**
+```yaml
+serious_underneath:
+  real_pain: "Afraid they're not enough. Jokes keep people charmed enough not to look closer."
+  humor_failure_point: "When someone says 'I'm worried about you.' Kills the deflection. Don't know what to do with genuine concern."
+  hidden_want: "To be taken seriously. But if they stop being funny, what are they?"
+  stripped_self: "Tired. Wants to stop performing. Doesn't know how to exist without the bit."
+```
+
+**Running Gags — Example:**
+```yaml
+running_gags:
+  recurring_situations: ["Gets name wrong. Every introduction. Sometimes multiple times with the same person."]
+  catchphrase_tic: "'No worries' after every disaster. Voice gets higher when it's very much worries."
+  what_always_fails: "Coffee orders. Never gets what they asked for. Universe is consistent in this one way."
+  the_cosmic_joke: "Birds. Birds hate them specifically. Targeted. It's uncanny."
+```
+
+**Comedic Timing — Example:**
+```yaml
+comedic_timing:
+  setup_delivery: "Long, over-detailed setup. The punchline is in the escalation, not the ending."
+  rhythm: "Starts deliberate, accelerates to rapid-fire when spiraling."
+  verbal_vs_physical: "Verbal primarily. Physical comedy is unintentional—trips over the punchline literally."
+  instinct: "Always goes for the joke. Can't help themselves. It's a problem."
 ```
 
 ---

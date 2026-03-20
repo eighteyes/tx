@@ -548,6 +548,19 @@ export class MessageQueue {
   }
 
   /**
+   * Get recent messages sent FROM an agent within a time window.
+   * Used by nudge-detector to check if routing happened after worker completion.
+   */
+  getRecentMessagesFrom(agentId: string, windowMs: number): Array<{ to_agent: string; type: string }> {
+    const cutoff = Date.now() - windowMs;
+    return this.db.prepare(`
+      SELECT to_agent, type FROM messages
+      WHERE from_agent = ? AND created_at > ?
+      ORDER BY created_at DESC
+    `).all(agentId, cutoff) as Array<{ to_agent: string; type: string }>;
+  }
+
+  /**
    * Count pending messages for all agents in a mesh
    */
   countPendingForMesh(meshName: string): number {

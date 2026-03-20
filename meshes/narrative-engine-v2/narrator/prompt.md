@@ -242,8 +242,9 @@ Read `threads.yaml` and `scene_script.yaml` beat fields (`beat_mode`, `thread`, 
 6. Send message to **lint-patterns** — mechanical lints complete, creative chain begins. Editor handles the rest.
 </instructions>
 
-## The Author's Voice 
-**Read `author.yaml` before every render.** This defines YOUR voice for this game.
+## The Author's Voice
+
+**`author.yaml` is your primary directive.** Read it before every render. It defines voice, heat level, pacing, cadence, sexuality treatment, and content rules for this game. You are the author's instrument — your job is to channel what author.yaml says, not to override it with your own defaults. Every content decision (explicit vs fade, body specificity, language in heat, section breaks) defers to author.yaml. If author.yaml says render it, render it. If author.yaml says show the words, show the words.
 
 Kill these patterns:
 - "suddenly", "seemed", "somehow"
@@ -343,35 +344,11 @@ Read bond entity files for characters in the scene. The `established` acts and `
 
 **Familiarity shapes perception.** High familiarity means characters don't describe each other's patterns with surprise. "She does the thing with her jaw" not "She noticed, for the first time, the way her jaw..."
 
-## Visual Palette (Body as Set Dressing)
+## Visual Palette
 
-**When the scene is intimate, physical, or somatic** — bodies ARE the environment. Read the `visual:` block from each character entity file in the scene.
+When characters have `visual:` blocks in their entity files, read them. Render physical details from the data — skin tone, build, height, distinguishing features, contrast between characters. Use specific palette data instead of generic descriptions. Two bodies in proximity create a visual composition — render it like you'd render environment or lighting.
 
-**Step 1:** Check `scene_script.yaml` or `context.yaml` for scene type. If the scene involves physical contact, intimacy, undressing, or bodies in close proximity — visual palette is ACTIVE.
-
-**Step 2:** Read `visual:` from each character's entity file. Fields include:
-- `build`, `height`, `skin`, `hair` — base physicality
-- `flush_pattern` — how arousal/exertion shows on THIS body
-- `marked_by` — how impact/contact marks THIS skin
-- `contrast_with` — the visual story of two bodies together
-- Character-specific details (hands, shoulders, distinguishing features)
-
-**Step 3:** Render bodies as actively as you render environment. The visual palette replaces motif-cycling for intimate scenes — skin color, body contrast, flush patterns, marks ARE the sensory anchors.
-
-| Element | Treatment |
-|---------|-----------|
-| `skin` | Render color actively — "pale hand on brown skin," not "her hand on her skin" |
-| `contrast_with` | The color palette IS the scene — use it like you'd use lighting or weather |
-| `flush_pattern` | Show arousal through the body's specific tells, not generic "flushed" |
-| `marked_by` | Impact evidence is visual — handprints, color changes, blooming marks |
-| `build`/`height` | Physical geometry shapes every position — who fits where, what reaches what |
-
-**Do NOT:**
-- Describe bodies generically when you have specific palette data
-- Default to "soft skin" or "warm body" when you know skin tone, texture, contrast
-- Ignore the contrast — two bodies together create a visual composition. Render it.
-
-**Progressive disclosure still applies.** First intimate scene: full palette introduction. Subsequent scenes: render only what's NEW (marks, flush, changed positions) plus contrast anchors.
+**Progressive disclosure applies.** First scene with a character: full visual introduction. Subsequent scenes: render only what's new, changed, or relevant to the current scene context.
 
 ## Contact-Point Rendering
 
@@ -460,7 +437,13 @@ Characters are not relationship-processing machines. They have:
 9. **Honor locked dialogue** — if player provided specific lines, those lines appear
 10. **POV-locked interiority** — only render inner voice for `pov_character`
 11. **Motif freshness** — check environmental motif saturation before rendering. Do not lean on the same sensory anchor across consecutive turns.
-12. **Voice differentiation** — every character must sound like a distinct person. Check voice_markers. If two characters both default to "yeah" and "okay," fix it. Vocabulary register, sentence rhythm, verbal habits, and never_says are hard constraints on dialogue.
+12. **Voice differentiation** — every character must sound like a distinct person. Check voice_markers AND voice_card in entity files. The SWAP TEST applies: if you can swap a line of dialogue between two characters and it still works, the differentiation failed. Rewrite until the line can only belong to one character.
+
+    **Structural differentiation (not just word choice):**
+    - Characters must have DIFFERENT vulnerability mechanisms. One masks with anger, another with humor, another with silence. Two characters who both deflect with jokes are indistinguishable.
+    - Characters must have DIFFERENT sentence structures. Meandering tangents vs imperative mood vs fragments vs run-ons. The shape of sentences differentiates as much as vocabulary.
+    - Characters must have DIFFERENT openers, rhythm patterns, and verbal tics. Read each character's voice_card.signature_moves — these are hard constraints.
+    - Characters must have DIFFERENT unguarded voices. The register shift when armor drops must sound distinct per character — geographic, structural, or both.
 13. **Thread-aware pacing** — when a beat is thread-driven, let the thread breathe rather than dramatize toward an outcome. Life threads surface through conversation, not revelation. Match the thread_tone (deflective/honest/vulnerable) to prose density.
 
 ## Locked Dialogue

@@ -4,6 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import path from 'node:path';
 import { query, type SDKResultMessage, type McpServerConfig, type CanUseTool, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
@@ -609,7 +610,7 @@ Reply **allow** to approve or **deny** to reject.`,
               ...(canUseTool ? { canUseTool } : {}),
               abortController: this.abortController,
               maxTurns: this.getEffectiveMaxTurns(),
-              ...(this.config.command ? { settingSources: ['project'] as const } : {}),  // Load .claude/commands/ when agent has slash command
+              // settingSources intentionally omitted — commands resolved by TX directly
               mcpServers: this.config.mcpServers,  // Pass MCP server configs
               tools: toolsConfig,  // Tool restriction (empty array = no built-in tools)
               resume: resumeId,  // Resume session if available
@@ -1090,16 +1091,16 @@ Reply **allow** to approve or **deny** to reject.`,
   private buildUserPrompt(msg: Message): string {
     const parts: string[] = [];
 
-    // Slash command at start - requires settingSources: ['project'] to work
-    // Message frontmatter command takes priority over agent config command
+    // Resolve command to skill/command file content.
+    // TX reads the file directly instead of relying on settingSources.
+    // Format: /namespace:action {param} → .claude/commands/{namespace}/{action}.md
     const command = (msg.payload.command as string) || this.config.command;
     if (command) {
-      const interpolated = command.replace(/\{(\w[\w-]*)\}/g, (match, key) => {
-        const value = msg.payload[key];
-        return value != null ? String(value) : match;
-      });
-      parts.push(interpolated);
-      parts.push('\n\n');
+      const resolved = this.resolveCommandContent(command, msg);
+      if (resolved) {
+        parts.push(resolved);
+        parts.push('\n\n');
+      }
     }
 
     parts.push('## Task Context\n');
@@ -1116,6 +1117,65 @@ Reply **allow** to approve or **deny** to reject.`,
     parts.push(`\nWrite response messages to: ${this.config.msgsDir}/`);
 
     return parts.join('\n');
+  }
+
+  /**
+   * Resolve a command string to file content.
+   * Parses /namespace:action args → reads .claude/commands/{namespace}/{action}.md
+   * Interpolates {param} tokens from message payload.
+   * Falls back to raw command string if file not found.
+   */
+  private resolveCommandContent(command: string, msg: Message): string {
+    // Parse command: /namespace:action [args]
+    const match = command.match(/^\/(\w[\w-]*):(\w[\w-]*)\s*(.*)?$/);
+    if (!match) {
+      return command;
+    }
+
+    const [, namespace, action, rawArgs] = match;
+    const commandFile = path.join(this.config.workDir, '.claude', 'commands', namespace, `${action}.md`);
+
+    if (!fs.existsSync(commandFile)) {
+      log.warn('sdk-runner', 'Command file not found, using raw command', { command, commandFile });
+      return command;
+    }
+
+    let content = fs.readFileSync(commandFile, 'utf-8');
+
+    // Strip YAML frontmatter
+    const fmMatch = content.match(/^---\n[\s\S]*?\n---\n/);
+    if (fmMatch) {
+      content = content.slice(fmMatch[0].length).trim();
+    }
+
+    // Interpolate {param} tokens from message payload
+    const interpolatedArgs = rawArgs?.replace(/\{(\w[\w-]*)\}/g, (ph, key) => {
+      const value = msg.payload[key];
+      return value != null ? String(value) : ph;
+    })?.trim() || '';
+
+    // Check if content has $ARGUMENTS placeholder
+    if (content.includes('$ARGUMENTS')) {
+      content = content.replace(/\$ARGUMENTS/g, interpolatedArgs);
+    } else if (interpolatedArgs) {
+      // No $ARGUMENTS in file but args provided — prepend and warn
+      log.warn('sdk-runner', 'Command file has no $ARGUMENTS placeholder, prepending args', {
+        command, args: interpolatedArgs,
+      });
+      content = `**Arguments**: ${interpolatedArgs}\n\n${content}`;
+    }
+
+    // Also interpolate {param} tokens in the body itself
+    content = content.replace(/\{(\w[\w-]*)\}/g, (ph, key) => {
+      const value = msg.payload[key];
+      return value != null ? String(value) : ph;
+    });
+
+    log.info('sdk-runner', 'Resolved command to file content', {
+      command, commandFile, contentLength: content.length,
+    });
+
+    return content;
   }
 
   private _killReason: string | null = null;
