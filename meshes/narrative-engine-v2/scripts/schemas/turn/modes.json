@@ -1,0 +1,6 @@
+{
+  "fates": {"mode": "overwrite"},
+  "violations": {"mode": "append", "allowed_targets": [".violations"]},
+  "sim-progress": {"mode": "patch", "strategy": "deep_merge"},
+  "calibration-state": {"mode": "patch", "strategy": "deep_merge"}
+}
