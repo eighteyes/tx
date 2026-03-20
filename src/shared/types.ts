@@ -418,3 +418,34 @@ export interface DistributionResult {
   synthesized_result: string;
   metadata?: Record<string, unknown>;
 }
+
+// Work Assay Creation types
+
+/**
+ * Summarizer input configuration
+ * Controls which inputs are passed to the summarizer
+ */
+export interface SummarizerInputs {
+  intent?: boolean;      // Include frozen intent (default: true)
+  rearmatter?: boolean;  // Include extracted rearmatter (default: true)
+  trace?: boolean;       // Include session transcript (default: true)
+}
+
+/**
+ * Summarizer configuration
+ * Defines a named post-completion worker that produces assay artifacts
+ */
+export interface SummarizerConfig {
+  prompt: string;             // Path to summarizer prompt file (required)
+  model?: SemanticModel;      // Model override (defaults to mesh model)
+  destination?: string;       // Where to deliver output: 'core/core' (default), agent name, or 'next'
+  inputs?: SummarizerInputs;  // Which inputs to feed (defaults: all true)
+  timeout?: number;           // Timeout in seconds (default: 60)
+}
+
+/**
+ * Agent-level summarizer options
+ * Deep-merged over base SummarizerConfig
+ * Cannot override 'prompt' (must define new summarizer instead)
+ */
+export type SummarizerOptions = Omit<SummarizerConfig, 'prompt'>;

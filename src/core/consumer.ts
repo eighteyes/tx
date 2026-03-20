@@ -1447,27 +1447,42 @@ export class MessageConsumer extends EventEmitter {
     return data;
   }
 
-  private parseRearmatter(yaml: string): Record<string, unknown> {
-    const data: Record<string, unknown> = {};
-
-    for (const line of yaml.split('\n')) {
-      const match = line.match(/^([^:]+):\s*(.*)$/);
-      if (!match) continue;
-
-      const key = match[1].trim();
-      const raw = match[2].trim();
-
-      // Parse as number, JSON, or keep as string
-      if (/^-?\d+\.?\d*$/.test(raw)) {
-        data[key] = parseFloat(raw);
-      } else if (raw.startsWith('{') || raw.startsWith('[')) {
-        try { data[key] = JSON.parse(raw); } catch { data[key] = raw; }
-      } else {
-        data[key] = raw;
-      }
+  /**
+   * Parse rearmatter YAML section (full YAML parser)
+   * Supports nested objects, arrays, multiline scalars
+   * Returns null on parse error (fail-open - message delivery continues)
+   */
+  private parseRearmatter(yamlText: string): Record<string, unknown> | null {
+    if (!yamlText || yamlText.trim().length === 0) {
+      return null;
     }
 
-    return data;
+    try {
+      const parsed = YAML.parse(yamlText);
+
+      // YAML.parse returns null for empty documents
+      if (parsed === null || parsed === undefined) {
+        return null;
+      }
+
+      // Ensure result is an object (not a primitive or array at root)
+      if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+        log.warn('consumer', 'Rearmatter parsed but is not an object', {
+          type: typeof parsed,
+          isArray: Array.isArray(parsed),
+        });
+        return null;
+      }
+
+      return parsed as Record<string, unknown>;
+    } catch (err) {
+      // YAML parse error - log but don't throw (fail-open)
+      log.warn('consumer', 'Failed to parse rearmatter YAML', {
+        error: (err as Error).message,
+        yamlPreview: yamlText.substring(0, 100),
+      });
+      return null;
+    }
   }
 
   /**

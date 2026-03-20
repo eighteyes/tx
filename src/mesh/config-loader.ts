@@ -123,6 +123,9 @@ export interface AgentConfig {
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
   postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
   fragments?: Record<string, string> | string;  // Fragment map { name: path } or directory path
+  rearmatter?: boolean;  // Enable rearmatter self-report after completion (default: false)
+  summarizer?: string;  // Reference to summarizer name from mesh summarizers block
+  summarizerOptions?: import('../shared/types.ts').SummarizerOptions;  // Per-agent summarizer overrides (deep-merged)
 }
 
 /**
@@ -152,7 +155,8 @@ export interface MeshConfig {
   iteration?: IterationConfig;  // Iteration config for quality gates
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
-  rearmatter?: RearmatterConfig;  // Transparency metadata config
+  rearmatter?: RearmatterConfig;  // Transparency metadata config (DEPRECATED: use agent.rearmatter boolean)
+  summarizers?: Record<string, import('../shared/types.ts').SummarizerConfig>;  // Named summarizer definitions
   manifest?: ManifestEntry[];  // File I/O manifest: declares files, readers/writers, locations
   manifest_enforcement?: ManifestEnforcementConfig;  // Artifact validation settings
   guardrails?: MeshGuardrailConfig;  // Per-mesh guardrail overrides (mesh-local wins over global)
