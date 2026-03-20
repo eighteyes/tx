@@ -1,0 +1,5 @@
+violations:
+  - type: word_doubling
+    classification: MECHANICAL
+    scope: scene_1
+    count: 2

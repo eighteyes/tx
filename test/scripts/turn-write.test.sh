@@ -4,12 +4,19 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TURN_WRITE="$SCRIPT_DIR/../../meshes/narrative-engine-v2/scripts/turn-write.sh"
 FIXTURES="$SCRIPT_DIR/fixtures"
+WRITE="$TURN_WRITE"
 PASS=0
 FAIL=0
 
 # Temp workspace with cleanup
 TMPWS=$(mktemp -d)
 trap 'rm -rf "$TMPWS"' EXIT
+
+setup_workspace() {
+  local ws
+  ws=$(mktemp -d)
+  echo "$ws"
+}
 
 assert_exit() {
   local desc="$1" expected="$2" actual="$3"
@@ -88,6 +95,45 @@ assert_exit "malformed JSON exits 2" 2 $?
 WS4="$TMPWS/test4"
 echo '{}' | bash "$TURN_WRITE" "$WS4" nonexistent-artifact 2>/dev/null
 assert_exit "unknown artifact exits 3" 3 $?
+
+# ─────────────────────────────────────────────
+# Test 5: Append mode — adds entry to existing file
+# ─────────────────────────────────────────────
+
+WS=$(setup_workspace)
+cp "$FIXTURES/existing-violations.yaml" "$WS/violations.yaml"
+cat "$FIXTURES/violation-entry.json" | "$WRITE" "$WS" violations --target=.violations 2>/dev/null
+assert_exit "append to existing file" 0 $?
+COUNT=$(yq '.violations | length' "$WS/violations.yaml")
+[[ "$COUNT" -eq 2 ]] && PASS=$((PASS + 1)) || { echo "FAIL: expected 2 violations, got $COUNT" >&2; FAIL=$((FAIL + 1)); }
+rm -rf "$WS"
+
+# ─────────────────────────────────────────────
+# Test 6: Append mode — creates file if not exists
+# ─────────────────────────────────────────────
+
+WS=$(setup_workspace)
+cat "$FIXTURES/violation-entry.json" | "$WRITE" "$WS" violations --target=.violations 2>/dev/null
+assert_exit "append creates new file" 0 $?
+[[ -f "$WS/violations.yaml" ]] && PASS=$((PASS + 1)) || { echo "FAIL: violations.yaml should exist" >&2; FAIL=$((FAIL + 1)); }
+rm -rf "$WS"
+
+# ─────────────────────────────────────────────
+# Test 7: Patch mode — merges into existing
+# ─────────────────────────────────────────────
+
+WS=$(setup_workspace)
+cat > "$WS/sim-progress.yaml" << 'SIMEOF'
+beats_complete: 2
+current_beat: beat_3
+status: in_progress
+SIMEOF
+echo '{"beats_complete": 3, "current_beat": "beat_4"}' | "$WRITE" "$WS" sim-progress 2>/dev/null
+assert_exit "patch merges into existing" 0 $?
+BEATS=$(yq '.beats_complete' "$WS/sim-progress.yaml")
+STATUS=$(yq '.status' "$WS/sim-progress.yaml")
+[[ "$BEATS" -eq 3 && "$STATUS" == "in_progress" ]] && PASS=$((PASS + 1)) || { echo "FAIL: patch should merge, not overwrite — beats=$BEATS status=$STATUS" >&2; FAIL=$((FAIL + 1)); }
+rm -rf "$WS"
 
 # ─────────────────────────────────────────────
 # Results

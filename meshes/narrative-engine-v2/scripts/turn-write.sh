@@ -191,15 +191,15 @@ case "$MODE" in
     fi
 
     if [[ -f "$OUTPUT_FILE" ]]; then
-      # Read incoming JSON array items and append each to the target array
+      # Append incoming object as a new entry in the target array
       MERGED=$(mktmp)
-      # Convert input JSON to YAML, then merge into existing file at target path
-      yq eval-all "select(fi == 0) as \$base | select(fi == 1) as \$new | \$base | ${TARGET} += \$new${TARGET}" \
+      yq eval-all "select(fi == 0) as \$base | select(fi == 1) as \$new | \$base | ${TARGET} += [\$new]" \
         "$OUTPUT_FILE" <(yq -P < "$INPUT_FILE") > "$MERGED"
       mv "$MERGED" "$OUTPUT_FILE"
     else
-      # No existing file — just write
-      yq -P < "$INPUT_FILE" > "$OUTPUT_FILE"
+      # No existing file — wrap as single-element array under target path
+      WRAPPED=$(mktmp)
+      jq --arg target "${TARGET#.}" '{($target): [.]}' < "$INPUT_FILE" | yq -P > "$OUTPUT_FILE"
     fi
     ;;
 
