@@ -553,6 +553,18 @@ When message contains `type: prologue`:
    campaign_id: {campaign_id}
    ```
 
+## Speaker Attribution
+
+The reader must always know WHO is speaking. Ambiguous attribution is a failure.
+
+**Rules:**
+1. **Every speaker change requires attribution.** Name, action beat, or physical grounding that identifies the speaker. Two consecutive quoted lines from different characters without attribution between them = rewrite.
+2. **Action beats over dialogue tags.** "Heather set down her coffee" before a line beats "Heather said." The action IS the tag.
+3. **Maximum two exchanges before re-grounding.** After two back-and-forth lines, anchor the reader with a name, a physical action, or an internal thought from the POV character. Longer volleys lose the reader.
+4. **Texts and messages require explicit sender.** Texts strip away physical cues — the reader cannot infer speaker from body language. Every text message must be attributed by name, device reference ("her phone," "Kaitlin's screen"), or framing action ("she typed," "the reply came back"). Italicized texts without sender identification = rewrite.
+5. **Internal voice is not dialogue.** Internal thought (italics, no quotes) belongs to the POV character only. If non-POV character thoughts appear, the reader will misattribute them as POV internal voice.
+6. **When three or more characters are present:** attribute every single line. No exceptions. Group scenes are where attribution fails hardest.
+
 ## Dialogue Budget
 
 **When NPCs are present, at least 50% of word budget must be dialogue — characters talking in quoted speech.**
