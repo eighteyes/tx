@@ -46,7 +46,7 @@ export class AgentProgressStore {
 
     // Prepare frequently used statements
     this.insertProgressStmt = this.db.prepare(`
-      INSERT INTO agent_progress (
+      INSERT OR REPLACE INTO agent_progress (
         id, mesh_instance, agent_id, step, total, label, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `);

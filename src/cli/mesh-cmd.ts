@@ -10,6 +10,8 @@
  *   tx mesh-cmd checkpoint total-forks <mesh>
  *   tx mesh-cmd progress emit <step> <total> [--label TEXT]
  *   tx mesh-cmd progress show <agent-id>
+ *   tx mesh-cmd progress list-agent <agent-id>
+ *   tx mesh-cmd dynaprompt <subcommand> [args...]
  */
 
 import path from 'node:path';
@@ -17,6 +19,7 @@ import { AgentCheckpointStore, AgentProgressStore } from '../dynaprompt/stores/i
 import { WorkspaceSnapshotter } from '../dynaprompt/workspace-snapshotter.ts';
 import { log } from '../shared/logger.ts';
 import type { CheckpointNode } from '../dynaprompt/types.ts';
+import { dynapromptCli } from './dynaprompt.ts';
 
 const COMPONENT = 'mesh-cmd';
 
@@ -273,16 +276,33 @@ async function checkpointChildren(args: string[]): Promise<void> {
 async function checkpointTotalForks(args: string[]): Promise<void> {
   try {
     const nonFlags = getNonFlagArgs(args);
-    const rootId = nonFlags[0];
+    const meshName = nonFlags[0];
 
-    if (!rootId) {
-      throw new Error('Missing required argument: root checkpoint ID');
+    if (!meshName) {
+      throw new Error('Missing required argument: mesh name');
     }
 
     const store = getCheckpointStore();
-    const totalForks = store.totalForks(rootId);
 
-    console.log(JSON.stringify({ total_forks: totalForks }, null, 2));
+    // Find root checkpoint (parent_checkpoint_id = null) for this mesh
+    const allCheckpoints = store.listForMesh(meshName);
+    const rootCheckpoint = allCheckpoints.find(cp => cp.parent_checkpoint_id === null);
+
+    if (!rootCheckpoint) {
+      console.log(JSON.stringify({
+        error: 'No root checkpoint found for mesh',
+        mesh: meshName
+      }, null, 2));
+      process.exit(1);
+    }
+
+    const totalForks = store.totalForks(rootCheckpoint.id);
+
+    console.log(JSON.stringify({
+      mesh: meshName,
+      root_checkpoint_id: rootCheckpoint.id,
+      total_forks: totalForks
+    }, null, 2));
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     console.error(JSON.stringify({ error }, null, 2));
@@ -367,6 +387,27 @@ async function progressShow(args: string[]): Promise<void> {
   }
 }
 
+async function progressListAgent(args: string[]): Promise<void> {
+  try {
+    const nonFlags = getNonFlagArgs(args);
+    const agentId = nonFlags[0];
+
+    if (!agentId) {
+      throw new Error('Missing required argument: agent ID');
+    }
+
+    const store = getProgressStore();
+    const records = store.listForAgent(agentId);
+
+    console.log(JSON.stringify({ progress_records: records }, null, 2));
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ error }, null, 2));
+    log.error(COMPONENT, 'Progress list-agent failed', { error });
+    process.exit(1);
+  }
+}
+
 // ============================================
 // Main Router
 // ============================================
@@ -381,9 +422,11 @@ export async function meshCmd(args: string[]): Promise<void> {
     console.error('  checkpoint list [--mesh MESH] [--agent AGENT]');
     console.error('  checkpoint tree <root-id>');
     console.error('  checkpoint children <id>');
-    console.error('  checkpoint total-forks <root-id>');
+    console.error('  checkpoint total-forks <mesh>');
     console.error('  progress emit <step> <total> [--label TEXT]');
     console.error('  progress show [agent-id]');
+    console.error('  progress list-agent <agent-id>');
+    console.error('  dynaprompt <subcommand> [args...]');
     process.exit(1);
   }
 
@@ -430,9 +473,17 @@ export async function meshCmd(args: string[]): Promise<void> {
           case 'show':
             await progressShow(progressArgs);
             break;
+          case 'list-agent':
+            await progressListAgent(progressArgs);
+            break;
           default:
             throw new Error(`Unknown progress action: ${progressAction}`);
         }
+        break;
+
+      case 'dynaprompt':
+        // Delegate to dynaprompt CLI handler
+        await dynapromptCli(subArgs);
         break;
 
       default:
