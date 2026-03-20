@@ -153,8 +153,17 @@ export class WorktreeManager {
       // Skip if source doesn't exist
       if (!fs.existsSync(sourcePath)) continue;
 
-      // Skip if target already exists (reuse case)
-      if (fs.existsSync(targetPath)) continue;
+      // If target exists as a real directory (not symlink), replace it.
+      // Stale real directories from pre-symlink worktrees cause message routing failures.
+      if (fs.existsSync(targetPath)) {
+        const stats = fs.lstatSync(targetPath);
+        if (stats.isSymbolicLink()) continue;  // Already symlinked — skip
+        // Real directory exists — remove and replace with symlink
+        log.info('worktree', `Replacing real directory with symlink: ${dir}`, {
+          target: targetPath, source: sourcePath,
+        });
+        fs.rmSync(targetPath, { recursive: true });
+      }
 
       try {
         fs.symlinkSync(sourcePath, targetPath, 'dir');
