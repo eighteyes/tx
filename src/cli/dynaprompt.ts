@@ -49,8 +49,14 @@ function getNonFlagArgs(args: string[]): string[] {
  * Load fragment registry for mesh/agent
  */
 function loadFragmentRegistry(meshName: string, agentName: string): FragmentRegistry {
-  const configLoader = new MeshConfigLoader();
-  const meshConfig = configLoader.load(meshName);
+  const workDir = process.cwd();
+  const meshesDir = path.join(workDir, 'meshes');
+
+  const configLoader = new MeshConfigLoader({ workDir, meshesDir });
+
+  // Load on demand if not already loaded
+  configLoader.loadOnDemand(meshName);
+  const meshConfig = configLoader.get(meshName);
 
   if (!meshConfig) {
     throw new Error(`Mesh not found: ${meshName}`);
@@ -65,8 +71,8 @@ function loadFragmentRegistry(meshName: string, agentName: string): FragmentRegi
   const registry = new FragmentRegistry();
 
   // Determine fragment directories
-  const meshDir = path.join(process.cwd(), 'meshes', meshName, 'fragments');
-  const agentDir = path.join(process.cwd(), 'meshes', meshName, 'agents', agentName, 'fragments');
+  const meshDir = path.join(meshesDir, meshName, 'fragments');
+  const agentDir = path.join(meshesDir, meshName, 'agents', agentName, 'fragments');
 
   registry.load(
     { fragments: meshConfig.fragments },
