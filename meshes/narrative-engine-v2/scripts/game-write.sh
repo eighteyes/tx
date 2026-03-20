@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# turn-write.sh - Validate JSON from stdin and write YAML turn artifacts
+# game-write.sh - Validate JSON from stdin and write YAML game artifacts
 #
-# Usage: turn-write.sh <workspace> <artifact> [--target=PATH]
-#   Reads JSON from stdin, validates against schemas/turn/<artifact>.schema.jq,
+# Usage: game-write.sh <workspace> <artifact> [--target=PATH]
+#   Reads JSON from stdin, validates against schemas/game/<artifact>.schema.jq,
 #   then writes to <workspace>/<artifact>.yaml using the configured write mode.
 #
-# Write modes (configured in schemas/turn/modes.json):
-#   overwrite - Replace file entirely (default)
-#   append    - Append to a target array in existing YAML
-#   patch     - Deep merge incoming JSON into existing YAML
-#   delta     - Apply arithmetic deltas to specified fields
+# Entity slash addressing:
+#   character/heather  -> schema: character.schema.jq, file: entities/characters/heather.yaml
+#   bond/kai_heath     -> schema: bond.schema.jq, file: entities/bonds/kai_heath.yaml
+#   author             -> schema: author.schema.jq, file: author.yaml
+#
+# Write modes (configured in schemas/game/modes.json):
+#   overwrite - Replace file entirely (all game artifacts use overwrite)
 #
 # Exit codes:
 #   0 - Success
@@ -21,8 +23,8 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-LEVEL="turn"
-SCHEMA_SUBDIR="turn"
+LEVEL="game"
+SCHEMA_SUBDIR="game"
 
 # ─────────────────────────────────────────────
 # HELP
@@ -30,25 +32,27 @@ SCHEMA_SUBDIR="turn"
 
 show_help() {
   cat >&2 <<'USAGE'
-turn-write.sh — Validate JSON and write YAML turn artifacts
+game-write.sh — Validate JSON and write YAML game artifacts
 
 Usage:
-  turn-write.sh <workspace> <artifact> [--target=PATH]
-  echo '{"branches":[],"seeds":[]}' | turn-write.sh ./ws fates
+  game-write.sh <workspace> <artifact> [--target=PATH]
+  echo '{"voice":"literary"}' | game-write.sh ./ws author
 
 Arguments:
-  workspace   Directory to write the artifact YAML into
-  artifact    Schema name (e.g. fates, violations, sim-progress)
+  workspace   Game directory to write artifacts into
+  artifact    Schema name, with optional entity slash addressing:
+              character/heather  -> entities/characters/heather.yaml
+              bond/kai_heath     -> entities/bonds/kai_heath.yaml
+              author             -> author.yaml
+              setting            -> setting.yaml
+              arc                -> arc.yaml
 
 Options:
-  --target=PATH   YAML path for append mode (e.g. .violations)
+  --target=PATH   YAML path for append mode
   --help          Show this help
 
-Write Modes (from schemas/turn/modes.json):
-  overwrite   Replace file entirely (default)
-  append      Append to target array in existing YAML
-  patch       Deep merge incoming JSON into existing YAML
-  delta       Apply arithmetic deltas, merge non-delta fields
+Write Modes (from schemas/game/modes.json):
+  overwrite   Replace file entirely (default for all game artifacts)
 
 Exit Codes:
   0  Success
@@ -73,13 +77,15 @@ source "$SCRIPT_DIR/write-common.sh"
 parse_write_args "$@"
 
 SCHEMA_DIR="$SCRIPT_DIR/schemas"
-SCHEMA_FILE="$SCHEMA_DIR/turn/${ARTIFACT}.schema.jq"
+resolve_schema_name "$ARTIFACT"
+resolve_entity_path "$WORKSPACE" "$ARTIFACT"
+
+SCHEMA_FILE="$SCHEMA_DIR/game/${SCHEMA_TYPE}.schema.jq"
 
 if [[ ! -f "$SCHEMA_FILE" ]]; then
   err_json "$ARTIFACT" 3 "[{\"type\":\"unknown_artifact\",\"artifact\":\"$ARTIFACT\"}]"
 fi
 
-resolve_write_mode "$ARTIFACT"
+resolve_write_mode "$SCHEMA_TYPE"
 validate_input
-OUTPUT_FILE="$WORKSPACE/${ARTIFACT}.yaml"
-apply_write "$ARTIFACT"
+apply_write "$SCHEMA_TYPE"
