@@ -212,6 +212,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Mesh completion behavior
   stop_on_first_complete: { type: 'boolean' },
   check_queue_on_complete: { type: 'boolean' },
+  // Summarizers (work-assay-creation): named post-completion audit workers
+  summarizers: { type: 'object' },  // Record<string, SummarizerConfig>
 };
 
 /**
@@ -233,6 +235,10 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   checkpoint: { type: 'string', enum: ['start', 'end'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
   fork_from: { type: 'string' },  // Fork from another agent's checkpoint
   orchestrator: { type: 'boolean' },  // Restrict to Read + Write(msgs only)
+  // Rearmatter and summarizer (work-assay-creation)
+  rearmatter: { type: 'boolean' },  // Enable agent self-report
+  summarizer: { type: 'string' },  // Reference to summarizer name (from mesh.summarizers)
+  summarizerOptions: { type: 'object' },  // Per-agent overrides to summarizer config (deep-merged)
 };
 
 /**
@@ -316,6 +322,11 @@ export class MeshValidator {
     // Validate rearmatter if present
     if (cfg.rearmatter) {
       this.validateRearmatter(cfg.rearmatter, errors, warnings, context);
+    }
+
+    // Validate summarizers if present
+    if (cfg.summarizers && Array.isArray(cfg.agents)) {
+      this.validateSummarizers(cfg.summarizers, cfg.agents, errors, warnings, context);
     }
 
     // Validate FSM if present
@@ -1812,6 +1823,131 @@ export class MeshValidator {
           `Ensemble agent '${agentName}' should have routing configuration${context}. ` +
           `Add routing for ensemble agents to define completion message destinations.`
         );
+      }
+    }
+  }
+
+  /**
+   * Validate summarizers configuration (work-assay-creation)
+   *
+   * Checks:
+   * - Summarizer structure (prompt, model, destination, inputs, timeout)
+   * - Prompt files exist (relative to workDir)
+   * - Agent references to summarizers are valid
+   * - Agent summarizerOptions doesn't contain 'prompt' key (must define new summarizer)
+   * - Warns if agent has summarizer but rearmatter is false
+   */
+  private static validateSummarizers(
+    summarizers: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (!summarizers || typeof summarizers !== 'object') {
+      errors.push(`'summarizers' must be an object${context}`);
+      return;
+    }
+
+    const summarizersObj = summarizers as Record<string, unknown>;
+    const summarizerNames = Object.keys(summarizersObj);
+
+    // Validate each summarizer definition
+    for (const name of summarizerNames) {
+      const summarizer = summarizersObj[name];
+      const prefix = `summarizers.${name}`;
+
+      if (!summarizer || typeof summarizer !== 'object') {
+        errors.push(`${prefix} must be an object${context}`);
+        continue;
+      }
+
+      const summarizerObj = summarizer as Record<string, unknown>;
+
+      // Required field: prompt
+      if (!summarizerObj.prompt) {
+        errors.push(`${prefix}: missing required field 'prompt'${context}`);
+      } else if (typeof summarizerObj.prompt !== 'string') {
+        errors.push(`${prefix}: 'prompt' must be a string${context}`);
+      }
+
+      // Optional fields with type validation
+      if (summarizerObj.model !== undefined && typeof summarizerObj.model !== 'string') {
+        warnings.push(`${prefix}: 'model' should be a string${context}`);
+      }
+
+      if (summarizerObj.destination !== undefined && typeof summarizerObj.destination !== 'string') {
+        warnings.push(`${prefix}: 'destination' should be a string${context}`);
+      }
+
+      if (summarizerObj.timeout !== undefined && typeof summarizerObj.timeout !== 'number') {
+        warnings.push(`${prefix}: 'timeout' should be a number${context}`);
+      } else if (typeof summarizerObj.timeout === 'number' && summarizerObj.timeout <= 0) {
+        warnings.push(`${prefix}: 'timeout' must be positive, got ${summarizerObj.timeout}${context}`);
+      }
+
+      if (summarizerObj.inputs !== undefined) {
+        if (typeof summarizerObj.inputs !== 'object' || Array.isArray(summarizerObj.inputs)) {
+          warnings.push(`${prefix}: 'inputs' should be an object${context}`);
+        } else {
+          const inputs = summarizerObj.inputs as Record<string, unknown>;
+          // Validate inputs flags are booleans
+          for (const inputKey of ['intent', 'rearmatter', 'trace']) {
+            if (inputs[inputKey] !== undefined && typeof inputs[inputKey] !== 'boolean') {
+              warnings.push(`${prefix}.inputs.${inputKey} should be a boolean${context}`);
+            }
+          }
+        }
+      }
+    }
+
+    // Validate agent references to summarizers
+    for (const agent of agents) {
+      if (!agent || typeof agent !== 'object') continue;
+      const agentObj = agent as Record<string, unknown>;
+      const agentName = agentObj.name as string;
+
+      // Check if agent.summarizer references a valid summarizer name
+      if (agentObj.summarizer !== undefined) {
+        if (typeof agentObj.summarizer !== 'string') {
+          errors.push(`Agent '${agentName}': 'summarizer' must be a string${context}`);
+        } else if (!summarizerNames.includes(agentObj.summarizer)) {
+          errors.push(
+            `Agent '${agentName}': references undefined summarizer '${agentObj.summarizer}'${context}. ` +
+            `Available summarizers: [${summarizerNames.join(', ')}]`
+          );
+        }
+
+        // Warn if summarizer set but rearmatter is false
+        if (agentObj.rearmatter === false) {
+          warnings.push(
+            `Agent '${agentName}': has 'summarizer' but 'rearmatter' is false${context}. ` +
+            `Summarizer requires rearmatter to function.`
+          );
+        }
+      }
+
+      // Check if agent.summarizerOptions contains 'prompt' key (not allowed)
+      if (agentObj.summarizerOptions !== undefined) {
+        if (typeof agentObj.summarizerOptions !== 'object' || Array.isArray(agentObj.summarizerOptions)) {
+          errors.push(`Agent '${agentName}': 'summarizerOptions' must be an object${context}`);
+        } else {
+          const options = agentObj.summarizerOptions as Record<string, unknown>;
+          if (options.prompt !== undefined) {
+            errors.push(
+              `Agent '${agentName}': 'summarizerOptions' cannot contain 'prompt' key${context}. ` +
+              `Define a new summarizer instead.`
+            );
+          }
+        }
+
+        // Warn if summarizerOptions set but no summarizer assigned
+        if (agentObj.summarizer === undefined) {
+          warnings.push(
+            `Agent '${agentName}': has 'summarizerOptions' but no 'summarizer' assigned${context}. ` +
+            `Options will be ignored without a base summarizer.`
+          );
+        }
       }
     }
   }

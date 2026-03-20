@@ -132,10 +132,10 @@ export function extractAndSaveRearmatter(
   let modifiedBody: string;
 
   if (destination === 'core/core') {
-    // User-facing: include rearmatter inline (keep full content)
-    // Don't replace - the original parseMessage flow keeps body + rearmatter separate
-    // We'll handle inline assembly later in the delivery formatting
-    modifiedBody = messageBody;
+    // User-facing: include rearmatter inline as third section
+    // Reconstruct the full message with rearmatter YAML inline
+    const yamlContent = rearmatter ? YAML.stringify(rearmatter) : rawRearmatter;
+    modifiedBody = `${messageBody}\n\n---\n\n${yamlContent}`;
   } else {
     // Internal agent-to-agent: replace with reference pointer
     modifiedBody = `${messageBody}\n\n[rearmatter: ${rearmatterPath}]`;

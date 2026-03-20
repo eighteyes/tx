@@ -16,9 +16,12 @@ import YAML from 'yaml';
 import type { MessageQueue } from '../queue/index.ts';
 import { log } from '../shared/logger.ts';
 import { DispatchRouter } from '../worker/dispatch-router.ts';
-import type { DispatcherRoutingConfig } from '../shared/types.ts';
+import type { DispatcherRoutingConfig, SummarizerConfig } from '../shared/types.ts';
 import { SystemMessageWriter } from './system-message-writer.ts';
 import { GuardrailConfig } from '../worker/guardrail-config.ts';
+import { extractAndSaveRearmatter, freezeIntent } from './rearmatter-extractor.ts';
+import { runSummarizer, mergeSummarizerConfig } from './summarizer-runner.ts';
+import { extractConfidence } from '../shared/rearmatter-schema.ts';
 
 /**
  * Interface for FSM validation capability
@@ -113,6 +116,7 @@ interface MeshConfig {
   fsm?: Record<string, unknown>;  // FSM config block (presence means FSM-controlled mesh)
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
+  summarizers?: Record<string, SummarizerConfig>;  // Named post-completion workers (work-assay-creation)
 }
 
 
@@ -148,12 +152,18 @@ export class MessageConsumer extends EventEmitter {
   systemWriter!: SystemMessageWriter;
   // Guardrail config for max_instances enforcement
   private guardrailConfig: GuardrailConfig;
+  // Work directories for assay artifacts and sessions
+  private workDir: string;
+  private assayDir: string;
+  private sessionDir: string;
+  private msgsDir: string;
 
   constructor(watchDir: string, queue: MessageQueue, meshesDir?: string) {
     super();
     this.setMaxListeners(25);
     this.watchDir = watchDir;
     this.queue = queue;
+    this.msgsDir = watchDir;
     // Default to TX_ROOT/meshes if not provided
     this.meshesDir = meshesDir || (process.env.TX_ROOT
       ? path.join(process.env.TX_ROOT, 'meshes')
@@ -166,10 +176,15 @@ export class MessageConsumer extends EventEmitter {
     );
     // Derive workDir from watchDir (.ai/tx/msgs -> project root)
     // watchDir is typically <workDir>/.ai/tx/msgs
-    const workDir = watchDir.endsWith(path.join('.ai', 'tx', 'msgs'))
+    this.workDir = watchDir.endsWith(path.join('.ai', 'tx', 'msgs'))
       ? path.resolve(watchDir, '../../..')
       : path.dirname(watchDir);
-    this.guardrailConfig = new GuardrailConfig(workDir);
+
+    // Set up assay and session directories
+    this.assayDir = path.join(this.workDir, '.ai', 'tx', 'assay');
+    this.sessionDir = path.join(this.workDir, '.ai', 'tx', 'sessions');
+
+    this.guardrailConfig = new GuardrailConfig(this.workDir);
     this.loadMeshEntryPoints();
   }
 
@@ -989,6 +1004,107 @@ export class MessageConsumer extends EventEmitter {
       // Change events without revision frontmatter: treat as new message
       // Queue insert handles dedup via UNIQUE constraint on source_file
 
+      // =================================================================
+      // WORK ASSAY CREATION - Rearmatter extraction + Summarizer
+      // =================================================================
+      let extractedConfidence: number | undefined;
+      let modifiedBody = parsed.body;
+      let assayPath: string | null = null;
+
+      // Extract mesh and agent names
+      const [meshName, agentName] = fromAgent.split('/');
+      const [, toAgentName] = toAgent.split('/');
+      const msgId = parsed.frontmatter['msg-id'] || `msg-${Date.now()}`;
+
+      // Intent freezing: save first message to entry_point
+      const entryPointName = this.meshEntryPoints.get(meshName);
+      if (entryPointName && toAgentName === entryPointName) {
+        freezeIntent(parsed.body, meshName, toAgentName, entryPointName, this.assayDir);
+      }
+
+      // Rearmatter extraction (if present)
+      if (parsed.rearmatter) {
+        const extraction = extractAndSaveRearmatter(
+          parsed.body,
+          parsed.rearmatter,
+          null,  // rawRearmatter - parseRearmatter already did YAML parse
+          meshName,
+          agentName,
+          msgId,
+          toAgent,
+          this.assayDir
+        );
+
+        extractedConfidence = extraction.confidence;
+        modifiedBody = extraction.body;
+
+        // Load mesh config to check for summarizer assignment
+        const meshConfig = await this.loadMeshConfig(meshName);
+        if (meshConfig && meshConfig.agents) {
+          const agent = (meshConfig.agents as Array<Record<string, unknown>>).find(
+            (a) => a.name === agentName
+          );
+
+          if (agent && agent.summarizer && typeof agent.summarizer === 'string') {
+            // Agent has summarizer assigned - spawn it
+            const summarizers = meshConfig.summarizers as Record<string, SummarizerConfig> | undefined;
+            if (summarizers && summarizers[agent.summarizer]) {
+              const baseSummarizer = summarizers[agent.summarizer];
+              const summarizerOptions = agent.summarizerOptions as Partial<SummarizerConfig> | undefined;
+              const finalConfig = mergeSummarizerConfig(baseSummarizer, summarizerOptions);
+
+              // Determine mesh model (for summarizer default)
+              const meshModel = (meshConfig.agents as Array<Record<string, unknown>>)?.[0]?.model as string || 'sonnet';
+
+              // Run summarizer (synchronous with timeout)
+              const summarizerResult = await runSummarizer(
+                finalConfig,
+                meshName,
+                agentName,
+                msgId,
+                meshModel as 'opus' | 'sonnet' | 'haiku',
+                this.assayDir,
+                this.sessionDir,
+                this.workDir,
+                this.msgsDir,
+                this.queue,
+                parsed.frontmatter['session-id'],
+                path.join(this.meshesDir, meshName)  // promptBasePath for mesh-specific prompts
+              );
+
+              if (summarizerResult.success && summarizerResult.assayPath) {
+                assayPath = summarizerResult.assayPath;
+                // Format assay in message body based on destination
+                if (toAgent === 'core/core') {
+                  // User-facing: inline the assay YAML
+                  if (summarizerResult.assay) {
+                    const assayYaml = YAML.stringify(summarizerResult.assay);
+                    modifiedBody += `\n\n---\n\n${assayYaml}`;
+                  }
+                } else {
+                  // Internal agent-to-agent: append reference pointer
+                  const assayRelPath = path.relative(this.workDir, summarizerResult.assayPath);
+                  modifiedBody += `\n\n[assay: ${assayRelPath}]`;
+                }
+              } else if (summarizerResult.timedOut) {
+                log.info('consumer', 'Summarizer timed out - proceeding without assay', {
+                  mesh: meshName,
+                  agent: agentName,
+                  msgId,
+                });
+              } else if (summarizerResult.error) {
+                log.warn('consumer', 'Summarizer failed - proceeding without assay', {
+                  mesh: meshName,
+                  agent: agentName,
+                  msgId,
+                  error: summarizerResult.error,
+                });
+              }
+            }
+          }
+        }
+      }
+
       const id = this.queue.insert({
         from_agent: parsed.frontmatter.from,
         to_agent: toAgent,
@@ -1006,8 +1122,10 @@ export class MessageConsumer extends EventEmitter {
           'inject-response': parsed.frontmatter['inject-response'],  // Auto-inject response into core session
           'mesh-id': parsed.frontmatter['mesh-id'],  // Parallel instance identifier
           'base-mesh': resolvedBaseMesh,  // Base mesh name for parallel instances (dispatcher uses for config lookup)
-          body: parsed.body,
+          body: modifiedBody,  // Modified body with rearmatter/assay references
           rearmatter: parsed.rearmatter,
+          confidence: extractedConfidence,  // Agent's self-assessed confidence (0-1)
+          assayPath,  // Path to assay file (if generated)
           filepath
         }
       });
