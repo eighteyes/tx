@@ -1,0 +1,13 @@
+branches:
+  - id: survival
+    type: trajectory
+    desc: Can they survive the journey
+  - id: alliance
+    type: seed
+    desc: Unlikely allies form
+trajectory_status:
+  south_gate_escape: active
+  moth_trust: approaching
+seeds:
+  - id: seed1
+    desc: a planted seed

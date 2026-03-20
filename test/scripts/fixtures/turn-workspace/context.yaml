@@ -1,0 +1,11 @@
+turn: 3
+context_type: turn
+entropy_pool: [15, 93, 11, 51, 29]
+actor:
+  id: kaitlin
+  name: Kaitlin
+scene:
+  location: library
+  present:
+    - kaitlin
+    - heather

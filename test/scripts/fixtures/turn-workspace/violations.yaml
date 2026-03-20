@@ -1,0 +1,7 @@
+violations:
+  - type: word_doubling
+    scope: scene_1
+    count: 2
+  - type: litotes
+    scope: scene_2
+    count: 1

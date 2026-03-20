@@ -1,0 +1,17 @@
+game: kaitlin
+campaign: campaign-1
+used_factoids:
+  - factoid: left hand gesture
+    turn: 1
+  - factoid: coffee preference
+    turn: 3
+  - factoid: book collection
+    turn: 5
+encounters:
+  heather:
+    reader_introduced: 0
+    details_revealed:
+      - detail: tall posture
+        turn: 1
+      - detail: nervous laugh
+        turn: 4

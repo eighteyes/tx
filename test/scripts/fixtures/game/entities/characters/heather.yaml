@@ -1,0 +1,11 @@
+id: heather
+entity_type: character
+name: Heather
+traits:
+  curiosity: high
+  patience: medium
+episodes:
+  - turn: 1
+    event: Met at orientation
+  - turn: 4
+    event: Study group formed

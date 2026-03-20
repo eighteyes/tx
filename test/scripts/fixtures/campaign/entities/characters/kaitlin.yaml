@@ -1,0 +1,13 @@
+id: kaitlin
+entity_type: character
+name: Kaitlin
+traits:
+  sharp_wit: high
+  vulnerability: low
+episodes:
+  - turn: 1
+    event: Arrived at campus
+  - turn: 3
+    event: First seminar
+  - turn: 5
+    event: Library encounter
