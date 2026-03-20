@@ -1,0 +1,5 @@
+{
+  "branches": [{"id": "survival", "type": "trajectory"}],
+  "trajectory_status": {"south_gate_escape": "active"},
+  "seeds": [{"id": "seed1", "desc": "a seed"}]
+}
