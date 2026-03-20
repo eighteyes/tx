@@ -13,6 +13,7 @@ import path from 'node:path';
 import { FragmentRegistry } from '../dynaprompt/fragment-registry.ts';
 import { AgentCheckpointStore } from '../dynaprompt/stores/index.ts';
 import { MeshConfigLoader } from '../mesh/config-loader.ts';
+import { GuardrailConfig } from '../worker/guardrail-config.ts';
 import { log } from '../shared/logger.ts';
 import type { Fragment } from '../dynaprompt/types.ts';
 
@@ -291,6 +292,30 @@ async function exploreFragments(args: string[]): Promise<void> {
       throw new Error(
         `Fragments not found: ${missingFragments.join(', ')}. Available: ${available.join(', ') || '(none)'}`
       );
+    }
+
+    // Check max_forks guardrail
+    const guardrailConfig = new GuardrailConfig(process.cwd());
+    const maxForks = guardrailConfig.getMaxForks(meshName, agentName);
+    const mode = guardrailConfig.getMode('max_forks', meshName, agentName);
+
+    if (maxForks !== null && fragmentNames.length > maxForks) {
+      const error = `Fork limit exceeded: requested ${fragmentNames.length} forks, limit is ${maxForks}`;
+
+      if (mode.strict) {
+        // Block the explore operation
+        throw new Error(error);
+      }
+
+      if (mode.warning) {
+        // Log warning but allow operation
+        log.warn(COMPONENT, 'max_forks guardrail exceeded (warning mode)', {
+          requested: fragmentNames.length,
+          limit: maxForks,
+          meshName,
+          agentName
+        });
+      }
     }
 
     // Build explore plan
