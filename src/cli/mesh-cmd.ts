@@ -6,6 +6,8 @@
  *   tx mesh-cmd checkpoint get <id>
  *   tx mesh-cmd checkpoint list [--mesh MESH] [--agent AGENT]
  *   tx mesh-cmd checkpoint tree <root-id>
+ *   tx mesh-cmd checkpoint children <id>
+ *   tx mesh-cmd checkpoint total-forks <mesh>
  *   tx mesh-cmd progress emit <step> <total> [--label TEXT]
  *   tx mesh-cmd progress show <agent-id>
  */
@@ -247,6 +249,48 @@ function renderTree(node: CheckpointNode, depth: number = 0): any {
   };
 }
 
+async function checkpointChildren(args: string[]): Promise<void> {
+  try {
+    const nonFlags = getNonFlagArgs(args);
+    const checkpointId = nonFlags[0];
+
+    if (!checkpointId) {
+      throw new Error('Missing required argument: checkpoint ID');
+    }
+
+    const store = getCheckpointStore();
+    const children = store.children(checkpointId);
+
+    console.log(JSON.stringify({ children }, null, 2));
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ error }, null, 2));
+    log.error(COMPONENT, 'Checkpoint children failed', { error });
+    process.exit(1);
+  }
+}
+
+async function checkpointTotalForks(args: string[]): Promise<void> {
+  try {
+    const nonFlags = getNonFlagArgs(args);
+    const rootId = nonFlags[0];
+
+    if (!rootId) {
+      throw new Error('Missing required argument: root checkpoint ID');
+    }
+
+    const store = getCheckpointStore();
+    const totalForks = store.totalForks(rootId);
+
+    console.log(JSON.stringify({ total_forks: totalForks }, null, 2));
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    console.error(JSON.stringify({ error }, null, 2));
+    log.error(COMPONENT, 'Checkpoint total-forks failed', { error });
+    process.exit(1);
+  }
+}
+
 // ============================================
 // Progress Handlers
 // ============================================
@@ -336,6 +380,8 @@ export async function meshCmd(args: string[]): Promise<void> {
     console.error('  checkpoint get <id>');
     console.error('  checkpoint list [--mesh MESH] [--agent AGENT]');
     console.error('  checkpoint tree <root-id>');
+    console.error('  checkpoint children <id>');
+    console.error('  checkpoint total-forks <root-id>');
     console.error('  progress emit <step> <total> [--label TEXT]');
     console.error('  progress show [agent-id]');
     process.exit(1);
@@ -361,6 +407,12 @@ export async function meshCmd(args: string[]): Promise<void> {
             break;
           case 'tree':
             await checkpointTree(checkpointArgs);
+            break;
+          case 'children':
+            await checkpointChildren(checkpointArgs);
+            break;
+          case 'total-forks':
+            await checkpointTotalForks(checkpointArgs);
             break;
           default:
             throw new Error(`Unknown checkpoint action: ${checkpointAction}`);
