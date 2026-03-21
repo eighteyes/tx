@@ -33,30 +33,47 @@ show_help() {
 turn-write.sh — Validate JSON and write YAML turn artifacts
 
 Usage:
-  turn-write.sh <workspace> <artifact> [--target=PATH]
-  echo '{"branches":[],"seeds":[]}' | turn-write.sh ./ws fates
+  echo '<json>' | turn-write.sh <path> <artifact> [flags]
 
 Arguments:
-  workspace   Directory to write the artifact YAML into
-  artifact    Schema name (e.g. fates, violations, sim-progress)
+  path        Path to the turn workspace directory
+  artifact    Schema name (auto-discovered from schemas/turn/)
 
-Options:
-  --target=PATH   YAML path for append mode (e.g. .violations)
+Flags:
+  --target=PATH   For append mode: jq path to target array (e.g., .used_factoids)
   --help          Show this help
 
 Write Modes (from schemas/turn/modes.json):
   overwrite   Replace file entirely (default)
-  append      Append to target array in existing YAML
+  append      Append to --target array in existing YAML
   patch       Deep merge incoming JSON into existing YAML
   delta       Apply arithmetic deltas, merge non-delta fields
 
 Exit Codes:
   0  Success
-  1  Validation error
-  2  Malformed JSON
-  3  Unknown artifact (no schema)
-  4  Write mode error
+  1  Validation error (unknown keys, missing keys, type mismatch)
+  2  Malformed JSON (stdin not valid JSON)
+  3  Unknown artifact (no schema found)
+  4  Write mode error (invalid transition, missing target, no existing file for delta)
+
+Errors:
+  Structured JSON on stderr: {"ok":false, "artifact":"...", "errors":[...]}
+
 USAGE
+
+  echo "Available Artifacts:" >&2
+  for f in "$SCRIPT_DIR/schemas/turn"/*.schema.jq; do
+    [[ -f "$f" ]] || continue
+    echo "  $(basename "$f" .schema.jq)" >&2
+  done
+
+  cat >&2 <<'EXAMPLES'
+
+Examples:
+  echo '{"turn":1,"branches":[],"seeds":[]}' | turn-write.sh ./workspace fates
+  echo '{"violation":"..."}' | turn-write.sh ./workspace violations --target=.violations
+  echo '{"scenes":[]}' | turn-write.sh ./workspace scene-script
+EXAMPLES
   exit 0
 }
 

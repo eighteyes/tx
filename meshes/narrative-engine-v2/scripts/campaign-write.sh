@@ -39,34 +39,48 @@ show_help() {
 campaign-write.sh — Validate JSON and write YAML campaign artifacts
 
 Usage:
-  campaign-write.sh <workspace> <artifact> [--target=PATH]
-  echo '{"id":"kaitlin","entity_type":"character","name":"Kaitlin"}' | campaign-write.sh ./ws character/kaitlin
+  echo '<json>' | campaign-write.sh <path> <artifact> [flags]
 
 Arguments:
-  workspace   Campaign directory to write artifacts into
-  artifact    Schema name, with optional entity slash addressing:
-              character/kaitlin  -> entities/characters/kaitlin.yaml
-              bond/kai_heath     -> entities/bonds/kai_heath.yaml
-              state              -> state.yaml
-              continuity         -> continuity.yaml
+  path        Path to the campaign directory
+  artifact    Schema name (auto-discovered from schemas/campaign/)
+              Entity-scoped: character/kaitlin, bond/kaitlin_heather
 
-Options:
-  --target=PATH   YAML path for append mode (e.g. .used_factoids)
+Flags:
+  --target=PATH   For append mode: jq path to target array (e.g., .used_factoids)
   --help          Show this help
 
 Write Modes (from schemas/campaign/modes.json):
   overwrite   Replace file entirely (default)
-  append      Append to target array in existing YAML
+  append      Append to --target array in existing YAML
   patch       Deep merge incoming JSON into existing YAML
   delta       Apply arithmetic deltas, merge non-delta fields
 
 Exit Codes:
   0  Success
-  1  Validation error
-  2  Malformed JSON
-  3  Unknown artifact (no schema)
-  4  Write mode error
+  1  Validation error (unknown keys, missing keys, type mismatch)
+  2  Malformed JSON (stdin not valid JSON)
+  3  Unknown artifact (no schema found)
+  4  Write mode error (invalid transition, missing target, no existing file for delta)
+
+Errors:
+  Structured JSON on stderr: {"ok":false, "artifact":"...", "errors":[...]}
+
 USAGE
+
+  echo "Available Artifacts:" >&2
+  for f in "$SCRIPT_DIR/schemas/campaign"/*.schema.jq; do
+    [[ -f "$f" ]] || continue
+    echo "  $(basename "$f" .schema.jq)" >&2
+  done
+
+  cat >&2 <<'EXAMPLES'
+
+Examples:
+  echo '{"id":"kaitlin","name":"Kaitlin"}' | campaign-write.sh ./campaign character/kaitlin
+  echo '{"violation":"..."}' | campaign-write.sh ./campaign continuity --target=.used_factoids
+  echo '{"trust":2}' | campaign-write.sh ./campaign bond/kaitlin_heather
+EXAMPLES
   exit 0
 }
 
