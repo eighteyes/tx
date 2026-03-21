@@ -2,8 +2,30 @@
   "arc": {"mode": "delta", "delta_fields": ["arc_pressure"], "allowed_targets": [".seed_history", ".question_history"]},
   "state": {"mode": "overwrite"},
   "continuity": {"mode": "append", "allowed_targets": [".used_factoids", ".encounters", ".notes"]},
-  "trajectories": {"mode": "patch", "strategy": "deep_merge"},
+  "trajectories": {
+    "mode": "patch",
+    "strategy": "deep_merge",
+    "transitions": {
+      "field": "status",
+      "rules": {
+        "planted": ["approaching", "active"],
+        "approaching": ["active", "expired"],
+        "active": ["fired", "expired"]
+      }
+    }
+  },
   "character": {"mode": "patch", "strategy": "deep_merge"},
   "bond": {"mode": "patch", "strategy": "deep_merge"},
-  "condition": {"mode": "patch", "strategy": "deep_merge"}
+  "condition": {
+    "mode": "patch",
+    "strategy": "deep_merge",
+    "transitions": {
+      "field": "status",
+      "rules": {
+        "set": ["active"],
+        "active": ["resolved", "chronic"],
+        "chronic": ["resolved"]
+      }
+    }
+  }
 }

@@ -199,6 +199,10 @@ do_append() {
 }
 
 do_patch() {
+  local schema_type="${1:-}"
+  # Validate state transitions before merging
+  validate_transition "$schema_type"
+
   if [[ -f "$OUTPUT_FILE" ]]; then
     local merged
     merged=$(mktmp)
@@ -207,6 +211,98 @@ do_patch() {
     mv "$merged" "$OUTPUT_FILE"
   else
     yq -P < "$INPUT_FILE" > "$OUTPUT_FILE"
+  fi
+}
+
+# validate_transition: check state transition rules from modes.json
+# Args: schema_type
+# Uses: MODES_FILE, INPUT_FILE, OUTPUT_FILE, ARTIFACT
+validate_transition() {
+  local schema_type="${1:-}"
+  if [[ -z "$schema_type" ]]; then
+    return 0
+  fi
+
+  # No modes file or no transitions config — skip
+  if [[ ! -f "$MODES_FILE" ]]; then
+    return 0
+  fi
+
+  local has_transitions
+  has_transitions=$(jq -r --arg a "$schema_type" '.[$a].transitions // empty' < "$MODES_FILE" 2>/dev/null)
+  if [[ -z "$has_transitions" ]]; then
+    return 0
+  fi
+
+  # Get the field name to check (e.g. "status")
+  local field
+  field=$(jq -r --arg a "$schema_type" '.[$a].transitions.field' < "$MODES_FILE")
+  if [[ -z "$field" || "$field" == "null" ]]; then
+    return 0
+  fi
+
+  # Get new value from incoming JSON
+  local new_value
+  new_value=$(jq -r --arg f "$field" '.[$f] // empty' < "$INPUT_FILE")
+  if [[ -z "$new_value" ]]; then
+    # No status change in incoming data — nothing to validate
+    return 0
+  fi
+
+  # No existing file — new creation, allow any initial value
+  if [[ ! -f "$OUTPUT_FILE" ]]; then
+    return 0
+  fi
+
+  # Get current value from existing file
+  # Handle both object and array formats — for arrays, find by matching id
+  local current_value
+  local is_array
+  is_array=$(yq -r 'type' "$OUTPUT_FILE" 2>/dev/null)
+  if [[ "$is_array" == "!!seq" ]]; then
+    # Array format — find item with matching id
+    local item_id
+    item_id=$(jq -r '.id // empty' < "$INPUT_FILE")
+    if [[ -n "$item_id" ]]; then
+      current_value=$(id="$item_id" f="$field" \
+        yq -r '.[] | select(.id == env(id)) | .[env(f)] // ""' "$OUTPUT_FILE" 2>/dev/null)
+    else
+      current_value=""
+    fi
+  else
+    current_value=$(f="$field" yq -r '.[env(f)] // ""' "$OUTPUT_FILE" 2>/dev/null)
+  fi
+  if [[ -z "$current_value" || "$current_value" == "null" ]]; then
+    # No current value — treat as initial write
+    return 0
+  fi
+
+  # Same value — no transition
+  if [[ "$current_value" == "$new_value" ]]; then
+    return 0
+  fi
+
+  # Check if transition is allowed
+  local allowed
+  allowed=$(jq -r --arg a "$schema_type" --arg cur "$current_value" \
+    '.[$a].transitions.rules[$cur] // empty | .[]' < "$MODES_FILE" 2>/dev/null)
+
+  if [[ -z "$allowed" ]]; then
+    # No rules for current state — block transition
+    err_json "$ARTIFACT" 4 "[{\"type\":\"invalid_transition\",\"field\":\"$field\",\"from\":\"$current_value\",\"to\":\"$new_value\",\"detail\":\"no transitions defined from state '$current_value'\"}]"
+  fi
+
+  # Check if new_value is in the allowed list
+  local found=false
+  while IFS= read -r val; do
+    if [[ "$val" == "$new_value" ]]; then
+      found=true
+      break
+    fi
+  done <<< "$allowed"
+
+  if [[ "$found" != "true" ]]; then
+    err_json "$ARTIFACT" 4 "[{\"type\":\"invalid_transition\",\"field\":\"$field\",\"from\":\"$current_value\",\"to\":\"$new_value\",\"detail\":\"transition from '$current_value' to '$new_value' is not allowed\"}]"
   fi
 }
 
@@ -233,7 +329,7 @@ apply_write() {
   case "$MODE" in
     overwrite) do_overwrite ;;
     append)    do_append "$schema_type" ;;
-    patch)     do_patch ;;
+    patch)     do_patch "$schema_type" ;;
     delta)     do_delta ;;
     *)         err_json "$ARTIFACT" 4 "[{\"type\":\"write_mode_error\",\"detail\":\"unknown mode: $MODE\"}]" ;;
   esac
