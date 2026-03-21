@@ -42,71 +42,94 @@ workspace: {workspace}
 
 **NOTE: Scribe is the ONLY agent (besides calibrator) that writes to campaign-level files.**
 
-## Campaign Data Access
+## Data Access
 
-**CRITICAL: NEVER use yq to write to campaign-level files. ALL writes go through campaign.sh.**
+Read and write game data through gateway scripts only. Never read or write YAML files directly.
+
+```
+SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
+
+# Read data
+$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
+$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
+$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+
+# Write data
+echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact>
+echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+
+# Explore
+*-read.sh <path> --list
+*-read.sh <path> <art> --keys
+*-read.sh <path> --search="X"
+*-read.sh <path> <art> --discover
+
+# Run --help on any script for full usage
+```
+
+**CRITICAL: NEVER use yq to write to campaign-level files. ALL writes go through campaign-write.sh.**
 
 This includes:
-- arc.yaml — use `campaign.sh arc update`
-- continuity.yaml — use `campaign.sh facts`
-- trajectories.yaml — use `campaign.sh trajectory`
-- Bond files — use `campaign.sh bond update` or `campaign.sh bond episode`
-- Character trait pressures — use `campaign.sh entity traits`
-- Conditions — use `campaign.sh condition set` or `campaign.sh condition mutate`
+- arc.yaml — use `campaign-write.sh arc`
+- continuity.yaml — use `campaign-write.sh continuity`
+- trajectories.yaml — use `campaign-write.sh trajectories`
+- Bond files — use `campaign-write.sh bond/{id}`
+- Character entities — use `campaign-write.sh character/{id}`
+- Conditions — use `campaign-write.sh condition/{id}`
 
-Timeline.md remains a manual markdown append (not managed by campaign.sh).
+Timeline.md remains a manual markdown append (not managed by gateway scripts).
 
-**Why this matters:** Direct yq writes produce malformed YAML (unquoted colons, unescaped apostrophes, entries appended to wrong sections). campaign.sh handles all quoting and validation automatically.
-
-```bash
-# Script location — use this path in all calls
-CAMPAIGN_SCRIPT="$TX_ROOT/meshes/narrative-engine-v2/scripts/campaign.sh"
-CP="{campaign_path}"  # e.g., .ai/games/{game-id}/campaigns/{campaign-id}
-```
+**Why this matters:** Direct yq writes produce malformed YAML (unquoted colons, unescaped apostrophes, entries appended to wrong sections). Gateway scripts handle all quoting and validation automatically.
 
 ### Quick Reference — Write Commands
 ```bash
-# Arc state
-$CAMPAIGN_SCRIPT $CP arc update --turn=N --pressure-delta=-5 --momentum=falling
-$CAMPAIGN_SCRIPT $CP arc update --seed-bloom=criminal_past
-$CAMPAIGN_SCRIPT $CP arc update --question-add="New dramatic question?"
-$CAMPAIGN_SCRIPT $CP arc update --question-resolve=0
+# Arc state (delta mode — arc_pressure applies arithmetic delta, other fields merge)
+echo '{"arc_pressure": -5, "momentum": "falling"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc
 
-# Facts & continuity
-$CAMPAIGN_SCRIPT $CP facts add --turn=N --fact="Established fact" --entities=entity1,entity2
-$CAMPAIGN_SCRIPT $CP facts add-secret --turn=N --secret="Secret text" --known-by=character
-$CAMPAIGN_SCRIPT $CP facts reveal-secret --id=0 --to=character --turn=N
-$CAMPAIGN_SCRIPT $CP facts add-barrier --character=char --does-not-know="What they don't know" --dramatic-irony=true
-$CAMPAIGN_SCRIPT $CP facts add-world-event --turn=N --event="World event" --category=consequence
-$CAMPAIGN_SCRIPT $CP facts appearance --entity=id --turn=N --context="Scene context"
-$CAMPAIGN_SCRIPT $CP facts add-factoid --turn=N --factoid="Factoid used" --context="Where used"
+# Arc seed/question history (append to target array)
+echo '{"turn": N, "planted": ["criminal_past"]}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.seed_history
+echo '{"turn": N, "added": "New dramatic question?"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.question_history
 
-# Entity episodes
-$CAMPAIGN_SCRIPT $CP episode append {entity_file} --turn=N --event="5-15 word description" --trait-changes="DESPERATE:+1,WARM:-1"
+# Facts & continuity (append mode — appends to target array)
+echo '{"factoid": "Established fact", "turn": N, "entities": ["entity1", "entity2"]}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.used_factoids
+echo '{"entity": "id", "turn": N, "context": "Scene context"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.encounters
+echo '{"event": "World event", "turn": N, "category": "consequence"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.notes
 
-# Entity traits
-$CAMPAIGN_SCRIPT $CP entity traits --entity=character_id --trait=PROTECTIVE --pressure=8 --note="breakthrough via architecture"
+# Character episodes (patch mode — deep merges into character entity)
+echo '{"id": "char_id", "entity_type": "character", "name": "Name", "episodes": [{"turn": N, "event": "5-15 words", "trait_changes": {"DESPERATE": 1}}]}' | $SCRIPTS/campaign-write.sh {campaign_path} character/{char_id}
 
-# Bond updates
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=power --h=7 --k=3
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=sexual --value=6
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --normalized-add="gamified reward architecture"
-$CAMPAIGN_SCRIPT $CP bond episode --bond=heather_kaitlin --turn=93 --event="Library breakthrough" --dimension-changes="power h:7/k:3 sustained"
+# Character traits (patch mode)
+echo '{"id": "char_id", "entity_type": "character", "name": "Name", "traits": {"evolved": {"PROTECTIVE": {"pressure": 8}}}}' | $SCRIPTS/campaign-write.sh {campaign_path} character/{char_id}
 
-# Trajectories
-$CAMPAIGN_SCRIPT $CP trajectory add --id=trajectory_id --desc="Outcome when fires" --deadline=N --source="Source"
-$CAMPAIGN_SCRIPT $CP trajectory fire --id=trajectory_id --turn=N --outcome="What happened"
-$CAMPAIGN_SCRIPT $CP trajectory interrupt --id=trajectory_id --turn=N --reason="Why interrupted"
+# Bond updates (patch mode — deep merges into bond entity)
+echo '{"bond_id": "heather_kaitlin", "dimensions": {"power": {"h": 7, "k": 3}}}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
+echo '{"bond_id": "heather_kaitlin", "episodes": [{"turn": 93, "event": "Library breakthrough", "dimension_changes": "power h:7/k:3 sustained"}]}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
 
-# Conditions (REPLACE semantics — mutates in place)
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --type=TYPE --phase=PHASE --intensity=TEXT
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --phase=NEW_PHASE --physical="new state" --behavioral="new behavior"
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} --id=ID --turn=N --field=manifestations.speech --value="new speech pattern"
-$CAMPAIGN_SCRIPT $CP condition mutate --entity=heather_kaitlin --condition=nre --field=behavioral --value="gamified productivity architecture"
-$CAMPAIGN_SCRIPT $CP condition mutate --entity=kaitlin --condition=thesis_pressure --field=intensity --value="4/10"
-$CAMPAIGN_SCRIPT $CP condition get {entity_file} --id=ID
-$CAMPAIGN_SCRIPT $CP condition list {entity_file} --active
-$CAMPAIGN_SCRIPT $CP condition resolve {entity_file} --id=ID --turn=N --resolved-into="what it became"
+# Trajectories (patch mode with status transitions)
+echo '{"id": "traj_id", "status": "planted", "desc": "Outcome when fires", "deadline": N, "source": "Source"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
+echo '{"id": "traj_id", "status": "fired", "turn": N, "outcome": "What happened"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
+
+# Conditions (patch mode with status transitions)
+echo '{"id": "cond_id", "status": "active", "turn": N, "type": "TYPE", "phase": "PHASE"}' | $SCRIPTS/campaign-write.sh {campaign_path} condition/{entity_id}
+
+# Scene state (overwrite — copies current scene to campaign level)
+$SCRIPTS/turn-read.sh {workspace} scene | $SCRIPTS/campaign-write.sh {campaign_path} state
+
+# Read campaign data
+$SCRIPTS/campaign-read.sh {campaign_path} --list
+$SCRIPTS/campaign-read.sh {campaign_path} arc
+$SCRIPTS/campaign-read.sh {campaign_path} arc --keys
+$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids
+$SCRIPTS/campaign-read.sh {campaign_path} trajectories
+$SCRIPTS/campaign-read.sh {campaign_path} character/{id}
+$SCRIPTS/campaign-read.sh {campaign_path} bond/{id}
+
+# Read turn workspace data
+$SCRIPTS/turn-read.sh {workspace} --list
+$SCRIPTS/turn-read.sh {workspace} resolution
+$SCRIPTS/turn-read.sh {workspace} fates
+$SCRIPTS/turn-read.sh {workspace} context
 ```
 
 ## Workflow
@@ -121,48 +144,55 @@ $CAMPAIGN_SCRIPT $CP condition resolve {entity_file} --id=ID --turn=N --resolved
    ```bash
    cat {workspace}/prose.md >> {game}/story-corpus.txt && tr '[:upper:]' '[:lower:]' < {game}/story-corpus.txt | tr -cs '[:alpha:]' '\n' | sort | uniq -c | sort -rn | grep -vw -e the -e a -e an -e and -e or -e but -e in -e on -e at -e to -e for -e of -e with -e by -e from -e is -e it -e was -e be -e are -e were -e been -e has -e had -e have -e do -e did -e does -e not -e no -e so -e if -e as -e up -e out -e that -e this -e what -e which -e who -e when -e where -e how -e all -e each -e its -e she -e her -e he -e his -e they -e them -e their -e we -e our -e you -e your -e i -e me -e my -e s -e t -e d -e re -e ve -e ll -e just -e then -e than -e too -e very -e can -e could -e would -e will -e about -e into -e over -e after -e before -e between -e through -e during -e without -e again -e still -e now -e here -e there -e some -e any -e more -e other -e also -e back -e down -e only -e even -e because -e while -e like -e being -e something -e way -e one -e two | head -100 > {game}/story-concordance.txt
    ```
-3. Read workspace files: resolution.yaml, fates.yaml, prose.md, dramaturg-notes.yaml, scene_script.yaml
+3. Read workspace files via gateway scripts:
+   ```bash
+   $SCRIPTS/turn-read.sh {workspace} resolution
+   $SCRIPTS/turn-read.sh {workspace} fates
+   $SCRIPTS/turn-read.sh {workspace} dramaturg-notes
+   $SCRIPTS/turn-read.sh {workspace} scene_script
+   ```
+   Read prose.md directly (markdown file).
 4. Write `summary.md` to workspace (see Turn Compression)
 5. **Write scene.yaml** to workspace (see Scene State Extraction)
-6. **Copy scene.yaml to campaign level**:
+6. **Copy scene.yaml to campaign level** via gateway:
    ```bash
-   cp {workspace}/scene.yaml {campaign_path}/scene.yaml
+   $SCRIPTS/turn-read.sh {workspace} scene | $SCRIPTS/campaign-write.sh {campaign_path} state
    ```
 7. **Timeline Update**: append entry to timeline.md (see Timeline Management)
 8. **Bond Updates**: if relationship intensity changed, update bond entity (see Bond Management)
 9. **Prop Updates**: if props changed location/state, update prop entities (see Prop Management)
 10. **Location Updates**: if location details established/changed, update location entity (see Location Management)
-11. **Entity Episodes** via campaign.sh:
+11. **Entity Episodes** via gateway:
     ```bash
-    $CAMPAIGN_SCRIPT $CP episode append {campaign_path}/entities/characters/{id}.yaml --turn={N} --event="{5-15 words}" --trait-changes="{TRAIT:+N,...}"
+    echo '{"id": "{id}", "entity_type": "character", "name": "{Name}", "episodes": [{"turn": N, "event": "{5-15 words}", "trait_changes": {"TRAIT": +N}}]}' | $SCRIPTS/campaign-write.sh {campaign_path} character/{id}
     ```
 12. **Life Detail Capture**: scan prose.md for NEW life details invented by narrator (see Life Detail Capture below)
 13. **Layer Evolution**: add new details from episodes to appropriate description layers
 14. **Condition Management**: update mutable temporal states on characters and bonds (see Condition Management below)
-15. **Encounter Logging** via campaign.sh — log what NARRATOR established:
+15. **Encounter Logging** via gateway — log what NARRATOR established:
     ```bash
-    $CAMPAIGN_SCRIPT $CP facts add --turn={N} --fact="{established fact}" --entities={entity1,entity2}
-    $CAMPAIGN_SCRIPT $CP facts appearance --entity={id} --turn={N} --context="{scene context}"
-    $CAMPAIGN_SCRIPT $CP facts add-factoid --turn={N} --factoid="{factoid used}" --context="{where used}"
+    echo '{"factoid": "{established fact}", "turn": N, "entities": ["{entity1}", "{entity2}"]}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.used_factoids
+    echo '{"entity": "{id}", "turn": N, "context": "{scene context}"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.encounters
     ```
-16. **Arc State** via campaign.sh:
+16. **Arc State** via gateway:
     ```bash
-    $CAMPAIGN_SCRIPT $CP arc update --turn={N} --pressure-delta={delta} --momentum={state}
+    echo '{"arc_pressure": {delta}, "momentum": "{state}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc
     ```
-    For seeds: `--seed-bloom={id}`. For questions: `--question-add="{text}"` or `--question-resolve={index}`.
-17. **Fates Archival** — promote fired world events via campaign.sh:
+    For seeds: `echo '{"turn": N, "planted": ["{id}"]}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.seed_history`
+    For questions: `echo '{"turn": N, "added": "{text}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.question_history`
+17. **Fates Archival** — promote fired world events via gateway:
     ```bash
-    $CAMPAIGN_SCRIPT $CP facts add-world-event --turn={N} --event="{world event}" --category={category}
+    echo '{"event": "{world event}", "turn": N, "category": "{category}"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.notes
     ```
     Advance NPC agendas in entity files directly.
-18. **Trajectory Management** via campaign.sh:
+18. **Trajectory Management** via gateway:
     ```bash
     # From resolution.yaml trajectory_created:
-    $CAMPAIGN_SCRIPT $CP trajectory add --id={id} --desc="{outcome}" --deadline={fires_at} --source="{source}" --category={cat}
+    echo '{"id": "{id}", "status": "planted", "desc": "{outcome}", "deadline": N, "source": "{source}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
     # From fates.yaml trajectory_updates.firing_this_turn:
-    $CAMPAIGN_SCRIPT $CP trajectory fire --id={id} --turn={N} --outcome="{what happened}"
+    echo '{"id": "{id}", "status": "fired", "turn": N, "outcome": "{what happened}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
     # From fates.yaml trajectory_updates.interrupted:
-    $CAMPAIGN_SCRIPT $CP trajectory interrupt --id={id} --turn={N} --reason="{why}"
+    echo '{"id": "{id}", "status": "expired", "turn": N, "note": "{why}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
     ```
 19. Check for game-level promotions (see Canon Promotion)
 20. Run completion duties (see Turn Completion below)
@@ -332,7 +362,7 @@ Then append prologue as Turn 0, Day 1.
 
 ## Bond Management
 
-When relationship intensity or dynamics change this turn, update the bond entity via campaign.sh.
+When relationship intensity or dynamics change this turn, update the bond entity via gateway scripts.
 
 ### Bond Entity Location
 ```
@@ -345,25 +375,20 @@ When relationship intensity or dynamics change this turn, update the bond entity
 
 | Trigger | Update Command |
 |---------|----------------|
-| Bond dimension changes (power, sexual, trust, familiarity) | `campaign.sh bond update` |
-| New normalized act emerges | `campaign.sh bond update --normalized-add` |
-| Significant relationship event | `campaign.sh bond episode` |
+| Bond dimension changes (power, sexual, trust, familiarity) | `campaign-write.sh bond/{id}` with dimensions |
+| New normalized act emerges | `campaign-write.sh bond/{id}` with normalized_acts |
+| Significant relationship event | `campaign-write.sh bond/{id}` with episodes |
 
 ### Update Commands
 
 ```bash
-# Update bond dimensions
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=power --h=7 --k=3
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=sexual --value=6
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --dimension=trust --bilateral=5
+# Update bond dimensions (patch mode — deep merges)
+echo '{"bond_id": "heather_kaitlin", "dimensions": {"power": {"h": 7, "k": 3}}}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
+echo '{"bond_id": "heather_kaitlin", "dimensions": {"sexual": 6}}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
+echo '{"bond_id": "heather_kaitlin", "dimensions": {"trust": {"bilateral": 5}}}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
 
-# Add normalized act
-$CAMPAIGN_SCRIPT $CP bond update --bond=heather_kaitlin --normalized-add="gamified reward architecture"
-
-# Append episode
-$CAMPAIGN_SCRIPT $CP bond episode --bond=heather_kaitlin --turn=93 \
-  --event="Library breakthrough — bratting weaponized into thesis productivity" \
-  --dimension-changes="power h:7/k:3 sustained, trust deepens"
+# Append episode (patch merges episodes array)
+echo '{"bond_id": "heather_kaitlin", "episodes": [{"turn": 93, "event": "Library breakthrough — bratting weaponized into thesis productivity", "dimension_changes": "power h:7/k:3 sustained, trust deepens"}]}' | $SCRIPTS/campaign-write.sh {campaign_path} bond/heather_kaitlin
 ```
 
 ### Bond Entity Format
@@ -394,7 +419,7 @@ episodes:
 If a bond entity doesn't exist for a relationship that changes:
 1. Create `entities/bonds/` directory if needed
 2. Create bond file with alphabetical naming
-3. Initialize manually with basic structure, then use campaign.sh to populate
+3. Initialize via `campaign-write.sh bond/{id}` with full initial structure
 
 ## Prop Management
 
@@ -579,7 +604,7 @@ Oracle includes `condition_flags` in its validation response. **Read these first
 1. Read oracle's `condition_flags`
 2. For each `new` flag → check if the character has relevant backstory (see Backstory Generation below)
 3. For each flag, read the relevant prose to extract **specific, concrete manifestation details**
-4. Execute the campaign.sh command with rich detail from the prose
+4. Execute the gateway write command with rich detail from the prose
 
 **If oracle missed something obvious** (rare), you may create/mutate independently. But oracle should catch most condition changes.
 
@@ -648,42 +673,17 @@ Ask one question: **does this character have a past with this kind of experience
 ### Commands
 
 ```bash
-# Create new condition (first appearance)
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
-  --id={condition_id} --turn={N} --type={type} --phase={phase} \
-  --pace={instant|fast|medium|slow|glacial} \
-  --intensity="{N/10}" \
-  --physical="{body symptoms}" \
-  --cognitive="{thought patterns}" \
-  --behavioral="{actions/habits}" \
-  --speech="{verbal patterns}" \
-  --advances="{what escalates it}" \
-  --regresses="{what calms it}" \
-  --resolves-into="{what it becomes}"
+# Create new condition (first appearance — patch mode)
+echo '{"id": "{condition_id}", "status": "active", "turn": N, "type": "{type}", "phase": "{phase}", "severity": "{intensity}", "effects": {"physical": "{body symptoms}", "cognitive": "{thought patterns}", "behavioral": "{actions/habits}", "speech": "{verbal patterns}"}}' | $SCRIPTS/campaign-write.sh {campaign_path} condition/{entity_id}
 
-# Mutate existing condition (REPLACE changed fields only)
-$CAMPAIGN_SCRIPT $CP condition set {entity_file} \
-  --id={condition_id} --turn={N} \
-  --phase={new_phase} --intensity="{new}" \
-  --physical="{updated body state}"
+# Mutate existing condition (patch merges only changed fields)
+echo '{"id": "{condition_id}", "turn": N, "phase": "{new_phase}", "severity": "{new}", "effects": {"physical": "{updated body state}"}}' | $SCRIPTS/campaign-write.sh {campaign_path} condition/{entity_id}
 
-# Mutate a specific field (simpler syntax, auto-finds entity file)
-$CAMPAIGN_SCRIPT $CP condition mutate --entity={character_or_bond_id} \
-  --condition={condition_id} --field={field_path} --value="{new value}"
-# Examples:
-$CAMPAIGN_SCRIPT $CP condition mutate --entity=heather_kaitlin --condition=nre \
-  --field=behavioral --value="gamified productivity architecture"
-$CAMPAIGN_SCRIPT $CP condition mutate --entity=kaitlin --condition=thesis_pressure \
-  --field=intensity --value="4/10"
-
-# Resolve when condition ends
-$CAMPAIGN_SCRIPT $CP condition resolve {entity_file} \
-  --id={condition_id} --turn={N} --resolved-into="{what it became}"
+# Resolve when condition ends (status transition: active -> resolved)
+echo '{"id": "{condition_id}", "status": "resolved", "turn": N, "description": "{what it became}"}' | $SCRIPTS/campaign-write.sh {campaign_path} condition/{entity_id}
 ```
 
-**When to use `condition mutate` vs `condition set`:**
-- Use `mutate` for quick single-field updates (simpler, auto-finds entity)
-- Use `set` for multi-field updates or when you need turn tracking
+Patch mode deep-merges, so only include fields that changed. The `effects` object merges at field level — updating `effects.physical` won't erase `effects.behavioral`.
 
 ### Phase Evolution Guidelines
 
@@ -701,7 +701,7 @@ Conditions aren't linear — they can regress, stall, or skip phases. But here a
 | Anger | flash → sustained → cooling → residue | instant | 0 |
 | Obsession | seed → fixation → consuming → confrontation → release | medium | 7 |
 
-**Pace enforcement:** campaign.sh blocks phase transitions if insufficient story-days have elapsed. Intensity and manifestations always change freely — only phase is gated.
+**Pace enforcement:** Gateway scripts block phase transitions if insufficient story-days have elapsed. Intensity and manifestations always change freely — only phase is gated.
 
 ### Rules
 
@@ -796,21 +796,19 @@ episodes:
 ### Process
 
 1. Identify affected entities from resolution.yaml and prose.md
-2. For each affected character, use campaign.sh to append episodes:
+2. For each affected character, use gateway to append episodes:
    ```bash
-   $CAMPAIGN_SCRIPT $CP episode append {campaign_path}/entities/characters/{id}.yaml \
-     --turn={N} --event="{5-15 words}" --trait-changes="{TRAIT:+N,TRAIT:-N}"
+   echo '{"id": "{id}", "entity_type": "character", "name": "{Name}", "episodes": [{"turn": N, "event": "{5-15 words}", "trait_changes": {"TRAIT": +N, "TRAIT": -N}}]}' | $SCRIPTS/campaign-write.sh {campaign_path} character/{id}
    ```
-   campaign.sh automatically:
+   Patch mode deep-merges:
    - Appends to `episodes[]`
-   - Creates/updates `traits.evolved` entries with pressure, baseline, decay_type, last_pressured
-   - Only updates `last_pressured` when pressure increases
+   - Merges `traits.evolved` entries with pressure, baseline, decay_type, last_pressured
 3. For trait pressure updates without episode context:
    ```bash
-   $CAMPAIGN_SCRIPT $CP entity traits --entity={id} --trait={TRAIT} --pressure={N} --note="optional context"
+   echo '{"id": "{id}", "entity_type": "character", "name": "{Name}", "traits": {"evolved": {"TRAIT": {"pressure": N}}}}' | $SCRIPTS/campaign-write.sh {campaign_path} character/{id}
    ```
-4. For trait changes NOT covered by episode append or entity traits (voice evolution, metaphor codification):
-   - Update entity file directly via yq (these are rare, structural changes to trait definitions)
+4. For trait changes NOT covered by episode or trait updates (voice evolution, metaphor codification):
+   - Use `campaign-write.sh character/{id}` with the relevant trait structure
 
 ## Emergent Vocabulary Codification
 
@@ -850,7 +848,7 @@ Layer placement is SEMANTIC (visibility), not temporal.
 
 ## Encounter Logging
 
-Log what NARRATOR established via campaign.sh:
+Log what NARRATOR established via gateway scripts:
 
 1. For each entity in prose: log appearance and established facts
 2. Track which description layers NARRATOR surfaced
@@ -858,26 +856,20 @@ Log what NARRATOR established via campaign.sh:
 
 ```bash
 # Log entity appearances
-$CAMPAIGN_SCRIPT $CP facts appearance --entity={id} --turn={N} --context="{scene context}"
+echo '{"entity": "{id}", "turn": N, "context": "{scene context}"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.encounters
 
-# Log established facts
-$CAMPAIGN_SCRIPT $CP facts add --turn={N} --fact="{what was established}" --entities={entity1,entity2}
+# Log established facts / factoids used in prose
+echo '{"factoid": "{what was established}", "turn": N, "entities": ["{entity1}", "{entity2}"]}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.used_factoids
 
-# Log factoids used in prose
-$CAMPAIGN_SCRIPT $CP facts add-factoid --turn={N} --factoid="{factoid}" --context="{where used}"
-
-# Log new secrets revealed
-$CAMPAIGN_SCRIPT $CP facts add-secret --turn={N} --secret="{secret}" --known-by={character}
-
-# Log knowledge barriers
-$CAMPAIGN_SCRIPT $CP facts add-barrier --character={char} --does-not-know="{info}" --dramatic-irony=true
+# Log world events / secrets / barriers as notes
+echo '{"event": "{secret or barrier}", "turn": N, "category": "secret"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.notes
 ```
 
-Purpose: ORACLE queries these via `campaign.sh facts query` before validating — ensures continuity is surgical, not whole-file reads.
+Purpose: ORACLE queries these via `campaign-read.sh` before validating — ensures continuity is surgical, not whole-file reads.
 
 ## Arc State Maintenance
 
-Update arc.yaml via campaign.sh after each turn. ARCHITECT and GRAVITY read this file.
+Update arc.yaml via gateway scripts after each turn. ARCHITECT and GRAVITY read this file.
 
 ### Story Day
 
@@ -886,10 +878,10 @@ Maintain `story_day` in arc.yaml. Increment when the turn's timeline shows a new
 ```bash
 # Check if new day — compare turn's date against timeline
 # If new day:
-$CAMPAIGN_SCRIPT $CP arc update --field=story_day --value={new_day_count}
+echo '{"arc_pressure": 0, "last_updated": {"story_day": {new_day_count}}}' | $SCRIPTS/campaign-write.sh {campaign_path} arc
 ```
 
-Story_day is used by campaign.sh to enforce condition pace — phase transitions are gated by elapsed story-days, not turns.
+Story_day is used by gateway scripts to enforce condition pace — phase transitions are gated by elapsed story-days, not turns.
 
 ### Update Rules
 
@@ -901,51 +893,50 @@ Story_day is used by campaign.sh to enforce condition pace — phase transitions
 
 ### Commands
 ```bash
-# Pressure and momentum
-$CAMPAIGN_SCRIPT $CP arc update --turn={N} --pressure-delta={delta} --momentum={state}
+# Pressure and momentum (delta mode — arc_pressure applies arithmetic delta)
+echo '{"arc_pressure": {delta}, "momentum": "{state}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc
 
-# Seeds — promote to ready_to_activate
-$CAMPAIGN_SCRIPT $CP arc update --seed-bloom={seed_id}
+# Seeds — promote via seed_history append
+echo '{"turn": N, "planted": ["{seed_id}"], "status": "ready_to_activate"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.seed_history
 
-# Questions — add or resolve
-$CAMPAIGN_SCRIPT $CP arc update --question-add="{new question text}"
-$CAMPAIGN_SCRIPT $CP arc update --question-resolve={0-based-index}
+# Questions — add or resolve via question_history append
+echo '{"turn": N, "added": "{new question text}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.question_history
+echo '{"turn": N, "resolved": "{question text}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc --target=.question_history
 
-# Phase — update directly
-$CAMPAIGN_SCRIPT $CP arc update --phase={phase_name}
+# Phase — merge directly
+echo '{"arc_pressure": 0, "phase": "{phase_name}"}' | $SCRIPTS/campaign-write.sh {campaign_path} arc
 
 # Read current state
-$CAMPAIGN_SCRIPT $CP arc get
+$SCRIPTS/campaign-read.sh {campaign_path} arc
 ```
 
 ## Post-Write Validation
 
-After completing ALL campaign.sh writes for a turn, validate that campaign files still parse:
+After completing ALL gateway writes for a turn, validate by reading back key files:
 
 ```bash
-# Run full campaign validation as LAST step before completion
-$CAMPAIGN_SCRIPT $CP validate
+# Verify campaign files parse correctly
+$SCRIPTS/campaign-read.sh {campaign_path} arc --keys
+$SCRIPTS/campaign-read.sh {campaign_path} continuity --keys
+$SCRIPTS/campaign-read.sh {campaign_path} trajectories --keys
 ```
 
-If ANY file fails validation, fix it before routing completion. Read the failing file, find the syntax error, fix it, re-run validate.
+If ANY read returns an error, investigate the file and fix before routing completion.
 
-**Common causes of malformed YAML:**
-1. **Unquoted colons** — `note: Turn 50 reframe — 'sex as weapon'` breaks because of the colon after `reframe`. Quote the value.
-2. **Unescaped apostrophes** — `'hasn't'` must be `'hasn''t'` inside single quotes.
-3. **Appending to wrong section** — episode entries inside conditions, factoids inside appearances. Always verify the target key path before appending.
+**Gateway scripts validate on write** — malformed JSON is rejected with structured errors on stderr (exit code 1 for validation errors, exit code 2 for malformed JSON). If a write fails, fix the JSON input and retry.
 
-**If campaign.sh itself fails:** Do NOT fall back to raw yq writes. Report the failure and stop. Raw yq writes without proper quoting break downstream agents that depend on campaign.sh (oracle, gravity, architect).
+**If gateway scripts fail:** Do NOT fall back to raw yq writes. Report the failure and stop. Raw yq writes without proper quoting break downstream agents.
 
 ## Fates Archival
 
-When `fates.yaml` exists in workspace, archive the world's actions via campaign.sh.
+When `fates.yaml` exists in workspace, archive the world's actions via gateway scripts.
 
 ### Fired Events → Continuity
 
-If `world_event` is not null, promote via campaign.sh:
+If `world_event` is not null, promote via gateway:
 
 ```bash
-$CAMPAIGN_SCRIPT $CP facts add-world-event --turn={N} --event="{world event description}" --category={category}
+echo '{"event": "{world event description}", "turn": N, "category": "{category}"}' | $SCRIPTS/campaign-write.sh {campaign_path} continuity --target=.notes
 ```
 
 ### NPC Agenda Advancement
@@ -958,20 +949,14 @@ For each NPC with an `agenda` field in their entity file:
 
 ## Trajectory Management (Chekhov's Guns)
 
-**Only scribe writes to campaign's trajectories.yaml via campaign.sh. System detects, scribe records.**
+**Only scribe writes to campaign's trajectories.yaml via gateway scripts. System detects, scribe records.**
 
 ### Adding New Trajectories
 
 Read `resolution.yaml` → `trajectory_created`. If not null:
 
 ```bash
-$CAMPAIGN_SCRIPT $CP trajectory add \
-  --id={id} \
-  --desc="{outcome_when_fires}" \
-  --deadline={fires_at_turn} \
-  --source="{source}" \
-  --category={category} \
-  --weight={weight_when_firing}
+echo '{"id": "{id}", "status": "planted", "desc": "{outcome_when_fires}", "deadline": {fires_at_turn}, "source": "{source}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
 ```
 
 ### Marking Fired Trajectories
@@ -979,17 +964,17 @@ $CAMPAIGN_SCRIPT $CP trajectory add \
 Read `fates.yaml` → `trajectory_updates.firing_this_turn`. For each:
 
 ```bash
-$CAMPAIGN_SCRIPT $CP trajectory fire --id={id} --turn={N} --outcome="{what happened}"
+echo '{"id": "{id}", "status": "fired", "turn": N, "outcome": "{what happened}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
 ```
 
-This moves the trajectory from active to `archived_fired` automatically.
+Status transition `active -> fired` is enforced by the schema.
 
 ### Removing Interrupted Trajectories
 
 Read `fates.yaml` → `trajectory_updates.interrupted`. For each:
 
 ```bash
-$CAMPAIGN_SCRIPT $CP trajectory interrupt --id={id} --turn={N} --reason="{why interrupted}"
+echo '{"id": "{id}", "status": "expired", "turn": N, "note": "{why interrupted}"}' | $SCRIPTS/campaign-write.sh {campaign_path} trajectories
 ```
 
 This moves the trajectory from active to `archived_interrupted` automatically.
@@ -997,8 +982,9 @@ This moves the trajectory from active to `archived_interrupted` automatically.
 ### Listing Active Trajectories
 
 ```bash
-$CAMPAIGN_SCRIPT $CP trajectory list                  # active only
-$CAMPAIGN_SCRIPT $CP trajectory list --include-archived  # all
+$SCRIPTS/campaign-read.sh {campaign_path} trajectories              # full file
+$SCRIPTS/campaign-read.sh {campaign_path} trajectories --keys       # structure overview
+$SCRIPTS/campaign-read.sh {campaign_path} trajectories --search="planted"  # filter by status
 ```
 
 ## Rolling Window
