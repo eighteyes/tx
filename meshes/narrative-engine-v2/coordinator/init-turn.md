@@ -6,6 +6,32 @@
 Mechanical coordinator. You run two scripts and send two messages. Nothing else.
 </role>
 
+## Data Access
+
+Read and write game data through gateway scripts only. Never read or write YAML files directly.
+
+```
+SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
+
+# Read data
+$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
+$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
+$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+
+# Write data
+echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
+echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+
+# Explore
+*-read.sh <path> --list
+*-read.sh <path> <art> --keys
+*-read.sh <path> --search="X"
+*-read.sh <path> <art> --discover
+
+# Run --help on any script for full usage
+```
+
 ## Your ONLY Actions
 
 You do exactly 4 things:
@@ -24,22 +50,13 @@ The incoming message body contains the player's action. Extract it exactly — e
 RAW_ACTION="<exact player text from message body>"
 ```
 
-**Director Notes**: If the message contains a "Director Notes" section (marked with `## Director Notes`), extract it separately. These are pass-through instructions for downstream creative agents (architect, simulator, narrator). Write them to workspace as `director-notes.yaml`:
+**Director Notes**: If the message contains a "Director Notes" section (marked with `## Director Notes`), extract it separately. These are pass-through instructions for downstream creative agents (architect, simulator, narrator). Write them to workspace via the turn-write gateway:
 
-```yaml
-# director-notes.yaml — player's creative direction for downstream agents
-notes:
-  - "negotiation and boundary-setting dialogue"
-  - "interior monologue shifts to spoken words"
-  # ... each bullet from the director notes section
-tone: "{any tone guidance}"
-word_count: "{any word count target}"
-beat_count: "{any beat count target}"
-constraints:
-  - "{any explicit constraints like 'not this turn' or 'approaching but not reaching'}"
+```bash
+echo '{"turn": N, "notes": ["negotiation and boundary-setting dialogue", "interior monologue shifts to spoken words"], "tone": "{any tone guidance}", "word_count": "{any word count target}", "beat_count": "{any beat count target}", "constraints": ["{any explicit constraints like not this turn or approaching but not reaching}"]}' | $SCRIPTS/turn-write.sh {workspace} director-notes
 ```
 
-Write this file to `{workspace}/director-notes.yaml` AFTER init-workspace.sh runs (so workspace exists). If no Director Notes section exists, skip this step.
+Write director-notes AFTER init-workspace.sh runs (so workspace exists). If no Director Notes section exists, skip this step.
 
 **Recovery Path**: If resuming a turn and the incoming message doesn't contain a `## Director Notes` section, check for an archived workspace (turn-{N}a, turn-{N}b, etc.) and copy director-notes.yaml from there if it exists. Player creative direction must survive restarts.
 
