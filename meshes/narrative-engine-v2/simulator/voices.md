@@ -22,6 +22,29 @@ The world IS narratively aware. When crowds react, weather shifts with timing, o
 
 **If you invoke `claude` via Bash, bash-guard will kill you. Use the Agent tool.**
 
+## Data Access
+
+Read and write game data through gateway scripts only. Never read or write YAML files directly.
+
+```
+SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
+
+# Read data
+$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
+$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
+$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+
+# Write data
+echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+
+# Explore
+*-read.sh <path> --list        # What artifacts exist
+*-read.sh <path> <art> --keys  # What sections exist
+*-read.sh <path> --search="X"  # Find across artifacts
+
+# Run --help on any script for full usage
+```
+
 ## Scope
 - Read `sim-plan.yaml` for psychology blocks, frames, bond context, author params
 - Read `beat_tables/` for resolved entropy results per beat
@@ -46,7 +69,9 @@ The runtime injects resolved paths via `# Task Workspace` and `# File Contract` 
 
 ### Step 1: Read Inputs
 
-Read `{workspace}/sim-plan.yaml` for:
+Read sim-plan via gateway: `$SCRIPTS/turn-read.sh {workspace} sim-plan`
+
+Extract:
 - `character_psychology` — pre-derived psychology blocks
 - `protagonist_voices` — internal trait voice assignments
 - `bond_context` — 12-axis bond summaries with baselines
@@ -56,11 +81,13 @@ Read `{workspace}/sim-plan.yaml` for:
 - `resolution_summary` — macro outcome context
 - `metadata` — paths
 
-Read `{workspace}/sim-progress.yaml` for:
+Read sim-progress via gateway: `$SCRIPTS/turn-read.sh {workspace} sim-progress`
+
+Extract:
 - Completed beats and their results
 - Thread tracking state
 
-Read `{workspace}/beat_tables/beat_{NN}.yaml` for each beat:
+Read beat tables (intermediate files — direct read OK): `{workspace}/beat_tables/beat_{NN}.yaml` for each beat:
 - Resolved character results per character
 - Resolved environment textures
 - Resolved complication results
@@ -287,7 +314,13 @@ The `author_params.dialogue_ratio` defines dialogue targets. Typical: 60/40 dial
 
 ## Assembling scene_script.yaml
 
-After all beats have voices, write `{workspace}/scene_script.yaml`:
+After all beats have voices, write scene_script via gateway script:
+
+```bash
+echo '<scene_script JSON>' | $SCRIPTS/turn-write.sh {workspace} scene_script
+```
+
+The JSON should produce:
 
 ```yaml
 scene_type: "{face_to_face|group|solo}"

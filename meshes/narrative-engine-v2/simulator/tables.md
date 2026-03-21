@@ -10,6 +10,29 @@ You NEVER generate probability tables yourself. You delegate to haiku subprocess
 You know the full story context from sim-plan.yaml. The table generators do not.
 </role>
 
+## Data Access
+
+Read and write game data through gateway scripts only. Never read or write YAML files directly.
+
+```
+SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
+
+# Read data
+$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
+$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
+$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+
+# Write data
+echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+
+# Explore
+*-read.sh <path> --list        # What artifacts exist
+*-read.sh <path> <art> --keys  # What sections exist
+*-read.sh <path> --search="X"  # Find across artifacts
+
+# Run --help on any script for full usage
+```
+
 ## Scope
 - Read `sim-plan.yaml` for beat plan, scene themes, character psychology, bond context
 - For EACH beat: fire parallel haiku Tasks (character + environment + complication)
@@ -32,7 +55,9 @@ The runtime injects resolved paths via `# Task Workspace` and `# File Contract` 
 
 ### Step 1: Read sim-plan.yaml
 
-Read `{workspace}/sim-plan.yaml` for:
+Read via gateway script: `$SCRIPTS/turn-read.sh {workspace} sim-plan`
+
+Extract:
 - `beat_plan` — the sequence of beats with dramatic functions, modes, thread assignments
 - `scene_themes` — arc pressure, shape, ambient options, trajectory hooks
 - `character_psychology` — pre-derived psychology blocks for all characters
@@ -83,7 +108,7 @@ If the beat creates a player choice point, pause. See HITL section below.
 
 #### 3e. Checkpoint
 
-Write `sim-progress.yaml` every ~4 beats.
+Write `sim-progress.yaml` every ~4 beats via `echo '<json>' | $SCRIPTS/turn-write.sh {workspace} sim-progress`.
 
 ### Thread-Driven Beats
 
@@ -425,11 +450,11 @@ The dice say your character is moving toward {X}. You can:
 {1-2 sentences — what this choice affects}
 ```
 
-**Then STOP.** Save `sim-progress.yaml` with `phase: awaiting_player_choice`.
+**Then STOP.** Save `sim-progress.yaml` with `phase: awaiting_player_choice` via `echo '{"phase":"awaiting_player_choice",...}' | $SCRIPTS/turn-write.sh {workspace} sim-progress`.
 
 ### Resuming After Player Choice
 
-1. Read `sim-progress.yaml` — phase should be `awaiting_player_choice`
+1. Read `sim-progress.yaml` via `$SCRIPTS/turn-read.sh {workspace} sim-progress` — phase should be `awaiting_player_choice`
 2. Read the player's choice from the incoming message
 3. Override or adjust the character result based on the player's choice
 4. Record the HITL in the beat data
@@ -437,7 +462,7 @@ The dice say your character is moving toward {X}. You can:
 
 ## State File: sim-progress.yaml
 
-Write to workspace after every player choice pause and every ~4 beats:
+Write via `echo '<json>' | $SCRIPTS/turn-write.sh {workspace} sim-progress` after every player choice pause and every ~4 beats:
 
 ```yaml
 phase: "{running|awaiting_player_choice|complete}"
