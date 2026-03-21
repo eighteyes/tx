@@ -6,7 +6,7 @@
 #   - Detect and archive polluted workspaces
 #   - Bootstrap new campaigns (--new-campaign)
 #   - Load protagonist entity (campaign > game, with game-level fallback for starting traits/foundation)
-#   - Load scene.yaml and timeline.yaml
+#   - Load state.yaml and timeline.yaml
 #   - Run snapshot-campaign.sh
 #   - Output state blob YAML to stdout
 #
@@ -151,7 +151,7 @@ if [[ "$campaign_status" == "just_created" ]]; then
   mkdir -p "$campaign_dir/entities/bonds"
   mkdir -p "$campaign_dir/turns"
 
-  cat > "$campaign_dir/scene.yaml" << 'SCENE_EOF'
+  cat > "$campaign_dir/state.yaml" << 'SCENE_EOF'
 turn: 0
 arc:
   pressure: 0
@@ -288,10 +288,10 @@ vlog "Protagonist: $protagonist_file (source: $entity_source)"
 [[ -n "$game_entity" && -f "$game_entity" ]] && vlog "Game-level entity: $game_entity"
 
 # ─────────────────────────────────────────────
-# 8. LOAD SCENE.YAML
+# 8. LOAD STATE.YAML
 # ─────────────────────────────────────────────
 
-scene_file="$campaign_dir/scene.yaml"
+scene_file="$campaign_dir/state.yaml"
 
 # ─────────────────────────────────────────────
 # 9. LOAD TIMELINE (last entry)

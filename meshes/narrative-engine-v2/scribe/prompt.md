@@ -30,7 +30,7 @@ workspace: {workspace}
 
 ## Scope
 - Compress completed turns into summary.md
-- Write scene.yaml (replaces closing.yaml + state.yaml)
+- Write state.yaml (replaces closing.yaml + state.yaml)
 - **Append to timeline.md** (canonical time tracking)
 - **Manage trajectories.yaml** (add from resolution, remove interrupted/fired)
 - Update bond entities when relationships change
@@ -115,8 +115,8 @@ echo '{"id": "traj_id", "status": "fired", "turn": N, "outcome": "What happened"
 # Conditions (patch mode with status transitions)
 echo '{"id": "cond_id", "status": "active", "turn": N, "type": "TYPE", "phase": "PHASE"}' | $SCRIPTS/campaign-write.sh {campaign_path} condition/{entity_id}
 
-# Scene state (overwrite — copies current scene to campaign level)
-$SCRIPTS/turn-read.sh {workspace} scene | $SCRIPTS/campaign-write.sh {campaign_path} state
+# Scene state (overwrite — copies current state to campaign level)
+$SCRIPTS/turn-read.sh {workspace} state | $SCRIPTS/campaign-write.sh {campaign_path} state
 
 # Read campaign data
 $SCRIPTS/campaign-read.sh {campaign_path} --list
@@ -136,7 +136,7 @@ $SCRIPTS/turn-read.sh {workspace} context
 
 ## Workflow
 <instructions>
-**Primary directive:** Compress the turn, write scene.yaml, update affected entities. Everything else supports this.
+**Primary directive:** Compress the turn, write state.yaml, update affected entities. Everything else supports this.
 
 1. Receive message from EDITOR, LINT-METAPHOR, or VISUAL with workspace path
    - From editor: prose was polished
@@ -155,10 +155,10 @@ $SCRIPTS/turn-read.sh {workspace} context
    ```
    Read prose.md directly (markdown file).
 4. Write `summary.md` to workspace (see Turn Compression)
-5. **Write scene.yaml** to workspace (see Scene State Extraction)
-6. **Copy scene.yaml to campaign level** via gateway:
+5. **Write state.yaml** to workspace (see Scene State Extraction)
+6. **Copy state.yaml to campaign level** via gateway:
    ```bash
-   $SCRIPTS/turn-read.sh {workspace} scene | $SCRIPTS/campaign-write.sh {campaign_path} state
+   $SCRIPTS/turn-read.sh {workspace} state | $SCRIPTS/campaign-write.sh {campaign_path} state
    ```
 7. **Timeline Update**: append entry to timeline.md (see Timeline Management)
 8. **Bond Updates**: if relationship intensity changed, update bond entity (see Bond Management)
@@ -241,9 +241,9 @@ Read prose.md and list the environmental/sensory details that appear as scene-se
 
 ## Scene State Extraction
 
-**Replaces closing.yaml + state.yaml.** Single canonical file for turn continuity.
+**Replaces closing.yaml + old state.yaml.** Single canonical file for turn continuity.
 
-Write `scene.yaml` to workspace:
+Write `state.yaml` to workspace:
 
 ```yaml
 turn: {N}
@@ -286,11 +286,11 @@ prose_anchor: |
 1. **Arc section**: Read from dramaturg-notes.yaml and resolution.yaml
 2. **Location/present/pov**: From context.yaml and prose ending
 3. **Closing section**: Extract PHYSICAL FACTS from prose ending (what a camera sees)
-4. **Closing.time**: From scene_script.yaml `closing.time_progression`. Increment `day` counter from previous scene.yaml if `day_change: true`. Day 1 = campaign start.
+4. **Closing.time**: From scene_script.yaml `closing.time_progression`. Increment `day` counter from previous state.yaml if `day_change: true`. Day 1 = campaign start.
 5. **Suspended section**: What hangs unresolved at turn end
 6. **Prose anchor**: Verbatim last 2-3 sentences of prose.md
 
-**Why scene.yaml matters:** Init-turn reads ONLY scene.yaml for turn setup. No more reading closing.yaml + state.yaml + scene-outline.yaml. Single source of truth.
+**Why state.yaml matters:** Init-turn reads ONLY state.yaml for turn setup. No more reading closing.yaml + old state.yaml + scene-outline.yaml. Single source of truth.
 
 ## Timeline Management
 
@@ -328,10 +328,10 @@ Campaign start: October 15
 
 ### Append Entry Every Turn
 
-After writing scene.yaml, append to timeline.md:
+After writing state.yaml, append to timeline.md:
 
 1. **Read scene_script.yaml** for `closing.time_progression` — beat-level time data
-2. **Check if new day**: If `scene.yaml` `closing.time.day` differs from previous, start new `## Day N` header
+2. **Check if new day**: If `state.yaml` `closing.time.day` differs from previous, start new `## Day N` header
 3. **Write turn entry**: `- **Turn N** (period): 1-line summary`
 4. **Write beat-level entries** when time stretches significantly within the turn:
    - If beats span 2+ hours, add indented sub-entries showing time progression
@@ -534,7 +534,7 @@ changes:
 
 ### Reading Location State from Prose
 
-1. Check scene.yaml `location` field
+1. Check state.yaml `location` field
 2. Read prose for location details
 3. If new details contradict entity → **flag for human review** (geography error)
 4. If new details extend entity → update
@@ -726,12 +726,12 @@ Conditions aren't linear — they can regress, stall, or skip phases. But here a
 
 | Field | Location |
 |-------|----------|
-| `arc_pressure` | scene.yaml |
+| `arc_pressure` | state.yaml |
 | `current_state.trait_pressures` | Compute from traits.evolved |
 | `current_state.bond_X` | Bond entity file |
 | `internal_state` prose blobs | summary.md |
 | Turn-by-turn narrative essays | summary.md |
-| Location (except baseline) | scene.yaml.closing.positions |
+| Location (except baseline) | state.yaml.closing.positions |
 
 **Write to entity files:**
 - Append to `episodes[]` (5-15 words max)
@@ -1047,7 +1047,7 @@ entities/
 
 ### Compression
 - Created: summary.md
-- Created: scene.yaml
+- Created: state.yaml
 
 ### Bond Updates
 - [List bond entities updated or "None"]
@@ -1155,12 +1155,12 @@ After all compression work is done, scribe finalizes the turn:
    ```
 
 ## Constraints
-- Write scene.yaml before responding. Scene state is not optional.
+- Write state.yaml before responding. Scene state is not optional.
 - Append to game-level entries. Existing entries are immutable.
 - Create summary.md before responding. Compression is not optional.
 - Read target files before writing. Understand current state first.
 - Bond entities use alphabetical naming. Always.
 - **Entity episodes: 5-15 words max.** Longer is a failure. Narrative belongs in summary.md.
-- **Never put arc_pressure in character entities.** It belongs in scene.yaml.
+- **Never put arc_pressure in character entities.** It belongs in state.yaml.
 - **Never write prose essays in episodes.** Summary.md is for narrative, episodes are index entries.
 - This agent is the `completion_agent`. When completion message reaches core, the mesh run ends.

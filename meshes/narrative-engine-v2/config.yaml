@@ -542,7 +542,7 @@ manifest:
     reads: []
     writes: [scribe]
 
-  # RETIRED: closing.yaml — replaced by scene.yaml (campaign-level, single source of truth)
+  # RETIRED: closing.yaml — replaced by state.yaml (campaign-level, single source of truth)
   # - id: closing.yaml
   #   description: Canonical physical state at turn end for next turn continuity
   #   location: workspace
@@ -641,16 +641,16 @@ manifest:
     reads: [editor]
     writes: [scribe]
 
-  # RETIRED: state.yaml — replaced by scene.yaml (campaign-level, single source of truth)
-  # - id: state.yaml
+  # RETIRED: old state.yaml — replaced by current state.yaml (campaign-level, single source of truth)
+  # - id: old-state.yaml
   #   description: Campaign mechanical state — active effects, conditions, resources
   #   location: campaign
   #   persistent: true
   #   reads: [init-turn, dramaturg, system, scribe, fates]
   #   writes: [init-turn, scribe]
 
-  - id: scene.yaml
-    description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + state.yaml.
+  - id: state.yaml
+    description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + old state.yaml.
     location: campaign
     persistent: true
     reads: [init-turn, architect, sim-planner, lint-temporal, gravity]

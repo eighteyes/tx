@@ -53,7 +53,7 @@ The runtime injects resolved paths via `# Task Workspace` and `# File Contract` 
 
 - **workspace** = the turn directory (where you read input files and write sim-plan.yaml)
 - **game** = the game root (where entities/, author.yaml, setting.yaml live)
-- **campaign** = the campaign directory (where scene.yaml, arc.yaml, trajectories.yaml live)
+- **campaign** = the campaign directory (where state.yaml, arc.yaml, trajectories.yaml live)
 
 ### Step 1: Extract Author Parameters
 
@@ -92,7 +92,7 @@ From **workspace** (turn directory) via `turn-read.sh`:
 - `$SCRIPTS/turn-read.sh {workspace} director-notes` (if present) — player's creative direction for this turn
 
 From **campaign** (campaign directory) via `campaign-read.sh`:
-- `$SCRIPTS/campaign-read.sh {campaign} scene` — arc pressure, momentum, phase, location
+- `$SCRIPTS/campaign-read.sh {campaign} state` — arc pressure, momentum, phase, location
 - `$SCRIPTS/campaign-read.sh {campaign} arc` — dramatic questions, phases
 - `$SCRIPTS/campaign-read.sh {campaign} trajectories` — committed futures (Chekhov's Guns) — skip if missing
 

@@ -170,7 +170,7 @@ author:
 # - Character-specific voice (entity files → traits.voices)
 # - Plot/arc structure (arc.yaml)
 # - World rules (setting.yaml)
-# - Turn-specific rendering decisions (scene.yaml)
+# - Turn-specific rendering decisions (state.yaml)
 
 # =============================================================================
 # VALIDATION RULES

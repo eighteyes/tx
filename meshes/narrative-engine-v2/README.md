@@ -194,7 +194,7 @@ Every time a trait influences an outcome, its pressure increments (1-5). At pres
 │   └── bonds/*.yaml         # Game-level bond templates
 │
 └── campaigns/{campaign-id}/
-    ├── scene.yaml           # Current scene state (arc pressure, location, positions)
+    ├── state.yaml           # Current scene state (arc pressure, location, positions)
     ├── continuity.yaml      # Facts that cannot be contradicted
     ├── timeline.yaml        # Canonical time reference
     ├── trajectories.yaml    # Committed futures (Chekhov's Guns)

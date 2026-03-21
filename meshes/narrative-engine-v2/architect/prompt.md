@@ -88,7 +88,7 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
      - Use `--section=life` for: active_concerns, expertise, social_web, opinions, voice_markers — these inform dramaturg guidance and character action tables
    - `$SCRIPTS/campaign-read.sh {game_path} bond --list` then `$SCRIPTS/campaign-read.sh {game_path} bond/{id}` for each — ALL bond files (relationship intensities, dynamics)
    - `$SCRIPTS/campaign-read.sh {game_path} arc` — dramatic questions, seeds, phases, thread pressure
-   - `$SCRIPTS/campaign-read.sh {game_path} scene` — arc pressure, momentum, phase, location, present characters
+   - `$SCRIPTS/campaign-read.sh {game_path} state` — arc pressure, momentum, phase, location, present characters
    - `$SCRIPTS/campaign-read.sh {game_path} trajectories` — committed futures (Chekhov's Guns) — **skip if missing**
    - `$SCRIPTS/campaign-read.sh {game_path} continuity` — query continuity data:
      ```bash
@@ -108,7 +108,7 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
 5. Read from **prior turns** (N-1 through N-3) — ONLY these files:
    - `summary.md` — compressed turn summary (thematic focus, beat types, trait activity)
    - `resolution.yaml` — mechanical outcomes, trait changes, what actually happened
-   - `scene.yaml` — closing positions, location, time (campaign-level scene.yaml is canonical; per-turn is backup)
+   - `state.yaml` — closing positions, location, time (campaign-level state.yaml is canonical; per-turn is backup)
    - **These are the ONLY prior-turn files you read.** Do not read prior entropy-tables.yaml, dramaturg-notes.yaml, fates.yaml, threads.yaml, or any other prior-turn artifacts. You generate fresh versions of those files each turn.
 6. **Run calc-trajectory-status.sh:**
    ```bash
@@ -203,9 +203,9 @@ You generate world event entries for a narrative turn AND write a weighted entro
 {from setting.yaml — relevant world rules, geography, tone}
 
 ## Current Scene
-Location: {from scene.yaml/context.yaml}
+Location: {from state.yaml/context.yaml}
 Time: {from timeline.md}
-Weather/conditions: {from scene.yaml if available}
+Weather/conditions: {from state.yaml if available}
 
 ## What Just Happened
 {brief physical state from context.yaml}
@@ -373,7 +373,7 @@ You generate ambient texture entries AND write a weighted table. You see ONLY au
 {from author.yaml — sensory preferences, stylistic constraints, balance settings}
 
 ## Scene Mood
-Location: {from scene.yaml}
+Location: {from state.yaml}
 Time: {from timeline.md}
 Established motifs: {from continuity.yaml — sensory details already established}
 
@@ -427,7 +427,7 @@ You extract life threads from a character entity file — the things running und
 {character's bond states relevant to this scene}
 
 ## Scene Context
-Location: {from scene.yaml/context.yaml}
+Location: {from state.yaml/context.yaml}
 Who's present: {from context.yaml — other characters in scene}
 Emotional state: {from dramaturg notes if available, or inferred from traits}
 
@@ -480,7 +480,7 @@ You extract scene-level threads — narrative tensions and unresolved questions 
 {from turns N-1 through N-3 summary.md files — what happened recently}
 
 ## Current Scene State
-{from scene.yaml — arc pressure, momentum, suspended elements}
+{from state.yaml — arc pressure, momentum, suspended elements}
 {from context.yaml — what's happening now}
 
 ## Rules
@@ -709,7 +709,7 @@ Current emotional state: {from entity traits/pressures}
 
 ## Scene Context
 Who's present: {from context.yaml}
-Location: {from scene.yaml}
+Location: {from state.yaml}
 What's happening: {from action-lock.yaml — brief}
 
 ## Rules
@@ -1332,7 +1332,7 @@ All scripts are at: `$TX_ROOT/meshes/narrative-engine-v2/scripts/` (`$SCRIPTS`).
 | Script | Usage | Output |
 |--------|-------|--------|
 | `turn-read.sh <workspace> [artifact] [flags]` | Read turn-level data | JSON |
-| `campaign-read.sh <campaign_path> [artifact] [flags]` | Read campaign-level data (entities, arc, scene, etc.) | JSON |
+| `campaign-read.sh <campaign_path> [artifact] [flags]` | Read campaign-level data (entities, arc, state, etc.) | JSON |
 | `game-read.sh <game_path> [artifact] [flags]` | Read game-level data (setting, author) | JSON |
 | `turn-write.sh <workspace> <artifact>` | Write turn-level data (stdin JSON) | YAML file |
 

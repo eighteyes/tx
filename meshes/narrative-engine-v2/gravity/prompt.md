@@ -84,8 +84,8 @@ $SCRIPTS/campaign-read.sh {campaign_path} arc --section=dramatic_question
 $SCRIPTS/campaign-read.sh {campaign_path} arc --section=trajectory
 $SCRIPTS/campaign-read.sh {campaign_path} arc --section=phase
 $SCRIPTS/campaign-read.sh {campaign_path} trajectories
-$SCRIPTS/campaign-read.sh {campaign_path} scene --section=momentum
-$SCRIPTS/campaign-read.sh {campaign_path} scene --section=arc_pressure
+$SCRIPTS/campaign-read.sh {campaign_path} state --section=momentum
+$SCRIPTS/campaign-read.sh {campaign_path} state --section=arc_pressure
 ```
 
 ### 4. Bond State

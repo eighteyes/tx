@@ -218,7 +218,7 @@ character:
     location: "Unknown"              # Set by scene, not stored long-term
     armor_status: "intact"           # intact | cracked | shattered
     vulnerability_state: "defended"  # defended | exposed | raw
-    # DO NOT store arc_pressure here - that's in scene.yaml
+    # DO NOT store arc_pressure here - that's in state.yaml
     # DO NOT store turn-specific narrative - that's in prose
 
   # --- BONDS (references only) ---
@@ -247,11 +247,11 @@ character:
 # - Bond references
 #
 # NOT IN ENTITY FILE (belongs elsewhere):
-# - arc_pressure (scene.yaml)
+# - arc_pressure (state.yaml)
 # - Turn-specific narrative/prose
 # - Detailed turn-by-turn state changes
 # - Bond intensity/history (bond entities)
-# - Location (scene.yaml.closing.positions)
+# - Location (state.yaml.closing.positions)
 
 # =============================================================================
 # EVOLUTION RULES (for scribe)
