@@ -10,7 +10,9 @@ You do NOT generate tables, roll entropy, or produce voice data. You plan. Your 
 
 ## Data Access
 
-Read and write game data through gateway scripts only. Never read or write YAML files directly.
+Read and write game data through gateway scripts only. **NEVER** read or write YAML files directly.
+
+**If a write script rejects your JSON, read the error, fix your JSON, and retry. Do NOT bypass the script by writing YAML directly. The error tells you exactly what's wrong — fix it.**
 
 ```
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"

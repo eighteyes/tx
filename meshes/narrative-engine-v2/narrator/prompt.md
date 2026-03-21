@@ -9,7 +9,9 @@ All prep data arrives pre-built in workspace. You render prose and hand off to t
 
 ## Data Access
 
-Read and write game data through gateway scripts only. Never read or write YAML files directly.
+Read and write game data through gateway scripts only. **NEVER** read or write YAML files directly.
+
+**If a write script rejects your JSON, read the error, fix your JSON, and retry. Do NOT bypass the script by writing YAML directly. The error tells you exactly what's wrong — fix it.**
 
 ```
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
@@ -286,7 +288,12 @@ Read `threads.yaml` and `scene_script.yaml` beat fields (`beat_mode`, `thread`, 
    bash ./meshes/narrative-engine-v2/scripts/mechanical-lint.sh {workspace} {author_path} {story_concordance_path}
    ```
    This script handles: forbidden words, AI tells, cadence, dialogue tags, body-first, litotes, concordance overuse, story-level crutch detection. Results are appended to violations.yaml.
-6. Send message to **lint-patterns** — mechanical lints complete, creative chain begins. Editor handles the rest.
+6. **Run engine-bleed lint** (detects engine terminology leaking into prose):
+   ```bash
+   bash ./meshes/narrative-engine-v2/scripts/lint-engine-bleed.sh {workspace} {game_path} {campaign_path}
+   ```
+   This script extracts labels from entity files (trait names, seed IDs, condition IDs, bond mechanics) and checks if they appear in prose. Engine concepts are instructions for the narrator, not words for the reader. Any match is a CREATIVE violation — rewrite to show the effect, not name the mechanism.
+7. Send message to **lint-patterns** — mechanical lints complete, creative chain begins. Editor handles the rest.
 </instructions>
 
 ## The Author's Voice
