@@ -34,3 +34,4 @@ meshes/*
 meshes/opus-soul/mcp/
 meshes/opus-soul/walks/
 meshes/opus-soul/walker/
+.sandbox-deny.log
