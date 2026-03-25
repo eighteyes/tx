@@ -97,7 +97,7 @@ agents:
     prompt: simulator/voices.md
     # Phase 3: Per-beat voice gen (sonnet Tasks) + scene_so_far + scene_script.yaml assembly
     permissions:
-      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Agent, TaskOutput]
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep]
 
   # ==========================================
   # CREATIVE AGENTS (sonnet/opus)
