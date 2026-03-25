@@ -110,6 +110,12 @@ Parse the player's action into decomposition fields:
 Send to core/core:
 
 ```
+---
+to: core/core
+from: narrative-engine-v2/init-turn
+human: blocking
+headline: Turn confirmation
+---
 INTENT CONFIRMATION — Turn {turn}
 
 You said: "{raw player text}"
