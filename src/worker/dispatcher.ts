@@ -204,7 +204,8 @@ type ResumeReason =
   | 'quality-iteration'
   | 'incoming-ask-reminder'
   | 'system-feedback'
-  | 'artifact-retry';
+  | 'artifact-retry'
+  | 'blocking-hitl';
 
 /**
  * Options for unified session resume
@@ -2872,6 +2873,56 @@ The system will resume your session when the human responds.`;
       this.workerLifecycle.resetSentTargetForResponse(awaitingAgentId, respondingAgentId);
     }
 
+    // Blocking HITL: worker is still active (not suspended), waiting for human response
+    if (respondingAgentId === 'core/core' && this.workerLifecycle.isBlockingHitl(awaitingAgentId)) {
+      const activeWorker = this.getFirstWorkerForAgent(awaitingAgentId);
+      if (!activeWorker) {
+        log.error('dispatcher', 'Blocking HITL response but worker gone', { awaitingAgentId });
+        // Fall through to normal suspended session handling
+      } else {
+        const sessionId = activeWorker.runner.getSessionId();
+        if (!sessionId) {
+          log.error('dispatcher', 'Blocking HITL response but no sessionId', { awaitingAgentId });
+        } else {
+          log.info('dispatcher', 'Blocking HITL: resuming worker with human response', {
+            from: respondingAgentId,
+            to: awaitingAgentId,
+            sessionId: sessionId.slice(0, 8),
+          });
+
+          // Resolve the pending ask
+          this.queue.resolvePendingAsk(respondingAgentId, awaitingAgentId, correlationId);
+
+          // Clear blocking state
+          this.workerLifecycle.clearBlockingHitl(awaitingAgentId);
+
+          // Re-register heartbeat monitoring (worker is about to resume)
+          const [meshName, agentName] = awaitingAgentId.split('/');
+          const meshReliability = meshName ? this.meshConfigs.get(meshName)?.reliability : undefined;
+          this.reliability?.registerAgent(awaitingAgentId, meshReliability?.heartbeat);
+
+          // Build resume prompt with routing reminder
+          const meshConfig = this.meshConfigs.get(meshName);
+          const agentConfig = meshConfig?.agents.find(a => a.name === agentName);
+          const routingReminder = this.buildRoutingReminder(meshName, agentName, meshConfig);
+          const resumePrompt = this.sessionManager.buildHumanResponsePrompt(
+            content, event.headline, routingReminder
+          );
+
+          // Resume the SAME runner — no new process, no race condition
+          await this.resumeSession({
+            reason: 'blocking-hitl',
+            agentId: awaitingAgentId,
+            sessionId,
+            prompt: resumePrompt,
+            runner: activeWorker.runner,
+          });
+
+          return;
+        }
+      }
+    }
+
     // Check for suspended session
     const suspended = this.sessionManager.get(awaitingAgentId);
     if (suspended) {
@@ -4948,6 +4999,23 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         // This fixes race condition when queue is empty (0 messages processed)
         if (activeWorker?.startedPromise) {
           await activeWorker.startedPromise;
+        }
+
+        // Blocking HITL: worker finished its turn but is waiting for human response
+        // Hold — don't route downstream, don't cleanup, don't complete FSM
+        // Also prevents the pending-asks suspension check later from running,
+        // which would incorrectly suspend a blocking HITL worker
+        if (activeWorker?.blockingHitl) {
+          log.info('dispatcher', 'Blocking HITL: holding completion until human responds', {
+            agentId,
+            workerId: currentWorkerId,
+            sessionId: data.sessionId?.slice(0, 8),
+          });
+          // Save transcript for debugging but don't proceed with completion
+          if (data.output) {
+            this.saveSessionOutput(agentId, data.output);
+          }
+          return;
         }
 
         // Set worker output and sessionId in hook context for quality hooks
