@@ -200,6 +200,20 @@ export interface AskMessageEvent {
 }
 
 /**
+ * Event emitted by Consumer when a blocking HITL message is detected
+ * Agent sends message with `human: blocking` — worker stays alive awaiting response
+ */
+export interface BlockingHitlMessageEvent {
+  id: number;
+  filepath: string;
+  from: string;
+  to: string;
+  type: string;
+  headline?: string;
+  msgId?: string;
+}
+
+/**
  * Event emitted by Consumer when an ask-response message is detected
  * Enhanced with boundary detection for terminal-by-default
  */

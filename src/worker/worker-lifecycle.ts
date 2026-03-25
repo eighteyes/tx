@@ -40,6 +40,7 @@ export interface ActiveWorker {
   taskFrom?: string;  // Who sent the initial task (e.g., 'core/core')
   nudgeCount: number;  // Number of completion nudges sent
   sentTargets: Set<string>;  // Agent completion frontier: targets already sent to this session
+  blockingHitl: boolean;  // Worker is waiting for a human response (blocking HITL mode)
 }
 
 /**
@@ -62,7 +63,7 @@ interface WorkerStateFile {
 /**
  * Options for adding a new worker
  */
-export type AddWorkerOptions = Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount' | 'sentTargets'>;
+export type AddWorkerOptions = Omit<ActiveWorker, 'workerId' | 'messagesSent' | 'nudgeCount' | 'sentTargets' | 'blockingHitl'>;
 
 /**
  * Manages active worker instances and their lifecycle
@@ -89,6 +90,7 @@ export class WorkerLifecycleManager {
       nudgeCount: 0,  // Initialize nudge counter
       taskFrom,  // Track who sent the initial task
       sentTargets: new Set(),  // Initialize agent completion frontier
+      blockingHitl: false,  // Initialize blocking HITL state
     };
 
     const workers = this.activeWorkers.get(agentId) || [];
@@ -255,6 +257,37 @@ export class WorkerLifecycleManager {
       return new Set();
     }
     return new Set(workers[0].sentTargets);  // Return copy
+  }
+
+  /**
+   * Mark a worker as blocking on HITL response.
+   * Worker stays in active workers but won't trigger downstream routing.
+   */
+  setBlockingHitl(agentId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    if (!workers || workers.length === 0) return false;
+    workers[0].blockingHitl = true;
+    log.info('worker-lifecycle', 'Worker entered blocking HITL state', { agentId });
+    return true;
+  }
+
+  /**
+   * Check if a worker is in blocking HITL state.
+   */
+  isBlockingHitl(agentId: string): boolean {
+    const workers = this.activeWorkers.get(agentId);
+    return workers?.[0]?.blockingHitl ?? false;
+  }
+
+  /**
+   * Clear blocking HITL state (called when human responds).
+   */
+  clearBlockingHitl(agentId: string): void {
+    const workers = this.activeWorkers.get(agentId);
+    if (workers?.[0]) {
+      workers[0].blockingHitl = false;
+      log.info('worker-lifecycle', 'Worker exited blocking HITL state', { agentId });
+    }
   }
 
   /**
