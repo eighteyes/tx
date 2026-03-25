@@ -123,7 +123,7 @@ export class PromptInjector {
   private selectPreamble(context: PreambleContext): string {
     if (context.agentCount <= 1) return PREAMBLE_SINGLE_AGENT;
 
-    const agentTools = ['Agent', 'TaskOutput'];
+    const agentTools = ['Agent', 'Task', 'TaskOutput'];
     const hasAgentTools = context.allowedTools?.some(t => agentTools.includes(t)) ?? false;
     return hasAgentTools ? PREAMBLE_MULTI_AGENT_WITH_TASK : PREAMBLE_MULTI_AGENT;
   }

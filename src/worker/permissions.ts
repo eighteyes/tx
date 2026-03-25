@@ -122,7 +122,13 @@ export function resolvePermissions(
   // 'dontAsk' silently denies — use only when HITL is not wired up.
   const mode = permissions?.mode || 'default';
   const allowedTools = permissions?.allowedTools || DEFAULT_ALLOWED_TOOLS;
-  const disallowedTools = permissions?.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
+  const baseDisallowed = permissions?.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
+
+  // Explicitly allowed tools override the disallow list.
+  // Prevents configs like allowedTools: [Task] from colliding with
+  // DEFAULT_DISALLOWED_TOOLS: [Task].
+  const allowedSet = new Set(allowedTools);
+  const disallowedTools = baseDisallowed.filter(t => !allowedSet.has(t));
 
   return {
     mode,

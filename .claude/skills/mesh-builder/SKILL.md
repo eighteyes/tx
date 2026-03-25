@@ -973,10 +973,10 @@ agents:
 **Available tools:**
 - File operations: `Read`, `Write`, `Edit`, `Glob`, `Grep`
 - Execution: `Bash` (denied by default)
-- Advanced: `Agent`, `TaskOutput`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
+- Advanced: `Task` (subagent spawning), `TaskOutput`, `LSP`, `WebFetch`, `WebSearch`, `TodoWrite`, `NotebookEdit`, `Skill`, `EnterPlanMode`, `ExitPlanMode`, `KillShell`
 - **Never grant to mesh agents**: `AskUserQuestion` (no user session — use messaging to `core/core` instead)
 
-**Preamble behavior:** Multi-agent meshes tell agents "not the Agent tool" by default to prevent subprocess chaos. When `Agent` or `TaskOutput` appear in `allowedTools`, the preamble switches to encourage Agent tool usage for parallel subprocesses within the session, while still routing cross-agent work via messages.
+**Preamble behavior:** Multi-agent meshes tell agents "not the Task tool" by default to prevent subprocess chaos. When `Task` or `TaskOutput` appear in `allowedTools`, the preamble switches to encourage Task tool usage for parallel subprocesses within the session, while still routing cross-agent work via messages. The preamble also recognizes `Agent` as a legacy alias.
 
 **Security principle:** Only grant tools an agent actually needs. Start restrictive, add permissions as required.
 
