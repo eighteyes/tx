@@ -224,6 +224,13 @@ export class ReliabilityManager {
   }
 
   /**
+   * Unregister an agent from heartbeat monitoring (e.g. blocking HITL pause)
+   */
+  unregisterAgent(agentId: string): void {
+    this.heartbeat.unregister(agentId);
+  }
+
+  /**
    * Record heartbeat (call on worker output)
    */
   recordHeartbeat(agentId: string): void {
