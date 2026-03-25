@@ -1036,8 +1036,36 @@ export class MessageConsumer extends EventEmitter {
         return;
       }
 
+      // Blocking HITL: agent wants to ask human but keep session alive
+      // human: blocking in frontmatter prevents session suspension
+      if (parsed.frontmatter.human === 'blocking' && toAgent === 'core/core' && messageType !== 'task-complete') {
+        const msgId = parsed.frontmatter['msg-id'];
+
+        log.info('consumer', 'Blocking HITL message detected', {
+          from: fromAgent,
+          to: toAgent,
+          msgId,
+        });
+
+        this.emit('blocking-hitl-message', {
+          id,
+          filepath,
+          from: fromAgent,
+          to: toAgent,
+          type: messageType,
+          headline: parsed.frontmatter.headline,
+          msgId,
+        });
+
+        // Still emit core-message for display to human (falls through to normal routing)
+        // Pending ask tracking happens in the normal queue insert path above
+      }
+
       // Detect messages that trigger await state in dispatcher
-      if (messageType === 'ask' || messageType === 'ask-human' || (messageType === 'message' && toAgent === 'core/core')) {
+      // Exclude blocking HITL messages from the standard ask-message path
+      if ((messageType === 'ask' || messageType === 'ask-human' ||
+          (messageType === 'message' && toAgent === 'core/core'))
+          && parsed.frontmatter.human !== 'blocking') {
         if (messageType === 'ask' || messageType === 'ask-human') {
           log.warn('deprecated-message-type', `Legacy type="${messageType}" used; boundary inference handles this`, { type: messageType, file: filename, detail: 'Use human: true frontmatter instead of ask-human type' });
         }
