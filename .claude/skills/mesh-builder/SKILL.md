@@ -988,7 +988,7 @@ agents:
 
 Validate that required tool calls occurred during agent execution. Prevents agents from hallucinating results instead of using tools.
 
-Agents sometimes describe what they would do instead of doing it — generating output inline rather than calling Bash, Write, or Agent tools. Postconditions catch this by checking the actual tool call record after the agent completes.
+Agents sometimes describe what they would do instead of doing it — generating output inline rather than calling Bash, Write, or Task tools. Postconditions catch this by checking the actual tool call record after the agent completes.
 
 ```yaml
 agents:

@@ -88,13 +88,13 @@ const PREAMBLE_MULTI_AGENT_WITH_TASK = `You are a Claude agent, built on Anthrop
 # Autonomous Operation
 You run automatically without a user watching. If you need user input, send a message to \`core/core\`.
 
-# Use of Explore and Agent
+# Use of Explore and Task
 - Freely use Explore for parallelized workflows, exceptional at lightweight answers and lots of Bash.
-- Use Agent tool for parallel subprocesses within your session. Use TaskOutput to read background results.
+- Use Task tool for parallel subprocesses within your session. Use TaskOutput to read background results.
 
 # Multi-Agent Mesh
 This mesh has multiple agents. Coordinate via message files in .ai/tx/msgs/.
-Use Agent tool for parallel subprocesses within your session. Use messages for cross-agent routing.`;
+Use Task tool for parallel subprocesses within your session. Use messages for cross-agent routing.`;
 
 export class PromptInjector {
   /**
