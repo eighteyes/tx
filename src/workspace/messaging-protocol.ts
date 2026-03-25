@@ -53,6 +53,31 @@ For \`to:\`, single-word names auto-route within your mesh:
 
 To ask the human a question, send a message to \`core/core\`:
 
+### Blocking HITL
+
+If you need to ask the human AND continue working after their response
+(before downstream agents run), use \`human: blocking\`:
+
+\`\`\`
+---
+to: core/core
+from: {mesh}/{agent}
+human: blocking
+headline: Confirmation needed
+---
+
+Your question here.
+\`\`\`
+
+With \`human: blocking\`:
+- Your session stays alive (not suspended)
+- The human's response is injected back into your session
+- You continue executing after receiving the response
+- Downstream agents only run after you complete
+
+Use this when you have work that MUST happen after human confirmation
+but BEFORE downstream agents start.
+
 ### Status Field
 
 Set \`status\` in frontmatter to indicate outcome:
