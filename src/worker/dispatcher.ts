@@ -162,6 +162,20 @@ interface AskMessageEvent {
 }
 
 /**
+ * Event emitted by Consumer when a blocking HITL message is detected.
+ * Agent sends message with `human: blocking` — worker stays alive awaiting response.
+ */
+interface BlockingHitlMessageEvent {
+  id: number;
+  filepath: string;
+  from: string;
+  to: string;
+  type: string;
+  headline?: string;
+  msgId?: string;
+}
+
+/**
  * Event emitted by Consumer when an ask-response message is detected
  */
 interface AskResponseMessageEvent {
@@ -278,6 +292,7 @@ export class WorkerDispatcher extends EventEmitter {
   private boundRevisionHandler: ((event: RevisionMessageEvent) => void) | null = null;
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
   private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
+  private boundBlockingHitlHandler!: (event: BlockingHitlMessageEvent) => void;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private boundMeshCompleteHandler: ((event: MeshCompleteEvent) => void) | null = null;
   private boundSystemFeedbackHandler: ((event: SystemFeedbackEvent) => void) | null = null;
@@ -1461,6 +1476,12 @@ export class WorkerDispatcher extends EventEmitter {
       };
       consumer.on('ask-response-message', this.boundAskResponseHandler);
 
+      // Blocking HITL: agent asks human but keeps session alive
+      this.boundBlockingHitlHandler = (event: BlockingHitlMessageEvent) => {
+        this.handleBlockingHitlMessage(event);
+      };
+      consumer.on('blocking-hitl-message', this.boundBlockingHitlHandler);
+
       // Subscribe to parity-reminder events for injecting feedback when task-complete blocked
       this.boundParityReminderHandler = (event: ParityReminderEvent) => {
         this.handleParityReminder(event);
@@ -2459,6 +2480,71 @@ export class WorkerDispatcher extends EventEmitter {
         error: (error as Error).message,
       });
     }
+  }
+
+  /**
+   * Handle blocking HITL message — agent asks human but keeps session alive.
+   *
+   * Unlike ask-human (which kills the worker and suspends), blocking HITL:
+   * - Flags the worker so the complete handler skips downstream routing
+   * - Lets the worker finish its current turn naturally
+   * - Pauses heartbeat monitoring (worker will be idle)
+   * - On human response, resumes the same runner with the response
+   *
+   * This prevents the race condition where downstream agents fire before
+   * the asking agent finishes its post-HITL work.
+   */
+  private handleBlockingHitlMessage(event: BlockingHitlMessageEvent): void {
+    const { from: senderAgentId, to: targetAgentId } = event;
+
+    const activeWorker = this.getFirstWorkerForAgent(senderAgentId);
+    if (!activeWorker) {
+      log.warn('dispatcher', 'Blocking HITL but no active worker — falling back to ask-message', {
+        from: senderAgentId,
+        to: targetAgentId,
+      });
+      // Fallback: treat as normal ask-human (fire the standard handler)
+      this.handleAskMessage({
+        ...event,
+        crossesHumanBoundary: true,
+        isTerminal: true,
+      });
+      return;
+    }
+
+    const sessionId = activeWorker.runner.getSessionId();
+    if (!sessionId) {
+      log.warn('dispatcher', 'Blocking HITL but no session ID — falling back to ask-message', {
+        from: senderAgentId,
+      });
+      this.handleAskMessage({
+        ...event,
+        crossesHumanBoundary: true,
+        isTerminal: true,
+      });
+      return;
+    }
+
+    // Flag the worker — complete handler will hold instead of routing
+    this.workerLifecycle.setBlockingHitl(senderAgentId);
+
+    // Persist sessionId for crash recovery (same as ask-human)
+    this.queue.setConversationId(senderAgentId, sessionId);
+
+    // Pause heartbeat monitoring — worker will be idle while awaiting response
+    this.reliability?.unregisterAgent(senderAgentId);
+
+    log.info('dispatcher', 'Blocking HITL: worker flagged, awaiting human response', {
+      from: senderAgentId,
+      to: targetAgentId,
+      sessionId: sessionId.slice(0, 8),
+    });
+
+    this.emit('worker:blocking-hitl', {
+      agentId: senderAgentId,
+      sessionId,
+      targetAgent: targetAgentId,
+    });
   }
 
   /**
@@ -3677,6 +3763,9 @@ Please advise the agent or check mesh configuration.`;
     if (consumer && this.boundAskResponseHandler) {
       consumer.off('ask-response-message', this.boundAskResponseHandler);
       this.boundAskResponseHandler = null;
+    }
+    if (consumer && this.boundBlockingHitlHandler) {
+      consumer.off('blocking-hitl-message', this.boundBlockingHitlHandler);
     }
     if (consumer && this.boundParityReminderHandler) {
       consumer.off('parity-reminder', this.boundParityReminderHandler);
