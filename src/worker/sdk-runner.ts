@@ -573,6 +573,19 @@ Reply **allow** to approve or **deny** to reject.`,
           toolsConfig = undefined;  // undefined = use default (all tools)
         }
 
+        // Resolve permissions then intersect with tool restriction.
+        // allowedTools/disallowedTools must only reference tools that exist
+        // in the restricted set — the SDK errors when told to approve a tool
+        // that isn't in the available tools list.
+        const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+        if (toolsConfig) {
+          const available = new Set(toolsConfig);
+          resolvedPerms.allowedTools = resolvedPerms.allowedTools.filter(t => available.has(t));
+          if (resolvedPerms.disallowedTools) {
+            resolvedPerms.disallowedTools = resolvedPerms.disallowedTools.filter(t => available.has(t));
+          }
+        }
+
         if (this.config.toolRestriction === 'mcp-only') {
           log.info('sdk-runner', `Tool restriction: mcp-only`, {
             workerId,
@@ -593,8 +606,6 @@ Reply **allow** to approve or **deny** to reject.`,
               model: this.config.model,
             });
           }
-          // Resolve permissions (god mode or agent-specific)
-          const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
           const canUseTool = this.buildCanUseTool();
 
           this.currentQuery = query({
@@ -629,9 +640,7 @@ Reply **allow** to approve or **deny** to reject.`,
               workerId,
               error: err.message
             });
-            // Retry without project settings
-            // Resolve permissions (god mode or agent-specific)
-            const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+            // Retry without project settings — reuse already-resolved perms
             const canUseToolRetry = this.buildCanUseTool();
 
             this.currentQuery = query({
@@ -1288,13 +1297,24 @@ Reply **allow** to approve or **deny** to reject.`,
       const userPrompt = this.buildFeedbackPrompt(feedback);
 
       // Determine tool configuration based on restriction policy
-      const toolsConfig = this.config.toolRestriction === 'mcp-only'
-        ? []
-        : undefined;
+      let toolsConfig: string[] | undefined;
+      if (this.config.toolRestriction === 'mcp-only') {
+        toolsConfig = [];
+      } else if (this.config.toolRestriction === 'orchestrator') {
+        toolsConfig = ['Read', 'Write'];
+      } else {
+        toolsConfig = undefined;
+      }
 
-      // Create query with resume option to continue the session
-      // Resolve permissions (god mode or agent-specific)
+      // Resolve permissions then intersect with tool restriction
       const resolvedPerms = resolvePermissions(this.config.permissions, this.config.godMode ?? false);
+      if (toolsConfig) {
+        const available = new Set(toolsConfig);
+        resolvedPerms.allowedTools = resolvedPerms.allowedTools.filter(t => available.has(t));
+        if (resolvedPerms.disallowedTools) {
+          resolvedPerms.disallowedTools = resolvedPerms.disallowedTools.filter(t => available.has(t));
+        }
+      }
 
       const q = query({
         prompt: userPrompt,
