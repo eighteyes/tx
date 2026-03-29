@@ -851,10 +851,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       if (head.inlineMessage) {
         message = head.inlineMessage;
       } else {
-        const content = fs.readFileSync(head.filepath, 'utf-8');
-        const bodyMatch = content.split(/^---$/m);
-        const body = bodyMatch.length >= 3 ? bodyMatch.slice(2).join('---').trim() : content;
-        message = `[mesh response from ${head.from}]\n\n${body}`;
+        message = `Read and follow instructions: @${head.filepath}`;
       }
 
       const injected = injectPrompt(tmux, message);
