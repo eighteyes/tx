@@ -1687,6 +1687,36 @@ export class WorkerDispatcher extends EventEmitter {
         }
       }
 
+      // Blocking HITL: worker is alive but parked waiting for human response.
+      // sessionManager has no record (no suspend call), so the await check above misses it.
+      // Route core/core responses through handleAskResponseMessage to resume the worker.
+      if (this.workerLifecycle.isBlockingHitl(agentId)) {
+        const pendingMessage = this.queue.peekOne(agentId);
+        const senderAgent = pendingMessage?.from_agent;
+
+        if (senderAgent === 'core/core') {
+          log.info('dispatcher', 'Blocking HITL: routing human response to handler', {
+            agentId,
+            from: senderAgent,
+          });
+
+          const message = this.queue.pollOne(agentId);
+          if (message) {
+            const payload = message.payload || {};
+            this.handleAskResponseMessage({
+              id: message.id || 0,
+              filepath: message.source_file || '',
+              from: senderAgent,
+              to: agentId,
+              content: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload),
+              headline: typeof payload.headline === 'string' ? payload.headline : '',
+              msgId: typeof payload.msg_id === 'string' ? payload.msg_id : undefined,
+            });
+          }
+          return;
+        }
+      }
+
       // Check if this is a drain-mode join agent — inject into running worker
       const [oaomMesh, oaomAgent] = agentId.split('/');
       const drainGroup = this.getDrainFanOutGroup(oaomMesh, oaomAgent);

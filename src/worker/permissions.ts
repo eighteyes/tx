@@ -1,30 +1,22 @@
 /**
  * Tool permissions for SDK agents
  *
- * This module provides constants and utilities for configuring tool access
- * in Claude SDK workers using the `dontAsk` permission mode.
+ * Responsibilities:
+ * - Define permission constants and types for Claude SDK workers
+ * - Resolve agent permissions from mesh config into SDK-ready format
+ * - Enforce deny-by-default for dangerous tools (Task)
  *
- * ## Permission Philosophy: Docker Replacement Model
+ * ## Permission Model
  *
- * TX replaces Docker isolation with workDir boundary enforcement.
- * Like Docker containers, agents have full tool access but cannot escape
- * their working directory.
+ * Permissive by default. Agents get full SDK tool access unless restricted.
  *
  * **Primary Security Boundary**: workDir (enforced by SDK + bash-guard)
- * **Secondary Safety Net**: Catastrophic command denylist
- *
- * ### Bash is Allowed by Default
- *
- * Bash is in DEFAULT_ALLOWED_TOOLS because:
- * - Docker let you run anything inside the container
- * - Our security model is the workDir boundary, not per-command filtering
- * - bash-guard prevents workDir escapes and catastrophic host damage
- * - Network access (curl, wget, ssh, etc.) is explicitly allowed
+ * **Secondary Safety Net**: Catastrophic command denylist in bash-guard
  *
  * ### What We Block
  *
  * 1. **workDir Boundary Violations** (bash-guard):
- *    - Any file system operation outside the project directory
+ *    - File system operations outside the project directory
  *    - Absolute paths not under workDir
  *    - Relative paths that escape workDir
  *
@@ -39,14 +31,19 @@
  *    - Meshes that need Task must explicitly allow it in allowedTools
  */
 
-// Default allowed tools for safe operation (when no permissions block specified)
+// All tools pre-approved by default (when no permissions block defined)
 export const DEFAULT_ALLOWED_TOOLS = [
   'Read',
   'Write',
   'Edit',
   'Glob',
   'Grep',
-  'Bash',    // Allowed by default — workDir boundary enforced by bash-guard
+  'Bash',
+  'WebFetch',
+  'WebSearch',
+  'NotebookEdit',
+  'TodoWrite',
+  'KillShell',
 ];
 
 // Tools denied by default (must be explicitly allowed in mesh config)
@@ -76,9 +73,6 @@ export const CORE_AGENT_TOOLS = [
   'KillShell',
 ];
 
-// Utility callers (no tools needed - text analysis only)
-export const UTILITY_CALLER_TOOLS: string[] = [];
-
 // Permission mode type
 export type PermissionMode = 'dontAsk' | 'acceptEdits' | 'default' | 'bypassPermissions';
 
@@ -100,6 +94,9 @@ export interface ResolvedPermissions {
 /**
  * Resolve agent permissions with safe defaults
  *
+ * No permissions block = unrestricted (empty allowedTools → SDK uses full set).
+ * Task is denied by default via disallowedTools unless explicitly allowed.
+ *
  * @param permissions - Agent permissions from mesh config (optional)
  * @param godMode - Whether god mode is enabled (bypasses all restrictions)
  * @returns Resolved permissions ready for SDK query options
@@ -117,12 +114,20 @@ export function resolvePermissions(
     };
   }
 
-  // Normal mode: use agent permissions or safe defaults
-  // 'default' mode routes unapproved tools through canUseTool for HITL approval.
-  // 'dontAsk' silently denies — use only when HITL is not wired up.
-  const mode = permissions?.mode || 'default';
-  const allowedTools = permissions?.allowedTools || DEFAULT_ALLOWED_TOOLS;
-  const baseDisallowed = permissions?.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
+  // No permissions block = all tools pre-approved.
+  // canUseTool HITL gate remains active as fallback for unknown tools.
+  if (!permissions) {
+    return {
+      mode: 'default',
+      allowedTools: DEFAULT_ALLOWED_TOOLS,
+      disallowedTools: DEFAULT_DISALLOWED_TOOLS,
+    };
+  }
+
+  // Explicit permissions: 'default' routes unapproved tools through canUseTool.
+  const mode = permissions.mode || 'default';
+  const allowedTools = permissions.allowedTools || [];
+  const baseDisallowed = permissions.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
 
   // Explicitly allowed tools override the disallow list.
   // Prevents configs like allowedTools: [Task] from colliding with

@@ -230,9 +230,17 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const tmux = new TmuxSession(sessionName);
   const sessionExists = await tmux.exists();
 
-  if (options?.reattach && sessionExists) {
-    log.info('start', 'Reattach mode: reusing existing tmux session');
-    console.log(`[tmux] Reattaching to existing session: ${sessionName}`);
+  if (options?.reattach) {
+    if (sessionExists) {
+      log.info('start', 'Reattach mode: reusing existing tmux session');
+      console.log(`[tmux] Reattaching to existing session: ${sessionName}`);
+    } else {
+      // Session gone (race with old process cleanup or manual kill) — recreate without killing
+      log.warn('start', 'Reattach mode: tmux session gone, creating fresh');
+      console.log(`[tmux] Session not found, creating fresh: ${sessionName}`);
+      await tmux.create(cwd);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
   } else {
     if (sessionExists) {
       console.log(`[tmux] Killing existing session: ${sessionName}`);
