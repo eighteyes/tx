@@ -4,6 +4,7 @@
 
 mesh: dev-know-build
 description: "Two-phase development: haiku prepares feature context, opus builds"
+brain: true
 
 intents:
   patterns:

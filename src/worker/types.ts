@@ -96,6 +96,7 @@ export interface MeshConfig {
   fsm?: FSMConfig;  // FSM config for workflow orchestration
   ensemble?: EnsembleConfig;  // Ensemble execution config
   rearmatter?: RearmatterConfig;  // Transparency metadata config
+  brain?: boolean;  // Inject brain access prompt into agents (message brain/brain for questions)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 

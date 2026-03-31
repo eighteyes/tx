@@ -165,6 +165,7 @@ export interface MeshConfig {
   stop_on_first_complete?: boolean;  // Stop mesh on first completion signal (default: true)
   check_queue_on_complete?: boolean;  // Defer shutdown if queue has pending messages (default: true)
   load_claude_md?: boolean;  // Load project CLAUDE.md into agent system prompt (default: true)
+  brain?: boolean;  // Inject brain access prompt into agents (message brain/brain for questions)
   _basePath?: string;  // Internal: directory containing this config (for relative prompt paths)
 }
 

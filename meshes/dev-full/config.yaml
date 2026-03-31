@@ -5,6 +5,7 @@
 
 mesh: dev-full
 description: "Big-feature development with context prep, HITL success criteria, quality gates, worktree isolation, and learning capture"
+brain: true
 
 
 

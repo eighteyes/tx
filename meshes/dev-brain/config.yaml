@@ -4,6 +4,7 @@
 
 mesh: dev-brain
 description: "Development mesh with learning capture. Implementer builds, reviewer gates, brain ingests lessons."
+brain: true
 
 intents:
   patterns:

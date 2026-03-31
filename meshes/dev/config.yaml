@@ -1,5 +1,6 @@
 mesh: dev
 description: "Deep development mesh with testing, review cycles, and quality gates for complex work"
+brain: true
 
 intents:
   patterns:

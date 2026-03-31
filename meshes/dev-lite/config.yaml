@@ -1,5 +1,6 @@
 mesh: dev-lite
 description: "Lightweight developer mesh for simple features, quick fixes, and straightforward work"
+brain: true
 
 intents:
   patterns:

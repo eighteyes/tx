@@ -4,6 +4,7 @@
 
 mesh: dev-review
 description: "Development mesh with sonnet developer, opus reviewer, haiku tester. Review-gated quality."
+brain: true
 
 intents:
   patterns:

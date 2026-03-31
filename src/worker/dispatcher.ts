@@ -4353,6 +4353,12 @@ Please advise the agent or check mesh configuration.`;
       // 7. Agent prompt (with template tokens already replaced)
       promptSections.push(agentPromptText);
 
+      // 7b. Brain access (when mesh has brain: true)
+      if (meshConfig?.brain === true && meshName !== 'brain') {
+        promptSections.push(this.promptInjector.buildBrainSection(meshName!, agent.name));
+        log.info('dispatcher', 'Appended brain access section', { agentId });
+      }
+
       // 8-10. Rearmatter, parallel instance, messaging+routing — appended below after gates
 
       let systemPrompt = promptSections.filter(Boolean).join('\n\n');
@@ -4797,7 +4803,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       const runnerConfig: SdkRunnerConfig = {
         id: agentId,
-        model: agent.model,
+        model,  // Uses dev_mode / lowMode / ultraLowMode override, not raw agent.model
         systemPrompt,
         workDir,
         msgsDir: this.config.msgsDir,
@@ -5986,7 +5992,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       log.debug('dispatcher', `Worker registered`, { agentId, workerId, taskFrom });
       this.writeWorkerState();
       // Emit spawn AFTER state write so status readers see the new worker
-      this.emit('worker:spawn', { agentId, model: agent.model });
+      this.emit('worker:spawn', { agentId, model: runnerConfig.model });
 
       // Run the worker (async, don't await)
       worker.run().catch(async (error) => {
@@ -6514,7 +6520,19 @@ ${output}
           // Clean up block state BEFORE triggering exit agent
           this.parallelBlocks.delete(blockKey);
 
-          // Trigger exit agent - process any queued messages
+          // Write system task for exit agent (queue-first, bypasses chokidar).
+          // Agent-authored routing messages may not be queued yet — chokidar
+          // can lag behind worker:complete or not be running at all (tests).
+          const completedList = Array.from(blockState.completed);
+          this.systemWriter.write({
+            to: exitAgentId,
+            from: 'system',
+            type: 'task',
+            headline: `All parallel agents completed`,
+            body: `Parallel block complete. Agents finished: ${completedList.join(', ')}`,
+          });
+
+          // Process any additional queued messages (agent-authored routing)
           this.processNextQueuedMessage(exitAgentId);
         }
       }

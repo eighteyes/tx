@@ -32,6 +32,7 @@ Every config option added is complexity that can break. The default question for
 | `injectOriginalMessage:` | Downstream agents truly need the original task | Omit |
 | `rearmatter:` | FSM routing depends on self-assessment scores | Omit |
 | `guardrails:` | Custom limits differ from system defaults | Omit |
+| `brain: true` | Agents need project context they can't get from preloaded files alone | Omit |
 | `load_claude_md: false` | Mesh agents should not inherit project CLAUDE.md instructions | `true` |
 
 **The minimal working mesh:**
@@ -55,6 +56,84 @@ This is complete. Everything else is optional and should be justified.
 - **`parallelism:` on 2 agents** — just route them sequentially, parallelism overhead isn't worth it.
 - **`checkpoint:/fork_from:` when agents don't share context** — preloading context agents don't need wastes tokens.
 - **Ensemble with 1 agent** — that's just a regular agent.
+- **Working in `.ai/tx/msgs/` instead of workspace** — agents MUST use `{workspace}` token for all intermediate files, analysis, outputs. `msgs/` is the message queue only.
+
+## Workspace Isolation — Critical Design Pattern
+
+**The rule:** Agents read from `.ai/tx/msgs/` (message queue). They write to **their intended output location** — either project files (src/, lib/, etc.) or a dedicated workspace. `.ai/tx/msgs/` is **message transport only** — never do agent work there.
+
+### Two Patterns
+
+**Pattern A: Developer Meshes (dev, dev-full, etc.)**
+- Agents write directly to project: `src/`, `lib/`, root config files, etc.
+- No workspace config needed
+- Messages are coordination only, actual work lives in codebase
+
+Example:
+```bash
+# ✅ CORRECT — implementer writes to src/
+echo "export function foo() { ... }" > src/foo.ts
+```
+
+**Pattern B: Analysis/Reasoning Meshes (lens, research, etc.)**
+- Agents write to dedicated workspace defined in config
+- Workspace isolates intermediate analysis from codebase
+- Useful for multi-agent workflows, game turns, reasoning loops
+
+Config:
+```yaml
+workspace:
+  path: ".ai/tx/workspaces/my-mesh"
+  create_on_init: true
+```
+
+Agent prompt:
+```markdown
+## Output Location
+All analysis goes to `{workspace}/`.
+
+## Workflow
+1. Create workspace subdirectories as needed: `mkdir -p {workspace}/analysis`
+2. Write working files: `{workspace}/analysis/draft-1.md`
+3. Include output content in completion message to next agent
+```
+
+At runtime, `{workspace}` resolves to `.ai/tx/workspaces/my-mesh`.
+
+### Anti-Pattern: Working in msgs/
+
+❌ **WRONG** — Pollutes message queue:
+```bash
+# Agent does this — BAD
+echo "analysis" > .ai/tx/msgs/my-work-123.md
+```
+
+This breaks the clean separation:
+- **Transport**: `.ai/tx/msgs/` (messages between agents)
+- **Work**: Project files OR dedicated workspace (agent output, analysis, code)
+
+Result: Message queue fills with intermediate files, becomes unreadable, routing breaks.
+
+### Best Practice: Parallel Isolation (Pattern B)
+
+When multiple analysis agents run in parallel, each writes to its own subdirectory within the shared workspace:
+
+```yaml
+# General parallel analysis pattern
+coordinator:        → {workspace}/request.md  (shared)
+analyst-1:          → {workspace}/runs/analysis-1.md
+analyst-2:          → {workspace}/runs/analysis-2.md
+analyst-3:          → {workspace}/runs/analysis-3.md
+synthesizer:        → {workspace}/synthesis.md  (reads all, synthesizes)
+```
+
+Each agent:
+1. Creates its subdirectory: `mkdir -p {workspace}/runs`
+2. Writes to it: `{workspace}/runs/{agent-id}-output.md`
+3. Routes completion back to coordinator
+4. Synthesizer reads all files and combines results
+
+**Result**: Clean isolation, no message pollution, work visible and debuggable.
 
 ## Dev Mode — Cheap Workflow Testing
 
@@ -180,6 +259,89 @@ agents:
 User message:  feature: auth  → prebuild gets "/know:prebuild auth"
 Prebuild msg:  feature: auth  → builder gets "/know:build auth"
 ```
+
+## Message File Path Format — CRITICAL
+
+**Every agent prompt that writes messages must explicitly specify the file path format.**
+
+### Format Rules
+
+Message files go to `.ai/tx/msgs/` with this format:
+
+```
+{timestamp}-{from}-{to}-{action}-{id}.md
+```
+
+Where:
+- `{timestamp}` = Unix seconds (`date +%s`)
+- `{from}` = Agent's qualified name with slashes replaced by hyphens (e.g., `lens-coordinator` for `lens/coordinator`)
+- `{to}` = Target agent/mesh with slashes replaced by hyphens (e.g., `lens-historical` for `lens-historical`)
+- `{action}` = What the message does (e.g., `dispatch`, `complete`, `response`)
+- `{id}` = Random or sequential ID (e.g., `12345` or `abc123`)
+
+### Examples
+
+✅ **CORRECT**:
+```markdown
+File: 1774562950-lens-framer-coordinator-frame-99999.md
+---
+to: lens/coordinator
+from: lens/framer
+msg-id: frame-1774562950
+---
+```
+
+✅ **ALSO CORRECT**:
+```markdown
+File: 1740362400-lens-coordinator-lens-historical-dispatch-47392.md
+---
+to: lens-historical
+from: lens/coordinator
+msg-id: dispatch-historical
+---
+```
+
+❌ **WRONG** (creates directory):
+```markdown
+File: /Users/god/projects/tx/tx-core/.ai/tx/msgs/1774562400-lens/coordinator--lens-historical.md
+```
+
+❌ **WRONG** (slashes in agent name):
+```markdown
+File: 1774562400-lens/coordinator--lens/historical-dispatch.md
+```
+
+### Prompt Template
+
+Include this in **every agent prompt** that writes messages:
+
+```markdown
+## Message Format
+
+Write messages to `.ai/tx/msgs/` with this filename structure:
+
+\`{timestamp}-{from}-{to}-{action}-{id}.md\`
+
+Example:
+\`1774562950-my-mesh-coordinator-my-mesh-worker-task-12345.md\`
+
+File content:
+\`\`\`markdown
+---
+to: my-mesh/worker
+from: my-mesh/coordinator
+msg-id: task-12345
+headline: Brief description
+---
+
+Message body...
+\`\`\`
+```
+
+Replace:
+- `my-mesh` with your actual mesh name
+- `coordinator`/`worker` with actual agent names
+- `task` with action (dispatch, complete, response, etc.)
 
 ## Writing Prompts
 
@@ -1077,7 +1239,7 @@ guardrails:
 | Field | Type | Description |
 |-------|------|-------------|
 | `dev_mode` | boolean | Force all agents to haiku for cheap workflow testing. Remove before production. |
-| `brain` | boolean | Enable brain-update insights |
+| `brain` | boolean | Inject brain access prompt into all agents. Agents learn they can message `brain/brain` for project questions (architecture, dependencies, design rationale). Skipped for the brain mesh itself. |
 | `capabilities` | array | Agent capability tags |
 | `config` | object | Custom mesh-specific settings |
 | `idle_timeout_minutes` | number/false | Idle timeout (false=disabled) |

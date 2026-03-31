@@ -1,5 +1,6 @@
 mesh: dev-worktree
 description: "Developer mesh with git worktree isolation for feature development"
+brain: true
 
 intents:
   patterns:

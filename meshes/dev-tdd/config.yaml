@@ -1,5 +1,6 @@
 mesh: dev-tdd
 description: "Red-green-refactor TDD mesh. Red writes failing tests from spec, green writes minimal code to pass, refactor cleans up. Reviewer gates each phase."
+brain: true
 
 agents:
   - name: red

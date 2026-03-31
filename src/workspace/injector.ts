@@ -699,6 +699,43 @@ This instance is isolated from other instances of \`${baseMesh}\`. Your work is 
   }
 
   /**
+   * Build brain access section for meshes with brain: true
+   * Tells agents they can message brain/brain for project questions
+   */
+  buildBrainSection(meshName: string, agentName: string): string {
+    return `# Project Knowledge (Brain)
+
+This mesh has brain access enabled. When you need project context — architecture, dependencies, design decisions, or "how does X work?" — send an ask to \`brain/brain\` instead of guessing.
+
+## When to Ask Brain
+- You need to understand existing architecture before making changes
+- You're unsure which files, patterns, or interfaces are relevant
+- You need project history or design rationale
+- You want to verify assumptions about the codebase
+
+## How to Ask
+Write a message to \`.ai/tx/msgs/\`:
+
+\`\`\`
+---
+to: brain/brain
+from: ${meshName}/${agentName}
+msg-id: brain-ask-{timestamp}
+headline: Brief question summary
+---
+
+Your question here. Be specific about what you need to know.
+\`\`\`
+
+Brain will respond with a message back to you. **Wait for the response before proceeding** with work that depends on the answer. Your session suspends automatically until brain replies.
+
+## When NOT to Ask
+- You already have the information (from preloaded files, manifest, or prior messages)
+- The question is answerable by reading a specific file you can access directly
+- You're in the middle of mechanical work that doesn't require project context`;
+  }
+
+  /**
    * Build combined messaging protocol + routing section
    * Single cohesive section at the END of the prompt
    */
