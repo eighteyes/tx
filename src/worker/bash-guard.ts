@@ -170,6 +170,12 @@ export class BashGuard {
           return { decision: 'approve' } as HookJSONOutput;
         }
 
+        // Whitelist: Allow heredoc pipes to gateway scripts (narrative engine data flow)
+        // These scripts are controlled by the mesh and part of the intended agent workflow
+        if (this.isWhitelistedGatewayPipe(command)) {
+          return { decision: 'approve' } as HookJSONOutput;
+        }
+
         // Strip heredoc content — heredoc bodies are data, not executable commands.
         // Matching words like "halt", "shutdown", "service" in narrative text is a false positive.
         const commandToCheck = command.replace(/<<-?\s*'?([A-Za-z_]+)'?\s*\n[\s\S]*?\n\s*\1\b/g, '<<HEREDOC_STRIPPED');
@@ -200,6 +206,31 @@ export class BashGuard {
       }],
       timeout: 5,
     };
+  }
+
+  /**
+   * Check if command is a whitelisted gateway script pipe
+   * Allows: echo '...' | turn-write.sh, cat <<EOF | campaign-read.sh, etc.
+   * These are controlled mesh gateway scripts for narrative engine data flow.
+   */
+  private isWhitelistedGatewayPipe(command: string): boolean {
+    const GATEWAY_SCRIPTS = [
+      'turn-write.sh',
+      'turn-read.sh',
+      'campaign-write.sh',
+      'campaign-read.sh',
+    ];
+
+    // Check if command pipes to a gateway script
+    for (const script of GATEWAY_SCRIPTS) {
+      // Match: | script or | ./script or | path/to/script
+      const pipePattern = new RegExp(`\\|\\s*(?:\\.?\\/[^\\s]*\\/)?${script.replace('.', '\\.')}(?:\\s|$)`);
+      if (pipePattern.test(command)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -362,11 +393,6 @@ export class BashGuard {
   private isSpecialPath(p: string): boolean {
     // /dev/null, /dev/stdout, /dev/stderr are safe
     if (/^\/dev\/(null|stdout|stderr|stdin|fd\/\d+)$/.test(p)) {
-      return true;
-    }
-
-    // /tmp is allowed for temporary file operations
-    if (p === '/tmp' || p.startsWith('/tmp/')) {
       return true;
     }
 

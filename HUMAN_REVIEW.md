@@ -1,5 +1,209 @@
 # Human Review
 
+## PCQ Test Strategy — Coverage, CLI, Quality Gates
+Date: 2026-03-29
+Session: pcq-test-strategy
+
+### What Was Done
+
+**P (Coverage Tooling)** — Installed `c8`, added `test:coverage` and `test:integration` scripts to package.json. Baseline: 5.26% → 29.12% statement coverage after integration tests.
+
+**C (CLI Integration Tests)** — `test/integration/cli.test.ts` — 23 tests.
+`tx status` (zero state, populated queue, workers.json, JSON output), `printStatus` (minimal, populated, awaiting workers, JSON), `tx mesh list` (no DB, JSON), `tx mesh clear` (sessions+messages, no DB, JSON), `tx mesh validate` (valid/invalid/missing config via subprocess), `tx restart` PID logic (stale detection, signal check, PID parsing, session names, AI-use guard), `tx status` subprocess (JSON/text).
+
+**Q (Quality Gates Integration Tests)** — `test/integration/quality-gates.test.ts` — 41 tests.
+Full pipeline (preflight→stack→results), gate ordering, halt behavior, flag behavior, legacy module, stack creation helpers, event emission, DeterministicGate (real shell commands), SummarizerGate (ensemble), cross-gate interaction, edge cases.
+
+### Verification Steps
+
+#### 1. Run all integration tests
+```bash
+npm run test:integration
+```
+Expected: 64 passing, 0 failures, clean exit.
+
+#### 2. Run coverage report
+```bash
+npm run test:coverage
+```
+Expected: Coverage report prints to terminal + HTML in `coverage/`. Key numbers: quality 99%, quality-gates 100%, cli ~21%, overall ~29%.
+
+#### 3. Verify existing unit tests still pass
+```bash
+npm test
+```
+Expected: Same pass/fail as before (pre-existing fsm-scripts failures are known).
+```bash
+tmux ls 2>/dev/null | grep 'cli-restart' | cut -d: -f1 | xargs -I{} tmux kill-session -t {}
+```
+
+---
+
+## Mesh Config Options — Full Coverage (F scope)
+Date: 2026-03-30
+Session: mesh-config-coverage
+
+### What Was Done
+
+Audited 86 mesh config fields (56% tested, 26% partial, 19% untested). Added three test files:
+
+**Unit tests** — `src/mesh/__tests__/config-untested-fields.test.ts` — 30 tests
+All 16 untested + partially-tested fields: `manifest_enforcement` (all 5 sub-fields), `dev_mode`, `worktree`, `reliability`, `rearmatter`, `routing_mode` (all 3 variants), `boundary_agents`, `routing_fallback`, `routing_retry_max`, `disable`, `stop_on_first_complete`, `check_queue_on_complete`, `load_claude_md`, `permissions` (allowedTools/disallowedTools/mode), `chrome`, `command`, `mcpServers`, `thinking`, `fragments` (string + map). Plus `resolvePermissions()` logic (5 cases: restricted, Task allow/deny, bypassPermissions, god mode).
+
+Key findings: `disable: true` meshes are skipped at storage time (never enter meshConfigs). `routing_fallback` and `routing_retry_max` are migrated into `guardrails.routing_error.*` AND preserved top-level. `fragments` string path is resolved to absolute. Several fields emit unknown-field warnings (chrome, thinking, fragments, load_claude_md) — documented with TODO comments.
+
+**Infra tests** — `test/e2e/37-config-options-infra.test.ts` — 17 tests (needs `--test-force-exit`)
+Behavioral enforcement: `dev_mode` flag survives load, `resolvePermissions()` integration (4 cases), agent permissions round-trip, `routing_mode: dispatcher` extracts correctly + `extractAgentRouting` returns undefined, `disable: true` absent from meshConfigs, `manifest_enforcement` all 5 sub-fields, `stop_on_first_complete`/`check_queue_on_complete` false-value preservation, `load_claude_md` gating, `rearmatter` sub-fields.
+
+**Real-LLM tests** — `test/e2e/real-llm/14-config-options.test.ts` — 3 tests (skips without API key)
+`dev_mode` model override (spawn event captures haiku), `permissions.allowedTools` restricts Bash, `load_claude_md: false` excludes CLAUDE.md from system prompt.
+
+### Verification Steps
+
+#### 1. Run new unit tests
+```bash
+node --import tsx --test src/mesh/__tests__/config-untested-fields.test.ts
+```
+Expected: 30/30 passing.
+
+#### 2. Run new infra tests
+```bash
+node --import tsx --test --test-force-exit test/e2e/37-config-options-infra.test.ts
+```
+Expected: 17/17 passing, clean exit ~1.3s.
+
+#### 3. Run real-LLM tests (requires API key)
+```bash
+ANTHROPIC_API_KEY=<key> node --import tsx --test test/e2e/real-llm/14-config-options.test.ts
+```
+Expected: 3 tests run, flexible assertions. Without key: 0 tests, skip, exit 0.
+
+#### 4. Run full infra suite
+```bash
+npm run test:e2e:infra
+```
+Expected: includes test 37, all pass with --test-force-exit.
+
+---
+
+## Lens Mesh — Multi-Lens Reasoning
+Date: 2026-03-26
+Session: lens-mesh-build
+
+### What Was Done
+Created `meshes/lens/` — coordinator-pattern mesh for multi-lens reasoning with context isolation. Dynamic lens selection (2-6 from a library of 10). Each lens agent runs in isolation (continuation:false, separate worker). Coordinator handles fan-out/fan-in. Opus comparator generates comparison surface (agreements, divergences, blindspot coverage). Routes to human for synthesis.
+
+### Files Created
+- `meshes/lens/config.yaml` — Mesh config, routing, guardrails
+- `meshes/lens/lenses.yaml` — 10-lens library (preloaded into coordinator)
+- `meshes/lens/framer/prompt.md` — Entry: parse input → ProblemFrame
+- `meshes/lens/coordinator/prompt.md` — Router: dispatch lenses, count completions, gate comparator
+- `meshes/lens/lens/prompt.md` — Shared prompt for all lens agents
+- `meshes/lens/comparator/prompt.md` — Comparison surface generator
+
+### Verification Steps
+
+#### 1. Config validates (agents, routing, lenses cross-reference)
+```bash
+echo "Agents:" && yq '.agents[].name' meshes/lens/config.yaml && echo "---" && echo "Routing keys:" && yq '.routing | keys | .[]' meshes/lens/config.yaml && echo "---" && echo "Lens agents:" && yq '.[].agent' meshes/lens/lenses.yaml
+```
+Expected: 13 agents, 13 routing keys, 10 lens agent names — all matching.
+
+#### 2. Prompt files exist for all agents
+```bash
+for p in $(yq '.agents[].prompt' meshes/lens/config.yaml | sort -u); do ls meshes/lens/$p; done
+```
+Expected: 4 files found, no errors.
+
+#### 3. Dev mode smoke test
+```bash
+tx prompt lens framer
+tx prompt lens coordinator
+tx prompt lens lens-first-principles
+tx prompt lens comparator
+```
+Verify: system prompt includes workspace injection, message protocol, and (for coordinator) preloaded lenses.yaml.
+
+#### 4. End-to-end with dev_mode (haiku)
+Send a test message:
+```
+Should we migrate from monolith to microservices? Team of 5, 50k users.
+Use first-principles and adversarial lenses.
+```
+Verify:
+- Framer creates `problem-frame.md` in workspace
+- Coordinator dispatches exactly 2 lens agents
+- Both lens agents write LensRun files to `runs/`
+- Coordinator gates comparator until both complete
+- Comparator produces `comparison.md` with agreements/divergences
+- Message arrives at core with comparison surface
+
+#### 5. Context isolation check
+During step 4, verify lens agents do NOT read `{workspace}/runs/`:
+```bash
+tx logs | grep -E 'lens-(first-principles|adversarial).*Read.*runs/'
+```
+Expected: no matches.
+
+---
+
+## Blocking HITL Mode
+Date: 2026-03-25
+Commits: 9015890..27a7f79
+
+### What Was Done
+Added `human: blocking` frontmatter mode. When an agent sends a message to core/core with `human: blocking`, the dispatcher flags the worker instead of killing/suspending. The worker finishes its turn, the complete handler holds (no downstream routing), and when the human responds, the same runner resumes. Fixes the gravity dispatch race in narrative-engine-v2 init-turn.
+
+### Files Changed
+- `src/worker/types.ts` — BlockingHitlMessageEvent interface
+- `src/worker/worker-lifecycle.ts` — blockingHitl flag + set/is/clear helpers
+- `src/core/consumer.ts` — Detect `human: blocking`, emit blocking-hitl-message
+- `src/reliability/reliability-manager.ts` — unregisterAgent wrapper
+- `src/worker/dispatcher.ts` — Event binding, handler, complete guard, response resume
+- `src/workspace/messaging-protocol.ts` — Agent-facing docs for human: blocking
+- `meshes/narrative-engine-v2/coordinator/init-turn.md` — Use human: blocking
+- `meshes/narrative-engine-v2/config.yaml` — Remove Agent/TaskOutput from sim-voices
+
+### Verification Steps
+
+#### 1. TypeScript compiles (pre-existing errors only)
+```bash
+npx tsc --noEmit --pretty 2>&1 | grep -c 'error TS'
+```
+Expected: 6 (all in dynaprompt.ts and brain-update.ts)
+
+#### 2. Consumer detects blocking HITL
+```bash
+grep -n 'blocking-hitl-message\|human.*blocking' src/core/consumer.ts
+```
+Expected: blocking detection at ~1041, event emission at ~1050, guard at ~1068
+
+#### 3. Dispatcher complete handler guard placement
+```bash
+grep -n 'blockingHitl' src/worker/dispatcher.ts | head -5
+```
+Expected: Guard at ~5008 (before ensemble/post-hooks/pending-asks checks)
+
+#### 4. Response handler placement
+```bash
+grep -n 'isBlockingHitl\|clearBlockingHitl' src/worker/dispatcher.ts
+```
+Expected: Check at ~2876, clear at ~2899
+
+#### 5. Narrative engine smoke (next turn)
+Run a narrative turn with init-turn. Verify:
+- init-turn sends HITL with `human: blocking`
+- Dispatcher logs "Blocking HITL: worker flagged"
+- After human responds, dispatcher logs "Blocking HITL: resuming worker"
+- stamp-decomposition.sh runs AFTER human response
+- gravity dispatches AFTER init-turn completes
+- No manual action-lock patching needed
+
+### Known Limitations
+- `human: blocking` is single-shot (one question per agent turn)
+- Crash recovery requires manual intervention (in-memory state lost)
+- sim-voices prompt still references Agent tool — needs prompt rearchitecture (separate task)
+
 ## Work Assay Creation (Spec Phase)
 Date: 2026-03-16
 Session: (current)

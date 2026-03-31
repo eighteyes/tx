@@ -250,7 +250,8 @@ describe('DispatchRouter', () => {
       assert.ok(ctx.validOutcomes);
       assert.ok(ctx.validOutcomes.includes('approved'));
       assert.strictEqual(ctx.isTerminal, false);
-      assert.strictEqual(ctx.availableAgents.length, AGENTS.length);
+      // reviewer routes to: writer (approved/default) and editor (needs_work) = 2 reachable agents
+      assert.strictEqual(ctx.availableAgents.length, 2);
     });
 
     test('returns correct context for terminal agent', () => {

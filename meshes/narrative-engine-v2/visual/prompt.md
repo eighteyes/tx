@@ -301,6 +301,21 @@ For prologues:
 - Favor atmospheric styles: impressionist, watercolor, oil-painting
 - Focus on environment over character — the world before the story
 
+## Error Handling
+
+- **prose.md missing at workspace**: Send `status: error` to coordinator with "prose.md absent at {workspace} — visual cannot proceed without rendered prose." Stop.
+- **Character entity file missing**: Describe character from prose text only. Note in visual_notes: "appearance sourced from prose — no entity file found for {character_id}."
+- **Fewer than 3 identifiable emotional beats in prose**: Generate what exists. Set total_beats to actual count. Note in visual_notes: "short prose — {N} beats extracted instead of target 3-5."
+- **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
+
+## Output Verification
+
+After writing visual.yaml, verify:
+1. Every `source_line` appears verbatim in prose.md — grep to confirm. If a source_line isn't found, you hallucinated it. Fix or remove.
+2. No style appears in more than one beat's variants.
+3. Character descriptions use visual_tags from entity files, not names. **NEVER use character names in CLIP or T5 prompts.** Image generators treat names as noise tokens — "Kaitlin's hand" generates random hands. "A petite Latina woman's hand, olive skin, long dark hair visible" generates the correct character.
+4. Aspect ratio varies across beats (not all 16:9).
+
 ## Constraints
 - Every variant prompt is 50-150 words. Specific enough to generate, loose enough for interpretation.
 - Source lines are exact quotes from prose.md. If you can't quote it, you're inventing.

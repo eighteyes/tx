@@ -4633,6 +4633,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
       systemPrompt += '\n\n' + messagingSection;
 
+      // Section 11: Worker recovery guidance (always-on, every agent)
+      systemPrompt += '\n\n' + this.promptInjector.buildWorkerRecoverySection(meshName!, agent.name);
+
       // --- Save constructed prompt ---
       const fsmState = fsm?.isInitialized() ? fsm.getStatus().currentState : undefined;
       const promptMetadata: Record<string, unknown> = { taskId };

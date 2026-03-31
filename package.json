@@ -1,16 +1,18 @@
 {
   "name": "tx-v4",
-  "version": "0.3.0",
+  "version": "0.3.6",
   "type": "module",
   "bin": {
     "tx": "./bin/tx"
   },
   "scripts": {
     "build": "tsc",
-    "test": "node --import tsx --test test/unit/**/*.test.ts test/*.test.ts",
+    "test": "node --import tsx --test src/mesh/__tests__/**/*.test.ts test/unit/**/*.test.ts test/*.test.ts",
+    "test:integration": "node --import tsx --test test/integration/**/*.test.ts",
+    "test:coverage": "c8 --all --src src --reporter=text --reporter=html --report-dir=coverage node --import tsx --test test/unit/**/*.test.ts test/integration/**/*.test.ts test/*.test.ts",
     "test:e2e": "node --import tsx --test test/e2e/*.test.ts",
-    "test:e2e:infra": "node --import tsx --test test/e2e/28-parallel-spawn-infra.test.ts test/e2e/29-fanout-infra.test.ts test/e2e/30-guardrails-infra.test.ts test/e2e/31-ensemble-infra.test.ts test/e2e/32-mesh-completion-infra.test.ts test/e2e/33-routing-errors-infra.test.ts test/e2e/34-crash-recovery-infra.test.ts test/e2e/35-revision-infra.test.ts test/e2e/36-dispatch-router-infra.test.ts",
-    "test:e2e:llm": "node --import tsx --test test/e2e/real-llm/02-ask-human.test.ts test/e2e/real-llm/08-parallelism.test.ts test/e2e/real-llm/09-fanout.test.ts test/e2e/real-llm/10-guardrails.test.ts test/e2e/real-llm/11-ensemble.test.ts test/e2e/real-llm/12-mesh-completion.test.ts test/e2e/real-llm/13-revision.test.ts",
+    "test:e2e:infra": "node --import tsx --test --test-force-exit test/e2e/28-parallel-spawn-infra.test.ts test/e2e/29-fanout-infra.test.ts test/e2e/30-guardrails-infra.test.ts test/e2e/31-ensemble-infra.test.ts test/e2e/32-mesh-completion-infra.test.ts test/e2e/33-routing-errors-infra.test.ts test/e2e/34-crash-recovery-infra.test.ts test/e2e/35-revision-infra.test.ts test/e2e/36-dispatch-router-infra.test.ts test/e2e/37-config-options-infra.test.ts",
+    "test:e2e:llm": "node --import tsx --test test/e2e/real-llm/02-ask-human.test.ts test/e2e/real-llm/08-parallelism.test.ts test/e2e/real-llm/09-fanout.test.ts test/e2e/real-llm/10-guardrails.test.ts test/e2e/real-llm/11-ensemble.test.ts test/e2e/real-llm/12-mesh-completion.test.ts test/e2e/real-llm/13-revision.test.ts test/e2e/real-llm/14-config-options.test.ts",
     "test:all": "node --import tsx --test test/**/*.test.ts",
     "test:frontend": "cd frontend && npx playwright test",
     "start": "node --import tsx src/cli/index.ts start",
@@ -39,6 +41,7 @@
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^20.0.0",
     "@types/tar": "^6.1.0",
+    "c8": "^11.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }

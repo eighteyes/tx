@@ -119,6 +119,14 @@ If the incoming task contains "redo", "retry", "again", "repeat", "replay", "res
 
 4. **Do NOT auto-route to init-turn** — wait for player to send their action
 
+## Error Handling
+
+- **session.yaml missing or unreadable**: Send `status: error` to core/core with error details. Stop.
+- **increment-turn.sh fails (exit ≠ 0)**: Send `status: blocked` to core/core with the script's stderr output. Do NOT route to init-turn with stale paths.
+- **redo-turn.sh fails (exit ≠ 0)**: Send `status: blocked` to core/core with the script's stderr output. Do NOT confirm success to player.
+- **Unrecognized phase in session.yaml**: Send `status: error` to core/core listing the unexpected phase value. Do not guess routing.
+- **Message is empty or unintelligible**: Send message to core/core asking player to clarify. Do not route to any coordinator.
+
 ## Session Validation (Minimal)
 
 Only check:
@@ -126,7 +134,7 @@ Only check:
 2. game_id present (unless game creation)
 3. phase is recognized
 
-**If validation fails:** Send message to core with the error. Do not attempt recovery.
+**If validation fails:** Send `status: error` to core/core with the error. Do not attempt recovery.
 
 ## Constraints
 - Entry routes to exactly TWO coordinators: game-coord, init-turn

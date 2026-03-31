@@ -48,9 +48,11 @@ export class AggregationEngine {
         return this.aggregateVoting(results);
 
       case 'consensus':
+        return this.aggregateConsensus(results);
+
       case 'custom':
-        log.warn('aggregation', `Strategy '${strategy}' deferred to Phase 3, using concat fallback`);
-        return this.aggregateConcat(results);
+        log.warn('aggregation', `Strategy 'custom' deferred to Phase 2, using concat fallback`);
+        return this.aggregateCustomFallback(results);
 
       default:
         log.warn('aggregation', `Unknown strategy '${strategy}', using concat fallback`);
@@ -81,32 +83,36 @@ export class AggregationEngine {
 
   /**
    * Deduplicate strategy: Remove duplicate findings
-   * Uses simple line-based deduplication
+   * Uses case-insensitive line-based deduplication
    */
   private static aggregateDeduplicate(results: AgentResult[]): AggregationResult {
-    const allLines = new Set<string>();
-    const agentContributions: Record<string, number> = {};
+    // Track normalised → original line (first seen wins)
+    const seenNorm = new Map<string, string>();
+    let totalLines = 0;
 
     for (const result of results) {
       const lines = result.content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      totalLines += lines.length;
 
       for (const line of lines) {
-        if (!allLines.has(line)) {
-          allLines.add(line);
-          agentContributions[result.agent] = (agentContributions[result.agent] || 0) + 1;
+        const norm = line.toLowerCase();
+        if (!seenNorm.has(norm)) {
+          seenNorm.set(norm, line);
         }
       }
     }
 
-    const aggregated_content = Array.from(allLines).join('\n');
+    const uniqueLines = Array.from(seenNorm.values());
+    const duplicatesRemoved = totalLines - uniqueLines.length;
+    const aggregated_content = uniqueLines.join('\n');
 
     return {
       aggregated_content,
       metadata: {
         strategy: 'deduplicate',
         agent_count: results.length,
-        unique_findings: allLines.size,
-        agent_contributions: agentContributions,
+        unique_lines: uniqueLines.length,
+        duplicates_removed: duplicatesRemoved,
       },
     };
   }
@@ -195,23 +201,113 @@ export class AggregationEngine {
       totalAgents: results.length,
     });
 
-    // Build metadata about all votes
-    const voteBreakdown = groups.map(g => ({
-      agents: g.agents,
-      votes: g.agents.length,
-      contentLength: g.content.length,
-    }));
+    // Detect tie: top two groups have same vote count
+    const isTie = groups.length >= 2 && groups[0].agents.length === groups[1].agents.length;
+
+    let aggregated_content: string;
+    if (isTie) {
+      // Format tie result
+      const tieOptions = groups.map(g =>
+        `- "${g.content}" (${g.agents.join(', ')})`
+      ).join('\n');
+      aggregated_content = `Tie — no clear winner.\n\n${tieOptions}`;
+    } else {
+      // Format winning result with vote attribution
+      const voteCount = winner.agents.length;
+      const totalAgents = results.length;
+      aggregated_content = `${winner.content}\n\n[${voteCount}/${totalAgents} agents: ${winner.agents.join(', ')}]`;
+    }
 
     return {
-      aggregated_content: winner.content,
+      aggregated_content,
       metadata: {
         strategy: 'voting',
         agent_count: results.length,
-        winner: winner.agents[0],
-        winning_coalition: winner.agents,
+        winner: isTie ? null : winner.agents[0],
+        winning_coalition: isTie ? [] : winner.agents,
         vote_count: winner.agents.length,
         group_count: groups.length,
-        vote_breakdown: voteBreakdown,
+        is_tie: isTie,
+      },
+    };
+  }
+
+  /**
+   * Consensus strategy: Find lines that appear across multiple agent results
+   * Lines appearing in 2+ results are "common themes"
+   */
+  private static aggregateConsensus(results: AgentResult[]): AggregationResult {
+    if (results.length === 0) {
+      return {
+        aggregated_content: '',
+        metadata: { strategy: 'consensus', agent_count: 0, common_themes: 0, unique_points: 0 },
+      };
+    }
+
+    // Count normalised line occurrences across agents
+    const lineCount = new Map<string, { original: string; count: number }>();
+
+    for (const result of results) {
+      const lines = result.content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      // Deduplicate within the same agent to avoid double-counting
+      const seenInAgent = new Set<string>();
+      for (const line of lines) {
+        const norm = line.toLowerCase();
+        if (!seenInAgent.has(norm)) {
+          seenInAgent.add(norm);
+          const entry = lineCount.get(norm);
+          if (entry) {
+            entry.count++;
+          } else {
+            lineCount.set(norm, { original: line, count: 1 });
+          }
+        }
+      }
+    }
+
+    const threshold = Math.max(2, Math.ceil(results.length * 0.5));
+    const commonThemes: string[] = [];
+    const uniquePoints: string[] = [];
+
+    for (const { original, count } of lineCount.values()) {
+      if (count >= threshold) {
+        commonThemes.push(original);
+      } else {
+        uniquePoints.push(original);
+      }
+    }
+
+    const sections: string[] = [];
+    if (commonThemes.length > 0) {
+      sections.push(`## Common Themes\n\n${commonThemes.join('\n')}`);
+    }
+    if (uniquePoints.length > 0) {
+      sections.push(`## Unique Points\n\n${uniquePoints.join('\n')}`);
+    }
+
+    return {
+      aggregated_content: sections.join('\n\n'),
+      metadata: {
+        strategy: 'consensus',
+        agent_count: results.length,
+        common_themes: commonThemes.length,
+        unique_points: uniquePoints.length,
+      },
+    };
+  }
+
+  /**
+   * Custom strategy Phase 2 fallback: concat with Phase 2 Fallback label
+   * Full custom aggregation via LLM query is deferred to Phase 2
+   */
+  private static aggregateCustomFallback(results: AgentResult[]): AggregationResult {
+    const base = this.aggregateConcat(results);
+    return {
+      aggregated_content: `## Phase 2 Fallback\n\nCustom aggregation via LLM is deferred to Phase 2.\n\n${base.aggregated_content}`,
+      metadata: {
+        ...base.metadata,
+        strategy: 'custom',
+        strategy_type: 'custom',
       },
     };
   }

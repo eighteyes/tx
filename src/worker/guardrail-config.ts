@@ -123,7 +123,7 @@ const GUARDRAIL_DEFAULT_MODES: Record<string, GuardrailMode> = {
   routing_error:    { strict: false, warning: true },   // Warn on routing failures
   max_messages:     { strict: true,  warning: true },   // Kill on message limit
   max_turns:        { strict: false, warning: true },   // Warn on turn limit (SDK handles hard limit)
-  max_mesh_messages:{ strict: true,  warning: true },   // Kill on mesh message limit
+  max_mesh_messages:{ strict: false, warning: true },   // Warn on mesh message limit
   duplicate_target: { strict: false, warning: true },   // Warn on duplicate routing
   postcondition:    { strict: false, warning: true },   // Warn on postcondition failure
 };

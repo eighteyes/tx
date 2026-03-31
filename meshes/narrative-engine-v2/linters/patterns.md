@@ -148,6 +148,28 @@ violations:
     suggestion: "pottery never mentioned in prior prose — remove or introduce the concept through scene first"
 ```
 
+## Error Handling
+
+- **prose-draft.md missing or empty**: Send `status: error` to coordinator with workspace path. Do not write violations. Stop.
+- **violations.yaml doesn't exist yet**: Create it via gateway with initial structure before appending:
+  ```bash
+  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/turn-write.sh {workspace} violations
+  ```
+- **violations.yaml exists but won't parse**: Send `status: blocked` to core/core with the parse error. Do not overwrite — the file may contain other linters' findings.
+- **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
+
+## Output Verification
+
+After appending violations, read back the file to confirm:
+```bash
+$SCRIPTS/turn-read.sh {workspace} violations
+```
+Verify your violations appear in the list and the YAML parses cleanly. If verification fails, re-read the original, re-append, retry once.
+
+## Deconfliction Note
+
+Mechanical lints (forbidden words, AI tells) already ran via script. If you detect a pattern that overlaps with a mechanical lint category (e.g., "emotion washing" overlaps with forbidden emotion words), check violations.yaml first — if the same line is already flagged mechanically, skip your creative flag for that line.
+
 ## Constraints
 - All violations classify as CREATIVE — they need editor's judgment, not simple swaps.
 - Suggest the TYPE of fix, not the exact words.

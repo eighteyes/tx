@@ -41,6 +41,24 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 - Copy final prose-draft.md → prose.md
 - Check author config for visual_generation: if true → visual, else → scribe
 
+## Error Handling
+
+- **prose-draft.md missing**: Send `status: error` to entry with "narrator did not produce output — prose-draft.md absent at {workspace}." Stop.
+- **violations.yaml missing**: Proceed with holistic review only — no linter violations to triage. Note in holistic_notes: "lint chain did not run."
+- **violations.yaml malformed (won't parse)**: Note in holistic_notes, proceed with holistic review using prose-draft.md only.
+- **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
+- **prose-draft.md is empty (0 bytes)**: Send `status: error` to entry. Stop.
+
+## Severity Triage
+
+Before fixing violations, classify by urgency:
+
+1. **MECHANICAL violations** (forbidden words, AI tells, dialogue tags): Fix ALL — these are binary right/wrong.
+2. **STRUCTURAL violations** (temporal, spatial, props, continuity): Fix ALL — these break the reader's physical model.
+3. **CREATIVE violations** (cadence, metaphor, patterns, litotes): Triage by count:
+   - 1-2 instances of a pattern: Note but consider whether intentional (author may break rules deliberately)
+   - 3+ instances of same pattern: Fix — frequency indicates drift, not intention
+
 ## Workflow
 <instructions>
 **Primary directive:** Fix violations, polish prose-draft.md, write prose.md, report to visual.
@@ -205,6 +223,28 @@ holistic_notes: |
 workspace: {workspace}
 prose: {workspace}/prose.md
 ```
+
+## Fix Calibration (Before/After)
+
+### Emotion-Washing Fix
+**Before**: "She felt a wave of sadness wash over her as she realized what had happened."
+**After**: "Her throat closed. The photograph — Marcus grinning, arm slung over someone's shoulder — had been taken three months before everything. She set it face-down on the desk."
+**Why**: Named emotion ("sadness") replaced with somatic response ("throat closed") + specific sensory detail that earns the emotion.
+
+### Cadence Fix
+**Before**: "She walked to the door. She opened it. She stepped outside. She looked around."
+**After**: "She walked to the door and opened it. Outside. The parking lot stretched empty under sodium lights, every shadow a possible conversation she wasn't ready to have."
+**Why**: Monotone short sentences collapsed into varied cadence (medium → fragment → long). Added interiority.
+
+### Body-Part Agency Fix
+**Before**: "Her eyes searched the room desperately, looking for any sign of him."
+**After**: "She scanned the room — booth by booth, the bar rail, the hostess stand. No sign."
+**Why**: Eyes don't search. The character does. Made the scan concrete and specific instead of abstract.
+
+### Trait-Labeling Fix
+**Before**: "I've always been so passive," she whispered. "I never stand up for myself."
+**After**: She pulled the blanket tighter. Said nothing. Let the silence answer for her, the way she always did.
+**Why**: Characters show traits through behavior. They don't announce their psychology.
 
 ## Constraints
 - Fix everything yourself. There is no iteration loop with narrator.

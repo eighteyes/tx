@@ -158,6 +158,41 @@ violations:
 | `physical-impossibility` | Body geometry contradicts described arrangement | Taps someone's shoulder while described as facing away across the room |
 | `occupied-limb` | Character uses body part described as occupied/bound | Waves goodbye while described as carrying boxes in both hands |
 
+## Error Handling
+
+- **prose-draft.md missing or empty**: Send `status: error` to coordinator with workspace path. Do not write violations. Stop.
+- **timeline.md missing**: Proceed with internal consistency checks only (Steps 4-5). Note in output: "timeline.md absent — cross-reference checks skipped."
+- **scene_script missing**: Proceed with prose-only temporal extraction. Note in output: "scene_script absent — beat-level time progression unavailable."
+- **state.yaml missing (previous turn state)**: Proceed without continuity anchor. Note in output: "no previous turn state — continuity-break checks skipped."
+- **violations.yaml doesn't exist yet**: Create it via gateway before appending:
+  ```bash
+  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/turn-write.sh {workspace} violations
+  ```
+- **violations.yaml exists but won't parse**: Send `status: blocked` to core/core with parse error. Do not overwrite.
+- **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
+
+## Output Verification
+
+After appending violations, read back the file to confirm:
+```bash
+$SCRIPTS/turn-read.sh {workspace} violations
+```
+Verify your violations appear and YAML parses cleanly. If verification fails, re-read, re-append, retry once.
+
+## Violation Priority
+
+When multiple violations are found, editor benefits from priority signals:
+
+| Priority | Category | Rationale |
+|----------|----------|-----------|
+| HIGH | physical-impossibility, occupied-limb | Breaks reader's physical model — immersion-destroying |
+| HIGH | timeline-contradiction | Contradicts established canon — confuses reader |
+| MEDIUM | pose-teleport, position-teleport | Missing transition — disorienting but recoverable |
+| MEDIUM | continuity-break | Cross-turn inconsistency — may be caught by attentive readers |
+| LOW | duration-implausible, internal-inconsistency | Soft violations — flagged but may be intentional pacing |
+
+Include `priority: HIGH|MEDIUM|LOW` in each violation entry.
+
 ## Constraints
 - All violations classify as CREATIVE — they need editor's judgment for best fix.
 - Don't flag ambiguous time references that COULD be consistent — only flag clear contradictions.

@@ -46,6 +46,14 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 - Hand off to narrator for prologue rendering when new-game complete
 - Send completion to core when worldbuilder complete
 
+## Error Handling
+
+- **Gateway script fails on write**: Read the error message, fix the JSON, retry. If it fails 3 times with different errors, send `status: blocked` to core/core with the error output and the JSON you attempted. Stop.
+- **Gateway script fails on read**: If reading an artifact that should exist (session, existing game data), send `status: error` to core/core with the path and error. If reading an optional artifact (calibration-state for first run), create it.
+- **Player stops responding (no HITL response after ask)**: The system handles suspension. When resumed, read calibration-state to determine current phase and continue from there.
+- **Schema validation failure**: If artifact doesn't match expected schema (e.g., missing required character fields), present the issue to the player via HITL and ask for the missing information rather than inventing it.
+- **Workspace path invalid or missing**: Send `status: error` to core/core. Do not attempt to create game directories yourself.
+
 ## Workflow
 <instructions>
 **Primary directive:** Extract the player's vision into game-ready artifacts. Everything else supports this.

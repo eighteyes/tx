@@ -173,6 +173,29 @@ After completing your analysis, you decide whether editor runs:
    prose: {workspace}/prose.md
    ```
 
+## Error Handling
+
+- **prose-draft.md missing or empty**: Send `status: error` to coordinator with workspace path. Do not write violations. Stop.
+- **violations.yaml doesn't exist**: Create it via gateway before appending:
+  ```bash
+  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/turn-write.sh {workspace} violations
+  ```
+- **violations.yaml exists but won't parse**: Send `status: blocked` to core/core with parse error. Do not overwrite.
+- **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
+- **cp fails when promoting prose**: Retry once. If second attempt fails, send `status: error` to core/core. Do not route to scribe without verified prose.md.
+
+## Output Verification
+
+After appending violations, read back the full violations file:
+```bash
+$SCRIPTS/turn-read.sh {workspace} violations
+```
+Verify your violations appear and YAML parses cleanly. If verification fails, re-read, re-append, retry once.
+
+## Cross-Scene Awareness
+
+Channel analysis applies within the current turn's prose only. Do NOT flag channel reuse across different turns — each turn is a fresh scene with its own sensory budget. The editor handles cross-turn repetition separately via lookback (Step 1.5 in editor's workflow).
+
 ## Constraints
 - All violations classify as CREATIVE — editor picks the strongest, varies others.
 - Flag only duplicates with same emotional function. Different functions on same channel are valid.

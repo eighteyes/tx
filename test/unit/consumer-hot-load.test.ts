@@ -128,8 +128,11 @@ Please review PR #123.
 
     let errorWritten = false;
     const originalWriteFile = fs.writeFileSync;
+    // Consumer escalates after maxRetries (default 3) attempts.
+    // Filename format: <ts>-<type>-<from>--<to>-<msgId>.md
+    // Escalation writes: message-system-routing-validator--core-core-<id>.md
     const writeFileSpy = (filepath: string | Buffer | URL | number, data: string | NodeJS.ArrayBufferView, ...args: any[]) => {
-      if (typeof filepath === 'string' && filepath.includes('error-system--core-core')) {
+      if (typeof filepath === 'string' && filepath.includes('routing-validator--core-core')) {
         errorWritten = true;
       }
       return originalWriteFile(filepath as string, data, ...(args as [fs.WriteFileOptions | undefined]));
@@ -137,33 +140,35 @@ Please review PR #123.
     fs.writeFileSync = writeFileSpy as typeof fs.writeFileSync;
 
     try {
-      // Send message to nonexistent mesh
-      const msgFile = path.join(
-        env.msgsDir,
-        `${Date.now()}-core-core--nonexistent-worker-test.md`
-      );
-      fs.writeFileSync(
-        msgFile,
-        `---
+      // Send 3 messages to trigger the retry limit (maxRetries default = 3)
+      // The consumer escalates on the 3rd attempt from the same sender→target pair
+      for (let i = 0; i < 3; i++) {
+        const msgFile = path.join(
+          env.msgsDir,
+          `${Date.now() + i}-core-core--nonexistent-worker-test-${i}.md`
+        );
+        originalWriteFile(
+          msgFile,
+          `---
 to: nonexistent/worker
 from: core/core
-msg-id: nonexistent-test
+msg-id: nonexistent-test-${i}
 headline: This should fail
 timestamp: ${new Date().toISOString()}
 ---
 
 This mesh does not exist.
 `
-      );
-
-      await new Promise(resolve => setTimeout(resolve, 600));
+        );
+        await new Promise(resolve => setTimeout(resolve, 650));
+      }
 
       // Message should NOT be queued (dropped)
       const messages = queue.poll('nonexistent/worker');
       assert.strictEqual(messages.length, 0, 'Message to nonexistent mesh should be dropped');
 
-      // Error message should have been written to core
-      assert.ok(errorWritten, 'Error message should be written to core');
+      // Error message should have been escalated to core after retry limit
+      assert.ok(errorWritten, 'Error escalation should be written to core after retry limit');
     } finally {
       fs.writeFileSync = originalWriteFile;
     }

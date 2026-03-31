@@ -1,5 +1,6 @@
 // test/unit/fragment-registry.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -25,21 +26,21 @@ describe('FragmentRegistry', () => {
     const registry = new FragmentRegistry();
     registry.loadFromDir(fragDir);
 
-    expect(registry.list()).toEqual(['contrarian', 'deep-dive']);
-    expect(registry.get('deep-dive')).toContain('Analyze in detail');
+    assert.deepEqual(registry.list(), ['contrarian', 'deep-dive']);
+    assert.ok(registry.get('deep-dive')?.includes('Analyze in detail'));
   });
 
   it('returns null for unknown fragment', () => {
     const registry = new FragmentRegistry();
-    expect(registry.get('nonexistent')).toBeNull();
+    assert.equal(registry.get('nonexistent'), null);
   });
 
   it('registers runtime fragments', () => {
     const registry = new FragmentRegistry();
     registry.register('custom', '# Custom\nAgent-authored fragment.');
 
-    expect(registry.get('custom')).toContain('Agent-authored');
-    expect(registry.list()).toContain('custom');
+    assert.ok(registry.get('custom')?.includes('Agent-authored'));
+    assert.ok(registry.list().includes('custom'));
   });
 
   it('loads from multiple directories with priority', () => {
@@ -54,6 +55,6 @@ describe('FragmentRegistry', () => {
     registry.loadFromDir(meshFrags);    // lower priority
     registry.loadFromDir(agentFrags);   // higher priority (loaded second, overwrites)
 
-    expect(registry.get('shared')).toBe('agent version');
+    assert.equal(registry.get('shared'), 'agent version');
   });
 });

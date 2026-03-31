@@ -233,6 +233,11 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   checkpoint: { type: 'string', enum: ['start', 'end'] },  // Checkpoint type (boolean true also accepted, normalized to 'start')
   fork_from: { type: 'string' },  // Fork from another agent's checkpoint
   orchestrator: { type: 'boolean' },  // Restrict to Read + Write(msgs only)
+  // Browser + thinking + prompt config
+  chrome: { type: 'boolean' },           // Launch agent with --chrome (ChromeCliRunner)
+  thinking: { type: 'object' },          // Extended thinking config { budget_tokens }
+  fragments: { type: 'array' },          // Prompt fragment names to inject (string[])
+  load_claude_md: { type: 'boolean' },   // Control CLAUDE.md injection (default: true)
 };
 
 /**
@@ -328,14 +333,21 @@ export class MeshValidator {
       errors.push(`FSM requires 'routing' configuration${context}`);
     }
 
-    // Validate multi-agent mesh routing (skip for dispatcher/manifest mode)
-    if (Array.isArray(cfg.agents) && cfg.agents.length > 1 && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest') {
+    // Validate multi-agent mesh routing (skip for dispatcher/manifest mode and task_distribution/ensemble meshes)
+    if (Array.isArray(cfg.agents) && cfg.agents.length > 1 &&
+        cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest' &&
+        !cfg.task_distribution && !cfg.ensemble) {
       this.validateMultiAgentRouting(cfg, errors, warnings, context);
     }
 
     // Validate FSM state agent routing (skip for dispatcher/manifest mode)
     if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest') {
       this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
+    }
+
+    // Validate top-level ensemble config if present
+    if (cfg.ensemble && Array.isArray(cfg.agents)) {
+      this.validateMeshEnsemble(cfg.ensemble, cfg.agents, errors, warnings, context);
     }
 
     // Validate task_distribution if present
@@ -1545,6 +1557,76 @@ export class MeshValidator {
       totalErrors,
       totalWarnings
     };
+  }
+
+  /**
+   * Validate top-level mesh ensemble configuration (EnsembleConfig)
+   * This is the mesh-level coordinator ensemble (not FSM state-level ensemble).
+   */
+  private static validateMeshEnsemble(
+    config: unknown,
+    agents: unknown[],
+    errors: string[],
+    warnings: string[],
+    context: string
+  ): void {
+    if (!config || typeof config !== 'object') {
+      errors.push(`Invalid ensemble config${context}: must be an object`);
+      return;
+    }
+
+    const ensemble = config as Record<string, unknown>;
+    const agentNames = new Set((agents as Record<string, unknown>[]).map(a => a.name as string));
+    const prefix = 'ensemble';
+
+    // Validate agents array (required)
+    if (!ensemble.agents) {
+      errors.push(`${prefix}.agents is required${context}`);
+    } else if (!Array.isArray(ensemble.agents) || ensemble.agents.length === 0) {
+      errors.push(`${prefix}.agents must be a non-empty array${context}`);
+    } else {
+      for (const agent of ensemble.agents as string[]) {
+        if (!agentNames.has(agent)) {
+          errors.push(`${prefix}.agents: '${agent}' not found in mesh agents${context}`);
+        }
+      }
+    }
+
+    // Validate aggregation_strategy (required)
+    const validStrategies = ['concat', 'deduplicate', 'voting', 'consensus', 'custom'];
+    if (!ensemble.aggregation_strategy) {
+      errors.push(`${prefix}.aggregation_strategy is required${context}`);
+    } else if (!validStrategies.includes(ensemble.aggregation_strategy as string)) {
+      errors.push(`${prefix}.aggregation_strategy must be one of [${validStrategies.join(', ')}], got '${ensemble.aggregation_strategy}'${context}`);
+    }
+
+    // custom strategy requires aggregation_prompt
+    if (ensemble.aggregation_strategy === 'custom' && !ensemble.aggregation_prompt) {
+      errors.push(`${prefix}: custom aggregation_strategy requires 'aggregation_prompt'${context}`);
+    }
+
+    // Validate timeout_ms (optional)
+    if (ensemble.timeout_ms !== undefined) {
+      if (typeof ensemble.timeout_ms !== 'number' || ensemble.timeout_ms < 100 || ensemble.timeout_ms > 600000) {
+        errors.push(`${prefix}.timeout_ms must be a number between 100 and 600000${context}`);
+      }
+    }
+
+    // Validate fault_tolerance (optional)
+    if (ensemble.fault_tolerance !== undefined) {
+      if (typeof ensemble.fault_tolerance !== 'object' || ensemble.fault_tolerance === null) {
+        errors.push(`${prefix}.fault_tolerance must be an object${context}`);
+      } else {
+        const ft = ensemble.fault_tolerance as Record<string, unknown>;
+        if (ft.min_success_count !== undefined) {
+          if (typeof ft.min_success_count !== 'number' || ft.min_success_count < 1) {
+            errors.push(`${prefix}.fault_tolerance.min_success_count must be a number >= 1${context}`);
+          } else if (Array.isArray(ensemble.agents) && ft.min_success_count > ensemble.agents.length) {
+            errors.push(`${prefix}.fault_tolerance.min_success_count (${ft.min_success_count}) exceeds agent count (${ensemble.agents.length})${context}`);
+          }
+        }
+      }
+    }
   }
 
   /**

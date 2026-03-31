@@ -14,6 +14,8 @@ import type { SystemMessageWriter } from '../core/system-message-writer.ts';
 import type { MessageQueue } from '../queue/index.ts';
 import type { TrackedMessage } from './worker-lifecycle.ts';
 import { runHaikuQuery } from '../session/session-summarizer.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export interface NudgeConfig {
   enabled: boolean;
@@ -163,11 +165,16 @@ export class NudgeDetector {
       expectedTargets.includes(m.to_agent) || expectedTargets.includes(m.to_agent.split('/').pop()!)
     );
 
-    if (snapshotSentToExpected || freshSentToExpected) {
+    // Filesystem check: the file watcher may not have registered the message yet.
+    // Check .ai/tx/msgs/ for message files written by this agent in the last 30s.
+    const filesystemSentToExpected = this.checkFilesystemForRecentMessages(agentId, expectedTargets, 30_000);
+
+    if (snapshotSentToExpected || freshSentToExpected || filesystemSentToExpected) {
       log.debug('nudge-detector', 'Agent routed to expected target, skipping nudge', {
         agentId,
         snapshotSent: messagesSent.map(m => m.to),
         freshSent: recentFromAgent.map(m => m.to_agent),
+        filesystemSent: filesystemSentToExpected,
         expectedTargets,
       });
       return;
@@ -205,6 +212,92 @@ export class NudgeDetector {
 
       await this.sendNudge(snapshot, target);
     }
+  }
+
+  /**
+   * Check filesystem for recent message files from this agent
+   * Returns true if a message file to an expected target was found
+   *
+   * This prevents false nudges when the file watcher hasn't registered
+   * the message yet (race condition between agent completion and file watcher).
+   */
+  private checkFilesystemForRecentMessages(agentId: string, expectedTargets: string[], windowMs: number): boolean {
+    try {
+      // Message files are in .ai/tx/msgs/ relative to workDir
+      // We need to find workDir - walk up from __dirname until we find .ai/tx/msgs/
+      const msgsDir = this.findMessagesDir();
+      if (!msgsDir) {
+        log.debug('nudge-detector', 'Could not locate .ai/tx/msgs/, skipping filesystem check', { agentId });
+        return false;
+      }
+
+      const cutoff = Date.now() - windowMs;
+      const files = fs.readdirSync(msgsDir);
+
+      // Message filename format: {unix_epoch_seconds}-{from}--{to}-{short_id}.md
+      // Extract from field and check mtime
+      const agentShortName = agentId.replace('/', '-'); // dev/worker -> dev-worker
+
+      for (const file of files) {
+        if (!file.endsWith('.md')) continue;
+
+        const filePath = path.join(msgsDir, file);
+        const stats = fs.statSync(filePath);
+
+        // Check if file was written in the time window
+        if (stats.mtimeMs < cutoff) continue;
+
+        // Check if this file was written by our agent
+        // Format: timestamp-from--to-id.md
+        const parts = file.split('--');
+        if (parts.length < 2) continue;
+
+        const fromPart = parts[0]; // timestamp-from
+        const toPart = parts[1].split('-')[0]; // Extract "to" before the short_id
+
+        // Check if from matches (from field includes agent name after timestamp)
+        if (!fromPart.includes(agentShortName)) continue;
+
+        // Check if to matches any expected target
+        for (const target of expectedTargets) {
+          const targetShortName = target.includes('/') ? target.replace('/', '-') : target;
+          if (toPart === targetShortName || toPart.endsWith(`-${targetShortName}`)) {
+            log.debug('nudge-detector', 'Found recent message file on filesystem', {
+              agentId,
+              file,
+              target: toPart,
+              expectedTargets,
+            });
+            return true;
+          }
+        }
+      }
+
+      return false;
+    } catch (err) {
+      log.warn('nudge-detector', 'Filesystem check failed', {
+        agentId,
+        error: (err as Error).message,
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Find the .ai/tx/msgs/ directory by walking up from current directory
+   */
+  private findMessagesDir(): string | null {
+    let dir = process.cwd();
+    for (let i = 0; i < 5; i++) {
+      const msgsDir = path.join(dir, '.ai', 'tx', 'msgs');
+      if (fs.existsSync(msgsDir)) {
+        return msgsDir;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break; // Reached root
+      dir = parent;
+    }
+    return null;
   }
 
   /**

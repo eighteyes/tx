@@ -126,13 +126,13 @@ export function resolvePermissions(
 
   // Explicit permissions: 'default' routes unapproved tools through canUseTool.
   const mode = permissions.mode || 'default';
-  const allowedTools = permissions.allowedTools || [];
+  const allowedTools = permissions.allowedTools ?? DEFAULT_ALLOWED_TOOLS;
   const baseDisallowed = permissions.disallowedTools || DEFAULT_DISALLOWED_TOOLS;
 
-  // Explicitly allowed tools override the disallow list.
-  // Prevents configs like allowedTools: [Task] from colliding with
-  // DEFAULT_DISALLOWED_TOOLS: [Task].
-  const allowedSet = new Set(allowedTools);
+  // Conflict filter: only explicit allowedTools override the disallow list.
+  // Using the fallback DEFAULT_ALLOWED_TOOLS here would incorrectly strip items
+  // from an explicit disallowedTools-only config (e.g. disallowedTools: ['Bash']).
+  const allowedSet = new Set(permissions.allowedTools || []);
   const disallowedTools = baseDisallowed.filter(t => !allowedSet.has(t));
 
   return {

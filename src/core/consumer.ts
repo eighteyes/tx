@@ -1506,13 +1506,32 @@ export class MessageConsumer extends EventEmitter {
    * Future: only task, task-complete, message. Routing determines semantics.
    */
   private inferMessageType(fm: Frontmatter, to: string, from: string): string {
-    // To core/core with status=complete or outcome=complete = task-complete (mesh completion signal)
-    // Dispatcher agents use outcome: complete (resolved by DispatchRouter to core/core)
-    // Agent-mode agents use status: complete
+    // Completion signal: non-core agent → core/core with status:complete or outcome:complete
     if (to === 'core/core' && !from.startsWith('core/') && (fm.status === 'complete' || fm.outcome === 'complete')) {
       return 'task-complete';
     }
-    // Everything else is a message. Human boundary is inferred from destination (core/core).
+
+    // Phase 7: boundary-based type inference (system messages bypass inference)
+    const fromSystem = from.startsWith('system/');
+    const toSystem = to.startsWith('system/');
+    const fromCore = from.startsWith('core/');
+    const toCore = to.startsWith('core/');
+
+    // Worker → core/core (non-completion) = ask-human (question for the human operator)
+    if (toCore && !fromCore && !fromSystem) {
+      return 'ask-human';
+    }
+
+    // Human operator → agent = ask-response (human answering agent's question)
+    if (fromCore && !toCore && !toSystem) {
+      return 'ask-response';
+    }
+
+    // Agent → agent (within or cross-mesh collaboration) = ask
+    if (!toCore && !fromCore && !fromSystem && !toSystem) {
+      return 'ask';
+    }
+
     return 'message';
   }
 

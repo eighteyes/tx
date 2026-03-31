@@ -5,6 +5,78 @@ All notable changes to TX V4 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.6] - 2026-03-31
+
+### Added
+
+#### Prompts
+- **`brain: true` mesh config**: Injects brain access guidance into all non-brain agents — when to ask, exact message format, session auto-suspends awaiting response
+- **Worker recovery section**: Failure & escalation guidance injected into every worker agent — three signal levels (escalate to core/core, error via routing, retry self capped at 2-3), escalation message template, note on automatic DLQ capture
+- **Core prompt: operator tools expanded**: Added `tx mesh unstick`, `tx mesh drain`, `tx mesh fsm-reset` with usage guidance and queue-vs-FSM decision tree
+
+#### Runtime
+- **Consumer: boundary-based type inference**: Phase 7 clean inference — worker→core = ask-human, core→agent = ask-response, agent→agent = ask
+- **Aggregation: deduplication + tie detection**: Line-based case-insensitive dedup, tie formatting when top groups are equal
+- **Bash-guard: gateway script whitelist**: Narrative engine gateway scripts (`turn-write.sh`, `turn-read.sh`, `campaign-write.sh`, `campaign-read.sh`) whitelisted for heredoc pipe patterns
+- **Nudge-detector: filesystem message check**: Filesystem fallback scans `.ai/tx/msgs/` for recent agent messages when in-memory snapshot misses
+- **Mesh-validator: ensemble validation**: Top-level `ensemble` config validated alongside FSM state-level ensemble
+
+### Fixed
+
+- **HITL routing**: Blocking HITL responses route correctly through ask-human flow
+- **Permissive tool defaults**: Tool access defaults relaxed for standard agent operation
+- **Injector: file reference**: Message bodies written as file references instead of inlined content
+- **sdk-runner: tool intersection**: `allowedTools` intersected with restriction set — agents receive correct tool subset
+- **Agent→Task tool name**: Preamble and permissions prompts corrected from `Agent` tool to `Task` tool across all injected sections
+
+## [0.3.5] - 2026-03-25
+
+### Added
+
+#### Runtime
+- **ChromeCliRunner**: `agent.chrome: true` launches browser-enabled agents with auto-dispatch
+- **Tool-call postconditions**: Validate tool outputs against declared expectations after execution
+- **`canUseTool` callback**: HITL permission ask flow for runtime tool authorization
+- **Core as userland**: Core session launches without `dontAsk` bypass
+
+#### Reliability
+- **Dead Letter Queue**: Failed messages captured with `tx mesh dlq` for inspection and replay
+- **Circuit breakers**: Failure-count thresholds with automatic checkpointing
+- **SLI tracking**: Service level indicator metrics for mesh execution health
+- **Safe mode**: Degraded execution mode when reliability thresholds are breached
+- **`tx mesh health`**: Runtime health status across all active meshes
+- **Checkpoint rewind**: Recovery from checkpoint log
+- **Human review gates**: Enforced HITL review before automated recovery actions
+
+#### Guardrails
+- **Unified kill lifecycle**: Single convergence point for all kill paths
+- **Per-guardrail defaults**: Each guardrail resolves `strict`/`warning` independently
+- **Bash-guard scope**: Supports `TX_ROOT` and user-configured `allowed_paths`
+- **inject-response on failure**: Fires on worker errors and mesh kills, not just clean completions
+
+#### Meshes — Narrative Engine v2
+- **Shell/jq gateway scripts**: Complete data access layer replacing direct YAML manipulation
+- **Read scripts**: Five access modes — `browse`, `skim`, `read`, `discover`, `search`
+- **Write scripts**: `turn-write`, `campaign-write`, `game-write` with `overwrite`, `append`, and `patch` modes
+- **Entity slash addressing**: `/entity/name` path syntax for targeted entity updates
+- **State transition validation**: Patch mode enforces valid transitions before applying
+- **Schema validation**: `validate-common.jq` with turn, campaign, and game-level jq schemas
+- **Migration scripts**: Arc and entity migration tooling
+- **Strict no-bypass enforcement**: Data access blocks reject circumvention of the gateway layer
+- **campaign.sh retired**: Prompt functionality migrated to gateway scripts
+- **scene.yaml → state.yaml**: Renamed to reflect state semantics
+
+#### Meshes — Bug Finding
+- **bug-fixer**: FSM batch loop — triage → planner → researcher → fixer → validator → reporter
+- **bug-finder**: FSM crawl-test-synthesize pipeline
+- **bug-know-finder**: Spec-graph-guided pipeline with inspector for reality-to-spec reconciliation
+
+### Fixed
+
+- **Feature name persistence**: Survives across mesh run boundaries; `{feature}` works in workspace paths
+- **Worktree symlinks**: Stale real directories replaced with proper symlinks
+- **Nudge detector**: Improved message handling, removed false-positive guardrail limits
+
 ## [0.3.0] - 2026-03-04
 
 ### Added
@@ -288,6 +360,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace manager for task-scoped outputs
 - Prompt injection system
 
+[0.3.6]: https://github.com/eighteyes/tx/compare/v0.3.5...v0.3.6
+[0.3.5]: https://github.com/eighteyes/tx/compare/v0.3.0...v0.3.5
 [0.3.0]: https://github.com/eighteyes/tx/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/eighteyes/tx/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/eighteyes/tx/compare/v0.2.0...v0.2.1

@@ -284,6 +284,48 @@ if [ -f "$STORY_CONCORDANCE" ] && [ -f "$CONCORDANCE" ]; then
 fi
 
 # ============================================================================
+# SECTION 9: Meta-Leak Detection (Continuity Canary)
+# Game-mechanical language in prose signals narrator pulling from wrong layer.
+# Turn references = temporal omniscience. Trait names = entity YAML leaking.
+# Each hit is a continuity violation flag — oracle should investigate POV.
+# ============================================================================
+
+# Turn references (Turn 86, turn 12, etc.)
+turn_refs=$(grep -inE '\bTurn [0-9]+\b' "$PROSE" 2>/dev/null || true)
+if [ -n "$turn_refs" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "meta-leak" "CONTINUITY" "$linenum" "Turn [N]" "$content" "Game-mechanical time reference in prose. Characters have no turn awareness. Likely continuity violation — check POV and character knowledge."
+  done <<< "$turn_refs"
+fi
+
+# Trait names in ALL CAPS (SMUG, INTELLIGENT, PROTECTIVE, DESPERATE, ANGRY, BOUNDARIED, FLUID, WARM)
+trait_caps=$(grep -onE '\b(SMUG|INTELLIGENT|PROTECTIVE|DESPERATE|ANGRY|BOUNDARIED|FLUID|WARM)\b' "$PROSE" 2>/dev/null || true)
+if [ -n "$trait_caps" ]; then
+  while IFS=: read -r linenum word; do
+    [ -n "$linenum" ] && add_violation "meta-leak" "CONTINUITY" "$linenum" "$word" "ALL-CAPS trait name in prose" "Trait label leaked from entity YAML. Render as behavior, not label."
+  done <<< "$trait_caps"
+fi
+
+# Game-mechanical vocabulary that shouldn't appear in prose
+META_WORDS="mechanical_note arc_pressure trait_pressure action_weight entropy_mode baseline decay_type"
+for mword in $META_WORDS; do
+  meta_matches=$(grep -in "$mword" "$PROSE" 2>/dev/null || true)
+  if [ -n "$meta_matches" ]; then
+    while IFS=: read -r linenum content; do
+      [ -n "$linenum" ] && add_violation "meta-leak" "CONTINUITY" "$linenum" "$mword" "$content" "Game-mechanical term in prose. Narrator pulling from data layer."
+    done <<< "$meta_matches"
+  fi
+done
+
+# The word "mechanical" itself — game-data vocabulary
+mech_matches=$(grep -inw "mechanical" "$PROSE" 2>/dev/null || true)
+if [ -n "$mech_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "meta-leak" "CONTINUITY" "$linenum" "mechanical" "$content" "Game-data vocabulary in prose. Likely narrator parroting YAML field names."
+  done <<< "$mech_matches"
+fi
+
+# ============================================================================
 # MERGE VIOLATIONS INTO violations.yaml
 # ============================================================================
 

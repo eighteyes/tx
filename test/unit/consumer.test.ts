@@ -21,8 +21,19 @@ describe('Consumer Type Inference', () => {
 
   beforeEach(async () => {
     env = createTestEnv('tx-v4-type-inference');
+
+    // Create test-mesh config so the consumer can route messages to it
+    const meshDir = path.join(env.meshesDir, 'test-mesh');
+    fs.mkdirSync(meshDir, { recursive: true });
+    fs.writeFileSync(path.join(meshDir, 'config.yaml'), `mesh: test-mesh
+entry_point: worker
+agents:
+  - name: worker
+  - name: reviewer
+`);
+
     queue = new MessageQueue(env.dbPath);
-    consumer = new MessageConsumer(env.msgsDir, queue);
+    consumer = new MessageConsumer(env.msgsDir, queue, env.meshesDir);
     await consumer.start();
     await new Promise(resolve => setTimeout(resolve, 200));
   });

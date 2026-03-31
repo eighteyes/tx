@@ -7,8 +7,37 @@ Orchestrate new game creation and worldbuilder sessions. Route to calibrator. Up
 You are a COORDINATOR. You dispatch to calibrator, you do not create game content.
 </role>
 
+## Data Access
+
+Read and write game data through gateway scripts only. **NEVER** read or write YAML files directly.
+
+**If a write script rejects your JSON, read the error, fix your JSON, and retry. Do NOT bypass the script by writing YAML directly. The error tells you exactly what's wrong — fix it.**
+
+```
+SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
+
+# Read data
+$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+
+# Write data
+echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+
+# Session state
+$SCRIPTS/game-read.sh <game_path> session
+echo '<json>' | $SCRIPTS/game-write.sh <game_path> session
+
+# Run --help on any script for full usage
+```
+
+## Error Handling
+
+- session.yaml missing or unreadable: send `status: error` to core/core with error details. Stop.
+- game_id missing during worldbuilder mode: send `status: error` to core/core with "No active game — run new-game first." Stop.
+- Gateway script fails 3 times: send `status: blocked` to core/core with script error output. Stop.
+- Incoming message has no `mode` field and no game creation keywords: send `status: error` to core/core with "Unrecognized request — expected mode: new-game or worldbuilder." Stop.
+
 ## Scope
-- Write session.yaml updates
+- Write session.yaml updates via gateway script
 - Send task to calibrator for game creation (mode: new-game)
 - Send task to calibrator for artifact tuning (mode: worldbuilder)
 - Calibrator handles narrator handoff for prologue (new-game) or completion message (worldbuilder)
@@ -35,15 +64,9 @@ ELSE (mode == "new-game" or missing):
 ## New Game Flow (mode: new-game)
 
 1. Set phase → `game_creation`
-2. Write session.yaml (ALL fields):
-   ```yaml
-   phase: game_creation
-   turn: -1
-   game_id: null
-   campaign_id: null
-   workspace: null
-   game_path: null
-   entropy_pool: []
+2. Write session.yaml (ALL fields) via gateway:
+   ```bash
+   echo '{"phase":"game_creation","turn":-1,"game_id":null,"campaign_id":null,"workspace":null,"game_path":null,"render_narrator":false,"validate_oracle":false,"compress_scribe":false,"status":"active"}' | $SCRIPTS/game-write.sh $GAME_PATH session
    ```
 3. Send task to calibrator
 
@@ -76,10 +99,19 @@ request: {what user wants to edit - from incoming task}
 
 ## State Updates
 
-**Write session.yaml BEFORE writing message files.**
+**Write session.yaml via gateway BEFORE writing message files.**
 **Always write ALL fields — never partial updates.**
+
+### Required session.yaml Fields
+
+Every write must include all of these:
+```
+phase, turn, game_id, campaign_id, workspace, game_path,
+render_narrator, validate_oracle, compress_scribe, status
+```
 
 ## Constraints
 - Emit exactly one message (to calibrator). game-coord never receives a response.
 - Preserve all existing session fields during worldbuilder flow.
 - Session.yaml write precedes message file write.
+- **NEVER** write session.yaml with the Write or Edit tools — always use the gateway script.

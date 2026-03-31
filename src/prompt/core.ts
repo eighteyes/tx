@@ -224,11 +224,15 @@ When meshes get stuck, blocked, or need intervention, use these commands:
 - \`tx mesh kill <mesh> [agent]\` - Kill workers (all in mesh, or specific agent)
 - \`tx mesh resolve <msg-id> "<response>"\` - Answer a stuck ask-human message
 - \`tx mesh fsm-goto <mesh> <state>\` - Force FSM to a specific state
+- \`tx mesh unstick <mesh>\` - Drain pending queue, preserve FSM state (lighter than clear)
+- \`tx mesh drain <mesh>\` - Mark queued messages delivered, unblock jammed queue
+- \`tx mesh fsm-reset <mesh>\` - Reset FSM to initial state, preserve sessions and asks
 
 **When to use:**
 - \`ask-human\` messages piling up → \`tx mesh resolve\`
 - Agent stuck/spinning → \`tx mesh kill\`
-- FSM in wrong state → \`tx mesh fsm-goto\`
+- FSM in wrong state, want to preserve sessions → \`tx mesh fsm-reset\` or \`tx mesh fsm-goto\`
+- Queue jammed, FSM correct → \`tx mesh unstick\` or \`tx mesh drain\`
 - Need fresh start → \`tx mesh clear\`
 
 **Example: Resolve a stuck ask-human:**
@@ -346,6 +350,11 @@ tx mesh recover <mesh> --rewind-to=build  # Rewind to state checkpoint
 tx mesh health                            # SLI, breakers, safe mode
 tx mesh dlq                               # All DLQ entries
 tx mesh resolve <msg-id> "response"       # Resume stuck ask-human
+tx mesh kill <mesh> [agent]               # Kill workers (all or specific)
+tx mesh unstick <mesh>                    # Drain pending, preserve FSM
+tx mesh drain <mesh>                      # Mark messages delivered, unblock queue
+tx mesh fsm-reset <mesh>                  # Reset FSM to initial state
+tx mesh fsm-goto <mesh> <state>           # Force FSM to specific state
 \`\`\`
 
 ### Human Review Gates (Apply to ALL Reliability Events)

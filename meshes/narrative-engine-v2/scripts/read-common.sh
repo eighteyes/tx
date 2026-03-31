@@ -107,6 +107,7 @@ parse_read_args() {
 # character/kaitlin -> entities/characters/kaitlin.yaml
 # fates -> fates.yaml
 # Sets: READ_FILE, ENTITY_TYPE, ENTITY_ID
+# Includes fallback for underscore↔hyphen filename variations
 resolve_entity_read_path() {
   local base="$1" artifact="$2"
   ENTITY_TYPE=""
@@ -117,6 +118,35 @@ resolve_entity_read_path() {
     READ_FILE="$base/entities/${ENTITY_TYPE}s/${ENTITY_ID}.yaml"
   else
     READ_FILE="$base/${artifact}.yaml"
+  fi
+
+  # Fallback: if file doesn't exist, try alternate separator (hyphen↔underscore)
+  if [[ ! -f "$READ_FILE" ]]; then
+    local alt_artifact
+    if [[ "$artifact" == *"_"* ]]; then
+      # Try replacing underscores with hyphens
+      alt_artifact="${artifact//_/-}"
+    elif [[ "$artifact" == *"-"* ]]; then
+      # Try replacing hyphens with underscores
+      alt_artifact="${artifact//-/_}"
+    else
+      # No separator to swap, return original
+      return
+    fi
+
+    # Rebuild path with alternate separator
+    if [[ "$alt_artifact" == */* ]]; then
+      ENTITY_TYPE="${alt_artifact%%/*}"
+      ENTITY_ID="${alt_artifact#*/}"
+      local alt_file="$base/entities/${ENTITY_TYPE}s/${ENTITY_ID}.yaml"
+    else
+      local alt_file="$base/${alt_artifact}.yaml"
+    fi
+
+    # Use alternate file if it exists
+    if [[ -f "$alt_file" ]]; then
+      READ_FILE="$alt_file"
+    fi
   fi
 }
 

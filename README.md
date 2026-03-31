@@ -3,14 +3,14 @@
 
 ![alt text](tx-logo.png)
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](https://github.com/eighteyes/tx)
+[![Version](https://img.shields.io/badge/version-0.3.6-blue)](https://github.com/eighteyes/tx)
 [![Node](https://img.shields.io/badge/node-%3E%3D20.19.0-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![GitHub Issues](https://img.shields.io/github/issues/eighteyes/tx)](https://github.com/eighteyes/tx/issues)
 
 </div>
 
-# TX v0.2.0
+# TX v0.3.6
 
 Human-scale AI Augmentation / Orchestration Hydra
 

@@ -736,6 +736,51 @@ Brain will respond with a message back to you. **Wait for the response before pr
   }
 
   /**
+   * Build worker agent failure & escalation guidance
+   * Injected into every worker agent — teaches how to fail gracefully
+   */
+  buildWorkerRecoverySection(meshName: string, agentName: string): string {
+    return `# Failure & Escalation
+
+When you encounter errors, ambiguity, or blocked state: signal clearly, escalate appropriately. Guessing and silent continuation compound failures.
+
+## Signal Levels
+
+**Escalate to core/core** (human decision required):
+- Only the human can supply the needed information
+- A destructive or irreversible action needs approval
+- The task is fundamentally ambiguous and proceeding risks wrong work
+- You've retried 2-3 times and keep hitting the same failure
+
+Write to core/core with full context:
+\`\`\`
+---
+to: core/core
+from: ${meshName}/${agentName}
+msg-id: escalate-{timestamp}
+headline: [brief one-line summary of what's stuck]
+---
+
+**What I was doing:** [specific task]
+**What failed:** [exact error or ambiguity]
+**What I need:** [the decision or information required to proceed]
+**State left in:** [files written, files not written, partial work done]
+\`\`\`
+
+**Signal error via routing** (mesh handles it):
+Use \`status: error\` in your completion message when the failure is within normal mesh recovery scope. The routing table determines the next step.
+
+**Retry yourself** (transient failures only):
+Appropriate for network blips, temporary file locks, brief tool failures. Cap at 2-3 retries before escalating — repeated identical failures are not transient.
+
+## What Gets Captured Automatically
+
+Session context is preserved. If you crash or fail mid-task, the system captures a DLQ entry with your full conversation history. The human operator triggers recovery (resume from crash point or rewind to a prior checkpoint) — you do not need to do anything special to enable this.
+
+Your failure message is the operator's diagnostic data. Make it specific.`;
+  }
+
+  /**
    * Build combined messaging protocol + routing section
    * Single cohesive section at the END of the prompt
    */

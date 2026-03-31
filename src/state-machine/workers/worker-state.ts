@@ -194,8 +194,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async start(pid: number): Promise<void> {
     const from = this.state;
     if (from.status !== 'initializing') {
-      log.warn('tx-fsm', `Cannot start from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
-      return;
+      throw new Error(`Cannot start from ${from.status}`);
     }
 
     await this.transition('start', {
@@ -315,8 +314,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
 
     this.context.retryCount++;
     if (this.context.retryCount > this.context.maxRetries) {
-      log.warn('tx-fsm', `Max retries exceeded: ${this.context.maxRetries}`, { entityId: this.id });
-      return;
+      throw new Error(`Max retries exceeded: ${this.context.maxRetries}`);
     }
 
     await this.transition('retry', {
@@ -336,8 +334,7 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
   async enterAwait(targetAgent: string, sessionId: string): Promise<void> {
     const from = this.state;
     if (from.status !== 'running' && from.status !== 'idle') {
-      log.warn('tx-fsm', `Cannot await from ${from.status}, ignoring`, { entityId: this.id, status: from.status, targetAgent });
-      return;
+      throw new Error(`Cannot await from ${from.status}`);
     }
 
     // Store session ID for resume
