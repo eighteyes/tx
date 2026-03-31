@@ -34,16 +34,21 @@ Human-scale AI Augmentation / Orchestration Hydra
 > `tx` uses `dontAsk` permission mode with [workDir boundary enforcement](docs/permissions.md) — no Docker required. For unrestricted access, use `tx start --god-mode`.
 
 ```bash
+npm install -g tx-ai
+```
+
+Or install from source:
+
+```bash
 git clone git@github.com:eighteyes/tx.git
 cd tx
-npm install
-# installs global tx command
-npm link
+npm install && npm link
+```
 
-# cd to your project, or just run here to check it out
-cd ../<project-directory>
+Then, from any project directory:
 
-# start the show ( authenticate claude first )
+```bash
+# authenticate claude first
 tx start
 
 > "Research a report about pelicans riding bikes"
