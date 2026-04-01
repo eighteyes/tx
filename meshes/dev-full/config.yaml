@@ -1,5 +1,5 @@
 # dev-full mesh
-# Big-feature development: context prep → HITL criteria → implement → test → review → evaluate
+# Big-feature development: context prep → HITL criteria → implement → test → review → evaluate → ultrareview → handoff
 # Combines: dev-know-build (prebuild), dev-brain (learning), dev (quality gates), dev-worktree (isolation)
 # Key pattern: success criteria as independent artifact, evaluated by dedicated agent
 
@@ -63,8 +63,23 @@ agents:
     model: opus
     prompt: evaluator/prompt.md
 
+  - name: ultrareview
+    model: opus
+    prompt: ultrareview/prompt.md
+
+  - name: handoff
+    model: sonnet
+    prompt: handoff/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+
 entry_point: prebuild
-completion_agents: [evaluator]
+completion_agents: [handoff]
 continuation: false
 
 routing:
@@ -98,10 +113,21 @@ routing:
 
   evaluator:
     complete:
-      core: "All criteria met - feature complete"
+      ultrareview: "All criteria met - ready for final review"
     blocked:
       implementer: "Criteria gaps found, iteration needed"
       core: "Max iterations reached, human decision needed"
+
+  ultrareview:
+    complete:
+      handoff: "Final review passed - generate human review steps"
+    blocked:
+      implementer: "Holistic issues found, revision needed"
+      core: "Ship/no-ship decision needs human"
+
+  handoff:
+    complete:
+      core: "Feature complete with human review steps"
 
 workspace:
   path: ".ai/output/dev-full/{feature}/"
@@ -111,34 +137,47 @@ manifest:
     location: "{workspace}/context.md"
     description: "Codebase context: relevant files, patterns, constraints, integration points"
     writes: [prebuild]
-    reads: [implementer]
+    reads: [implementer, ultrareview, handoff]
 
   - id: criteria
     location: "{workspace}/criteria.md"
     description: "HITL-validated success criteria — the sole evaluation rubric"
     writes: [prebuild]
-    reads: [implementer, tester, reviewer, evaluator]
+    reads: [implementer, tester, reviewer, evaluator, ultrareview, handoff]
 
   - id: working-notes
     location: "{workspace}/working-notes.md"
     description: "Implementation insights, gotchas, patterns discovered"
     writes: [implementer]
-    reads: [implementer, reviewer]
+    reads: [implementer, reviewer, ultrareview, handoff]
     persistent: true
 
   - id: decisions
     location: "{workspace}/decisions.md"
     description: "Key decisions with rationale and trade-offs"
     writes: [implementer]
-    reads: [implementer, reviewer]
+    reads: [implementer, reviewer, ultrareview, handoff]
     persistent: true
 
   - id: scorecard
     location: "{workspace}/scorecard.md"
     description: "Evaluator's criteria assessment scorecard"
     writes: [evaluator]
-    reads: [implementer, evaluator]
+    reads: [implementer, evaluator, ultrareview, handoff]
     persistent: true
+
+  - id: ultrareview-report
+    location: "{workspace}/ultrareview.md"
+    description: "Final holistic review: security, perf, integration, ship/no-ship verdict"
+    writes: [ultrareview]
+    reads: [implementer, ultrareview, handoff]
+    persistent: true
+
+  - id: human-review
+    location: "HUMAN_REVIEW.md"
+    description: "Appended human review checklist for manual verification"
+    writes: [handoff]
+    reads: [handoff]
 
 lifecycle:
   pre:
@@ -180,5 +219,20 @@ playbook_notes: |
   - Max 3 iterations tracked in evaluator session context
   - After 3 failures, escalates to human (blocked → core)
 
-  Cost profile: 1 haiku + 2 sonnet + 2 opus = moderate
+  Ultrareview (final gate):
+  - Reads ALL manifests: context, criteria, working-notes, decisions, scorecard
+  - Reads the actual code diff/implementation
+  - Holistic pass: security, performance, integration coherence, doc gaps
+  - Human-facing ship/no-ship verdict with evidence
+  - Code-reviewer style analysis (patterns, anti-patterns, missed edge cases)
+  - Writes ultrareview.md report
+  - Can block back to implementer or escalate to human
+
+  Handoff (terminal):
+  - Reads criteria, ultrareview report, scorecard, working-notes
+  - Generates human review checklist: commands, manual steps, expected results
+  - Appends to HUMAN_REVIEW.md in project root
+  - No automated tests — just what a human needs to verify with their own eyes
+
+  Cost profile: 1 haiku + 3 sonnet + 3 opus = moderate-high
   No FSM needed — iteration tracking is agent-managed via session continuity.
