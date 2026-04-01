@@ -1,0 +1,109 @@
+{
+  "meta": {
+    "project": {
+      "name": "tx",
+      "description": "Distributed agentic orchestration platform using file-based messaging, SQLite queues, and Claude Agent SDK workers"
+    },
+    "phases": {
+      "pending": {
+        "feature:result-synthesizer": {
+          "status": "incomplete"
+        }
+      }
+    },
+    "decisions": {
+      "claude-code-review-2026-04-01": {
+        "title": "Reviewed Claude Code source for borrowable techniques",
+        "outcome": "tx already ahead in most areas (chaos contracts, FSM, quality gates, fork/join). Identified result synthesis as the key technique to adopt.",
+        "date": "2026-04-01",
+        "context": "Compared eighteyes/claude-code-source-code (decompiled v2.1.88) with tx architecture"
+      }
+    }
+  },
+  "entities": {
+    "user": {
+      "developer": {
+        "name": "Developer",
+        "description": "Software developer using tx to orchestrate multi-agent workflows via meshes"
+      }
+    },
+    "objective": {
+      "orchestrate-agents": {
+        "name": "Orchestrate Agent Workflows",
+        "description": "Coordinate multiple Claude agents through meshes to complete complex software tasks"
+      }
+    },
+    "feature": {
+      "result-synthesizer": {
+        "name": "Result Synthesizer",
+        "description": "Completion agents synthesize findings into structured decisions + evidence before messaging core/human. Prevents raw working state from being dumped to the user.",
+        "rationale": "Borrowed from Claude Code coordinator synthesis rule: coordinators must distill worker findings into concrete decisions with evidence, never forward raw output. Scoped to completion_agents -> core only.",
+        "implementation_options": [
+          "Prompt-level: inject synthesis instructions into completion agent prompts",
+          "Post-hook: run summarization pass on outgoing core-bound messages",
+          "Hybrid: prompt instructs synthesis format, post-hook validates structure"
+        ]
+      }
+    },
+    "action": {
+      "synthesize-results": {
+        "name": "Synthesize Results",
+        "description": "When a completion_agent sends a message to core/core, transform raw working state into structured output: decisions made, evidence, files changed, open questions"
+      }
+    },
+    "component": {
+      "synthesis-hook": {
+        "name": "Synthesis Hook",
+        "description": "Post-hook on completion_agent messages to core that validates or enforces synthesis format. Runs after agent writes message but before it reaches core injector."
+      },
+      "synthesis-prompt": {
+        "name": "Synthesis Prompt Section",
+        "description": "Prompt section injected into completion_agent system prompts instructing structured result synthesis with format: summary, decisions, evidence, files changed, open questions."
+      }
+    }
+  },
+  "references": {
+    "business-logic": {
+      "synthesis-format": {
+        "description": "Completion agent messages to core must follow structured format: (1) Summary - 1-3 sentence outcome, (2) Decisions - what was decided and why, (3) Evidence - file paths, test results, specific findings, (4) Changes - files created/modified with brief descriptions, (5) Open Questions - unresolved items requiring human input"
+      }
+    },
+    "source-file": {
+      "dispatcher": {
+        "description": "Worker dispatcher handles message routing and hook execution",
+        "path": "src/worker/dispatcher.ts"
+      },
+      "prompt-sections": {
+        "description": "Prompt section builders for agent system prompts",
+        "path": "src/prompt/sections/"
+      },
+      "consumer": {
+        "description": "Message consumer routes messages between agents and core",
+        "path": "src/core/consumer.ts"
+      }
+    }
+  },
+  "graph": {
+    "user:developer": {
+      "depends_on": [
+        "objective:orchestrate-agents"
+      ]
+    },
+    "objective:orchestrate-agents": {
+      "depends_on": [
+        "feature:result-synthesizer"
+      ]
+    },
+    "feature:result-synthesizer": {
+      "depends_on": [
+        "action:synthesize-results"
+      ]
+    },
+    "action:synthesize-results": {
+      "depends_on": [
+        "component:synthesis-hook",
+        "component:synthesis-prompt"
+      ]
+    }
+  }
+}
