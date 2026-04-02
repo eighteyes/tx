@@ -627,6 +627,17 @@ Type detection: string value = linear, object value = branch, array value = fan-
 
 **Session reuse** (default behavior): `continuation: true` is the default — sessions persist naturally. Set `continuation: false` to force cold starts (needed for `checkpoint`/`fork_from` isolation).
 
+**Completion agents**: Define which agents sit at the mesh boundary and can message `core/core`. Accepts array form (preferred) or deprecated singular string:
+```yaml
+# Preferred: array form
+completion_agents:
+  - reviewer
+  - evaluator
+
+# Deprecated: singular form (backward compatible, array takes precedence if both set)
+completion_agent: reviewer
+```
+
 **Persistent mesh (no shutdown on complete)**: For meshes that loop perpetually and report status without dying:
 ```yaml
 completion_agents:
@@ -985,6 +996,33 @@ fsm:
   scripts: {}
 ```
 
+**Ensemble shorthand (agent + count):** Instead of listing agents individually, spawn N copies of one agent. Supports variable references for dynamic parallelism:
+```yaml
+fsm:
+  context:
+    parallelism: 3
+
+  states:
+    parallel_review:
+      ensemble:
+        type: parallel
+        agent: reviewer           # Single agent template
+        count: $parallelism       # Spawns 3 instances (variable reference)
+        aggregation: concat
+```
+
+**FSM context_descriptions:** Document context variables for maintainability:
+```yaml
+fsm:
+  context:
+    turn: 0
+    workspace: null
+
+  context_descriptions:
+    turn: "Current iteration number, incremented each cycle"
+    workspace: "Resolved workspace path for this turn"
+```
+
 **Agents receive injected context:**
 ```markdown
 ## FSM Context
@@ -1020,12 +1058,13 @@ Alternative to ensemble for splitting work across agents:
 
 ```yaml
 task_distribution:
-  spawner: coordinator      # Agent that splits the task
-  subagents: [worker-1, worker-2, worker-3]
-  reviewer: synthesizer     # Agent that combines results
-  distribution_strategy: equal  # equal | weighted | adaptive | custom
-  subtask_count: 5          # Optional fixed count
-  timeout_ms: 300000        # 5 minute timeout
+  spawner: coordinator                  # Required: agent that splits the task
+  subagents: [worker-1, worker-2, worker-3]  # Required: agents that do the work
+  reviewer: synthesizer                 # Required: agent that combines results
+  distribution_strategy: equal          # Required: equal | weighted | adaptive | custom
+  distribution_prompt: "..."            # Required when strategy is 'custom'
+  subtask_count: 5                      # Optional fixed count
+  timeout_ms: 300000                    # 5 minute timeout
   allow_partial_failure: true
 ```
 
@@ -1057,6 +1096,8 @@ For ensemble `aggregation` field:
 | `state.type: ensemble` | `state.ensemble: { type: parallel }` | Old FSM syntax |
 | `state.subtask: true` | Explicit ensemble routing | Implicit behavior |
 | `workspace: "string"` | `workspace: { path: "..." }` | Object format preferred |
+| `completion_agent: "name"` | `completion_agents: [name]` | Array form takes precedence if both set |
+| `routing_fallback` / `routing_retry_max` | `guardrails.routing_error.*` | Moved to guardrail config |
 
 ## Agent Config Fields
 
@@ -1070,15 +1111,20 @@ For ensemble `aggregation` field:
 | `mcpServers` | object | no | MCP server configurations |
 | `description` | string | no | Agent documentation |
 | `load` | array | no | Files to preload into context (globs supported) |
-| `checkpoint` | boolean | no | Save session state on completion for forking |
+| `checkpoint` | boolean / string | no | Save session state on completion for forking. `true` (normalized to `'start'`), `'start'`, or `'end'`. |
 | `fork_from` | string | no | Fork from another agent's checkpoint |
-| `thinking` | boolean | no | Extended thinking (default: true). Set `false` to disable. |
-| `max_turns` | number | no | API round-trip limit per invocation |
-| `max_messages` | number | no | Outbound message limit per invocation |
+| `thinking` | boolean / object | no | Extended thinking. `true` (default), `false` to disable, or `{ budget_tokens: number }` to set token budget. |
+| `max_turns` | number | no | API round-trip limit per invocation. Also configurable via `guardrails.max_turns` with strict/warning modes. |
+| `max_messages` | number | no | Outbound message limit per invocation. Also configurable via `guardrails.max_messages` with strict/warning modes. |
+| `fragments` | array | no | Prompt fragment names to inject (string[]). Fragments are reusable prompt snippets shared across agents. |
+| `load_claude_md` | boolean | no | Control CLAUDE.md injection into agent system prompt (default: true). Set `false` to prevent project instructions from leaking into mesh agents. |
 | `orchestrator` | boolean | no | Restrict to Read + Write(msgs only). For coordinator agents that route, not implement. |
 | `permissions` | object | no | Tool access control. See Permissions section below. |
 | `postconditions` | object | no | Tool call postconditions. See Postconditions section. |
 | `chrome` | boolean | no | Use `claude --chrome` CLI instead of Agent SDK. Enables browser access. Fire-and-forget: no HITL, no resume, no checkpoint. |
+
+**Incompatible combinations:**
+- `fork_from` + `continuation: true` — fork requires cold start isolation. Set `continuation: false` explicitly when using `fork_from`.
 
 ## Chrome Agents (Browser Access)
 
@@ -1251,6 +1297,7 @@ guardrails:
 | `routing_retry_max` | number | **DEPRECATED** — use `guardrails.routing_error.routing_retry_max` |
 | `manifest_enforcement` | object | Artifact validation settings |
 | `max_mesh_messages` | number/object | Mesh-wide message cap (guardrail) |
+| `max_invocations` | number/object | Per-agent spawn cap — counts worker spawns, not messages. Caps iteration loops while allowing ask/respond (no new spawn). Same `{strict, warning, limit}` shape. |
 | `autoInjectManifestFiles` | boolean | Auto-preload manifest reads (default: true) |
 | `load_claude_md` | boolean | Load project CLAUDE.md into agent system prompt (default: true) |
 
@@ -1356,6 +1403,7 @@ Unified runtime enforcement with **strict/warning mode** on every guardrail. Con
 - **Artifact validation**: Pre/post validation of agent outputs. Default: enabled, 2 retries.
 - **Max messages/turns**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object.
 - **Max mesh messages**: Mesh-wide cap on total messages across all agents in a mesh run.
+- **Max invocations**: Per-agent spawn cap. Counts how many times a worker is spawned for an agent in a mesh run. Ask/respond cycles don't count (worker stays alive). Prevents unbounded iteration loops. Warning at limit injects "final invocation" feedback. Strict past limit blocks spawn and notifies core.
 - **Max turns (warning mode)**: SDK limit bypassed, turns tracked manually, event emitted at threshold.
 - **Parity**: Always-on, non-configurable.
 
@@ -1389,6 +1437,10 @@ guardrails:
     limit: null
   max_mesh_messages:
     strict: false
+    warning: true
+    limit: null
+  max_invocations:
+    strict: true
     warning: true
     limit: null
   meshes:

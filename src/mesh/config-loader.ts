@@ -86,6 +86,7 @@ export interface MeshGuardrailOverrides {
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   postcondition?: { strict?: boolean; warning?: boolean };
+  max_invocations?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
 }
 
 export interface MeshGuardrailConfig extends MeshGuardrailOverrides {

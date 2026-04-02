@@ -71,6 +71,7 @@ export type AddWorkerOptions = Omit<ActiveWorker, 'workerId' | 'messagesSent' | 
 export class WorkerLifecycleManager {
   private activeWorkers: Map<string, ActiveWorker[]> = new Map();
   private stateFilePath: string;
+  private invocationCounters: Map<string, number> = new Map();
 
   constructor(stateFilePath: string) {
     this.stateFilePath = stateFilePath;
@@ -105,6 +106,41 @@ export class WorkerLifecycleManager {
     });
 
     return workerId;
+  }
+
+  /**
+   * Increment invocation counter for an agent in a mesh run.
+   * Called before spawning a worker. Returns the new count.
+   */
+  incrementInvocation(meshName: string, agentName: string): number {
+    const key = `${meshName}/${agentName}`;
+    const count = (this.invocationCounters.get(key) || 0) + 1;
+    this.invocationCounters.set(key, count);
+    log.debug('worker-lifecycle', 'Incremented invocation counter', {
+      agent: key,
+      count,
+    });
+    return count;
+  }
+
+  /**
+   * Get current invocation count for an agent in a mesh run.
+   */
+  getInvocationCount(meshName: string, agentName: string): number {
+    return this.invocationCounters.get(`${meshName}/${agentName}`) || 0;
+  }
+
+  /**
+   * Reset invocation counters for a mesh (called on new mesh run).
+   */
+  resetInvocationCounters(meshName: string): void {
+    const prefix = `${meshName}/`;
+    for (const key of this.invocationCounters.keys()) {
+      if (key.startsWith(prefix)) {
+        this.invocationCounters.delete(key);
+      }
+    }
+    log.debug('worker-lifecycle', 'Reset invocation counters', { meshName });
   }
 
   /**

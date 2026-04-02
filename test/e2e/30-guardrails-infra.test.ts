@@ -513,6 +513,71 @@ describe('Guardrails Infrastructure', () => {
     );
   });
 
+  test('max_invocations override chain resolves agent > mesh', async () => {
+    createTestMesh(env, {
+      name: 'test-invocations',
+      config: {
+        mesh: 'test-invocations',
+        description: 'Test max_invocations resolution',
+        agents: [
+          { name: 'capped', model: 'haiku', prompt: 'capped.md' },
+          { name: 'uncapped', model: 'haiku', prompt: 'uncapped.md' },
+        ],
+        entry_point: 'capped',
+      },
+      prompts: {
+        'capped.md': 'You are a capped agent.',
+        'uncapped.md': 'You are an uncapped agent.',
+      },
+    });
+
+    await dispatcher.start();
+
+    (dispatcher as any).guardrails.registerMesh('test-invocations', {
+      max_invocations: { strict: true, warning: true, limit: 5 },
+      agents: {
+        'capped': {
+          max_invocations: { strict: true, warning: true, limit: 2 },
+        },
+      },
+    });
+
+    const guardrails = (dispatcher as any).guardrails;
+
+    const cappedLimit = guardrails.getMaxInvocations('test-invocations', 'capped');
+    const uncappedLimit = guardrails.getMaxInvocations('test-invocations', 'uncapped');
+
+    assert.strictEqual(cappedLimit, 2, `capped agent should use agent-level limit of 2, got ${cappedLimit}`);
+    assert.strictEqual(uncappedLimit, 5, `uncapped agent should inherit mesh-level limit of 5, got ${uncappedLimit}`);
+  });
+
+  test('invocation counters increment and reset correctly', async () => {
+    createTestMesh(env, {
+      name: 'test-inv-counter',
+      config: {
+        mesh: 'test-inv-counter',
+        description: 'Test invocation counting',
+        agents: [
+          { name: 'worker', model: 'haiku', prompt: 'worker.md' },
+        ],
+        entry_point: 'worker',
+      },
+      prompts: { 'worker.md': 'Worker.' },
+    });
+
+    await dispatcher.start();
+
+    const lifecycle = (dispatcher as any).workerLifecycle;
+
+    assert.strictEqual(lifecycle.incrementInvocation('test-inv-counter', 'worker'), 1);
+    assert.strictEqual(lifecycle.incrementInvocation('test-inv-counter', 'worker'), 2);
+    assert.strictEqual(lifecycle.incrementInvocation('test-inv-counter', 'worker'), 3);
+    assert.strictEqual(lifecycle.getInvocationCount('test-inv-counter', 'worker'), 3);
+
+    lifecycle.resetInvocationCounters('test-inv-counter');
+    assert.strictEqual(lifecycle.getInvocationCount('test-inv-counter', 'worker'), 0);
+  });
+
   // --------------------------------------------------------------------------
 
   test('mesh config loaded with guardrails block intact', async () => {

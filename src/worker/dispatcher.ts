@@ -862,6 +862,7 @@ export class WorkerDispatcher extends EventEmitter {
     this.completedAgents.delete(meshName);
     this.cachedManifestVars.delete(meshName);
     this.meshMessageCounters.delete(meshName);
+    this.workerLifecycle.resetInvocationCounters(meshName);
     log.debug('dispatcher', 'Mesh state reset for new turn', { meshName });
   }
 
@@ -1033,6 +1034,7 @@ export class WorkerDispatcher extends EventEmitter {
     if (reason.startsWith('Identity gate')) return { guardrail: 'identity-gate', source: 'sdk-hook' };
     if (reason.includes('max_messages')) return { guardrail: 'max_messages', source: 'dispatcher' };
     if (reason.includes('max_mesh_messages')) return { guardrail: 'max_mesh_messages', source: 'dispatcher' };
+    if (reason.includes('max_invocations')) return { guardrail: 'max_invocations', source: 'dispatcher' };
     return { guardrail: 'unknown', source: 'dispatcher' };
   }
 
@@ -1049,6 +1051,7 @@ export class WorkerDispatcher extends EventEmitter {
       case 'identity-gate': return 'policy_violation';
       case 'max_messages': return 'guardrail_kill';
       case 'max_mesh_messages': return 'guardrail_kill';
+      case 'max_invocations': return 'guardrail_kill';
       default: return 'crash';
     }
   }
@@ -3907,6 +3910,59 @@ Please advise the agent or check mesh configuration.`;
       });
       // Task stays in queue, will be processed when parallel block completes
       return;
+    }
+
+    // Check max_invocations guardrail before spawning
+    const invocationCount = this.workerLifecycle.incrementInvocation(meshName, agent.name);
+    const maxInvocations = this.guardrails.getMaxInvocations(meshName, agent.name);
+
+    if (maxInvocations != null) {
+      const mode = this.guardrails.getMode('max_invocations', meshName, agent.name);
+
+      // At the limit: inject "final invocation" warning
+      if (invocationCount === maxInvocations && mode.warning) {
+        log.info('dispatcher', 'Agent at final invocation — injecting feedback', {
+          agentId,
+          invocationCount,
+          maxInvocations,
+        });
+        this.emit('system-feedback', {
+          agentId,
+          meshName,
+          feedback: `[GUARDRAIL] This is your final invocation (${invocationCount}/${maxInvocations}). Wrap up your work or escalate to core. You will not be re-invoked after this.`,
+          source: 'max_invocations',
+        });
+      }
+
+      // Past the limit: block or warn
+      if (invocationCount > maxInvocations) {
+        if (mode.strict) {
+          log.warn('dispatcher', 'max_invocations limit reached — blocking spawn', {
+            agentId,
+            maxInvocations,
+            invocationCount,
+          });
+          log.activity('guardrail:max-invocations', agentId, `max_invocations STRICT BLOCK (${invocationCount}/${maxInvocations}) — spawn denied`);
+
+          this.systemWriter?.write({
+            to: 'core/core',
+            from: agentId,
+            type: 'info',
+            headline: `Budget kill: ${agent.name} hit max_invocations (${invocationCount}/${maxInvocations})`,
+            body: `Agent \`${agentId}\` was denied spawn — invocation limit reached (${invocationCount}/${maxInvocations}).\n\nThis agent has been re-invoked too many times in this mesh run. The iteration loop may be stuck.\n\nConsider: reviewing rejection patterns, increasing the limit, or manually intervening.`,
+          });
+          return;
+        }
+
+        if (mode.warning) {
+          log.warn('dispatcher', 'max_invocations limit reached (warning mode)', {
+            agentId,
+            maxInvocations,
+            invocationCount,
+          });
+          log.activity('guardrail:max-invocations:warning', agentId, `max_invocations warning (${invocationCount}/${maxInvocations}, allowed)`);
+        }
+      }
     }
 
     try {

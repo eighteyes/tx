@@ -18,7 +18,7 @@ intents:
 
 agents:
   - name: prebuild
-    model: haiku
+    model: sonnet
     command: "/know:prebuild {feature}"
     prompt: prebuild/prompt.md
     permissions:
@@ -94,12 +94,17 @@ routing:
       tester: "Implementation ready for testing"
     blocked:
       core: "Need clarification from human"
+    ask-response:
+      tester: "Quick fix for test issue"
+      reviewer: "Quick fix for review issue"
 
   tester:
     complete:
       reviewer: "Tests passing, ready for review"
     blocked:
-      implementer: "Tests failing, needs fixes"
+      implementer: "Tests failing, needs full re-implementation"
+    ask:
+      implementer: "Minor test fix needed"
     ask-response:
       implementer: "Test feedback response"
 
@@ -107,7 +112,9 @@ routing:
     complete:
       evaluator: "Code quality approved"
     blocked:
-      implementer: "Code quality issues, revision needed"
+      implementer: "Structural issues, needs re-testing after fix"
+    ask:
+      implementer: "Cosmetic fix needed — naming, dead code, style"
     ask-response:
       implementer: "Review feedback response"
 
@@ -195,7 +202,36 @@ rearmatter:
     gotchas: "Issues discovered"
     learnings: "Insights for brain"
 
-guardrails: {}
+guardrails:
+  max_mesh_messages:
+    strict: true
+    warning: true
+    limit: 35
+  max_invocations:
+    strict: true
+    warning: true
+    limit: 8
+  agents:
+    prebuild:
+      max_invocations:
+        strict: true
+        warning: true
+        limit: 2
+    evaluator:
+      max_invocations:
+        strict: true
+        warning: true
+        limit: 4
+    ultrareview:
+      max_invocations:
+        strict: true
+        warning: true
+        limit: 3
+    handoff:
+      max_invocations:
+        strict: true
+        warning: true
+        limit: 1
 
 playbook_notes: |
   Big-feature mesh combining best patterns from existing dev meshes.
@@ -234,5 +270,5 @@ playbook_notes: |
   - Appends to HUMAN_REVIEW.md in project root
   - No automated tests — just what a human needs to verify with their own eyes
 
-  Cost profile: 1 haiku + 3 sonnet + 3 opus = moderate-high
+  Cost profile: 4 sonnet + 3 opus = moderate-high
   No FSM needed — iteration tracking is agent-managed via session continuity.
