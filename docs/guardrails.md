@@ -77,6 +77,7 @@ Per-guardrail defaults:
 | routing_error | false | true | Warn on routing failures |
 | max_turns | false | true | Warn at threshold (SDK handles hard limit) |
 | duplicate_target | false | true | Warn on duplicate routing |
+| max_instances | false | true | Warn on parallel instance limit |
 
 ### Per-Guardrail Enforcement
 
@@ -89,6 +90,7 @@ Per-guardrail defaults:
 | routing_error | Kill/escalate after max_retries; redirect to fallback on edge limit | Log + return (no escalation); log + allow message through |
 | max_messages | Kill worker | Log + allow worker to continue |
 | max_turns | SDK halts session | No SDK limit; emit warning event at threshold |
+| max_instances | Block new instance spawn | Log + allow spawn |
 
 ### max_turns Special Case
 
@@ -250,6 +252,38 @@ guardrails:
     my-mesh:
       max_mesh_messages:
         limit: 30
+```
+
+### Max Instances
+
+Per-mesh cap on parallel instances (spawned via `parallel: true` messages).
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `limit` | null | Max concurrent instances per base mesh (null = unlimited) |
+
+Mesh-level only (no per-agent override). Resolution chain: mesh-local config > global mesh override > global default.
+
+Strict: blocks new instance spawn. Warning: logs and allows.
+
+```yaml
+# Mesh config.yaml - bare number
+max_instances: 3
+
+# Mesh config.yaml - object form
+max_instances:
+  strict: true
+  warning: true
+  limit: 3
+
+# Global config.yaml
+guardrails:
+  max_instances:
+    limit: 5
+  meshes:
+    dev:
+      max_instances:
+        limit: 2
 ```
 
 ### Postcondition
