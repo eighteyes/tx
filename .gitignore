@@ -28,10 +28,4 @@ meshes/*
 !meshes/structured-thinking
 !meshes/narrative-engine/
 !meshes/narrative-engine-v2/
-!meshes/reliability-test/
-!meshes/reliability-fsm/
-!meshes/opus-soul/
-meshes/opus-soul/mcp/
-meshes/opus-soul/walks/
-meshes/opus-soul/walker/
 .sandbox-deny.log
