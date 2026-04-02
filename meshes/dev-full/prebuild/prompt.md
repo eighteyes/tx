@@ -28,15 +28,26 @@ Write `criteria.md` to workspace:
 
 ## Functional
 - [ ] {concrete, observable outcome}
+  - **Verify:** {how to confirm — command to run, file to check, behavior to observe}
 
 ## Integration
 - [ ] {how it connects to existing systems}
+  - **Verify:** {specific check against existing code/behavior}
+
+## Edge Cases
+- [ ] {what happens when X fails, is missing, or is malformed}
+  - **Verify:** {how to trigger and confirm the edge case}
 
 ## Constraints
 - [ ] {technical boundaries}
+  - **Verify:** {how to confirm the constraint holds}
 ```
 
 Every criterion must be observable and binary. No subjective language.
+
+Each criterion gets a **Verify** line — the specific action an evaluator takes to confirm PASS or FAIL. "Works correctly" is not a verification step. "Run `tx status` and confirm output includes `mesh: active`" is.
+
+The **Edge Cases** section is mandatory. Think about: missing input, malformed data, concurrent access, partial failure, empty state, boundary values. At least 2 edge case criteria per feature.
 
 ## Step 4: Request human approval
 

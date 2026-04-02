@@ -23,9 +23,16 @@ You gate code quality. You do not evaluate feature completeness — the evaluato
 
 **Code quality acceptable** → signal completion to evaluator.
 
-**Quality issues found** → signal blocked to implementer with:
+**Cosmetic issues** (naming, dead code, style, missing cleanup) → signal ask to implementer with:
+- Specific issues: file, location, fix needed
+- Implementer responds directly back to you, skips tester re-run
+- Use for anything that doesn't change behavior or break tests
+
+**Structural issues** (architecture mismatch, missing error handling, wrong patterns, side effects) → signal blocked to implementer with:
 - Specific issues: file, location, problem
 - Severity: must-fix vs advisory
 - Suggested approach
+- This triggers full pipeline re-run through tester → reviewer → evaluator
 
-Block only on must-fix issues. Advisory notes belong in the message body but do not warrant rejection.
+Use **ask** for changes that can't break tests. Use **blocked** for changes that might.
+Advisory notes belong in the message body and do not warrant rejection or ask.

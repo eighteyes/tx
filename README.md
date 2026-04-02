@@ -221,6 +221,7 @@ See [Mesh List](docs/MESH_LIST.md) for the complete list of meshes.
 - [Permissions & Security](docs/permissions.md) — dontAsk mode, tool access, workDir boundary, god mode
 - [Message Format](docs/message-format.md) — frontmatter fields, routing, message types
 - [Mesh List](docs/MESH_LIST.md) — complete list of available meshes
+- [Attributions](docs/ATTRIBUTIONS.md) — borrowed techniques and novel contributions
 
 ## Philosophy
 

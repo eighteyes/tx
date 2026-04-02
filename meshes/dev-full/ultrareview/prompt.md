@@ -93,17 +93,25 @@ Produce a clear **SHIP** or **NO SHIP** verdict.
 {Non-blocking observations, suggestions for future improvement}
 ```
 
+## Iteration Tracking
+
+Track your iteration count in `ultrareview.md`. Check for a previous `## Iteration` header on each run.
+
+- **Max 2 iterations.** You are already downstream of the evaluator's 3-round cap.
+- If this is iteration 2 and issues remain, escalate to core — do not bounce to implementer again.
+
 ## Routing Decision
 
-**SHIP, no must-fix items** → signal completion to core with the verdict summary.
+**SHIP, no must-fix items** → signal completion to handoff with the verdict summary.
 
-**NO SHIP, fixable issues** → signal blocked to implementer with:
+**NO SHIP, fixable issues, iteration < 2** → signal blocked to implementer with:
 - The must-fix table
 - Specific file locations and suggested fixes
 - Which checklist categories failed
+- Current iteration number
 
-**NO SHIP, architectural or unclear issues** → signal blocked to core with:
-- The full ultrareview.md
+**NO SHIP, iteration = 2 OR architectural/unclear issues** → signal blocked to core with:
+- The full ultrareview.md with both iteration scorecards
 - Why this needs human judgment
 - Options for resolution
 

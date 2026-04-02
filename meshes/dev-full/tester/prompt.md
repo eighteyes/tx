@@ -24,7 +24,15 @@ Produce a test summary mapping criteria to results.
 
 **All tests pass** → signal completion to reviewer with test summary.
 
-**Any test fails** → signal blocked to implementer with:
+**Minor fix needed** (off-by-one, missing import, small logic error) → signal ask to implementer with:
+- The specific fix needed
+- Expected vs actual
+- Implementer responds directly back to you, no pipeline reset
+
+**Structural failure** (wrong approach, missing feature, broken integration) → signal blocked to implementer with:
 - Which criteria failed
 - What the test showed (expected vs actual)
 - Reproduction steps if applicable
+- This triggers a full pipeline re-run through tester → reviewer → evaluator
+
+Use **ask** when the fix is obvious and localized. Use **blocked** when the implementer needs to rethink the approach.
