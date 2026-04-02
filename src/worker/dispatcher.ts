@@ -4624,6 +4624,25 @@ Please advise the agent or check mesh configuration.`;
         });
       }
 
+      // 9. Guardrail state injection (budget awareness)
+      {
+        const lines: string[] = [];
+        if (maxInvocations != null) {
+          lines.push(`invocation: ${invocationCount} of ${maxInvocations}`);
+        }
+        const meshMsgCount = this.meshMessageCounters.get(meshName) || 0;
+        const meshMsgLimit = meshConfig?.max_mesh_messages;
+        const resolvedMeshMsgLimit = typeof meshMsgLimit === 'number' ? meshMsgLimit
+          : (meshMsgLimit && typeof meshMsgLimit === 'object' && 'limit' in meshMsgLimit) ? (meshMsgLimit as { limit?: number | null }).limit
+          : this.guardrails.getMaxMeshMessages(meshName);
+        if (resolvedMeshMsgLimit != null) {
+          lines.push(`mesh_messages: ${meshMsgCount} of ${resolvedMeshMsgLimit}`);
+        }
+        if (lines.length > 0) {
+          systemPrompt += `\n\n## Guardrail State\n\n${lines.join('\n')}\n\nThese are your budget limits for this mesh run. Plan your work accordingly — if you are near a limit, prioritize completing or escalating over starting new work.`;
+        }
+      }
+
       // Worktree context (prepend to top) + path sanitization
       if (hookContext.worktreePath && hookContext.featureName) {
         const worktreeContext = `## Worktree Context
