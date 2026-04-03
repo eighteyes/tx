@@ -54,24 +54,24 @@ Logs are written to `.ai/tx/logs/v4.jsonl` with the last run at `v4.last.jsonj`
 5. Workers write response messages back to msgs dir
 6. `inject-response: true` on outgoing task → active injection into tmux on mesh completion (retry loop, fallback to pending)
 
-### Terminal-by-Default Messaging
+### Routing-Based Messaging
 
-TX uses **boundary-based message inference** instead of explicit type fields:
+TX uses **routing context** instead of explicit type fields:
 
-- **To core/core**: Questions for human → session suspends awaiting response
-- **From core/core**: Human responses → session resumes with answer
-- **To other agents**: Collaboration requests → session awaits response
-- **completion_agents → core/core**: Mesh completion → validates parity gate
-
-The `type` field is **optional** for backward compatibility. The system infers message semantics from routing and boundaries.
+- **To core/core**: Messages for human → session suspends awaiting response
+- **From core/core + pending ask**: Human responses → resumes suspended session
+- **From core/core + no pending ask**: New work → dispatcher spawns worker
+- **Completion**: `status: complete` or `outcome: complete` in frontmatter → completion flow
+- **Everything else**: Regular inter-agent message → dispatcher spawns/queues work
 
 ## Event-Driven Architecture
 
 **Consumer Events** (`MessageConsumer`):
 | Event | Payload | Trigger |
 |-------|---------|---------|
-| `core-message` | `{id, filepath, from, type}` | Message for `core/core` |
-| `worker-message` | `{id, agentId, from, type}` | Message for worker agent |
+| `core-message` | `{id, filepath, from, completion}` | Message for `core/core` |
+| `worker-message` | `{agentId, from, completion}` | Message for worker agent |
+| `worker-resume` | `{id, filepath, from, to, content}` | Human response to pending ask |
 
 **Dispatcher Events** (`WorkerDispatcher`):
 | Event | Payload | Trigger |
