@@ -1,5 +1,64 @@
 # Human Review
 
+## Kill Message Types — Routing-Based Dispatch
+Date: 2026-04-03
+Session: kill-message-types
+Commits: 2c4cac9..7a102e2 (18 commits)
+
+### What Was Done
+Removed the entire `MessageType` system. Routing now determined by `to`/`from` fields, frontmatter `status`/`outcome: complete`, and `pending_asks` table state. No type inference, no re-inference, no type strings anywhere.
+
+**Key behavior changes:**
+- `core/core → agent` without pending ask now emits `worker-message` (was silently swallowed)
+- FSM rejection now sends feedback to agent (was silent WARN-only drop)
+- `ask-response-message` event renamed to `worker-resume`
+- `MessageType` union deleted, `type` field removed from `Message` interface
+- All `systemWriter.write()` calls no longer pass `type:`
+- Core agent prompt no longer teaches type vocabulary
+
+### Verification Checklist
+
+- [ ] **Start a simple mesh and verify message routing**
+```
+tx start dev-lite "Echo: hello world"
+```
+Expect: mesh starts, worker processes, completion message arrives at core.
+
+- [ ] **Verify core→agent new task (the original bug fix)**
+```
+# Start a mesh, then send a second task while no ask is pending
+tx start dev-lite "First task"
+# Wait for completion, then:
+tx msg dev-lite/worker "Second task without pending ask"
+```
+Expect: second task spawns a worker (not silently dropped).
+
+- [ ] **Verify ask/response flow (human boundary)**
+```
+tx start dev-full-ensemble "Ask me a question about the codebase"
+```
+Expect: agent asks question → session suspends → your reply resumes it.
+
+- [ ] **Verify completion detection**
+```
+# Check logs after a mesh completes
+cat .ai/tx/logs/v4.last.jsonl | jq 'select(.msg | contains("completion")) | .msg' | head -5
+```
+Expect: logs reference `isComplete` / `completion: true`, NOT `task-complete` type.
+
+- [ ] **Verify no type: field in message files**
+```
+ls -la .ai/tx/msgs/ | head -5
+cat .ai/tx/msgs/$(ls -t .ai/tx/msgs/ | head -1) | head -10
+```
+Expect: frontmatter has `to:`, `from:`, `msg-id:`, `headline:` — NO `type:` line.
+
+- [ ] **Check prompt doesn't teach type vocabulary**
+```
+rg "ask-human|task-complete|ask-response" src/prompt/core.ts
+```
+Expect: zero hits.
+
 ## Free Routing Mode
 Date: 2026-04-02
 Session: free-routing-mode
