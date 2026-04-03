@@ -63,7 +63,6 @@ export interface MeshCompleteEvent {
 interface Frontmatter {
   to: string;
   from: string;
-  type: string;
   status?: string;
   'msg-id'?: string;
   headline?: string;
@@ -644,20 +643,6 @@ export class MessageConsumer extends EventEmitter {
         }
         toAgent = resolved;
         dispatcherResolved = true;
-
-        // Re-infer message type with resolved target (dispatcher changes to → core/core)
-        // Without this, status: complete to mesh/dispatch infers as 'message' instead of 'task-complete'
-        if (!parsed.frontmatter._explicitType) {
-          const reinferred = this.inferMessageType(parsed.frontmatter, toAgent, fromAgent);
-          if (reinferred !== parsed.frontmatter.type) {
-            log.info('consumer', 'Re-inferred message type after dispatcher resolution', {
-              from: fromAgent, to: toAgent,
-              originalType: parsed.frontmatter.type,
-              resolvedType: reinferred,
-            });
-            parsed.frontmatter.type = reinferred;
-          }
-        }
       }
 
       // =================================================================
@@ -899,19 +884,19 @@ export class MessageConsumer extends EventEmitter {
       // Self-heals on first violation, escalates on second.
       // =================================================================
 
-      // Type is always set by parseMessage() (either from file or inferred)
-      const messageType = parsed.frontmatter.type;
+      // Compute completion status from frontmatter fields (replaces type inference)
+      const isComplete = this.isCompletion(parsed.frontmatter);
 
-      if (fromAgent && toAgent && messageType) {
+      if (fromAgent && toAgent) {
         const [fromMesh] = fromAgent.split('/');
         const [toMesh] = toAgent.split('/');
 
         // Only validate intra-mesh routing (not cross-mesh or system messages)
-        // Skip task-complete as it's handled specially
+        // Skip completions as they're handled specially
         // Skip system messages (from: system/*)
         // Skip dispatcher-resolved messages (already validated by DispatchRouter)
         if (fromMesh === toMesh &&
-            messageType !== 'task-complete' &&
+            !isComplete &&
             !fromAgent.startsWith('system/') &&
             !fromAgent.startsWith('core/') &&
             !dispatcherResolved) {
@@ -919,7 +904,7 @@ export class MessageConsumer extends EventEmitter {
           const isDispatcherViolation = await this.checkDispatcherModeViolation(fromAgent, toAgent, filepath);
           if (isDispatcherViolation) return;
 
-          const routingValid = await this.validateRouting(fromAgent, toAgent, messageType, filepath);
+          const routingValid = await this.validateRouting(fromAgent, toAgent, 'message', filepath);
           if (!routingValid) {
             // Already wrote feedback/escalation, skip further processing
             return;
@@ -937,17 +922,17 @@ export class MessageConsumer extends EventEmitter {
         const frontmatterRecord: Record<string, unknown> = {
           from: fromAgent,
           to: toAgent,
-          type: messageType,
           'msg-id': parsed.frontmatter['msg-id'],
           headline: parsed.frontmatter.headline,
           status: parsed.frontmatter.status,
           command: parsed.frontmatter.command,
         };
 
+        const fsmType = isComplete ? 'complete' : 'message';
         const isValid = await this.fsmValidator.validateMessageWithFSM(
           fromAgent,
           toAgent,
-          messageType,
+          fsmType,
           frontmatterRecord,
           parsed.rearmatter ?? undefined
         );
@@ -957,7 +942,6 @@ export class MessageConsumer extends EventEmitter {
             filepath: filename,
             from: fromAgent,
             to: toAgent,
-            type: messageType,
           });
           // Don't route the message - FSM validation failed
           return;
@@ -971,7 +955,6 @@ export class MessageConsumer extends EventEmitter {
         log.info('consumer', `Message revision detected (explicit)`, {
           from: parsed.frontmatter.from,
           to: toAgent,
-          type: parsed.frontmatter.type,
           mode: parsed.frontmatter.revision,
           file: filename
         });
@@ -982,7 +965,6 @@ export class MessageConsumer extends EventEmitter {
             filepath,
             agentId: toAgent,
             from: parsed.frontmatter.from,
-            type: parsed.frontmatter.type,
             content: parsed.body,
             headline: parsed.frontmatter.headline,
             mode
@@ -997,7 +979,6 @@ export class MessageConsumer extends EventEmitter {
       const id = this.queue.insert({
         from_agent: parsed.frontmatter.from,
         to_agent: toAgent,
-        type: parsed.frontmatter.type,
         source_file: filepath,
         payload: {
           'msg-id': parsed.frontmatter['msg-id'],
@@ -1028,7 +1009,7 @@ export class MessageConsumer extends EventEmitter {
         from: parsed.frontmatter.from,
         to: toAgent,
         originalTo: parsed.frontmatter.to !== toAgent ? parsed.frontmatter.to : undefined,
-        type: parsed.frontmatter.type,
+        completion: isComplete,
         headline: parsed.frontmatter.headline,
         file: filename,
         event
@@ -1041,190 +1022,74 @@ export class MessageConsumer extends EventEmitter {
         return;
       }
 
-      // Blocking HITL: agent wants to ask human but keep session alive
-      // human: blocking in frontmatter prevents session suspension
-      if (parsed.frontmatter.human === 'blocking' && toAgent === 'core/core' && messageType !== 'task-complete') {
-        const msgId = parsed.frontmatter['msg-id'];
+      // =================================================================
+      // HUMAN RESPONSE DETECTION
+      // core/core → non-core agent: check if this resumes a suspended session
+      // =================================================================
+      const msgId = parsed.frontmatter['msg-id'];
 
-        log.info('consumer', 'Blocking HITL message detected', {
-          from: fromAgent,
-          to: toAgent,
-          msgId,
-        });
+      if (fromAgent === 'core/core' && toAgent !== 'core/core') {
+        const pendingAsks = this.queue.getPendingAsks(toAgent);
+        const hasPendingHumanAsk = pendingAsks.some(a => a.to_agent === 'core/core');
 
-        this.emit('blocking-hitl-message', {
-          id,
-          filepath,
-          from: fromAgent,
-          to: toAgent,
-          type: messageType,
-          headline: parsed.frontmatter.headline,
-          msgId,
-        });
+        if (hasPendingHumanAsk) {
+          log.info('consumer', 'Human response resuming suspended agent', {
+            from: fromAgent, to: toAgent, msgId, file: filename,
+          });
 
-        // Still emit core-message for display to human (falls through to normal routing)
-        // Pending ask tracking happens in the normal queue insert path above
+          this.emit('worker-resume', {
+            id, filepath,
+            from: fromAgent,
+            to: toAgent,
+            content: parsed.body,
+            headline: parsed.frontmatter.headline,
+            msgId,
+          });
+          return; // Handled — do NOT fall through
+        }
+        // No pending ask → fall through to normal worker-message (new work)
       }
 
-      // Detect messages that trigger await state in dispatcher
-      // Exclude blocking HITL messages from the standard ask-message path
-      if ((messageType === 'ask' || messageType === 'ask-human' ||
-          (messageType === 'message' && toAgent === 'core/core'))
-          && parsed.frontmatter.human !== 'blocking') {
-        if (messageType === 'ask' || messageType === 'ask-human') {
-          log.warn('deprecated-message-type', `Legacy type="${messageType}" used; boundary inference handles this`, { type: messageType, file: filename, detail: 'Use human: true frontmatter instead of ask-human type' });
-        }
-        const msgId = parsed.frontmatter['msg-id'];
+      // =================================================================
+      // MESSAGES TO CORE
+      // =================================================================
+      if (toAgent === 'core/core') {
 
-        log.info('consumer', `${messageType} message detected`, {
-          from: fromAgent,
-          to: toAgent,
-          msgId,
-          file: filename
-        });
-
-        // Human response detection: core/core → agent with pending ask = ask-response
-        // When an agent messages core/core (human boundary), the mesh halts.
-        // The human's reply comes back as a regular message from core/core.
-        // Detect this and emit ask-response-message to resume the suspended session.
-        if (fromAgent === 'core/core' && toAgent !== 'core/core') {
-          const pendingAsks = this.queue.getPendingAsks(toAgent);
-          const hasPendingHumanAsk = pendingAsks.some(a => a.to_agent === 'core/core');
-
-          if (hasPendingHumanAsk) {
-            log.info('consumer', `Human response detected for suspended agent`, {
-              from: fromAgent,
-              to: toAgent,
-              msgId,
-              pendingAskCount: pendingAsks.filter(a => a.to_agent === 'core/core').length,
-              file: filename,
+        // --- Ask tracking ---
+        // Non-core, non-completion messages to core = agent asking human
+        if (!fromAgent.startsWith('core/') && !isComplete) {
+          if (msgId) {
+            this.queue.trackPendingAsk(fromAgent, toAgent, msgId);
+            log.info('consumer', 'Parity gate: tracking ask to human boundary', {
+              fromAgent, msgId, to: toAgent,
             });
+          }
 
-            this.emit('ask-response-message', {
-              id,
-              filepath,
+          // Blocking HITL: agent keeps session alive
+          if (parsed.frontmatter.human === 'blocking') {
+            this.emit('blocking-hitl-message', {
+              id, filepath,
               from: fromAgent,
               to: toAgent,
-              content: parsed.body,
               headline: parsed.frontmatter.headline,
               msgId,
-              fromHumanBoundary: true,
-              resumesSuspension: true,
             });
-            return;  // Handled as ask-response — do NOT fall through
-          }
-        }
-
-        // Parity gate: ONLY track asks to core/core (human boundary)
-        // Agent-to-agent asks don't require parity tracking in terminal-by-default
-        if (msgId && toAgent === 'core/core') {
-          this.queue.trackPendingAsk(fromAgent, toAgent, msgId);
-          const counts = this.queue.getPendingAskCounts(fromAgent);
-          log.info('consumer', `Parity gate: tracking ask to human boundary`, {
-            fromAgent,
-            msgId,
-            to: toAgent,
-            pendingCount: counts.get(toAgent) || 1,
-          });
-        }
-
-        // Boundary detection — any message to core/core crosses human boundary
-        const crossesHumanBoundary = toAgent === 'core/core';
-        const isTerminal = true;  // All asks are terminal by default (sender suspends)
-
-        this.emit('ask-message', {
-          id,
-          filepath,
-          from: fromAgent,
-          to: toAgent,
-          type: messageType,
-          headline: parsed.frontmatter.headline,
-          msgId,
-          crossesHumanBoundary,
-          isTerminal
-        });
-      }
-
-      // Detect response messages - these resume awaiting workers
-      if (messageType === 'ask-response') {
-        log.warn('consumer', `DEPRECATED ASK: type 'ask-response' is deprecated, use 'message' + routing`, {
-          from: parsed.frontmatter.from,
-          to: toAgent,
-        });
-        const msgId = parsed.frontmatter['msg-id'];
-        const respondingAgent = parsed.frontmatter.from;
-
-        const correlationId = msgId;
-
-        log.info('consumer', `Ask-response message detected`, {
-          from: respondingAgent,
-          to: toAgent,
-          msgId,
-          correlationId,
-          file: filename
-        });
-
-        // Parity gate: ONLY validate responses from core/core (human boundary)
-        // Agent-to-agent responses don't need parity tracking in terminal-by-default
-        if (respondingAgent === 'core/core') {
-          // Parity gate: validate response matches a pending ask (don't delete yet)
-          // Deletion happens in dispatcher after successful delivery
-          const result = this.queue.findPendingAsk(respondingAgent, toAgent, correlationId);
-
-          if (result.found) {
-            if (result.matchType === 'msg-id') {
-              log.info('consumer', `Parity gate: found pending ask by msg-id`, {
-                agentId: toAgent,
-                msgId,
-                from: respondingAgent,
-                originalMsgId: result.ask?.msg_id,
-              });
-            } else {
-              // Agent fallback - msg-id didn't match but found pending ask to this agent
-              log.warn('consumer', `Parity gate: found pending ask by agent (msg-id mismatch)`, {
-                agentId: toAgent,
-                responseMsgId: msgId,
-                originalMsgId: result.ask?.msg_id,
-                from: respondingAgent,
-              });
-            }
           } else {
-            // No match found - could be a race or truly unknown
-            const pending = this.queue.getPendingAsks(toAgent);
-            const counts = this.queue.getPendingAskCounts(toAgent);
-            log.debug('consumer', `Parity gate: no pending ask found for response`, {
-              agentId: toAgent,
+            // Regular ask — emit for dispatcher suspension handling
+            this.emit('ask-message', {
+              id, filepath,
+              from: fromAgent,
+              to: toAgent,
+              headline: parsed.frontmatter.headline,
               msgId,
-              from: respondingAgent,
-              knownMsgIds: pending.map(p => p.msg_id),
-              knownTargets: Array.from(counts.keys()),
+              crossesHumanBoundary: true,
+              isTerminal: true,
             });
           }
         }
 
-        // Boundary detection for terminal-by-default
-        const fromHumanBoundary = respondingAgent === 'core/core';
-        const resumesSuspension = fromHumanBoundary;  // Human responses resume suspensions
-
-        this.emit('ask-response-message', {
-          id,
-          filepath,
-          from: respondingAgent,
-          to: toAgent,
-          content: parsed.body,
-          headline: parsed.frontmatter.headline,
-          msgId,
-          fromHumanBoundary,
-          resumesSuspension
-        });
-        return;  // ask-response handled - do NOT fall through to worker-message
-      }
-
-      if (toAgent === 'core/core') {
-        // Parity gate: check if task-complete has pending asks
-        if (messageType === 'task-complete') {
-          log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate core path' });
-          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
+        // --- Parity gate for completion ---
+        if (isComplete) {
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -1233,21 +1098,21 @@ export class MessageConsumer extends EventEmitter {
               to: p.to_agent,
             }));
 
-            log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
+            log.warn('consumer', 'Parity gate: BLOCKING completion with pending asks', {
               fromAgent,
               pendingAsks: pendingAsksList,
               totalPendingCount: pending.length,
               file: filename,
             });
 
-            // DELETE the task-complete file
+            // DELETE the completion file
             try {
               fs.unlinkSync(filepath);
-              log.info('consumer', `Parity gate: deleted blocked task-complete file`, {
+              log.info('consumer', 'Parity gate: deleted blocked completion file', {
                 filepath: filename,
               });
             } catch (unlinkErr) {
-              log.error('consumer', `Parity gate: failed to delete task-complete file`, {
+              log.error('consumer', 'Parity gate: failed to delete completion file', {
                 filepath: filename,
                 error: (unlinkErr as Error).message,
               });
@@ -1260,11 +1125,11 @@ export class MessageConsumer extends EventEmitter {
               deletedFile: filepath,
             } as ParityReminderEvent);
 
-            // Skip emitting core-message - the task-complete is blocked
+            // Skip emitting core-message — completion is blocked
             return;
           }
 
-          // Parity gate passed - mark parallel instance complete if mesh-id present
+          // Parity gate passed — mark parallel instance complete if mesh-id present
           if (parsed.frontmatter['mesh-id']) {
             const [meshName] = fromAgent.split('/');
             const instanceMeshId = parsed.frontmatter['mesh-id'];
@@ -1361,18 +1226,21 @@ export class MessageConsumer extends EventEmitter {
           }
         }
 
+        // --- Emit core-message ---
         this.emit('core-message', {
           id,
           filepath,
           from: parsed.frontmatter.from,
-          type: parsed.frontmatter.type,
-          event
+          completion: isComplete,
+          event,
         });
       } else {
-        // Parity gate: check if task-complete TO another worker has pending asks
-        if (messageType === 'task-complete') {
-          log.warn('deprecated-message-type', `Legacy type="task-complete" used; use status: complete instead`, { type: messageType, file: filename, detail: 'Parity gate worker path' });
-          const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, toAgent);
+        // =================================================================
+        // MESSAGES TO WORKERS
+        // =================================================================
+
+        // --- Parity gate for worker-targeted completion ---
+        if (isComplete) {
           const pending = this.queue.getPendingAsks(fromAgent);
 
           if (pending.length > 0) {
@@ -1381,21 +1249,21 @@ export class MessageConsumer extends EventEmitter {
               to: p.to_agent,
             }));
 
-            log.warn('consumer', `Parity gate: BLOCKING task-complete with pending asks`, {
+            log.warn('consumer', 'Parity gate: BLOCKING completion with pending asks', {
               fromAgent,
               pendingAsks: pendingAsksList,
               totalPendingCount: pending.length,
               file: filename,
             });
 
-            // DELETE the task-complete file
+            // DELETE the completion file
             try {
               fs.unlinkSync(filepath);
-              log.info('consumer', `Parity gate: deleted blocked task-complete file`, {
+              log.info('consumer', 'Parity gate: deleted blocked completion file', {
                 filepath: filename,
               });
             } catch (unlinkErr) {
-              log.error('consumer', `Parity gate: failed to delete task-complete file`, {
+              log.error('consumer', 'Parity gate: failed to delete completion file', {
                 filepath: filename,
                 error: (unlinkErr as Error).message,
               });
@@ -1408,7 +1276,7 @@ export class MessageConsumer extends EventEmitter {
               deletedFile: filepath,
             } as ParityReminderEvent);
 
-            // Skip emitting worker-message - the task-complete is blocked
+            // Skip emitting worker-message — completion is blocked
             return;
           }
         }
@@ -1427,7 +1295,7 @@ export class MessageConsumer extends EventEmitter {
           id,
           agentId: toAgent,
           from: parsed.frontmatter.from,
-          type: parsed.frontmatter.type,
+          completion: isComplete,
           event,
           injectResponse: parsed.frontmatter['inject-response'] === 'true',
         });
@@ -1450,12 +1318,9 @@ export class MessageConsumer extends EventEmitter {
       if (!frontmatter.from) frontmatter.from = `external/${frontmatter.source || 'unknown'}`;
     }
 
-    // Type field is optional — inferred from routing context
-    if (!frontmatter.to || !frontmatter.from) return null;
-    if (frontmatter.type) {
-      frontmatter._explicitType = 'true';
-    } else {
-      frontmatter.type = this.inferMessageType(frontmatter, frontmatter.to, frontmatter.from);
+    if (!frontmatter.to || !frontmatter.from) {
+      log.warn('consumer', 'Message missing to/from fields', { file: 'unknown' });
+      return null;
     }
 
     const hasRearmatter = parts.length >= 4;
@@ -1466,7 +1331,7 @@ export class MessageConsumer extends EventEmitter {
   }
 
   private parseFrontmatter(yaml: string): Frontmatter {
-    const data: Frontmatter = { to: '', from: '', type: '' };
+    const data: Frontmatter = { to: '', from: '' };
 
     for (const line of yaml.split('\n')) {
       const match = line.match(/^([^:]+):\s*(.*)$/);
@@ -1504,40 +1369,11 @@ export class MessageConsumer extends EventEmitter {
   }
 
   /**
-   * Infer message type when not explicitly provided (Terminal-by-default)
-   * This enables simpler message authoring by inferring type from routing context
-   *
-   * DEPRECATED ASK: ask/ask-human/ask-response types are deprecated.
-   * Future: only task, task-complete, message. Routing determines semantics.
+   * Check if a message represents a completion signal
+   * Replaces type-string inference — uses frontmatter fields directly
    */
-  private inferMessageType(fm: Frontmatter, to: string, from: string): string {
-    // Completion signal: non-core agent → core/core with status:complete or outcome:complete
-    if (to === 'core/core' && !from.startsWith('core/') && (fm.status === 'complete' || fm.outcome === 'complete')) {
-      return 'task-complete';
-    }
-
-    // Phase 7: boundary-based type inference (system messages bypass inference)
-    const fromSystem = from.startsWith('system/');
-    const toSystem = to.startsWith('system/');
-    const fromCore = from.startsWith('core/');
-    const toCore = to.startsWith('core/');
-
-    // Worker → core/core (non-completion) = ask-human (question for the human operator)
-    if (toCore && !fromCore && !fromSystem) {
-      return 'ask-human';
-    }
-
-    // Human operator → agent = ask-response (human answering agent's question)
-    if (fromCore && !toCore && !toSystem) {
-      return 'ask-response';
-    }
-
-    // Agent → agent (within or cross-mesh collaboration) = ask
-    if (!toCore && !fromCore && !fromSystem && !toSystem) {
-      return 'ask';
-    }
-
-    return 'message';
+  private isCompletion(frontmatter: Record<string, string | undefined>): boolean {
+    return frontmatter.status === 'complete' || frontmatter.outcome === 'complete';
   }
 
   // ==========================================================================
