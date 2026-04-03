@@ -147,19 +147,16 @@ interface RevisionMessageEvent {
 
 /**
  * Event emitted by Consumer when a message is detected
- * DEPRECATED ASK: 'ask'/'ask-human' types are deprecated, use 'message' + routing
  */
 interface AskMessageEvent {
   id: number;
   filepath: string;
-  from: string;  // Agent that sent the message
-  to: string;    // Recipient agent
-  type: string;  // 'message' (preferred) or 'ask'/'ask-human' (DEPRECATED)
+  from: string;
+  to: string;
   headline?: string;
   msgId?: string;
-  // Terminal-by-default additions
-  crossesHumanBoundary?: boolean;  // True if targets core/core (human)
-  isTerminal?: boolean;            // True if suspends the sender (always true for now)
+  crossesHumanBoundary?: boolean;
+  isTerminal?: boolean;
 }
 
 /**
@@ -171,25 +168,21 @@ interface BlockingHitlMessageEvent {
   filepath: string;
   from: string;
   to: string;
-  type: string;
   headline?: string;
   msgId?: string;
 }
 
 /**
- * Event emitted by Consumer when an ask-response message is detected
+ * Event emitted by Consumer when a worker-resume message is detected
  */
-interface AskResponseMessageEvent {
+interface WorkerResumeEvent {
   id: number;
   filepath: string;
-  from: string;  // Agent that responded (e.g., "narrative-engine/system")
-  to: string;    // Agent receiving the response (e.g., "narrative-engine/narrator")
+  from: string;
+  to: string;
   content: string;
   headline?: string;
   msgId?: string;
-  // Boundary detection
-  fromHumanBoundary?: boolean;  // true if from === 'core/core' (human response)
-  resumesSuspension?: boolean;  // true if this should resume a suspended session
 }
 
 // TrackedMessage and ActiveWorker types are now imported from './worker-lifecycle.ts'
@@ -293,14 +286,14 @@ export class WorkerDispatcher extends EventEmitter {
   private boundMessageHandler: ((event: { agentId: string }) => void) | null = null;
   private boundRevisionHandler: ((event: RevisionMessageEvent) => void) | null = null;
   private boundAskMessageHandler: ((event: AskMessageEvent) => void) | null = null;
-  private boundAskResponseHandler: ((event: AskResponseMessageEvent) => void) | null = null;
+  private boundAskResponseHandler: ((event: WorkerResumeEvent) => void) | null = null;
   private boundBlockingHitlHandler!: (event: BlockingHitlMessageEvent) => void;
   private boundParityReminderHandler: ((event: ParityReminderEvent) => void) | null = null;
   private boundMeshCompleteHandler: ((event: MeshCompleteEvent) => void) | null = null;
   private boundSystemFeedbackHandler: ((event: SystemFeedbackEvent) => void) | null = null;
   // Message tracking handlers for completion enforcement
-  private boundCoreMessageTrackingHandler: ((event: { from: string; type: string; filepath: string }) => void) | null = null;
-  private boundWorkerMessageTrackingHandler: ((event: { from: string; type: string; agentId: string; filepath?: string }) => void) | null = null;
+  private boundCoreMessageTrackingHandler: ((event: { from: string; completion?: boolean; filepath: string }) => void) | null = null;
+  private boundWorkerMessageTrackingHandler: ((event: { from: string; completion?: boolean; agentId: string; filepath?: string }) => void) | null = null;
 
   /** Deferred mesh completions — waiting for active workers to finish before finalizing */
   private pendingCompletions: Map<string, { completionAgent: string; receivedAt: number }> = new Map();
@@ -1467,17 +1460,15 @@ export class WorkerDispatcher extends EventEmitter {
 
       // Subscribe to ask message events for await state handling
       this.boundAskMessageHandler = (event: AskMessageEvent) => {
-        log.warn('dispatcher', 'DEPRECATE: ask-message consumer event fired', { from: event.from, to: event.to });
         this.handleAskMessage(event);
       };
       consumer.on('ask-message', this.boundAskMessageHandler);
 
-      // Subscribe to ask-response events for resuming awaiting workers
-      this.boundAskResponseHandler = (event: AskResponseMessageEvent) => {
-        log.warn('dispatcher', 'DEPRECATE: ask-response-message consumer event fired', { from: event.from, to: event.to });
+      // Subscribe to worker-resume events for resuming awaiting workers
+      this.boundAskResponseHandler = (event: WorkerResumeEvent) => {
         this.handleAskResponseMessage(event);
       };
-      consumer.on('ask-response-message', this.boundAskResponseHandler);
+      consumer.on('worker-resume', this.boundAskResponseHandler);
 
       // Blocking HITL: agent asks human but keeps session alive
       this.boundBlockingHitlHandler = (event: BlockingHitlMessageEvent) => {
@@ -1505,14 +1496,14 @@ export class WorkerDispatcher extends EventEmitter {
 
       // Track messages sent by workers for completion enforcement
       // When a worker writes a message, track it so we can verify task-complete was sent
-      this.boundCoreMessageTrackingHandler = (event: { from: string; type: string; filepath: string }) => {
-        this.trackMessageSent(event.from, 'core/core', event.type, event.filepath);
+      this.boundCoreMessageTrackingHandler = (event: { from: string; completion?: boolean; filepath: string }) => {
+        this.trackMessageSent(event.from, 'core/core', event.completion ? 'complete' : 'message', event.filepath);
       };
       consumer.on('core-message', this.boundCoreMessageTrackingHandler);
 
-      this.boundWorkerMessageTrackingHandler = (event: { from: string; type: string; agentId: string; filepath?: string }) => {
+      this.boundWorkerMessageTrackingHandler = (event: { from: string; completion?: boolean; agentId: string; filepath?: string }) => {
         // agentId in worker-message is the recipient (toAgent)
-        this.trackMessageSent(event.from, event.agentId, event.type, event.filepath);
+        this.trackMessageSent(event.from, event.agentId, event.completion ? 'complete' : 'message', event.filepath);
       };
       consumer.on('worker-message', this.boundWorkerMessageTrackingHandler);
 
@@ -1681,8 +1672,6 @@ export class WorkerDispatcher extends EventEmitter {
               content: typeof payload.body === 'string' ? payload.body : JSON.stringify(payload),
               headline: typeof payload.headline === 'string' ? payload.headline : '',
               msgId: typeof payload.msg_id === 'string' ? payload.msg_id : undefined,
-              fromHumanBoundary: false,
-              resumesSuspension: false,
             });
           }
           return;
@@ -2372,7 +2361,7 @@ export class WorkerDispatcher extends EventEmitter {
    * Note: With parallelism, asks affect the first worker for the agent
    */
   private async handleAskMessage(event: AskMessageEvent): Promise<void> {
-    const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
+    const { from: senderAgentId, to: targetAgentId } = event;
 
     // Get first worker for this agent
     const activeWorker = this.getFirstWorkerForAgent(senderAgentId);
@@ -2399,14 +2388,8 @@ export class WorkerDispatcher extends EventEmitter {
 
     try {
       // Halt mesh when message crosses human boundary
-      const crossesHumanBoundary = targetAgentId === 'core/core' && messageType !== 'task-complete';
-      if (messageType === 'ask-human' || (messageType === 'message' && crossesHumanBoundary)) {
-        if (messageType === 'ask-human') {
-          log.warn('dispatcher', `DEPRECATED ASK: type 'ask-human' is deprecated, use 'message' to core/core`, {
-            from: senderAgentId,
-            to: targetAgentId,
-          });
-        }
+      const crossesHumanBoundary = event.crossesHumanBoundary ?? (targetAgentId === 'core/core');
+      if (crossesHumanBoundary) {
         log.info('dispatcher', `ask-human: halting mesh for human response`, {
           from: senderAgentId,
           to: targetAgentId,
@@ -2498,7 +2481,6 @@ export class WorkerDispatcher extends EventEmitter {
         log.debug('dispatcher', `Worker entering await state`, {
           from: senderAgentId,
           to: targetAgentId,
-          type: messageType,
           sessionId: sessionId.slice(0, 8),
         });
         await machine.enterAwait(targetAgentId, sessionId);
@@ -2517,7 +2499,6 @@ export class WorkerDispatcher extends EventEmitter {
           workerId: senderAgentId,
           targets: [targetAgentId],
           sessionId,
-          type: messageType,
         });
         // Note: ask-human is handled above with early return (kills worker, halts mesh)
       } else {
@@ -2913,7 +2894,7 @@ The system will resume your session when the human responds.`;
    * 2. Remove the responder from awaitingResponses
    * 3. If all responses received, resume the session
    */
-  private async handleAskResponseMessage(event: AskResponseMessageEvent): Promise<void> {
+  private async handleAskResponseMessage(event: WorkerResumeEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content, msgId: correlationId } = event;
 
     // NOTE: pending_asks table only tracks core/core boundary (parity gate)
@@ -3866,7 +3847,7 @@ Please advise the agent or check mesh configuration.`;
       this.boundAskMessageHandler = null;
     }
     if (consumer && this.boundAskResponseHandler) {
-      consumer.off('ask-response-message', this.boundAskResponseHandler);
+      consumer.off('worker-resume', this.boundAskResponseHandler);
       this.boundAskResponseHandler = null;
     }
     if (consumer && this.boundBlockingHitlHandler) {
@@ -4166,8 +4147,10 @@ Please advise the agent or check mesh configuration.`;
       if (fsmObj && fsmObj.isInitialized()) {
         const fsmCtx = fsmObj.getStatus().context;
         if (fsmCtx?.workspace && typeof fsmCtx.workspace === 'string') {
+          // Always resolve relative to workDir — FSM context workspace is a logical path,
+          // not a system absolute path. Prevents mkdir to arbitrary absolute paths.
           resolvedWorkspaceDir = path.isAbsolute(fsmCtx.workspace as string)
-            ? fsmCtx.workspace as string
+            ? path.join(this.config.workDir, (fsmCtx.workspace as string).replace(/^\//, ''))
             : path.join(this.config.workDir, fsmCtx.workspace as string);
         }
       }
