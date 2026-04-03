@@ -551,8 +551,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       to: data.to,
       headline: data.headline,
     });
-    // Route as ask-response to inject into sender's session
-    consumer.emit('ask-response-message', {
+    // Route as worker-resume to inject into sender's session
+    consumer.emit('worker-resume', {
       from: data.from,
       to: data.to,
       content: data.content,
@@ -612,7 +612,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
     // Route synthetic response to dispatcher for direct injection
     if (data.syntheticResponse) {
-      consumer.emit('ask-response-message', {
+      consumer.emit('worker-resume', {
         from: data.syntheticResponse.from,
         to: data.syntheticResponse.to,
         content: data.syntheticResponse.content,
@@ -629,7 +629,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   deadlockDetector.start();
 
   // Append message to pending-for-core.json for hook injection
-  const appendPendingMessage = (id: number, filepath: string, from: string, type: string) => {
+  const appendPendingMessage = (id: number, filepath: string, from: string, completion: boolean) => {
     try {
       const pendingPath = path.join(dataDir, 'pending-for-core.json');
       const pending = fs.existsSync(pendingPath)
@@ -640,14 +640,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       pending.messages.push({
         id,
         from,
-        type,
+        completion,
         file: filepath,
         timestamp: new Date().toISOString(),
       });
       pending.lastWritten = id;
 
       fs.writeFileSync(pendingPath, JSON.stringify(pending, null, 2));
-      log.info('injector', 'Appended message to pending-for-core.json', { id, from, type });
+      log.info('injector', 'Appended message to pending-for-core.json', { id, from, completion });
     } catch (err) {
       log.error('injector', 'Failed to append pending message', { id, error: String(err) });
     }
@@ -986,7 +986,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   }
 
   /** Parse a message .md file into AgentMessage fields */
-  function parseMessageFromFile(filepath: string): { from: string; to: string; type: string; body: string; headline?: string; msgId?: string; refMsgId?: string } | null {
+  function parseMessageFromFile(filepath: string): { from: string; to: string; completion: boolean; body: string; headline?: string; msgId?: string; refMsgId?: string } | null {
     try {
       const content = fs.readFileSync(filepath, 'utf-8');
       const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
@@ -1004,7 +1004,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
       return {
         from: fm['from'] || '',
         to: fm['to'] || 'core/core',
-        type: fm['type'] || 'task-complete',
+        completion: fm['status'] === 'complete' || fm['outcome'] === 'complete',
         body,
         headline: fm['headline'],
         msgId: fm['msg-id'],
@@ -1102,15 +1102,15 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   }
 
   // Subscribe to core-message BEFORE starting dispatcher to avoid race
-  consumer.on('core-message', ({ id, filepath, from, type }) => {
-    log.info('injector', 'Received core-message event', { id, from, type, file: path.basename(filepath) });
+  consumer.on('core-message', ({ id, filepath, from, completion }) => {
+    log.info('injector', 'Received core-message event', { id, from, completion, file: path.basename(filepath) });
     tmux.bell();
-    appendPendingMessage(id, filepath, from, type);
+    appendPendingMessage(id, filepath, from, completion);
     queue.markProcessed(id);
 
-    // Remove outgoing task on task-complete from a mesh
+    // Remove outgoing task on completion from a mesh
     let removedTask: Record<string, unknown> | null = null;
-    if (type === 'task-complete') {
+    if (completion) {
       const [mesh] = from.split('/');
       removedTask = removeOutgoingTask(mesh);
     }
@@ -1122,10 +1122,10 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
     // Active injection: per-task inject-response flag OR global inject mode
     if (removedTask?.injectResponse) {
-      log.info('injector', 'inject-response: actively injecting task completion', { from, type });
+      log.info('injector', 'inject-response: actively injecting task completion', { from, completion });
       tryInjectResponse(id, filepath, from);
     } else if (inboxMode === 'inject') {
-      log.info('injector', 'Inject mode: actively injecting core-message', { from, type });
+      log.info('injector', 'Inject mode: actively injecting core-message', { from, completion });
       tryInjectResponse(id, filepath, from);
     }
 
@@ -1133,8 +1133,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   });
 
   // Track outgoing tasks when core sends tasks to meshes + forward routing status to www
-  consumer.on('worker-message', ({ agentId, from, type, injectResponse }) => {
-    if (from === 'core/core' && (type === 'task' || type === 'message')) {
+  consumer.on('worker-message', ({ agentId, from, injectResponse }) => {
+    if (from === 'core/core') {
       const [mesh] = agentId.split('/');
       addOutgoingTask(mesh, `task-${Date.now()}`, { injectResponse: !!injectResponse });
       writeStatusFile();
