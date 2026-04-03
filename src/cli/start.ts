@@ -1281,6 +1281,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   // Stop self-healing components
   clearInterval(statusHeartbeat);
+  if (injectionPollTimer) clearInterval(injectionPollTimer);
+  if (systemErrorPollTimer) clearInterval(systemErrorPollTimer);
   staleCleaner.stop();
   deadlockDetector.stop();
 
