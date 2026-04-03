@@ -22,11 +22,9 @@ export function buildTaskContext(context: PromptContext): string {
 
     // Extract key fields
     const fromMatch = metadata.match(/^from:\s*(.+)$/m);
-    const typeMatch = metadata.match(/^type:\s*(.+)$/m);
     const headlineMatch = metadata.match(/^headline:\s*(.+)$/m);
 
     if (fromMatch) section += `**From**: ${fromMatch[1]}\n`;
-    if (typeMatch) section += `**Type**: ${typeMatch[1]}\n`;
     if (headlineMatch) section += `**Headline**: ${headlineMatch[1]}\n`;
 
     section += `\n${body}\n`;
