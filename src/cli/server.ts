@@ -390,7 +390,7 @@ const routes: Array<{ method: string; pattern: string; handler: RouteHandler }> 
       const message: AgentMessage = {
         from,
         to: to || 'core/core',
-        type: type || 'task-complete',
+        type: type || 'message',
         body,
         headline,
         msgId,
@@ -984,13 +984,13 @@ function writeToMsgsDir(workDir: string, message: AgentMessage, sessionId: strin
   const timestamp = message.timestamp || Date.now();
   const safeFrom = message.from.replace(/\//g, '-');
   const safeTo = message.to.replace(/\//g, '-');
-  const filename = `${timestamp}-${message.type}-${safeFrom}--${safeTo}-${msgId}.md`;
+  const filename = `${timestamp}-${message.type || 'message'}-${safeFrom}--${safeTo}-${msgId}.md`;
   const filepath = path.join(msgsDir, filename);
 
   const frontmatter = [
     `to: ${message.to}`,
     `from: ${message.from}`,
-    `type: ${message.type}`,
+    `type: ${message.type || 'message'}`,
     `msg-id: ${msgId}`,
     `timestamp: ${new Date(timestamp).toISOString()}`,
     `www-session: ${sessionId}`,
@@ -1543,6 +1543,17 @@ export async function server(options: ServerOptions): Promise<(() => Promise<voi
   // Graceful shutdown (exported for embedded use)
   const shutdown = async () => {
     log.info('server', 'Shutting down...');
+
+    // Clear www-sessions registry so stale entries don't trigger HTTP pushes
+    try {
+      const sessionsPath = getWwwSessionsPath(workDir);
+      if (fs.existsSync(sessionsPath)) {
+        fs.writeFileSync(sessionsPath, '{}');
+        log.info('server', 'Cleared www-sessions registry');
+      }
+    } catch (err) {
+      log.warn('server', 'Failed to clear www-sessions on shutdown', { error: (err as Error).message });
+    }
 
     // Shutdown core WebSocket handler
     await coreWsHandler.shutdown();

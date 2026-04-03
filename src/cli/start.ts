@@ -1072,12 +1072,29 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     fs.writeFileSync(path.join(dir, filename), content);
   }
 
+  /** Check if a port is actually listening (fast TCP probe) */
+  async function isPortListening(port: number): Promise<boolean> {
+    const { createConnection } = await import('node:net');
+    return new Promise((resolve) => {
+      const socket = createConnection({ port, host: 'localhost' }, () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on('error', () => resolve(false));
+      socket.setTimeout(500, () => { socket.destroy(); resolve(false); });
+    });
+  }
+
   /** HTTP push a status event to tx-serve, falling back to file-copy */
   async function pushWwwStatus(meshId: string, body: string): Promise<void> {
     const entry = getWwwSessionEntry(meshId);
     if (!entry) return;
 
     const port = entry.port || parseInt(process.env.TX_SERVER_PORT || '6000', 10);
+
+    // Guard: don't attempt HTTP if server isn't listening
+    if (!await isPortListening(port)) return;
+
     try {
       const res = await fetch(`http://localhost:${port}/v1/sessions/${entry.sessionId}/forward`, {
         method: 'POST',
@@ -1420,6 +1437,7 @@ export async function restart(workDir?: string, options?: StartOptions): Promise
 }
 
 
+// Note: msg.type is vestigial ('message' for all new messages). Routing context derives from payload fields.
 function formatMessageForClaude(msg: any): string {
   return `# Incoming Message
 
