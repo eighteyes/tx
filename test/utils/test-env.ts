@@ -303,7 +303,6 @@ export function insertMessage(
   return env.queue.insert({
     from_agent: message.from,
     to_agent: message.to,
-    type: message.type,
     payload: {
       'msg-id': message.msgId || `msg-${Date.now()}`,
       headline: message.headline || '',

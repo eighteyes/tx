@@ -314,7 +314,6 @@ export async function spy(options: SpyOptions): Promise<void> {
 
 function printMessage(msg: {
   id?: number;
-  type: string;
   from_agent: string;
   to_agent: string;
   payload: Record<string, unknown>;
@@ -325,8 +324,9 @@ function printMessage(msg: {
     return;
   }
 
-  const icon = getTypeIcon(msg.type);
-  const type = colorType(msg.type);
+  const inferredType = (msg.payload?.headline as string) || 'message';
+  const icon = getTypeIcon(inferredType);
+  const type = colorType(inferredType);
   const time = msg.created_at ? formatTimeAgo(msg.created_at) : '';
   const headline = msg.payload.headline as string || '';
 

@@ -61,7 +61,7 @@ confidence: 0.95
     // Core should receive the message
     const messages = queue.poll('core/core');
     assert.strictEqual(messages.length, 1, 'Core should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-human');
+    assert.strictEqual(messages[0].from_agent, 'test/worker');
     assert.strictEqual(messages[0].from_agent, 'test/worker');
     assert.ok((messages[0].payload.body as string)?.includes('favorite color'));
   });
@@ -92,7 +92,7 @@ confidence: 1.0
     // Worker should receive the response
     const messages = queue.poll('test/worker');
     assert.strictEqual(messages.length, 1, 'Worker should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-response');
+    assert.strictEqual(messages[0].from_agent, 'core/core');
     assert.strictEqual(messages[0].from_agent, 'core/core');
     assert.ok((messages[0].payload.body as string)?.includes('Blue'));
   });
@@ -104,7 +104,6 @@ confidence: 1.0
     queue.insert({
       from_agent: 'test/worker',
       to_agent: 'core/core',
-      type: 'ask-human',
       payload: {
         'msg-id': 'q2',
         headline: 'Confirmation needed',
@@ -115,13 +114,12 @@ confidence: 1.0
     // 2. Verify core receives it
     const coreMessages = queue.poll('core/core');
     assert.strictEqual(coreMessages.length, 1);
-    assert.strictEqual(coreMessages[0].type, 'ask-human');
+    assert.strictEqual(coreMessages[0].from_agent, 'test/worker');
 
     // 3. Core sends response
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'ask-response',
       payload: {
         'msg-id': 'r2',
         headline: 'User confirmed',
@@ -132,7 +130,7 @@ confidence: 1.0
     // 4. Worker receives response
     const workerMessages = queue.poll('test/worker');
     assert.strictEqual(workerMessages.length, 1);
-    assert.strictEqual(workerMessages[0].type, 'ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.ok((workerMessages[0].payload.body as string)?.includes('proceed'));
   });
 });

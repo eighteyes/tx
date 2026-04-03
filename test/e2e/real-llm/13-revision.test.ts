@@ -116,7 +116,6 @@ describe('Real LLM Test: Revision', { skip: !hasClaude }, () => {
     const queueId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-revision/worker',
-      type: 'task',
       payload: {
         headline: 'Analysis task',
         body: 'Analyze the concept of software testing',
@@ -129,7 +128,6 @@ describe('Real LLM Test: Revision', { skip: !hasClaude }, () => {
       id: queueId,
       agentId: 'test-revision/worker',
       from: 'core/core',
-      type: 'task',
     });
 
     // 2. Wait for worker:spawn (up to 15s) — confirms the worker started
@@ -151,7 +149,6 @@ describe('Real LLM Test: Revision', { skip: !hasClaude }, () => {
       filepath: '',
       agentId: 'test-revision/worker',
       from: 'core/core',
-      type: 'task',
       content: 'Also include a section about TDD methodology.',
       headline: 'Additional instructions',
       mode: 'append',

@@ -200,7 +200,6 @@ ${guidance.suggestion}${levelWarning}`;
       this.writer.write({
         to: request.agentId,
         from: 'system/recovery',
-        type: 'guidance',
         headline: `State guidance for ${request.agentId}`,
         body,
       });
@@ -274,7 +273,6 @@ Please advise how to proceed.`;
       this.writer.write({
         to: 'core/core',
         from: 'system/recovery',
-        type: 'message',
         headline: `Agent ${request.agentId} appears stuck`,
         body,
       });

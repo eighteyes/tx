@@ -61,7 +61,7 @@ Please route this task appropriately.
     // Check queue - message should be delivered
     const messages = queue.peek('test-routing-enforcement/coordinator');
     assert.strictEqual(messages.length, 1, 'Coordinator should have 1 pending message');
-    assert.strictEqual(messages[0].type, 'task');
+    assert.ok(messages[0].from_agent, 'Should have from_agent');
     assert.strictEqual(messages[0].from_agent, 'core/core');
   });
 
@@ -86,7 +86,7 @@ Please complete this type A task.
     // Check queue - specialist-a should receive the message
     const messages = queue.peek('test-routing-enforcement/specialist-a');
     assert.strictEqual(messages.length, 1, 'Specialist A should have 1 pending message');
-    assert.strictEqual(messages[0].type, 'ask');
+    assert.ok(messages[0].from_agent, 'Should have from_agent');
     assert.strictEqual(messages[0].from_agent, 'test-routing-enforcement/coordinator');
   });
 
@@ -111,7 +111,7 @@ Type A task completed successfully.
     // Check queue - coordinator should receive the response
     const messages = queue.peek('test-routing-enforcement/coordinator');
     assert.strictEqual(messages.length, 1, 'Coordinator should have 1 pending message');
-    assert.strictEqual(messages[0].type, 'ask-response');
+    assert.ok(messages[0].from_agent, 'Should have from_agent');
     assert.strictEqual(messages[0].from_agent, 'test-routing-enforcement/specialist-a');
   });
 
@@ -136,7 +136,7 @@ All routing tests passed.
     // Check queue - core should receive the completion
     const messages = queue.peek('core/core');
     assert.strictEqual(messages.length, 1, 'Core should have 1 pending message');
-    assert.strictEqual(messages[0].type, 'task-complete');
+    assert.ok(messages[0].from_agent, 'Should have from_agent');
     assert.strictEqual(messages[0].from_agent, 'test-routing-enforcement/coordinator');
   });
 
@@ -148,7 +148,6 @@ All routing tests passed.
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-routing-enforcement/coordinator',
-      type: 'task',
       payload: { headline: 'Task 1', body: 'Do something' },
     });
 
@@ -156,7 +155,6 @@ All routing tests passed.
     queue.insert({
       from_agent: 'test-routing-enforcement/coordinator',
       to_agent: 'test-routing-enforcement/specialist-a',
-      type: 'ask',
       payload: { headline: 'Work request', body: 'Handle this' },
     });
 
@@ -164,7 +162,6 @@ All routing tests passed.
     queue.insert({
       from_agent: 'test-routing-enforcement/specialist-a',
       to_agent: 'test-routing-enforcement/coordinator',
-      type: 'ask-response',
       payload: { headline: 'Work done', body: 'Completed' },
     });
 
@@ -184,24 +181,23 @@ All routing tests passed.
     assert.strictEqual(afterPoll.length, 0, 'No more pending messages');
   });
 
-  test('Message types are preserved through queue', async () => {
-    const messageTypes = ['task', 'ask', 'ask-response', 'task-complete', 'ask-human'];
+  test('Message headlines are preserved through queue', async () => {
+    const headlines = ['task', 'ask', 'ask-response', 'task-complete', 'ask-human'];
 
-    for (const type of messageTypes) {
+    for (const headline of headlines) {
       queue.insert({
         from_agent: 'test/sender',
         to_agent: 'test/receiver',
-        type,
-        payload: { headline: `Test ${type}`, body: 'Content' },
+        payload: { headline: `Test ${headline}`, body: 'Content' },
       });
     }
 
     const messages = queue.poll('test/receiver');
-    assert.strictEqual(messages.length, messageTypes.length);
+    assert.strictEqual(messages.length, headlines.length);
 
-    const types = messages.map(m => m.type);
-    for (const expectedType of messageTypes) {
-      assert.ok(types.includes(expectedType), `Should include ${expectedType}`);
+    const receivedHeadlines = messages.map(m => m.payload.headline as string);
+    for (const expected of headlines) {
+      assert.ok(receivedHeadlines.some(h => h.includes(expected)), `Should include ${expected}`);
     }
   });
 
@@ -211,7 +207,6 @@ All routing tests passed.
       queue.insert({
         from_agent: 'test/sender',
         to_agent: 'test/receiver',
-        type: 'task',
         payload: { headline: `Task ${i}`, body: `Message ${i}` },
       });
       // Small delay to ensure different timestamps
@@ -235,7 +230,6 @@ All routing tests passed.
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/agent',
-      type: 'task',
       payload: { headline: 'First task', body: 'First' },
     });
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -243,7 +237,6 @@ All routing tests passed.
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/agent',
-      type: 'task',
       payload: { headline: 'Second task', body: 'Second' },
     });
 
@@ -269,7 +262,6 @@ All routing tests passed.
     const id1 = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/agent',
-      type: 'task',
       source_file: sourceFile,
       payload: { headline: 'Version 1', body: 'First version' },
     });
@@ -279,7 +271,6 @@ All routing tests passed.
     const id2 = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/agent',
-      type: 'task',
       source_file: sourceFile,
       payload: { headline: 'Version 2', body: 'Updated version' },
     });

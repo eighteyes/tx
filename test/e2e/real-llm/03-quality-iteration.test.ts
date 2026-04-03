@@ -120,7 +120,6 @@ iteration: [current iteration number]
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'quality-test/worker',
-      type: 'task',
       payload: {
         headline: 'Quality test task',
         body: 'Write a short greeting.',
@@ -134,7 +133,6 @@ iteration: [current iteration number]
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'quality-test/worker',
       });
 
@@ -157,7 +155,6 @@ iteration: [current iteration number]
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'quality-test/worker',
-      type: 'task',
       payload: {
         headline: 'Write greeting',
         body: 'Write a greeting message.',
@@ -172,7 +169,6 @@ iteration: [current iteration number]
     const startTime = Date.now();
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'quality-test/worker',
       });
 
@@ -193,7 +189,6 @@ iteration: [current iteration number]
     queue.insert({
       from_agent: 'system/quality',
       to_agent: 'quality-test/worker',
-      type: 'task',  // Use task type to trigger worker
       payload: {
         headline: 'Quality Feedback',
         body: 'The greeting was good but please make it more enthusiastic!',
@@ -205,7 +200,6 @@ iteration: [current iteration number]
     const feedbackStartTime = Date.now();
     while (Date.now() - feedbackStartTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'quality-test/worker',
       });
 

@@ -400,7 +400,6 @@ export class MessageConsumer extends EventEmitter {
     this.systemWriter.write({
       to: 'core/core',
       from: 'system/consumer',
-      type: 'error',
       headline: 'Command routing error',
       body,
       extraFrontmatter: { 'ref-msg-id': refMsgId },
@@ -422,7 +421,6 @@ export class MessageConsumer extends EventEmitter {
     this.systemWriter.write({
       to: targetAgentId,
       from: 'system/fan-out',
-      type: 'task',
       headline: `Fan-out task from ${fromAgent}`,
       body,
       extraFrontmatter: { 'original-from': fromAgent },
@@ -663,7 +661,6 @@ export class MessageConsumer extends EventEmitter {
         this.systemWriter.write({
           to: 'core/core',
           from: 'consumer/consumer',
-          type: 'error',
           headline: 'Missing mesh-id for parallel spawn',
           body: `Message has \`parallel: true\` but no \`mesh-id\` field. The \`mesh-id\` field is required when spawning parallel instances.`,
         });
@@ -716,7 +713,6 @@ export class MessageConsumer extends EventEmitter {
               this.systemWriter.write({
                 to: 'core/core',
                 from: 'consumer/consumer',
-                type: 'error',
                 headline: `Max instances exceeded for ${baseMesh}`,
                 body: errorMsg,
               });
@@ -1882,7 +1878,6 @@ Re-read your workspace files to determine where you are in your sequence, then s
     this.systemWriter.write({
       to: 'core/core',
       from: 'system/routing-validator',
-      type: 'message',
       headline: 'Routing violation needs human intervention',
       body: `# Agent Repeatedly Violating Routing Rules
 
@@ -1979,7 +1974,6 @@ ${targetsFormatted}
       this.systemWriter.write({
         to: 'core/core',
         from: 'system/routing-validator',
-        type: 'message',
         headline: 'Cross-mesh routing error - human intervention required',
         body: `# Agent Repeatedly Sending to Non-Existent Mesh
 

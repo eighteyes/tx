@@ -188,7 +188,6 @@ export class SdkRunner extends EventEmitter {
       writer.write({
         to: 'core/core',
         from: agentId,
-        type: 'permission-ask',
         headline: `${agentId} requests: ${toolName}`,
         body: `Agent \`${agentId}\` wants to use \`${toolName}\`.
 
@@ -548,13 +547,13 @@ Reply **allow** to approve or **deny** to reject.`,
         this.firstUserMessageUuid = null;
 
         totalProcessed++;
-        log.info('sdk-runner', `Processing message`, { workerId, messageId: taskMessage.id, type: taskMessage.type });
+        log.info('sdk-runner', `Processing message`, { workerId, messageId: taskMessage.id });
 
         // Emit processing event for FSM transition (idle → running)
         this.emit('message:processing', {
           id: workerId,
           messageId: taskMessage.id,
-          type: taskMessage.type
+          type: (taskMessage.payload?.headline as string) || 'message'
         });
 
         const userPrompt = this.buildUserPrompt(taskMessage);
@@ -1114,7 +1113,7 @@ Reply **allow** to approve or **deny** to reject.`,
 
     parts.push('## Task Context\n');
     parts.push(`**From**: ${msg.from_agent}`);
-    parts.push(`**Type**: ${msg.type}`);
+    parts.push(`**Type**: message`);
     if (msg.payload.headline) {
       parts.push(`**Headline**: ${msg.payload.headline}`);
     }

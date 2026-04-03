@@ -39,7 +39,6 @@ describe('V4 Queue Test', () => {
     const msg: Message = {
       from_agent: 'core/core',
       to_agent: 'mesh/worker',
-      type: 'task',
       payload: { action: 'do-something', data: { foo: 'bar' } }
     };
 
@@ -54,7 +53,6 @@ describe('V4 Queue Test', () => {
     const msg: Message = {
       from_agent: 'core/core',
       to_agent: 'mesh/poller',
-      type: 'task',
       payload: { action: 'poll-test' }
     };
     queue.insert(msg);
@@ -65,7 +63,7 @@ describe('V4 Queue Test', () => {
     assert.ok(Array.isArray(messages), 'Poll should return array');
     assert.ok(messages.length >= 1, 'Should have at least one message');
     assert.strictEqual(messages[0].to_agent, 'mesh/poller');
-    assert.strictEqual(messages[0].type, 'task');
+    assert.strictEqual(messages[0].to_agent, 'mesh/poller');
   });
 
   it('should mark message as delivered after poll', () => {
@@ -73,7 +71,6 @@ describe('V4 Queue Test', () => {
     const msg: Message = {
       from_agent: 'sender/agent',
       to_agent: 'receiver/agent',
-      type: 'update',
       payload: { info: 'delivery-test' }
     };
     const id = queue.insert(msg);
@@ -93,14 +90,12 @@ describe('V4 Queue Test', () => {
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'agent-a/worker',
-      type: 'task',
       payload: { target: 'a' }
     });
 
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'agent-b/worker',
-      type: 'task',
       payload: { target: 'b' }
     });
 

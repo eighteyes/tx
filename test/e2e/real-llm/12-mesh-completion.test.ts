@@ -112,7 +112,6 @@ describe('Real LLM Test: Mesh Completion', { skip: !hasClaude }, () => {
     const queueId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-echo/echo',
-      type: 'task',
       payload: {
         headline: 'Echo test',
         body: 'Echo back: hello world',
@@ -125,7 +124,6 @@ describe('Real LLM Test: Mesh Completion', { skip: !hasClaude }, () => {
       id: queueId,
       agentId: 'test-echo/echo',
       from: 'core/core',
-      type: 'task',
     });
 
     // 2. Wait for worker:complete — confirms the echo agent ran to completion

@@ -326,7 +326,6 @@ export async function run(options: RunOptions = {}): Promise<void> {
   queue.insert({
     from_agent: 'user/repl',
     to_agent: agentId,
-    type: 'task',
     payload: {
       headline: 'Initial prompt',
       body: prompt,

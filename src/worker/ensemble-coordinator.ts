@@ -372,7 +372,6 @@ ${ensembleOutput}
       const result = writer.write({
         to: targetAgentId,
         from: 'dispatcher/ensemble',
-        type: 'task',
         headline: 'Ensemble aggregation complete',
         body,
       });

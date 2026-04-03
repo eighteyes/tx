@@ -1309,7 +1309,6 @@ export class WorkerDispatcher extends EventEmitter {
           agentId,
           meshName,
           from: pendingMsg.from_agent,
-          type: pendingMsg.type,
         });
 
         // Use setTimeout to avoid blocking the current handler
@@ -2001,7 +2000,6 @@ export class WorkerDispatcher extends EventEmitter {
             this.queue.insert({
               from_agent: savedMsg.from_agent,
               to_agent: savedMsg.to_agent || agentId,
-              type: savedMsg.type,
               payload: savedMsg.payload || {},
               source_file: savedMsg.source_file,
             });
@@ -2139,7 +2137,6 @@ export class WorkerDispatcher extends EventEmitter {
             this.queue.insert({
               from_agent: msg.from_agent,
               to_agent: fallbackAgentId,
-              type: msg.type,
               payload: { ...msg.payload, body },
             });
           }
@@ -2202,7 +2199,6 @@ export class WorkerDispatcher extends EventEmitter {
               this.queue.insert({
                 from_agent: agentId,
                 to_agent: senderAgentId,
-                type: 'message',
                 payload: { headline: 'preflight-failed', body: errorContent },
               });
               // Consume the failed message
@@ -3464,7 +3460,6 @@ The system will resume your session when the human responds.`;
       this.queue.insert({
         from_agent: `${meshName}/manifest-resolver`,
         to_agent: agentId,
-        type: 'task',
         payload: {
           headline: 'Manifest routing: reads satisfied',
           body: `Your reads are satisfied. Write: [${writesNeeded.join(', ')}]`,
@@ -4351,7 +4346,6 @@ Please advise the agent or check mesh configuration.`;
           incomingAsks: [],
           pendingTasks: pendingTasks.map(t => ({
             from_agent: t.from_agent,
-            type: t.type,
             created_at: t.created_at,
             payload: t.payload as { headline?: string },
           })),
@@ -6076,7 +6070,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               messagesSent: msgsSent,
               fromAgent: nextMsg?.from_agent,
               toAgent: agentId,
-              msgType: nextMsg?.type,
+              msgType: (nextMsg?.payload?.headline as string) || 'message',
               payload: nextMsg?.payload as Record<string, unknown>,
               sourceFile: nextMsg?.source_file,
             });
@@ -6858,7 +6852,6 @@ ${output}
     this.queue.insert({
       from_agent: 'system/fan-in',
       to_agent: joinAgentId,
-      type: 'task',
       payload: {
         headline: `Batched fan-in: ${messages.length} responses`,
         body: combinedBody,
@@ -7519,7 +7512,6 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       task = {
         from_agent: 'system/fsm-dispatch',
         to_agent: agentId,
-        type: 'task',
         payload: {
           headline: `Execute task for state ${stateConfig.name}`,
           body: `FSM transitioned to ensemble state \`${stateConfig.name}\`. Execute your task.`,
@@ -7563,7 +7555,6 @@ Routes to \`core/core\` or other meshes are always permitted.`;
       this.queue.insert({
         from_agent: task.from_agent,
         to_agent: workerAgentId,
-        type: task.type,
         payload: { ...task.payload, _ensemble_index: i, _ensemble_total: ensembleTotal },
         source_file: undefined,
       });

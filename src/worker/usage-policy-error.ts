@@ -194,7 +194,6 @@ Please review the context above and choose one of the following:
     const result = writer.write({
       to: 'core/core',
       from: agentId,
-      type: 'ask-human',
       headline: 'Usage Policy Error - Human Intervention Required',
       body,
       extraFrontmatter,

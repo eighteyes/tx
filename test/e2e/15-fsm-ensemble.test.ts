@@ -89,7 +89,6 @@ describe('FSM Ensemble States E2E', () => {
       const mockTask: Message = {
         from_agent: 'core/core',
         to_agent: 'fsm-ensemble-test/coordinator',
-        type: 'task',
         payload: {
           'msg-id': 'test-task-1',
           body: 'Review this code',
@@ -134,7 +133,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test task' },
       };
 
@@ -168,7 +166,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test task' },
       };
 
@@ -204,7 +201,6 @@ describe('FSM Ensemble States E2E', () => {
           },
           {
             name: 'parallel_review',
-            type: 'ensemble',
             ensemble: {
               agents: ['reviewer-a', 'reviewer-b', 'reviewer-c'],
               aggregation: 'concat',
@@ -269,7 +265,6 @@ describe('FSM Ensemble States E2E', () => {
           },
           {
             name: 'parallel_review',
-            type: 'ensemble',
             ensemble: {
               agents: ['reviewer-a', 'reviewer-b', 'reviewer-c'],
               aggregation: 'concat',
@@ -322,7 +317,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test task' },
       };
 
@@ -358,7 +352,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test task' },
       };
 
@@ -389,7 +382,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test' },
       };
 
@@ -417,7 +409,6 @@ describe('FSM Ensemble States E2E', () => {
       const task: Message = {
         from_agent: 'core/core',
         to_agent: 'test-mesh/entry',
-        type: 'task',
         payload: { body: 'Test' },
       };
 
@@ -565,7 +556,6 @@ fsm:
         states: [
           {
             name: 'parallel_work',
-            type: 'ensemble',
             ensemble: {
               agents: ['worker-1', 'worker-2'],
               aggregation: 'concat',
@@ -611,7 +601,6 @@ fsm:
         states: [
           {
             name: 'invalid',
-            type: 'ensemble',
             // Missing ensemble config - should be invalid
             coordinator: 'worker',
           },

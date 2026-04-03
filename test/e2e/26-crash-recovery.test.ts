@@ -120,14 +120,12 @@ describe('Crash Recovery System', () => {
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'pending-1' }
     });
 
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'pending-2' }
     });
 
@@ -149,7 +147,6 @@ describe('Crash Recovery System', () => {
     const id = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'interrupted-test' }
     });
 
@@ -166,14 +163,12 @@ describe('Crash Recovery System', () => {
     const id1 = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'requeue-1' }
     });
 
     const id2 = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'requeue-2' }
     });
 
@@ -198,7 +193,6 @@ describe('Crash Recovery System', () => {
     const id = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { test: 'discard-test' }
     });
 

@@ -218,7 +218,6 @@ brain-confirmed: Got answer from brain.
     const queueId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'brain-dev-test/worker',
-      type: 'task',
       payload: {
         headline: 'Brain ask test',
         body: 'Ask brain about the project, then complete.',
@@ -231,7 +230,6 @@ brain-confirmed: Got answer from brain.
       id: queueId,
       agentId: 'brain-dev-test/worker',
       from: 'core/core',
-      type: 'task',
     });
 
     // 2. Wait for dev worker to spawn

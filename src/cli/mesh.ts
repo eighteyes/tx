@@ -518,7 +518,7 @@ async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void>
       console.log(`${chalk.bold(`Pending Messages: ${pendingMessages.length}`)}`);
       for (const msg of pendingMessages.slice(0, 5)) {
         const toAgent = msg.to_agent.split('/')[1];
-        console.log(`  ${chalk.dim('->')} ${chalk.cyan(toAgent)}: ${msg.type} (${formatTimeAgo(msg.created_at!)})`);
+        console.log(`  ${chalk.dim('->')} ${chalk.cyan(toAgent)}: ${(msg.payload?.headline as string) || 'message'} (${formatTimeAgo(msg.created_at!)})`);
       }
       if (pendingMessages.length > 5) {
         console.log(chalk.dim(`  ... and ${pendingMessages.length - 5} more`));
@@ -1376,8 +1376,12 @@ async function fsmStatus(meshName: string, flags: MeshFlags): Promise<void> {
       || `.ai/${meshName}/workspace`;
   }
 
-  if (workspaceDir && !path.isAbsolute(workspaceDir)) {
-    workspaceDir = path.join(cwd, workspaceDir);
+  if (workspaceDir) {
+    // Always resolve relative to cwd — FSM context workspace is a logical path,
+    // not a system absolute path. Prevents operations on arbitrary absolute paths.
+    workspaceDir = path.isAbsolute(workspaceDir)
+      ? path.join(cwd, workspaceDir.replace(/^\//, ''))
+      : path.join(cwd, workspaceDir);
   }
 
   // Build ordered state chain
@@ -3154,7 +3158,7 @@ async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise
           data: {
             from: msg.from_agent,
             to: msg.to_agent,
-            msgType: msg.type,
+            msgType: (msg.payload?.headline as string) || 'message',
             status: msg.status || 'unknown',
             headline: (payload as Record<string, unknown>).headline || '',
             id: msg.id,

@@ -117,7 +117,6 @@ success_signal: true
     const taskId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'simple-test/worker',
-      type: 'task',
       payload: {
         headline: 'Say hello',
         body: 'Please respond with a simple greeting.',
@@ -136,7 +135,6 @@ success_signal: true
     while (Date.now() - startTime < timeout) {
       // Check for completion message
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'simple-test/worker',
       });
 
@@ -171,7 +169,6 @@ success_signal: true
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'simple-test/worker',
-      type: 'task',
       payload: {
         headline: 'Session test',
         body: 'Please respond.',
@@ -185,7 +182,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'simple-test/worker',
       });
 

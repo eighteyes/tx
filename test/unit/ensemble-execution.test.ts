@@ -18,7 +18,6 @@ describe('EnsembleCoordinator', () => {
     mockTask = {
       from_agent: 'core/core',
       to_agent: 'test-mesh/agent-1',
-      type: 'task',
       payload: {
         'msg-id': 'task-1',
         body: 'Test task',

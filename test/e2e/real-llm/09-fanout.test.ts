@@ -119,7 +119,6 @@ describe('Real LLM Test: Fan-Out', { skip: !hasClaude }, () => {
       const queueId = queue.insert({
         from_agent: 'test-fan-out/planner',
         to_agent: `test-fan-out/${reviewer}`,
-        type: 'task',
         payload: {
           headline: `Review task for ${reviewer}`,
           body: 'Perform a brief code review. Write your findings. When done, write a message file with outcome: complete.',
@@ -131,7 +130,6 @@ describe('Real LLM Test: Fan-Out', { skip: !hasClaude }, () => {
         id: queueId,
         agentId: `test-fan-out/${reviewer}`,
         from: 'test-fan-out/planner',
-        type: 'task',
       });
     }
 

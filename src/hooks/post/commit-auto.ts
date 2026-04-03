@@ -45,7 +45,6 @@ const handler = async (context: HookContext, utils: HookUtils): Promise<void> =>
     utils.queue.insert({
       from_agent: 'hooks/commit',
       to_agent: commitAgentId,
-      type: 'task',
       payload: {
         'msg-id': `commit-task-${Date.now()}`,
         headline: 'Create commit for current changes',

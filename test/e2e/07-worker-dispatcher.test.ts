@@ -101,7 +101,6 @@ You are a test worker. When you receive a task, acknowledge it.`;
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: {
         headline: 'Test task',
         body: 'Please run the test'
@@ -128,7 +127,7 @@ You are a test worker. When you receive a task, acknowledge it.`;
     dispatcher.on('worker:spawn', () => {
       // Get the message type from queue
       const msg = queue.peekOne('test/worker');
-      spawnedType = msg?.type || null;
+      spawnedType = (msg?.payload?.headline as string) || null;
     });
 
     // Start dispatcher with mock consumer for event-driven dispatch
@@ -138,7 +137,6 @@ You are a test worker. When you receive a task, acknowledge it.`;
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'ask-response',
       payload: {
         headline: 'User response',
         body: 'Yes, proceed'
@@ -156,7 +154,7 @@ You are a test worker. When you receive a task, acknowledge it.`;
 
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    assert.strictEqual(spawnedType, 'ask-response', 'Should spawn worker for ask-response messages');
+    assert.strictEqual(spawnedType, 'User response', 'Should spawn worker for ask-response messages');
   });
 
   test('should track active workers', async () => {
@@ -171,7 +169,6 @@ You are a test worker. When you receive a task, acknowledge it.`;
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test/worker',
-      type: 'task',
       payload: { headline: 'Test', body: 'Test task' }
     });
 

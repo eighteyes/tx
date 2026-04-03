@@ -362,7 +362,6 @@ export class HeadlessRunner extends EventEmitter {
       this.queue.insert({
         from_agent: 'core/core',
         to_agent: agentId,
-        type: 'task',
         payload: {
           headline: 'Headless task',
           body: taskBody,
@@ -582,7 +581,6 @@ export class HeadlessRunner extends EventEmitter {
       this.queue.insert({
         from_agent: 'core/core',
         to_agent: agentId,
-        type: 'task',
         payload: {
           headline: `Quality iteration ${this.currentIteration}`,
           body: taskBody,
@@ -790,7 +788,6 @@ ${feedback}
       this.systemWriter.write({
         to: agentId,
         from: 'core/core',
-        type: 'task',
         headline: `Quality feedback - iteration ${this.currentIteration}`,
         body,
         extraFrontmatter: { headless: 'true' },

@@ -43,7 +43,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: 'prompt/command',
-        type: 'task',
         payload: {
           'msg-id': 'cmd-test-1',
           headline: 'Execute slash command',
@@ -84,7 +83,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: 'prompt/nocommand',
-        type: 'task',
         payload: {
           'msg-id': 'no-cmd-test',
           headline: 'Regular task',
@@ -123,7 +121,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: 'duplicate/worker',
-        type: 'task',
         payload: {
           'msg-id': 'dup-test',
           headline: 'Long task',
@@ -221,7 +218,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: 'events/error-test',
-        type: 'task',
         payload: {
           'msg-id': 'error-trigger',
           headline: 'Trigger SDK',
@@ -271,7 +267,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: 'kill/abort-test',
-        type: 'task',
         payload: {
           'msg-id': 'abort-trigger',
           headline: 'Long running task',
@@ -309,8 +304,7 @@ describe('V4 SDK Lifecycle Tests', () => {
         queue.insert({
           from_agent: 'core/core',
           to_agent: workerId,
-          type: 'task',
-          payload: {
+            payload: {
             'msg-id': `batch-${i}`,
             headline: `Task ${i}`,
             body: `Batch task ${i}`
@@ -327,7 +321,6 @@ describe('V4 SDK Lifecycle Tests', () => {
         queue.insert({
           from_agent: msg.from_agent,
           to_agent: msg.to_agent,
-          type: msg.type,
           payload: msg.payload
         });
       }
@@ -359,7 +352,6 @@ describe('V4 SDK Lifecycle Tests', () => {
       queue.insert({
         from_agent: 'test/sender',
         to_agent: workerId,
-        type: 'task',
         payload: {
           'msg-id': 'context-full',
           headline: 'Full Context Task',

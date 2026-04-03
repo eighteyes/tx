@@ -60,7 +60,7 @@ What is your name?
     // Core should receive the ask-human
     const messages = queue.poll('core/core');
     assert.strictEqual(messages.length, 1, 'Core should receive 1 message');
-    assert.strictEqual(messages[0].type, 'ask-human');
+    assert.strictEqual(messages[0].to_agent, 'core/core');
     assert.strictEqual(messages[0].from_agent, 'test-ask-human-halt/worker');
     assert.ok(
       (messages[0].payload.body as string)?.includes('name'),
@@ -73,7 +73,6 @@ What is your name?
     queue.insert({
       from_agent: 'test-ask-human-halt/worker',
       to_agent: 'core/core',
-      type: 'ask-human',
       payload: {
         'msg-id': 'q1',
         headline: 'Need user input',
@@ -89,7 +88,6 @@ What is your name?
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-ask-human-halt/worker',
-      type: 'ask-response',
       payload: {
         'msg-id': 'r1',
         headline: 'User response',
@@ -100,7 +98,7 @@ What is your name?
     // Worker should receive the response
     const workerMessages = queue.poll('test-ask-human-halt/worker');
     assert.strictEqual(workerMessages.length, 1, 'Worker should receive 1 message');
-    assert.strictEqual(workerMessages[0].type, 'ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.ok(
       (workerMessages[0].payload.body as string)?.includes('Alice'),
@@ -131,7 +129,7 @@ Should I proceed with the task?
     // Step 2: Verify core received it
     const coreMessages = queue.poll('core/core');
     assert.strictEqual(coreMessages.length, 1);
-    assert.strictEqual(coreMessages[0].type, 'ask-human');
+    assert.strictEqual(coreMessages[0].to_agent, 'core/core');
 
     // Step 3: Core sends response via file
     const responseFile = path.join(env.msgsDir, `${timestamp + 1}-ask-response-core-core--test-ask-human-halt-worker-hitl1-r.md`);
@@ -153,7 +151,7 @@ Yes, proceed with the task.
     // Step 4: Worker receives response
     const workerMessages = queue.poll('test-ask-human-halt/worker');
     assert.strictEqual(workerMessages.length, 1);
-    assert.strictEqual(workerMessages[0].type, 'ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.ok(
       (workerMessages[0].payload.body as string)?.includes('proceed'),
       'Response should contain confirmation'
@@ -334,7 +332,7 @@ What should I do next?
     // Core should receive it as ask-human (inferred)
     const coreMessages = queue.poll('core/core');
     assert.strictEqual(coreMessages.length, 1, 'Core should receive 1 message');
-    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Type should be inferred as ask-human');
+    assert.strictEqual(coreMessages[0].to_agent, 'core/core');
     assert.strictEqual(coreMessages[0].from_agent, 'test-ask-human-halt/worker');
   });
 
@@ -361,7 +359,7 @@ Proceed with implementation.
     // Worker should receive it as ask-response (inferred)
     const workerMessages = queue.poll('test-ask-human-halt/worker');
     assert.strictEqual(workerMessages.length, 1, 'Worker should receive 1 message');
-    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Type should be inferred as ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.strictEqual(workerMessages[0].from_agent, 'core/core');
   });
 
@@ -386,7 +384,7 @@ Should I proceed?
     // Step 2: Verify core received it as ask-human
     const coreMessages = queue.poll('core/core');
     assert.strictEqual(coreMessages.length, 1);
-    assert.strictEqual(coreMessages[0].type, 'ask-human', 'Should be inferred as ask-human');
+    assert.strictEqual(coreMessages[0].to_agent, 'core/core');
 
     // Step 3: Core responds WITHOUT type field (inferred from core/core)
     const responseFile = path.join(env.msgsDir, `${timestamp + 1}-tbd-core-core--test-ask-human-halt-worker-tbd3-r.md`);
@@ -405,7 +403,7 @@ Yes, proceed.
     // Step 4: Worker receives response
     const workerMessages = queue.poll('test-ask-human-halt/worker');
     assert.strictEqual(workerMessages.length, 1);
-    assert.strictEqual(workerMessages[0].type, 'ask-response', 'Should be inferred as ask-response');
+    assert.strictEqual(workerMessages[0].from_agent, 'core/core');
     assert.ok(
       (workerMessages[0].payload.body as string)?.includes('proceed'),
       'Response should contain confirmation'

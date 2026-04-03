@@ -1022,7 +1022,6 @@ export interface SituationalContext {
   /** Messages queued for this agent to process */
   pendingTasks: Array<{
     from_agent: string;
-    type: string;
     created_at?: number;
     payload?: { headline?: string };
   }>;

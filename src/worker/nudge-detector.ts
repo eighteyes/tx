@@ -136,7 +136,6 @@ export class NudgeDetector {
       this.writer.write({
         to: 'core/core',
         from: 'system/nudge-detector',
-        type: 'system',
         headline: `Routing failure: ${agentId} has no resolvable route`,
         body: `Agent \`${agentId}\` completed but no route could be resolved for any outcome.\n\nValid outcomes: ${JSON.stringify(validOutcomes)}\n\nThis likely indicates a mesh config issue — the agent's routing entry doesn't match what the agent actually emits.`,
       });
@@ -190,8 +189,8 @@ export class NudgeDetector {
       this.writer.write({
         to: 'core/core',
         from: `system/nudge-detector`,
-        type: 'task-complete',
         headline: `${agentId} completed (auto-forwarded)`,
+        extraFrontmatter: { status: 'complete' },
         body: `Agent \`${agentId}\` completed without writing a routing message. Last output:\n\n${snapshot.output.slice(0, 4000)}`,
       });
       return;
@@ -324,7 +323,6 @@ export class NudgeDetector {
     this.writer.write({
       to: target,
       from: 'system/nudge-detector',
-      type: 'task',
       headline: `Recovery: ${agentId} completed without forwarding`,
       body: `# Auto-Recovery: Stalled Route
 

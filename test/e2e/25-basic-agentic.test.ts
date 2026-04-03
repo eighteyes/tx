@@ -133,7 +133,6 @@ success_signal: true
     const taskId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'simple-responder/worker',
-      type: 'task',
       payload: {
         headline: 'Basic test',
         body: 'Please acknowledge this message.',
@@ -150,7 +149,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'simple-responder/worker',
       });
 
@@ -160,7 +158,7 @@ success_signal: true
 
         // Verify we got a response
         assert.ok(msg.payload, 'Response should have payload');
-        assert.strictEqual(msg.type, 'task-complete', 'Should be task-complete type');
+        assert.ok(msg.payload?.body || msg.payload?.headline, 'Should have response content');
         break;
       }
 
@@ -177,7 +175,6 @@ success_signal: true
     const taskId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-echo/echo',
-      type: 'task',
       payload: {
         headline: 'Echo test',
         body: testMessage,
@@ -194,7 +191,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'test-echo/echo',
       });
 

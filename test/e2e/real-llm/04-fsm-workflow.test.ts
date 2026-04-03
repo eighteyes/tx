@@ -204,7 +204,6 @@ success_signal: true
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'fsm-workflow/planner',
-      type: 'task',
       payload: {
         headline: 'FSM workflow test',
         body: 'Create a plan and implement it.',
@@ -218,7 +217,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const plannerMessages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'fsm-workflow/planner',
       });
 
@@ -227,7 +225,6 @@ success_signal: true
 
         // Check for implementer completion
         const implMessages = queue.queryMessages({
-          type: 'task-complete',
           from_agent: 'fsm-workflow/implementer',
         });
 

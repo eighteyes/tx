@@ -184,7 +184,6 @@ describe('Session Continuation E2E Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: agentId,
-        type: 'task',
         payload: { headline: `Task ${i}`, body: `Work ${i}` },
       });
     }
@@ -292,7 +291,6 @@ describe('Session Continuation E2E Tests', () => {
       queue.insert({
         from_agent: 'core/core',
         to_agent: agentId,
-        type: 'task',
         payload: { headline: `Task ${i + 1}`, body: `Do task ${i + 1}` },
       });
 
@@ -308,7 +306,6 @@ describe('Session Continuation E2E Tests', () => {
       queue.insert({
         from_agent: agentId,
         to_agent: 'core/core',
-        type: 'task-complete',
         payload: { headline: `Task ${i + 1} complete`, body: `Finished task ${i + 1}` },
       });
     }
@@ -328,7 +325,6 @@ describe('Session Continuation E2E Tests', () => {
     queue.insert({
       from_agent: agentId,
       to_agent: 'core/core',
-      type: 'ask-human',
       payload: { headline: 'Need input', body: 'What should I do?' },
     });
 
@@ -339,7 +335,6 @@ describe('Session Continuation E2E Tests', () => {
     queue.insert({
       from_agent: 'core/core',
       to_agent: agentId,
-      type: 'ask-response',
       payload: { headline: 'User response', body: 'Continue' },
     });
 

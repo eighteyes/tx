@@ -119,7 +119,6 @@ describe('Real LLM Test: Parallelism', { skip: !hasClaude }, () => {
     const queueId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'test-parallelism/preload',
-      type: 'task',
       payload: {
         headline: 'Parallel test',
         body: 'Analyze the project structure.',
@@ -132,7 +131,6 @@ describe('Real LLM Test: Parallelism', { skip: !hasClaude }, () => {
       id: queueId,
       agentId: 'test-parallelism/preload',
       from: 'core/core',
-      type: 'task',
     });
 
     // 2. Wait for parallel:spawn — confirms preload completed and parallel agents launched

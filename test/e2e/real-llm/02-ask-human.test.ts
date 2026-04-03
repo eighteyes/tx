@@ -155,7 +155,6 @@ describe('Real LLM Test: Ask-Human Flow', { skip: !hasClaude }, () => {
     const queueId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'hitl-test/worker',
-      type: 'task',
       payload: {
         headline: 'Ask name test',
         body: 'Ask the user for their name, then greet them.',
@@ -168,7 +167,6 @@ describe('Real LLM Test: Ask-Human Flow', { skip: !hasClaude }, () => {
       id: queueId,
       agentId: 'hitl-test/worker',
       from: 'core/core',
-      type: 'task',
     });
 
     // 2. Wait for the worker to send an ask-human (detected via core-message from file poller)
@@ -207,7 +205,6 @@ describe('Real LLM Test: Ask-Human Flow', { skip: !hasClaude }, () => {
 
     // Check the ask-human message in the queue
     const askMessages = queue.queryMessages({
-      type: 'ask-human',
       from_agent: 'hitl-test/worker',
     });
     console.log(`[LLM] ask-human messages in queue: ${askMessages.length}`);
@@ -216,7 +213,6 @@ describe('Real LLM Test: Ask-Human Flow', { skip: !hasClaude }, () => {
     const responseId = queue.insert({
       from_agent: 'core/core',
       to_agent: 'hitl-test/worker',
-      type: 'ask-response',
       payload: {
         headline: 'User response',
         body: 'My name is Alice.',
@@ -229,7 +225,6 @@ describe('Real LLM Test: Ask-Human Flow', { skip: !hasClaude }, () => {
       id: responseId,
       agentId: 'hitl-test/worker',
       from: 'core/core',
-      type: 'ask-response',
     });
 
     // 4. Wait for worker to resume and complete

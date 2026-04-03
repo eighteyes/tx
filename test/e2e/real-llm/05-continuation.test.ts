@@ -121,7 +121,6 @@ success_signal: true
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'continuation-test/worker',
-      type: 'task',
       payload: {
         headline: 'Remember word',
         body: 'Remember the secret word: PINEAPPLE',
@@ -135,7 +134,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'continuation-test/worker',
       });
 
@@ -166,7 +164,6 @@ success_signal: true
     queue.insert({
       from_agent: 'core/core',
       to_agent: 'continuation-test/worker',
-      type: 'task',
       payload: {
         headline: 'Follow-up task',
         body: 'What was the previous task about?',
@@ -180,7 +177,6 @@ success_signal: true
 
     while (Date.now() - startTime < timeout) {
       const messages = queue.queryMessages({
-        type: 'task-complete',
         from_agent: 'continuation-test/worker',
       });
 

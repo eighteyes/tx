@@ -68,7 +68,7 @@ describe('V4 Write Messaging Integration Test', () => {
     // Verify routing
     assert.strictEqual(msg.from_agent, sender, 'from_agent should match sender');
     assert.strictEqual(msg.to_agent, recipient, 'to_agent should match recipient');
-    assert.strictEqual(msg.type, 'task', 'type should be task');
+    assert.ok(msg.payload, 'Should have payload');
 
     // Verify payload contains body
     const body = msg.payload.body as string;

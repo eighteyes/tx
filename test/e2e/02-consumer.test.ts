@@ -63,7 +63,7 @@ describe('V4 Consumer Test', () => {
     assert.ok(msg, 'Should find the test message');
     assert.strictEqual(msg.from_agent, 'core/core');
     assert.strictEqual(msg.to_agent, 'dev/dev');
-    assert.strictEqual(msg.type, 'task');
+    assert.ok(msg.payload, 'Should have payload');
   });
 
   it('should extract frontmatter fields correctly', async () => {
@@ -85,7 +85,7 @@ describe('V4 Consumer Test', () => {
     assert.ok(msg, 'Should find the update message');
     assert.strictEqual(msg.from_agent, 'sender/agent');
     assert.strictEqual(msg.to_agent, 'receiver/agent');
-    assert.strictEqual(msg.type, 'update');
+    assert.ok(msg.payload, 'Should have payload');
     assert.ok(msg.payload.body, 'Should have body in payload');
   });
 

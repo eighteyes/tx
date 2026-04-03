@@ -33,7 +33,7 @@ function formatRelativeTime(timestamp: number): string {
  * Format message for display
  */
 function formatMessage(msg: Message): string {
-  const headline = msg.payload?.headline as string || msg.type;
+  const headline = msg.payload?.headline as string || 'message';
   const from = msg.from_agent;
   const to = msg.to_agent;
   const created = msg.created_at ? formatRelativeTime(msg.created_at) : 'unknown';
@@ -71,7 +71,7 @@ async function showRecoveryStatus(queue: MessageQueue, options: RecoverOptions):
         id: m.id,
         from: m.from_agent,
         to: m.to_agent,
-        type: m.type,
+        type: (m.payload?.headline as string) || 'message',
         headline: m.payload?.headline,
         createdAt: m.created_at,
       })),
