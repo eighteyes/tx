@@ -91,7 +91,7 @@ export class MessageQueue {
     // Cache prepared statements
     this.insertStmt = this.db.prepare(`
       INSERT INTO messages (from_agent, to_agent, type, payload, source_file, created_at)
-      VALUES (?, ?, NULL, ?, ?, ?)
+      VALUES (?, ?, 'message', ?, ?, ?)
     `);
 
     this.selectPendingStmt = this.db.prepare(`
