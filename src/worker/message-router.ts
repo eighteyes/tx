@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  * - Handling incoming worker messages (triggering spawns)
- * - Managing ask/ask-response flow
+ * - Managing resume flow
  * - Handling message revisions (interrupt + resume)
  * - Handling parity reminders
  * - Managing suspended sessions
@@ -27,8 +27,7 @@ import type {
   ActiveWorker,
   SuspendedSession,
   RevisionMessageEvent,
-  AskMessageEvent,
-  AskResponseMessageEvent,
+  WorkerResumeEvent,
   ParityReminderEvent,
   FrontmatterMiddleware,
   FrontmatterContext,
@@ -280,8 +279,8 @@ export class MessageRouter extends EventEmitter {
    * 3. For ask-human: kill the worker (will resume on response)
    * 4. Set up timeout for await
    */
-  async handleAskMessage(event: AskMessageEvent): Promise<void> {
-    const { from: senderAgentId, to: targetAgentId, type: messageType } = event;
+  async handleAskMessage(event: { from: string; to: string; content?: string; headline?: string }): Promise<void> {
+    const { from: senderAgentId, to: targetAgentId } = event;
 
     const activeWorker = this.deps.getActiveWorker(senderAgentId);
     if (!activeWorker) {
@@ -306,22 +305,7 @@ export class MessageRouter extends EventEmitter {
     }
 
     try {
-      // ask-human is fire-and-forget - don't add to awaitingResponses
-      if (messageType === 'ask-human') {
-        log.warn('deprecated-message-type', `Legacy type="ask-human" used; boundary inference handles this`, { type: messageType, file: 'message-router.ts', detail: 'Use human: true frontmatter instead' });
-        log.info('message-router', `ask-human sent (fire-and-forget, no await)`, {
-          from: senderAgentId,
-          to: targetAgentId,
-        });
-
-        // Handle ask-human: kill worker and suspend session
-        await this.handleAskHuman(senderAgentId, targetAgentId, sessionId, runner, machine);
-
-        this.emit('worker:ask-human', {
-          workerId: senderAgentId,
-          target: targetAgentId,
-        });
-      } else if (currentStatus === 'awaiting') {
+      if (currentStatus === 'awaiting') {
         // Already awaiting, add this target to the set
         log.info('message-router', `Adding await target`, {
           from: senderAgentId,
@@ -334,7 +318,6 @@ export class MessageRouter extends EventEmitter {
         log.debug('message-router', `Worker entering await state`, {
           from: senderAgentId,
           to: targetAgentId,
-          type: messageType,
           sessionId: sessionId.slice(0, 8),
         });
         await machine.enterAwait(targetAgentId, sessionId);
@@ -350,7 +333,6 @@ export class MessageRouter extends EventEmitter {
           workerId: senderAgentId,
           targets: [targetAgentId],
           sessionId,
-          type: messageType,
         });
       } else {
         log.warn('message-router', `Cannot await from current state`, {
@@ -434,13 +416,13 @@ export class MessageRouter extends EventEmitter {
   }
 
   // ===========================================================================
-  // Ask-Response Handling
+  // Resume Handling
   // ===========================================================================
 
   /**
-   * Handle ask-response message - resume awaiting worker
+   * Handle resume message - resume awaiting worker
    */
-  async handleAskResponse(event: AskResponseMessageEvent): Promise<void> {
+  async handleResume(event: WorkerResumeEvent): Promise<void> {
     const { from: respondingAgentId, to: awaitingAgentId, content } = event;
 
     // Check for suspended session (killed due to ask-human)
