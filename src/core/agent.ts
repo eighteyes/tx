@@ -108,31 +108,18 @@ export class CoreAgent extends EventEmitter {
   }
 
   private async handleMessage(msg: Message): Promise<void> {
-    console.log(`\n[core] ← ${msg.type} from ${msg.from_agent}`);
+    const payload = msg.payload || {};
+    const isCompletion = payload.status === 'complete' || payload.outcome === 'complete';
 
-    if (msg.type === 'ask-human' || msg.type === 'task-complete' || msg.type === 'ask') {
-      log.warn('deprecated-message-type', `Legacy type="${msg.type}" used in agent switch`, { type: msg.type, file: 'agent.ts', detail: 'Use boundary inference instead of explicit type field' });
-    }
-
-    switch (msg.type) {
-      case 'ask-human':
-        await this.handleAskHuman(msg);
-        break;
-
-      case 'task':
-        await this.handleTask(msg);
-        break;
-
-      case 'task-complete':
-        await this.handleTaskComplete(msg);
-        break;
-
-      case 'ask':
-        await this.routeMessage(msg);
-        break;
-
-      default:
-        console.log(`[core] Unhandled type: ${msg.type}`);
+    if (isCompletion) {
+      console.log(`\n[core] ← completion from ${msg.from_agent}`);
+      await this.handleTaskComplete(msg);
+    } else if (msg.to_agent === 'core/core' && msg.from_agent !== 'core/core') {
+      console.log(`\n[core] ← message from ${msg.from_agent}`);
+      await this.handleAskHuman(msg);
+    } else {
+      console.log(`\n[core] ← routing ${msg.from_agent} → ${msg.to_agent}`);
+      await this.routeMessage(msg);
     }
   }
 
@@ -151,11 +138,10 @@ export class CoreAgent extends EventEmitter {
     // Get user input
     const response = await this.promptUser('\n> Your response: ');
 
-    // Send ask-response back to the agent
+    // Send response back to the agent
     this.queue.insert({
       from_agent: 'core/core',
       to_agent: msg.from_agent,
-      type: 'ask-response',
       payload: {
         'msg-id': `response-${Date.now()}`,
         headline: 'User response',
@@ -164,7 +150,7 @@ export class CoreAgent extends EventEmitter {
       },
     });
 
-    console.log(`[core] → ask-response to ${msg.from_agent}\n`);
+    console.log(`[core] → response to ${msg.from_agent}\n`);
   }
 
   /**
@@ -332,7 +318,6 @@ export class CoreAgent extends EventEmitter {
     const messageContent = `---
 to: ${agentId}
 from: core/core
-type: task
 msg-id: ${msgId}
 headline: ${headline}
 timestamp: ${new Date().toISOString()}
