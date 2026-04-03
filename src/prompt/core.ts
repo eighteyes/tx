@@ -222,20 +222,20 @@ When meshes get stuck, blocked, or need intervention, use these commands:
 - \`tx mesh status <mesh>\` - Detailed view: FSM state, workers, pending asks
 - \`tx mesh clear <mesh>\` - Clear SQLite state (suspended sessions, pending asks, FSM)
 - \`tx mesh kill <mesh> [agent]\` - Kill workers (all in mesh, or specific agent)
-- \`tx mesh resolve <msg-id> "<response>"\` - Answer a stuck ask-human message
+- \`tx mesh resolve <msg-id> "<response>"\` - Answer a stuck agent question
 - \`tx mesh fsm-goto <mesh> <state>\` - Force FSM to a specific state
 - \`tx mesh unstick <mesh>\` - Drain pending queue, preserve FSM state (lighter than clear)
 - \`tx mesh drain <mesh>\` - Mark queued messages delivered, unblock jammed queue
 - \`tx mesh fsm-reset <mesh>\` - Reset FSM to initial state, preserve sessions and asks
 
 **When to use:**
-- \`ask-human\` messages piling up → \`tx mesh resolve\`
+- Suspended agents piling up → \`tx mesh resolve\`
 - Agent stuck/spinning → \`tx mesh kill\`
 - FSM in wrong state, want to preserve sessions → \`tx mesh fsm-reset\` or \`tx mesh fsm-goto\`
 - Queue jammed, FSM correct → \`tx mesh unstick\` or \`tx mesh drain\`
 - Need fresh start → \`tx mesh clear\`
 
-**Example: Resolve a stuck ask-human:**
+**Example: Resolve a suspended agent:**
 \`\`\`bash
 tx mesh status narrative-engine  # Find the msg-id
 tx mesh resolve ask-123 "Approved, continue with the plan"
@@ -349,7 +349,7 @@ tx mesh recover <mesh>                    # Resume from crash point
 tx mesh recover <mesh> --rewind-to=build  # Rewind to state checkpoint
 tx mesh health                            # SLI, breakers, safe mode
 tx mesh dlq                               # All DLQ entries
-tx mesh resolve <msg-id> "response"       # Resume stuck ask-human
+tx mesh resolve <msg-id> "response"       # Resume stuck agent question
 tx mesh kill <mesh> [agent]               # Kill workers (all or specific)
 tx mesh unstick <mesh>                    # Drain pending, preserve FSM
 tx mesh drain <mesh>                      # Mark messages delivered, unblock queue
@@ -373,7 +373,7 @@ tx mesh fsm-goto <mesh> <state>           # Force FSM to specific state
 
 ## How to Start Work
 
-Write a \`task\` message to trigger a worker:
+Write a message to trigger a worker:
 
 \`\`\`markdown
 ---
@@ -395,7 +395,7 @@ Add \`inject-response: true\` to auto-inject the mesh response into this session
 inject-response: true
 \`\`\`
 
-Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
+Save to: \`${msgsDir}/{timestamp}-core--test-worker-{id}.md\`
 
 ## Worktree-Enabled Meshes
 
@@ -504,9 +504,9 @@ User requested: /know:add auth-system
 
 When the tx-context system reminder shows incoming messages, **ALWAYS mention them to the user immediately**. Do not stay silent.
 
-- **task-complete messages**: Briefly summarize what finished (e.g., "Echo test came back successfully")
+- **Completion messages** (\`status: complete\`): Briefly summarize what finished (e.g., "Echo test came back successfully")
 - **error messages**: Read the error file and report the issue (e.g., "Consumer error: missing mesh-id for parallel spawn")
-- **ask-human messages**: Present the question to the user and await their response
+- **Agent questions** (\`human: true\`): Present the question to the user and await their response
 - **Any other messages**: Acknowledge receipt and summarize
 
 The user cannot see the tx-context — you are their only window into what the system is doing. Silence when messages arrive is confusing and unhelpful.
@@ -518,12 +518,12 @@ The user cannot see the tx-context — you are their only window into what the s
 
 ### Output Format Field
 
-Workers may include a \`format\` field in task-complete frontmatter:
+Workers may include a \`format\` field in completion frontmatter:
 
 - \`format: verbatim\` - Display the body as-is with markdown rendering. Use for prose, formatted output, or content that should not be summarized.
 - No format field - Summarize or acknowledge as appropriate.
 
-## Example ask-response:
+## Example response to agent:
 
 \`\`\`markdown
 ---
