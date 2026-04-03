@@ -181,7 +181,6 @@ The gap report has been written with best-effort analysis. The mesh will proceed
         context.systemWriter.write({
           to: 'core/core',
           from: `${context.meshName}/${context.agentName}`,
-          type: 'ask',
           headline: 'Discovery agent needs project clarification',
           body: askBody,
         });
@@ -190,7 +189,7 @@ The gap report has been written with best-effort analysis. The mesh will proceed
         const msgId = `discovery-ask-${context.taskId || Date.now()}`;
         const msgsDir = context.msgsDir || path.join(workDir, '.ai', 'tx', 'msgs');
         const filename = `${timestamp}-ask-${context.meshName}-${context.agentName}--core-core-${msgId}.md`;
-        const content = `---\nto: core/core\nfrom: ${context.meshName}/${context.agentName}\ntype: ask\nmsg-id: ${msgId}\nheadline: Discovery agent needs project clarification\ntimestamp: ${new Date().toISOString()}\nhuman: true\n---\n\n${askBody}\n`;
+        const content = `---\nto: core/core\nfrom: ${context.meshName}/${context.agentName}\nmsg-id: ${msgId}\nheadline: Discovery agent needs project clarification\ntimestamp: ${new Date().toISOString()}\nhuman: true\n---\n\n${askBody}\n`;
         fs.writeFileSync(path.join(msgsDir, filename), content, 'utf-8');
       }
     }

@@ -223,13 +223,12 @@ The workspace and gap report are preserved at: \`.ai/tx/workspaces/${meshName}/\
         context.systemWriter.write({
           to: 'core/core',
           from: `${meshName}/validation`,
-          type: 'ask',
           headline: `UI completion stalled after ${iteration} iteration${iteration === 1 ? '' : 's'} — ${gapCount} gap(s) remain`,
           body: escalationBody,
         });
       } else {
         const filename = `${timestamp}-ask-${meshName}-validation--core-core-${msgId}.md`;
-        const content = `---\nto: core/core\nfrom: ${meshName}/validation\ntype: ask\nmsg-id: ${msgId}\nheadline: UI completion stalled after ${iteration} iteration${iteration === 1 ? '' : 's'} — ${gapCount} gap(s) remain\ntimestamp: ${new Date().toISOString()}\nhuman: true\n---\n\n${escalationBody}\n`;
+        const content = `---\nto: core/core\nfrom: ${meshName}/validation\nmsg-id: ${msgId}\nheadline: UI completion stalled after ${iteration} iteration${iteration === 1 ? '' : 's'} — ${gapCount} gap(s) remain\ntimestamp: ${new Date().toISOString()}\nhuman: true\n---\n\n${escalationBody}\n`;
         fs.writeFileSync(path.join(msgsDir, filename), content, 'utf-8');
       }
 

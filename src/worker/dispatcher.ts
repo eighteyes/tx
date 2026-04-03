@@ -45,6 +45,7 @@ import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
 import { BashGuard } from './bash-guard.ts';
+import { MessageGate } from './message-gate.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { GuardrailKillHandler } from './guardrail-kill-handler.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables, resolveManifestPath } from './manifest-validator.ts';
@@ -743,7 +744,6 @@ export class WorkerDispatcher extends EventEmitter {
           this.systemWriter?.write({
             to: 'core/core',
             from: fromAgentId,
-            type: 'info',
             headline: `Budget kill: ${agentName} hit max_messages (${worker.messagesSent.length}/${maxMessages})`,
             body: `Agent \`${fromAgentId}\` was killed after sending ${worker.messagesSent.length} messages (limit: ${maxMessages}).\n\nDestinations: ${worker.messagesSent.map(m => m.to).join(', ')}\n\nThis agent's work was forcibly terminated. Downstream agents may not have received expected input.`,
           });
@@ -1428,11 +1428,10 @@ export class WorkerDispatcher extends EventEmitter {
       killAgent: (agentId: string, reason: string) => {
         return this.workerLifecycle.killForAgent(agentId, reason);
       },
-      requeueMessage: (from: string, to: string, type: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => {
+      requeueMessage: (from: string, to: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => {
         this.systemWriter.write({
           from,
           to,
-          type,
           headline: (payload.headline as string) || 'DLQ recovery',
           body: (payload.body as string) || '',
           extraFrontmatter: { ...extraFrontmatter, ...Object.fromEntries(
@@ -2040,7 +2039,6 @@ export class WorkerDispatcher extends EventEmitter {
           this.systemWriter.write({
             to: targetAgentId,
             from: 'system/fan-out',
-            type: 'task',
             headline: `Free mode fan-out from ${pendingMsg?.from_agent || 'core/core'}`,
             body: String(body),
           });
@@ -3427,7 +3425,6 @@ The system will resume your session when the human responds.`;
         this.systemWriter.write({
           to: 'core/core',
           from: `${meshName}/manifest-resolver`,
-          type: 'error',
           headline: 'Manifest deadlock detected',
           body: message,
         });
@@ -3449,10 +3446,10 @@ The system will resume your session when the human responds.`;
           this.systemWriter.write({
             to: 'core/core',
             from: `${meshName}/manifest-resolver`,
-            type: 'task-complete',
             headline: 'Mesh completed',
             body: 'All manifest pipeline agents have completed successfully.',
             injectResponse: true,
+            extraFrontmatter: { status: 'complete' },
           });
         }
         this.clearMeshState(meshName);
@@ -3544,10 +3541,10 @@ The system will resume your session when the human responds.`;
         this.systemWriter.write({
           to: 'core/core',
           from: `${meshName}/manifest-resolver`,
-          type: 'task-complete',
           headline: 'Mesh completed',
           body: `Completion agent '${agentName}' has finished.`,
           injectResponse: true,
+          extraFrontmatter: { status: 'complete' },
         });
       }
       this.clearMeshState(meshName);
@@ -3971,7 +3968,6 @@ Please advise the agent or check mesh configuration.`;
           this.systemWriter?.write({
             to: 'core/core',
             from: agentId,
-            type: 'info',
             headline: `Budget kill: ${agent.name} hit max_invocations (${invocationCount}/${maxInvocations})`,
             body: `Agent \`${agentId}\` was denied spawn — invocation limit reached (${invocationCount}/${maxInvocations}).\n\nThis agent has been re-invoked too many times in this mesh run. The iteration loop may be stuck.\n\nConsider: reviewing rejection patterns, increasing the limit, or manually intervening.`,
           });
@@ -4566,6 +4562,29 @@ Please advise the agent or check mesh configuration.`;
             level: this.reliability.safeMode.getLevel(meshName!),
           });
         }
+      }
+
+      // Message gate: enforce max_messages at write time (prevents chokidar race)
+      const maxMessages = this.guardrails.getMaxMessages(meshName!, agent.name) ?? (agent as any).max_messages ?? null;
+      if (maxMessages != null) {
+        const messageGate = new MessageGate({
+          agentId,
+          msgsDir: this.config.msgsDir,
+          maxMessages,
+          mode: this.guardrails.getMode('max_messages', meshName!, agent.name),
+          killRunner: (reason: string) => {
+            const workers = this.workerLifecycle.getForAgent(agentId);
+            for (const w of workers) {
+              w.runner.kill(reason);
+            }
+          },
+        });
+        preToolUseHooks.push(messageGate.createHook());
+        log.debug('message-gate', 'Message gate enabled', {
+          agentId,
+          maxMessages,
+          mode: this.guardrails.getMode('max_messages', meshName!, agent.name),
+        });
       }
 
       // Orchestrator gate: restrict Write to msgs dir only
@@ -5517,7 +5536,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.systemWriter?.write({
               to: 'core/core',
               from: agentId,
-              type: 'error',
               headline: `Postcondition validation failed: ${agent.name}`,
               body: `Agent \`${agentId}\` failed postcondition validation in strict mode.\n\n**Error**: ${data.error}\n\nThe mesh has been halted. Review the agent's postcondition configuration and ensure the agent performs the required actions.`,
             });
@@ -5565,7 +5583,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.systemWriter?.write({
               to: 'core/core',
               from: agentId,
-              type: 'error',
               headline: `Cascade halt: ${agent.name} instant-exited ${failCount} times`,
               body: `Agent \`${agentId}\` has instant-exited ${failCount} consecutive times (0 tool calls, <10s duration).\n\n` +
                 `The mesh has been halted to prevent infinite respawn loops.\n\n` +
@@ -5672,7 +5689,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.systemWriter?.write({
               to: 'core/core',
               from: agentId,
-              type: 'info',
               headline: `Budget exhausted: ${agent.name} hit max_turns (${totalTurns}/${runnerConfig.maxTurns})`,
               body: `Agent \`${agentId}\` completed after using all ${runnerConfig.maxTurns} turns. Its work may be incomplete.\n\n**Output summary** (last 500 chars):\n\`\`\`\n${(data.output || '').slice(-500)}\n\`\`\`\n\nConsider increasing \`max_turns\` for this agent or reviewing its task scope.`,
             });
@@ -5697,7 +5713,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
             this.systemWriter?.write({
               to: 'core/core',
               from: agentId,
-              type: 'info',
               headline: `Context saturated: ${agent.name} used ${Math.round(inputRatio * 100)}% of context window on input`,
               body: `Agent \`${agentId}\` completed without sending any messages. It consumed ~${Math.round(totalInput / 1000)}K of ~${MODEL_CONTEXT_WINDOW / 1000}K context tokens on input (system prompt + loaded files), leaving limited space for output.\n\nSystem prompt: ~${Math.round(systemPrompt.length / 4000)}K tokens\nOutput generated: ~${Math.round(totalOutput / 1000)}K tokens\n\nThis agent likely couldn't fit its full workflow into the remaining context. Consider:\n- Reducing the system prompt size\n- Splitting the task across multiple agents\n- Reducing file preloads\n- Starting a fresh session (clean context window)`,
             });
@@ -5993,7 +6008,6 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.systemWriter?.write({
             to: 'core/core',
             from: agentId,
-            type: 'info',
             headline: `Budget exhausted: ${agent.name} hit max_turns`,
             body: `Agent \`${agentId}\` was stopped after reaching its max_turns limit. Its work may be incomplete.\n\nConsider increasing \`max_turns\` for this agent or reviewing its task scope.`,
           });
@@ -6651,7 +6665,6 @@ ${output}
           this.systemWriter.write({
             to: exitAgentId,
             from: 'system',
-            type: 'task',
             headline: `All parallel agents completed`,
             body: `Parallel block complete. Agents finished: ${completedList.join(', ')}`,
           });
@@ -6670,7 +6683,6 @@ ${output}
     this.systemWriter.write({
       to: `${meshName}/${agentName}`,
       from: 'system',
-      type: 'task',
       headline: `Parallel fork from ${entryAgent}`,
       body: `Forked from parallel entry: ${entryAgent}`,
     });
@@ -7201,7 +7213,6 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
       this.systemWriter.write({
         to: 'brain/brain',
         from: 'core/core',
-        type: 'task',
         headline: `Analyze mesh run - ${meshName}`,
         body: taskBody,
       });
@@ -7353,7 +7364,6 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
     this.systemWriter.write({
       to: agentId,
       from: 'system/routing-validator',
-      type: 'message',
       headline: 'Routing violation - use correct agent name',
       body: feedback,
       ...(lastSessionId ? { extraFrontmatter: { 'session-id': lastSessionId } } : {}),
@@ -7462,7 +7472,6 @@ Routes to \`core/core\` or other meshes are always permitted.`;
     this.systemWriter.write({
       to: agentId,
       from: 'system/fsm-validator',
-      type: 'message',
       headline: 'Routing violation - use correct agent name',
       body: feedback,
       ...(lastSessionId ? { extraFrontmatter: { 'session-id': lastSessionId } } : {}),

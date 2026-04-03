@@ -570,7 +570,6 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     consumer.systemWriter.write({
       to: 'core/core',
       from: data.from,
-      type: 'ask-human',
       headline: data.headline,
       body: data.content,
     });

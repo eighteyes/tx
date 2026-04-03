@@ -28,7 +28,6 @@ export function writeStatusToCore(
     context.systemWriter.write({
       to: 'core/core',
       from,
-      type: 'update',
       headline,
       body,
     });

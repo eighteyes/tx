@@ -1900,7 +1900,6 @@ export class MeshFSM extends EventEmitter {
       this.writer.write({
         to: 'core/core',
         from: 'system/fsm-validator',
-        type: 'ask-human',
         headline: 'FSM Violation - Agent needs help',
         body: `# FSM Violation Escalation
 
@@ -1945,7 +1944,6 @@ Please investigate and provide guidance to the agent.`,
     const content = `---
 to: core/core
 from: system/fsm-validator
-type: ask-human
 msg-id: ${msgId}
 headline: FSM Violation - Agent needs help
 timestamp: ${new Date().toISOString()}
@@ -1982,7 +1980,6 @@ Please investigate and provide guidance to the agent.
         this.writer.write({
           to: agentId,
           from: 'system/fsm-dispatch',
-          type: 'task',
           headline: `FSM dispatch — execute ${toState}`,
           body: `FSM transitioned from \`${fromState}\` to \`${toState}\`. Execute your task for this state.`,
         });
@@ -1998,7 +1995,6 @@ Please investigate and provide guidance to the agent.
       const msgContent = `---
 to: ${agentId}
 from: system/fsm-dispatch
-type: task
 msg-id: ${msgId}
 headline: FSM dispatch — execute ${toState}
 timestamp: ${new Date(timestamp).toISOString()}

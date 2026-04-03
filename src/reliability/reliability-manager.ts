@@ -86,7 +86,7 @@ export interface DispatcherBindings {
   /** Kill all workers for an agent, returns count killed */
   killAgent: (agentId: string, reason: string) => number;
   /** Write a message into the queue (for requeue recovery) */
-  requeueMessage: (from: string, to: string, type: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => void;
+  requeueMessage: (from: string, to: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => void;
 }
 
 export class ReliabilityManager {
@@ -472,7 +472,6 @@ export class ReliabilityManager {
         this.bindings!.requeueMessage(
           'system/dlq-recovery',
           entry.agent_id,
-          'task',
           {
             headline: isRewind
               ? `DLQ recovery: rewinding to checkpoint ${sessionId.slice(0, 8)}`
@@ -509,7 +508,6 @@ export class ReliabilityManager {
         this.bindings!.requeueMessage(
           entry.from_agent,
           entry.to_agent,
-          entry.type,
           { ...payload, headline: payload.headline || `DLQ requeue: ${entry.failure_reason.slice(0, 50)}` },
         );
 

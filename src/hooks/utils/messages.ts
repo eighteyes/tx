@@ -155,7 +155,6 @@ ${feedback}
     context.systemWriter.write({
       to: agentId,
       from: 'core/core',
-      type: 'task',
       headline: `Quality feedback - iteration ${iteration}`,
       body,
     });
@@ -172,7 +171,7 @@ ${feedback}
   const msgId = `quality-feedback-${taskId}-${iteration}`;
   const filename = `${timestamp}-task-core--${agentId.replace('/', '-')}-${msgId}.md`;
   const filepath = path.join(msgsDir, filename);
-  const content = `---\nto: ${agentId}\nfrom: core/core\ntype: task\nmsg-id: ${msgId}\nheadline: Quality feedback - iteration ${iteration}\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
+  const content = `---\nto: ${agentId}\nfrom: core/core\nmsg-id: ${msgId}\nheadline: Quality feedback - iteration ${iteration}\ntimestamp: ${new Date().toISOString()}\n---\n\n${body}\n`;
   fs.writeFileSync(filepath, content);
   log.info('hooks', 'Wrote quality feedback message (fallback)', { agentId, taskId, iteration });
 }

@@ -133,7 +133,6 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
       context.systemWriter.write({
         to: 'brain/brain',
         from: 'core/core',
-        type: 'task',
         headline: `Analyze completed work - ${context.meshName}/${context.agentName}`,
         body: taskBody,
       });
@@ -142,7 +141,7 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
       const msgId = `brain-update-${context.taskId || Date.now()}`;
       const filename = `${timestamp}-task-core-core--brain-brain-${msgId}.md`;
       const filepath = path.join(context.msgsDir || path.join(utils.workDir, '.ai', 'tx', 'msgs'), filename);
-      const content = `---\nto: brain/brain\nfrom: core/core\ntype: task\nmsg-id: ${msgId}\nheadline: Analyze completed work - ${context.meshName}/${context.agentName}\ntimestamp: ${new Date().toISOString()}\n---\n\n${taskBody}\n`;
+      const content = `---\nto: brain/brain\nfrom: core/core\nmsg-id: ${msgId}\nheadline: Analyze completed work - ${context.meshName}/${context.agentName}\ntimestamp: ${new Date().toISOString()}\n---\n\n${taskBody}\n`;
       fs.writeFileSync(filepath, content);
     }
     log.info('hooks', 'Brain update message sent', { meshInstance: context.meshInstance });

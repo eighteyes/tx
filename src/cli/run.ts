@@ -396,7 +396,6 @@ function writeMessage(msgsDir: string, to: string, content: string, writer?: imp
     const result = writer.write({
       to,
       from: 'user/repl',
-      type: 'task',
       headline: 'User REPL message',
       body: content,
     });

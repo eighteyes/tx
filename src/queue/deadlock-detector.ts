@@ -312,7 +312,6 @@ ${cycle.msgIds.map(id => `- ${id}`).join('\n')}`;
       this.writer.write({
         to: 'core/core',
         from: 'system/deadlock-detector',
-        type: 'notification',
         headline: `Deadlock ${status}: ${cycle.agents[0]}`,
         body,
         extraFrontmatter: { status: status === 'broken' ? 'complete' : 'error' },

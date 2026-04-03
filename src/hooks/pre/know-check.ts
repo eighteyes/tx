@@ -50,7 +50,6 @@ const handler = async (context: HookContext, _utils: HookUtils): Promise<void> =
     context.systemWriter.write({
       to: 'core/core',
       from: agentId,
-      type: 'info',
       headline: `Missing know-cli dependency for ${meshName}`,
       body: `The \`${meshName}\` mesh requires the know CLI for proper functioning.\n\n**Issues found:**\n${warnings.map(w => `- ${w}`).join('\n')}\n\n**To fix:**\n1. Install CLI: \`npm install -g know-cli\`\n2. Init project: \`know init\`\n\nThe mesh will start but may not work correctly without these dependencies.`,
     });

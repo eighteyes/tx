@@ -116,7 +116,6 @@ Please review the changes and resolve the issue manually.`;
     context.systemWriter.write({
       to: 'core/core',
       from: 'hooks/commit',
-      type: 'update',
       headline: `Commit blocked - ${context.meshName}`,
       body,
     });
@@ -157,7 +156,6 @@ Please review the logs and handle this manually.`;
     context.systemWriter.write({
       to: 'core/core',
       from: 'hooks/commit',
-      type: 'update',
       headline: `Commit hook error - ${context.meshName}`,
       body,
     });

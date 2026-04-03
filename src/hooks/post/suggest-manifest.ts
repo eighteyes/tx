@@ -181,7 +181,6 @@ ${violationSummary}`;
       context.systemWriter.write({
         to: 'core/core',
         from: 'hooks/suggest-manifest',
-        type: 'update',
         headline: `Manifest suggestions - ${meshName}/${agentName}`,
         body,
       });
