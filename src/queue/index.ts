@@ -10,7 +10,6 @@ export interface Message {
   id?: number;
   from_agent: string;
   to_agent: string;
-  type: string;
   status?: 'pending' | 'delivered' | 'interrupted' | 'failed';
   payload: Record<string, unknown>;
   source_file?: string;
@@ -22,7 +21,6 @@ interface MessageRow {
   id: number;
   from_agent: string;
   to_agent: string;
-  type: string;
   status: string;
   payload: string;
   created_at: number;
@@ -93,11 +91,11 @@ export class MessageQueue {
     // Cache prepared statements
     this.insertStmt = this.db.prepare(`
       INSERT INTO messages (from_agent, to_agent, type, payload, source_file, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, NULL, ?, ?, ?)
     `);
 
     this.selectPendingStmt = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE to_agent = ? AND status = 'pending'
       ORDER BY created_at ASC
@@ -240,7 +238,6 @@ export class MessageQueue {
       const result = this.insertStmt.run(
         msg.from_agent,
         msg.to_agent,
-        msg.type,
         JSON.stringify(msg.payload),
         msg.source_file || null,
         Date.now()
@@ -255,7 +252,6 @@ export class MessageQueue {
           const result = this.insertStmt.run(
             msg.from_agent,
             msg.to_agent,
-            msg.type,
             JSON.stringify(msg.payload),
             msg.source_file,
             Date.now()
@@ -297,7 +293,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'pending' | 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -310,7 +305,7 @@ export class MessageQueue {
    */
   pollOne(recipient: string): Message | null {
     const row = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE to_agent = ? AND status = 'pending'
       ORDER BY created_at ASC
@@ -329,7 +324,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -346,7 +340,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'pending' | 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -359,7 +352,7 @@ export class MessageQueue {
    */
   peekOne(recipient: string): Message | null {
     const row = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE to_agent = ? AND status = 'pending'
       ORDER BY created_at ASC
@@ -372,7 +365,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'pending' | 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -509,7 +501,7 @@ export class MessageQueue {
     const limitClause = filter.limit ? `LIMIT ${filter.limit}` : '';
 
     const rows = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       ${whereClause}
       ORDER BY created_at DESC
@@ -520,7 +512,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'pending' | 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -551,13 +542,13 @@ export class MessageQueue {
    * Get recent messages sent FROM an agent within a time window.
    * Used by nudge-detector to check if routing happened after worker completion.
    */
-  getRecentMessagesFrom(agentId: string, windowMs: number): Array<{ to_agent: string; type: string }> {
+  getRecentMessagesFrom(agentId: string, windowMs: number): Array<{ to_agent: string }> {
     const cutoff = Date.now() - windowMs;
     return this.db.prepare(`
-      SELECT to_agent, type FROM messages
+      SELECT to_agent FROM messages
       WHERE from_agent = ? AND created_at > ?
       ORDER BY created_at DESC
-    `).all(agentId, cutoff) as Array<{ to_agent: string; type: string }>;
+    `).all(agentId, cutoff) as Array<{ to_agent: string }>;
   }
 
   /**
@@ -663,7 +654,7 @@ export class MessageQueue {
    */
   getInterruptedMessages(): Message[] {
     const rows = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, source_file, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, source_file, created_at, delivered_at
       FROM messages WHERE status = 'interrupted'
       ORDER BY created_at DESC
     `).all() as MessageRow[];
@@ -672,7 +663,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'interrupted',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -903,7 +893,7 @@ export class MessageQueue {
    */
   getPendingTasks(toAgent: string): Message[] {
     const rows = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE to_agent = ? AND status = 'pending'
       ORDER BY created_at ASC
@@ -913,7 +903,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'pending' | 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
@@ -1055,7 +1044,7 @@ export class MessageQueue {
 
     const placeholders = fromAgents.map(() => '?').join(',');
     const rows = this.db.prepare(`
-      SELECT id, from_agent, to_agent, type, status, payload, created_at, delivered_at
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE from_agent IN (${placeholders})
         AND type = 'ask-response'
@@ -1067,7 +1056,6 @@ export class MessageQueue {
       id: row.id,
       from_agent: row.from_agent,
       to_agent: row.to_agent,
-      type: row.type,
       status: row.status as 'delivered',
       payload: JSON.parse(row.payload),
       created_at: row.created_at,
