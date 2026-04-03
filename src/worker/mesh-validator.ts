@@ -117,7 +117,7 @@ export interface ValidationResult {
  * Field specification for validation
  */
 interface FieldSpec {
-  type: 'string' | 'boolean' | 'number' | 'array' | 'object';
+  type: string;  // single type or pipe-separated compound (e.g. 'boolean|array')
   required?: boolean;
   enum?: string[];
   minimum?: number;
@@ -179,7 +179,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Task distribution configuration: spawner splits task into subtasks
   task_distribution: { type: 'object' },  // TaskDistributionConfig: { spawner, subagents, reviewer, distribution_strategy, ... }
   // Session continuation: persist context across messages
-  continuation: { type: 'boolean' },  // true | [agent1, agent2]  (also accepts array, validated specially)
+  continuation: { type: 'boolean|array' },  // true | [agent1, agent2]
   // Inject original task message into downstream agents
   injectOriginalMessage: { type: 'boolean' },
   // Tool restriction policy
@@ -195,7 +195,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Guardrails: per-mesh overrides for gate thresholds, limits, routing retries
   guardrails: { type: 'object' },
   // Session persistence across mesh runs
-  persistence: { type: 'boolean' },  // Also accepts array, validated specially
+  persistence: { type: 'boolean|array' },  // true | [agent1, agent2]
   // Parallel execution blocks with fork/join semantics
   parallelism: { type: 'array' },  // ParallelBlock[]: { agents, entry, exit, timeout?, on_partial? }
   // Routing fallback and retry limits
@@ -204,7 +204,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Manifest enforcement settings
   manifest_enforcement: { type: 'object' },
   // Mesh-wide message limit (guardrail)
-  max_mesh_messages: { type: 'number' },  // Also accepts object, validated specially
+  max_mesh_messages: { type: 'number|object' },  // number or { strict, warning, limit }
   // Auto-inject manifest reads into agent context
   autoInjectManifestFiles: { type: 'boolean' },
   // Development
@@ -212,6 +212,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   // Mesh completion behavior
   stop_on_first_complete: { type: 'boolean' },
   check_queue_on_complete: { type: 'boolean' },
+  disable: { type: 'boolean' },
 };
 
 /**
@@ -238,6 +239,8 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   thinking: { type: 'object' },          // Extended thinking config { budget_tokens }
   fragments: { type: 'array' },          // Prompt fragment names to inject (string[])
   load_claude_md: { type: 'boolean' },   // Control CLAUDE.md injection (default: true)
+  permissions: { type: 'object' },       // Tool permission overrides { allowedTools, disallowedTools }
+  postconditions: { type: 'array' },     // Postcondition checks after worker completion
 };
 
 /**
@@ -482,7 +485,8 @@ export class MeshValidator {
         continue;
       }
 
-      if (spec.type !== actualType) {
+      const allowedTypes = spec.type.split('|');
+      if (!allowedTypes.includes(actualType)) {
         warnings.push(`Field '${field}' should be ${spec.type}, got ${actualType}${context}`);
         continue;
       }
@@ -899,15 +903,13 @@ export class MeshValidator {
 
     if (!fsmObj.states) {
       errors.push(`fsm.states is required${context}`);
-    } else if (typeof fsmObj.states !== 'object' || Array.isArray(fsmObj.states) || fsmObj.states === null) {
-      errors.push(`fsm.states must be an object (not array)${context}`);
+    } else if (typeof fsmObj.states !== 'object' || fsmObj.states === null) {
+      errors.push(`fsm.states must be an object or array${context}`);
     } else if (Object.keys(fsmObj.states).length === 0) {
       errors.push(`fsm.states cannot be empty${context}`);
     }
 
-    if (!fsmObj.scripts) {
-      errors.push(`fsm.scripts is required${context}`);
-    } else if (typeof fsmObj.scripts !== 'object' || Array.isArray(fsmObj.scripts) || fsmObj.scripts === null) {
+    if (fsmObj.scripts && (typeof fsmObj.scripts !== 'object' || Array.isArray(fsmObj.scripts) || fsmObj.scripts === null)) {
       errors.push(`fsm.scripts must be an object${context}`);
     }
 

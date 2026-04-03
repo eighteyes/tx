@@ -1,5 +1,166 @@
 # Human Review
 
+## Ultrareview HIGH + MEDIUM Fixes
+Date: 2026-04-03
+Session: ultrareview-high-medium
+
+### HIGH Fixes
+
+**H1** — Worker leak on run() rejection (`dispatcher.ts:6107`)
+- Added `removeActiveWorker()` in `worker.run().catch()` so failed workers don't block future spawns
+
+**H2** — Dispatcher stop() leaked listeners + subsystems (`dispatcher.ts:3826`)
+- Added cleanup for `core-message`, `worker-message` tracking handlers
+- Added `removeAllListeners` for anonymous `fan-out`/`fan-out-complete`
+- Added `nudgeDetector.cancelAll()` and `reliability.stop()`
+
+**H3** — waitForClaudeReady false positive (`tmux.ts:381`)
+- Removed `output2.length > output.length` (growing = still booting). Now only `output2 === output` (stable) triggers ready.
+
+**H4** — YAML.parse null crash (`config-loader.ts:390`)
+- Added null guard after parse, before accessing `rawConfig.mesh`
+
+**H5** — Validator rejected array FSM states (`mesh-validator.ts:902`)
+- Removed `Array.isArray` rejection — config-loader normalizes arrays to objects
+
+**H6** — Validator type mismatches for continuation/persistence/max_mesh_messages
+- Changed FieldSpec.type to `string` (allows pipe-separated compounds)
+- Updated type checker to split on `|` and match any
+- `continuation: 'boolean|array'`, `persistence: 'boolean|array'`, `max_mesh_messages: 'number|object'`
+
+**H7** — tx run arg parsing after boolean flags (`cli/index.ts:546`)
+- Rewrote nonFlagArgs filter to track consumed indices instead of peeking at previous arg
+
+**H8** — tx session --limit silently ignored (`cli/session.ts:498`)
+- Rewrote arg destructuring: selector is first non-flag arg, remaining go to parseFlags
+
+**H9** — Queue insert delete+reinsert not transactional (`queue/index.ts:250`)
+- Wrapped in `this.db.transaction()`
+
+**H10** — async setTimeout in deferWorkerKill (`dispatcher.ts:1103`)
+- Changed to sync callback with try/catch
+
+### MEDIUM Fixes
+
+**M1** — JSON.parse(row.payload) unguarded (`queue/index.ts`)
+- Added `safeParsePayload()` helper, replaced all 8 `JSON.parse(row.payload)` calls
+
+**M2** — getDeliveredResponses dead type filter (`queue/index.ts:1052`)
+- Removed `AND type = 'ask-response'` — insert() stores NULL for type since routing migration
+
+**M3** — TX_ROOT="" matches everything (`config-loader.ts:291`)
+- Changed `includes()` to `startsWith()` with truthy guard
+
+**M6** — Logger existsSync on every write (`shared/logger.ts:70`)
+- Added `logDirReady` flag to skip redundant syscall after first write
+
+**M7** — Unknown CLI command exits 0 (`cli/index.ts:746`)
+- Added `process.exit(1)` after showHelp in default case
+
+**M8** — Login raw mode not restored on error (`cli/login.ts:56`)
+- Extracted `restoreTerminal()` helper, wrapped onData in try/catch
+
+**M9** — Missing validator field specs
+- Added `disable`, `permissions`, `postconditions` to field specs
+
+**M11** — parseMessage splits body on `---` (`consumer.ts:1317`)
+- Rewrote to use `indexOf` for first two delimiters, `lastIndexOf` for rearmatter boundary
+
+### Skipped (not real bugs)
+
+- **M4** (tmux idle state) — TX only runs one tmux session; `resetIdleState()` exists
+- **M5** (HITL response discard) — response flows through SDK stream, not promise value
+- **M10** (FSM evaluator single-word) — would need broader condition parser; documenting limitation
+
+### Verification
+
+```
+# Type check (expect 0 new errors):
+npx tsc --noEmit 2>&1 | grep "error TS" | grep -v "brain-update\|chrome-cli-runner\|dynaprompt.ts:300\|sdk-runner.ts.931\|dispatcher.ts.4943"
+
+# Verify queue safe parsing:
+rg 'safeParsePayload' src/queue/index.ts | head -3
+
+# Verify validator compound types:
+rg 'boolean\|array' src/worker/mesh-validator.ts
+
+# Verify dispatcher cleanup:
+rg 'nudgeDetector.*cancelAll\|reliability.*stop' src/worker/dispatcher.ts
+
+# Verify consumer parseMessage uses indexOf:
+rg 'indexOf.*---' src/core/consumer.ts
+```
+
+---
+
+## Ultrareview Ship Blockers
+Date: 2026-04-03
+Session: ultrareview-ship-blockers
+
+### Changes Made
+
+**S1/S2 — DYNAPROMPT dead codepath** (`src/worker/dispatcher.ts:1745`)
+- `getWorker()` → `getFirst()` (method that actually exists on WorkerLifecycleManager)
+- `activeWorker.sessionId` → `runner.getSessionId()` (ActiveWorker has no sessionId)
+- Removed `queue.markDelivered()` call (method doesn't exist; `pollOne` already marks delivered)
+
+```
+# Verify dynaprompt path compiles — search for getWorker/markDelivered should return nothing:
+rg 'getWorker\(|markDelivered' src/worker/dispatcher.ts
+```
+
+**S3 — Wrong DB path in mesh CLI** (`src/cli/mesh.ts`)
+- 12 occurrences of `.ai/tx/queue.db` → `.ai/tx/data/queue.db`
+
+```
+# Verify no old paths remain:
+rg '\.ai/tx/queue\.db' src/cli/mesh.ts
+# Verify correct path matches start.ts:
+rg 'data/queue\.db' src/cli/mesh.ts | head -3
+```
+
+**S4 — Missing watcher error handler** (`src/core/consumer.ts:594`)
+- Added `watcher.on('error', ...)` with `log.error` to prevent uncaught exception crash
+
+```
+# Verify handler exists:
+rg "watcher.on\('error" src/core/consumer.ts
+```
+
+**S5 — FSM shell injection** (`src/mesh/fsm.ts` — 4 locations)
+- Added `escapeRegExp()` for safe regex construction from YAML keys
+- Added `shellQuote()` wrapping context values before shell interpolation
+
+```
+# Verify all 4 sites use escapeRegExp + shellQuote:
+rg 'escapeRegExp|shellQuote' src/mesh/fsm.ts
+# Verify no raw ctxKey interpolation remains:
+rg '\$\{ctxKey\}' src/mesh/fsm.ts
+```
+
+**S6 — Missing SQLite busy_timeout** (`src/queue/index.ts:88`)
+- Added `this.db.pragma('busy_timeout = 5000')` after WAL mode
+
+```
+# Verify pragma present:
+rg 'busy_timeout' src/queue/index.ts
+```
+
+### Manual Smoke Test
+
+```
+# 1. mesh list should now find the DB and return results (was always empty before):
+tx mesh list
+
+# 2. Start tx normally — watcher should not crash on startup:
+tx start
+
+# 3. Send a message and verify queue operations work with busy_timeout:
+tx msg core "test message"
+```
+
+---
+
 ## Kill Message Types — Routing-Based Dispatch
 Date: 2026-04-03
 Session: kill-message-types

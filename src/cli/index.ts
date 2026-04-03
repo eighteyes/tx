@@ -543,15 +543,21 @@ async function main() {
     case 'run':
       if (wantsHelp) { showHelp('run'); break; }
       // Args: mesh agent "prompt" with optional --front key=value (repeatable)
-      const nonFlagArgs = args.filter((a, i) => {
-        // Skip args that are --front or values after --front
-        if (a === '--front') return false;
-        if (i > 0 && args[i-1] === '--front') return false;
-        // Skip other flags and their values
-        if (a.startsWith('-')) return false;
-        if (i > 0 && args[i-1].startsWith('-') && args[i-1] !== '--front') return false;
-        return true;
-      });
+      // Identify which arg indices are consumed by flags (flag itself + its value)
+      const consumedByFlags = new Set<number>();
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--front') {
+          consumedByFlags.add(i);
+          if (args[i + 1]) consumedByFlags.add(++i);
+        } else if (args[i].startsWith('--') || (args[i].startsWith('-') && args[i].length === 2)) {
+          consumedByFlags.add(i);
+          // If next arg is a value (not another flag), consume it too
+          if (args[i + 1] && !args[i + 1].startsWith('-')) {
+            consumedByFlags.add(++i);
+          }
+        }
+      }
+      const nonFlagArgs = args.filter((_, i) => !consumedByFlags.has(i));
       // Collect all --front values
       const frontArgs: string[] = [];
       for (let i = 0; i < args.length; i++) {
@@ -744,6 +750,7 @@ async function main() {
 
     default:
       showHelp('main');
+      process.exit(1);
   }
 }
 

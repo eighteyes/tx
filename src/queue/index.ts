@@ -17,6 +17,15 @@ export interface Message {
   delivered_at?: number;
 }
 
+/** Safely parse JSON payload, returning a marker object on corruption instead of throwing */
+function safeParsePayload(raw: string, id?: number): Record<string, unknown> {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { _corrupt: true, _raw: raw, _id: id };
+  }
+}
+
 interface MessageRow {
   id: number;
   from_agent: string;
@@ -85,6 +94,7 @@ export class MessageQueue {
 
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
+    this.db.pragma('busy_timeout = 5000');
     this.createSchema();
     this.migrate();
 
@@ -246,16 +256,19 @@ export class MessageQueue {
     } catch (err) {
       // Check for UNIQUE constraint violation on source_file
       if (err instanceof Error && err.message.includes('UNIQUE constraint failed')) {
-        // File was updated - delete old record and insert fresh
+        // File was updated - delete old record and insert fresh (transactional)
         if (msg.source_file) {
-          this.db.prepare(`DELETE FROM messages WHERE source_file = ?`).run(msg.source_file);
-          const result = this.insertStmt.run(
-            msg.from_agent,
-            msg.to_agent,
-            JSON.stringify(msg.payload),
-            msg.source_file,
-            Date.now()
-          );
+          const reinsert = this.db.transaction(() => {
+            this.db.prepare(`DELETE FROM messages WHERE source_file = ?`).run(msg.source_file);
+            return this.insertStmt.run(
+              msg.from_agent,
+              msg.to_agent,
+              JSON.stringify(msg.payload),
+              msg.source_file,
+              Date.now()
+            );
+          });
+          const result = reinsert();
           return result.lastInsertRowid as number;
         }
         return -1;
@@ -294,7 +307,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'pending' | 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     }));
@@ -325,7 +338,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: Date.now()
     };
@@ -341,7 +354,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'pending' | 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     }));
@@ -366,7 +379,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'pending' | 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     };
@@ -513,7 +526,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'pending' | 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     }));
@@ -664,7 +677,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'interrupted',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     }));
@@ -904,7 +917,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'pending' | 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined
     }));
@@ -1047,7 +1060,6 @@ export class MessageQueue {
       SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
       FROM messages
       WHERE from_agent IN (${placeholders})
-        AND type = 'ask-response'
         AND status = 'delivered'
       ORDER BY created_at ASC
     `).all(...fromAgents) as MessageRow[];
@@ -1057,7 +1069,7 @@ export class MessageQueue {
       from_agent: row.from_agent,
       to_agent: row.to_agent,
       status: row.status as 'delivered',
-      payload: JSON.parse(row.payload),
+      payload: safeParsePayload(row.payload, row.id),
       created_at: row.created_at,
       delivered_at: row.delivered_at ?? undefined,
     }));

@@ -128,7 +128,7 @@ interface WorkersJson {
  */
 async function listMeshes(flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const sessionsPath = path.join(cwd, '.ai/tx/data/sessions.db');
   const workersPath = path.join(cwd, '.ai/tx/data/workers.json');
 
@@ -403,7 +403,7 @@ function printConfigValidation(result: ConfigValidationResult): void {
  */
 async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const sessionsPath = path.join(cwd, '.ai/tx/data/sessions.db');
   const workersPath = path.join(cwd, '.ai/tx/data/workers.json');
 
@@ -568,7 +568,7 @@ async function showMeshStatus(meshName: string, flags: MeshFlags): Promise<void>
  */
 async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const workersPath = path.join(cwd, '.ai/tx/data/workers.json');
 
   if (!fs.existsSync(queuePath)) {
@@ -690,7 +690,7 @@ async function clearMeshState(meshName: string, flags: MeshFlags): Promise<void>
  */
 async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const haltedPath = path.join(cwd, '.ai/tx/data/halted.json');
 
   if (!fs.existsSync(queuePath)) {
@@ -786,7 +786,7 @@ async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
  */
 async function drainMesh(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   if (!fs.existsSync(queuePath)) {
     if (flags.json) {
@@ -1340,7 +1340,7 @@ function buildStateChain(
  */
 async function fsmStatus(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   // Load FSM config (required)
   const loaded = loadFSMConfig(meshName, cwd);
@@ -1652,7 +1652,7 @@ async function fsmStatus(meshName: string, flags: MeshFlags): Promise<void> {
  */
 async function fsmReset(meshName: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   if (!fs.existsSync(queuePath)) {
     console.error(chalk.red('No queue database found.'));
@@ -1690,7 +1690,7 @@ async function fsmReset(meshName: string, flags: MeshFlags): Promise<void> {
  */
 async function fsmGoto(meshName: string, targetState: string, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   if (!fs.existsSync(queuePath)) {
     console.error(chalk.red('No queue database found.'));
@@ -1937,7 +1937,7 @@ async function meshRun(meshName: string, prompt: string, flags: MeshFlags): Prom
           const result = await fsm.handleMessage(
             `${meshName}/${agent}`,
             target,
-            'task-complete',
+            'complete',
             {}  // Empty frontmatter
           );
           if (!result) {
@@ -3031,7 +3031,7 @@ async function meshGuardrails(meshName: string | undefined, flags: MeshFlags): P
 async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
   const logsDir = path.join(cwd, '.ai/tx/logs');
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const sessionsPath = path.join(cwd, '.ai/tx/data/sessions.db');
   const promptsDir = path.join(cwd, '.ai/tx/prompts');
 
@@ -3388,6 +3388,7 @@ async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise
           else if (msgType === 'task-complete') typeBadge = chalk.blue('[complete]');
           else if (msgType === 'ask-human') typeBadge = chalk.yellow('[ask-human]');
           else if (msgType === 'ask-response') typeBadge = chalk.magenta('[response]');
+          else if (msgType === 'message') typeBadge = chalk.dim('[message]');
           else typeBadge = chalk.dim(`[${msgType}]`);
 
           const headlineStr = headline ? ` "${headline}"` : '';
@@ -3458,7 +3459,7 @@ async function meshDump(meshName: string | undefined, flags: MeshFlags): Promise
  */
 async function meshHealth(meshName: string | undefined, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   if (!fs.existsSync(queuePath)) {
     console.log(chalk.yellow('No queue database found. Run a mesh first.'));
@@ -3574,7 +3575,7 @@ async function meshHealth(meshName: string | undefined, flags: MeshFlags): Promi
  */
 async function meshDLQ(meshName: string | undefined, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
 
   if (!fs.existsSync(queuePath)) {
     console.log(chalk.yellow('No queue database found.'));
@@ -3663,7 +3664,7 @@ async function meshDLQ(meshName: string | undefined, flags: MeshFlags): Promise<
  */
 async function meshRecover(meshName: string | undefined, flags: MeshFlags): Promise<void> {
   const cwd = process.env.TX_CWD || process.cwd();
-  const queuePath = path.join(cwd, '.ai/tx/queue.db');
+  const queuePath = path.join(cwd, '.ai/tx/data/queue.db');
   const dataDir = path.join(cwd, '.ai/tx/data');
   const pidFile = path.join(dataDir, '.pid');
   const controlFile = path.join(dataDir, 'control.json');

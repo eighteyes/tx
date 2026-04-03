@@ -591,6 +591,10 @@ export class MessageConsumer extends EventEmitter {
         }
       });
 
+      this.watcher.on('error', (err: unknown) => {
+        log.error('consumer', 'File watcher error', { error: (err as Error).message });
+      });
+
       this.watcher.on('ready', () => {
         this.running = true;
         resolve();
@@ -1310,10 +1314,19 @@ export class MessageConsumer extends EventEmitter {
   }
 
   private parseMessage(content: string): ParsedMessage | null {
-    const parts = content.split(/^---$/m);
-    if (parts.length < 3) return null;
+    // Parse only the first two --- delimiters (frontmatter boundaries)
+    // Body may contain --- (markdown HR) so we can't split on all of them
+    // Normalize: if file starts with ---, prepend \n so indexOf('\n---\n') works
+    const normalized = content.startsWith('---\n') ? '\n' + content : content;
+    const firstDelim = normalized.indexOf('\n---\n');
+    if (firstDelim === -1) return null;
+    const secondDelim = normalized.indexOf('\n---\n', firstDelim + 4);
+    if (secondDelim === -1) return null;
 
-    const frontmatter = this.parseFrontmatter(parts[1].trim());
+    const fmRaw = normalized.slice(firstDelim + 5, secondDelim);
+    const rest = normalized.slice(secondDelim + 5);
+
+    const frontmatter = this.parseFrontmatter(fmRaw.trim());
 
     // External messages: cross-project (txlit) or external systems
     // Synthesize missing fields so they pass through the pipeline
@@ -1327,9 +1340,16 @@ export class MessageConsumer extends EventEmitter {
       return null;
     }
 
-    const hasRearmatter = parts.length >= 4;
-    const body = hasRearmatter ? parts[2].trim() : parts.slice(2).join('---').trim();
-    const rearmatter = hasRearmatter ? this.parseRearmatter(parts[3].trim()) : null;
+    // Check for trailing rearmatter block (last --- delimiter in remaining content)
+    const lastDelim = rest.lastIndexOf('\n---\n');
+    let body: string;
+    let rearmatter: Record<string, unknown> | null = null;
+    if (lastDelim !== -1) {
+      body = rest.slice(0, lastDelim).trim();
+      rearmatter = this.parseRearmatter(rest.slice(lastDelim + 5).trim());
+    } else {
+      body = rest.trim();
+    }
 
     return { frontmatter, body, rearmatter };
   }

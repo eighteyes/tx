@@ -63,12 +63,17 @@ class Logger {
     return this.levels[level] >= this.levels[this.minLevel];
   }
 
+  private logDirReady = false;
+
   private write(entry: LogEntry): void {
     if (!this.shouldLog(entry.level)) return;
 
     try {
-      if (!fs.existsSync(this.logDir)) {
-        fs.mkdirSync(this.logDir, { recursive: true });
+      if (!this.logDirReady) {
+        if (!fs.existsSync(this.logDir)) {
+          fs.mkdirSync(this.logDir, { recursive: true });
+        }
+        this.logDirReady = true;
       }
       fs.appendFileSync(this.logFile, JSON.stringify(entry) + '\n');
     } catch {

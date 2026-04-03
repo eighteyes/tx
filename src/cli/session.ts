@@ -495,11 +495,11 @@ ${chalk.bold('Examples:')}
  * Main session command entry point
  */
 export async function session(args: string[]): Promise<void> {
-  const [mesh, action, selector, ...rest] = args;
-  const flags = parseFlags(rest.concat(selector?.startsWith('--') ? [selector] : []));
-
-  // Adjust selector if it was actually a flag
-  const actualSelector = selector?.startsWith('--') ? undefined : selector;
+  const [mesh, action, ...remaining] = args;
+  // Separate selector from flags: first non-flag arg after action is the selector
+  const actualSelector = remaining[0] && !remaining[0].startsWith('-') ? remaining[0] : undefined;
+  const flagArgs = actualSelector ? remaining.slice(1) : remaining;
+  const flags = parseFlags(flagArgs);
 
   if (!mesh || !action) {
     printUsage();

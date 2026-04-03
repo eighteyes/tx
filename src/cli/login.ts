@@ -59,28 +59,37 @@ async function promptInput(prompt: string, hidden = false): Promise<string> {
 
       let password = '';
 
-      const onData = (char: Buffer) => {
-        const c = char.toString();
+      const restoreTerminal = () => {
+        stdin.removeListener('data', onData);
+        if (stdin.setRawMode) {
+          stdin.setRawMode(false);
+        }
+      };
 
-        if (c === '\n' || c === '\r') {
-          // Enter pressed
-          stdin.removeListener('data', onData);
-          if (stdin.setRawMode) {
-            stdin.setRawMode(false);
+      const onData = (char: Buffer) => {
+        try {
+          const c = char.toString();
+
+          if (c === '\n' || c === '\r') {
+            // Enter pressed
+            restoreTerminal();
+            process.stdout.write('\n');
+            rl.close();
+            resolve(password);
+          } else if (c === '\u0003') {
+            // Ctrl+C
+            restoreTerminal();
+            process.exit(1);
+          } else if (c === '\u007F' || c === '\b') {
+            // Backspace
+            if (password.length > 0) {
+              password = password.slice(0, -1);
+            }
+          } else {
+            password += c;
           }
-          process.stdout.write('\n');
-          rl.close();
-          resolve(password);
-        } else if (c === '\u0003') {
-          // Ctrl+C
-          process.exit(1);
-        } else if (c === '\u007F' || c === '\b') {
-          // Backspace
-          if (password.length > 0) {
-            password = password.slice(0, -1);
-          }
-        } else {
-          password += c;
+        } catch {
+          restoreTerminal();
         }
       };
 

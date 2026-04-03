@@ -288,7 +288,7 @@ export class MeshConfigLoader extends EventEmitter {
     for (const configPath of possiblePaths) {
       if (fs.existsSync(configPath)) {
         const basePath = path.dirname(configPath);
-        const isGlobal = configPath.includes(process.env.TX_ROOT || '___no_match___');
+        const isGlobal = process.env.TX_ROOT ? configPath.startsWith(process.env.TX_ROOT) : false;
         this.loadFromFile(configPath, basePath, isGlobal);
         return this.meshConfigs.has(meshName);
       }
@@ -388,6 +388,11 @@ export class MeshConfigLoader extends EventEmitter {
       const content = fs.readFileSync(configPath, 'utf-8');
       const isYaml = filename.endsWith('.yaml') || filename.endsWith('.yml');
       const rawConfig = isYaml ? YAML.parse(content) : JSON.parse(content);
+
+      if (!rawConfig || typeof rawConfig !== 'object') {
+        log.error('config-loader', `Empty or invalid config file: ${filename}`, { configPath });
+        return;
+      }
 
       // Validate using MeshValidator
       const validation = MeshValidator.validate(rawConfig, filename);

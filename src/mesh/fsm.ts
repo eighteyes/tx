@@ -27,6 +27,16 @@ export { FSMPersistence, type FSMStateData } from './fsm-persistence.ts';
 export { ScriptExecutor, type ScriptContext, type ScriptResult } from './fsm-scripts.ts';
 export { ConditionEvaluator } from './fsm-evaluator.ts';
 
+/** Escape special regex characters in a string for safe use in new RegExp() */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Shell-quote a value to prevent injection in shell expressions */
+function shellQuote(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 // Import types from shared (keep local types for re-export compatibility)
 import type {
   FSMConfig,
@@ -294,7 +304,7 @@ export class MeshFSM extends EventEmitter {
             let expr = valueExpr;
             for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
               if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
-                expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+                expr = expr.replace(new RegExp(`\\$${escapeRegExp(ctxKey)}\\b`, 'g'), shellQuote(String(ctxValue)));
               }
             }
             let shellExpr = expr;
@@ -556,7 +566,7 @@ export class MeshFSM extends EventEmitter {
 
         for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
           if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
-            expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+            expr = expr.replace(new RegExp(`\\$${escapeRegExp(ctxKey)}\\b`, 'g'), shellQuote(String(ctxValue)));
           }
         }
 
@@ -1159,7 +1169,7 @@ export class MeshFSM extends EventEmitter {
           // Replace context variable references like $varname
           for (const [ctxKey, ctxValue] of Object.entries(context)) {
             if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
-              expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+              expr = expr.replace(new RegExp(`\\$${escapeRegExp(ctxKey)}\\b`, 'g'), shellQuote(String(ctxValue)));
             }
           }
 
@@ -1588,7 +1598,7 @@ export class MeshFSM extends EventEmitter {
             let expr = valueExpr;
             for (const [ctxKey, ctxValue] of Object.entries(this.stateData.context)) {
               if (typeof ctxValue === 'string' || typeof ctxValue === 'number') {
-                expr = expr.replace(new RegExp(`\\$${ctxKey}\\b`, 'g'), String(ctxValue));
+                expr = expr.replace(new RegExp(`\\$${escapeRegExp(ctxKey)}\\b`, 'g'), shellQuote(String(ctxValue)));
               }
             }
             let shellExpr = expr;

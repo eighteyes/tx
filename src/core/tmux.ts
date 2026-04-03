@@ -379,13 +379,13 @@ async function waitForClaudeReady(tmux: TmuxSession, timeout: number): Promise<b
     }
 
     // Check for ready - look for lack of activity + prompt
-    // Simple heuristic: if we see text and it's been stable
+    // Simple heuristic: if we see text and it's been stable (unchanged)
     if (output.length > 100) {
       // Wait a bit more to ensure it's stable
       await new Promise(resolve => setTimeout(resolve, 2000));
       const output2 = tmux.capture(30);
-      if (output2 === output || output2.length > output.length) {
-        // Stable or growing - likely ready
+      if (output2 === output) {
+        // Output unchanged — Claude is ready
         return true;
       }
     }

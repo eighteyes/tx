@@ -1100,11 +1100,15 @@ export class WorkerDispatcher extends EventEmitter {
         resolve();
       };
 
-      const timeoutId = setTimeout(async () => {
+      const timeoutId = setTimeout(() => {
         cleanup();
         log.warn('dispatcher', 'deferWorkerKill: timeout, forcing kill', { agentId, workerId });
-        runner.kill(reason);
-        this.removeActiveWorker(agentId, workerId);
+        try {
+          runner.kill(reason);
+          this.removeActiveWorker(agentId, workerId);
+        } catch (err) {
+          log.error('dispatcher', 'deferWorkerKill: error during forced kill', { error: (err as Error).message });
+        }
         resolve();
       }, 5000);
 
@@ -1742,8 +1746,9 @@ export class WorkerDispatcher extends EventEmitter {
     const pendingMsg = this.queue.peekOne(agentId);
     if (pendingMsg?.from_agent === 'system/dynaprompt') {
       // Dynamic prompt injection — resume active session with fragment content
-      const activeWorker = this.workerLifecycle.getWorker(agentId);
-      if (activeWorker?.runner && activeWorker.sessionId) {
+      const activeWorker = this.workerLifecycle.getFirst(agentId);
+      const sessionId = activeWorker?.runner?.getSessionId();
+      if (activeWorker?.runner && sessionId) {
         const message = this.queue.pollOne(agentId);
         if (message) {
           const payload = message.payload || {};
@@ -1752,20 +1757,19 @@ export class WorkerDispatcher extends EventEmitter {
 
           log.info('dispatcher', 'Injecting dynaprompt fragment into active session', {
             agentId,
-            sessionId: activeWorker.sessionId,
+            sessionId: sessionId.slice(0, 8),
             fragmentName,
           });
 
           await this.resumeSession({
             reason: 'system-feedback',
             agentId,
-            sessionId: activeWorker.sessionId,
+            sessionId,
             prompt: fragmentContent,
             runner: activeWorker.runner,
             metadata: { source: 'dynaprompt', fragment: fragmentName },
           });
-
-          this.queue.markDelivered(message.id || 0);
+          // pollOne already marks the message as delivered
         }
       } else {
         log.warn('dispatcher', 'Dynaprompt received but no active session', { agentId });
@@ -3872,6 +3876,25 @@ Please advise the agent or check mesh configuration.`;
     if (clearedSessions > 0) {
       log.info('dispatcher', 'Clean shutdown: cleared suspended sessions', { count: clearedSessions });
     }
+
+    // Unsubscribe tracking listeners
+    if (consumer && this.boundCoreMessageTrackingHandler) {
+      consumer.off('core-message', this.boundCoreMessageTrackingHandler);
+      this.boundCoreMessageTrackingHandler = null;
+    }
+    if (consumer && this.boundWorkerMessageTrackingHandler) {
+      consumer.off('worker-message', this.boundWorkerMessageTrackingHandler);
+      this.boundWorkerMessageTrackingHandler = null;
+    }
+    // fan-out / fan-out-complete are anonymous — remove all
+    if (consumer) {
+      consumer.removeAllListeners('fan-out');
+      consumer.removeAllListeners('fan-out-complete');
+    }
+
+    // Stop subsystems
+    this.nudgeDetector?.cancelAll();
+    this.reliability?.stop();
 
     // Release per-agent/mesh maps to prevent leaks across restarts
     this.lastCompletedSessionIds.clear();
@@ -6121,6 +6144,11 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
               error: (err as Error).message,
             });
           }
+        }
+
+        // Remove the worker so future OAOM spawns aren't blocked
+        if (registeredWorkerId) {
+          this.removeActiveWorker(agentId, registeredWorkerId);
         }
       });
 
