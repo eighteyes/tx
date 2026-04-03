@@ -148,7 +148,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   keepalive: { type: 'boolean' },
   grace_period_ms: { type: 'number', minimum: 0, maximum: 60000 },
   topology: { type: 'string', enum: ['static', 'dynamic'] },
-  routing_mode: { type: 'string', enum: ['agent', 'dispatcher', 'manifest'] },
+  routing_mode: { type: 'string', enum: ['agent', 'dispatcher', 'manifest', 'free'] },
   routing: { type: 'object' },
   rearmatter: { type: 'object' },
   workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
@@ -333,15 +333,15 @@ export class MeshValidator {
       errors.push(`FSM requires 'routing' configuration${context}`);
     }
 
-    // Validate multi-agent mesh routing (skip for dispatcher/manifest mode and task_distribution/ensemble meshes)
+    // Validate multi-agent mesh routing (skip for dispatcher/manifest/free mode and task_distribution/ensemble meshes)
     if (Array.isArray(cfg.agents) && cfg.agents.length > 1 &&
-        cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest' &&
+        cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest' && cfg.routing_mode !== 'free' &&
         !cfg.task_distribution && !cfg.ensemble) {
       this.validateMultiAgentRouting(cfg, errors, warnings, context);
     }
 
-    // Validate FSM state agent routing (skip for dispatcher/manifest mode)
-    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest') {
+    // Validate FSM state agent routing (skip for dispatcher/manifest/free mode)
+    if (cfg.fsm && cfg.routing && Array.isArray(cfg.agents) && cfg.routing_mode !== 'dispatcher' && cfg.routing_mode !== 'manifest' && cfg.routing_mode !== 'free') {
       this.validateFSMStateRouting(cfg.fsm, cfg.routing, cfg.agents, errors, warnings, context);
     }
 
@@ -367,6 +367,19 @@ export class MeshValidator {
         cfg.workspace,
         cfg.fsm
       );
+    }
+
+    // Validate free routing mode
+    if (cfg.routing_mode === 'free') {
+      // Warning: free mode with routing section (ignored at runtime)
+      if (cfg.routing) {
+        warnings.push(`routing_mode 'free' ignores 'routing' configuration${context}. Agents self-route from full roster.`);
+      }
+
+      // Warning: free mode with fsm section (not compatible)
+      if (cfg.fsm) {
+        warnings.push(`routing_mode 'free' ignores 'fsm' configuration${context}. Agents self-organize without state machine.`);
+      }
     }
 
     // Validate manifest routing mode

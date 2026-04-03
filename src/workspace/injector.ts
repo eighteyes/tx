@@ -17,7 +17,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '../shared/logger.ts';
 import type { SessionStore, SessionMetadata, FileChangeSummary } from '../session/index.ts';
-import { buildRoutingSection, buildDispatcherRoutingSection } from '../prompt/sections/routing.js';
+import { buildRoutingSection, buildDispatcherRoutingSection, buildFreeRoutingSection } from '../prompt/sections/routing.js';
 import type { RoutingConfig } from '../prompt/sections/routing.js';
 
 export interface InjectionContext {
@@ -788,6 +788,7 @@ Your failure message is the operator's diagnostic data. Make it specific.`;
     meshName: string;
     routing?: RoutingConfig;
     dispatcherRouting?: DispatchInjectionContext;
+    freeRouting?: { agentName: string; allAgents: string[]; completionAgents?: string[] };
   }): string {
     const parts: string[] = [];
 
@@ -796,7 +797,11 @@ Your failure message is the operator's diagnostic data. Make it specific.`;
     parts.push(protocol.trim());
 
     // Routing destinations (appended to messaging for cohesion)
-    if (config.dispatcherRouting) {
+    if (config.freeRouting) {
+      const fr = config.freeRouting;
+      parts.push('');
+      parts.push(buildFreeRoutingSection(fr.agentName, fr.allAgents, fr.completionAgents));
+    } else if (config.dispatcherRouting) {
       const dr = config.dispatcherRouting;
       parts.push('');
       parts.push(buildDispatcherRoutingSection(

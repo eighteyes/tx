@@ -1,5 +1,60 @@
 # Human Review
 
+## Free Routing Mode
+Date: 2026-04-02
+Session: free-routing-mode
+
+### What Was Done
+Added `routing_mode: free` — agents self-organize from full roster, no routing table.
+
+### Verification Checklist
+
+- [ ] **Validate mesh config loads**
+```
+tx validate meshes/test-free/config.yaml
+```
+
+- [ ] **Run test-free mesh with entry_point**
+```
+tx start test-free "Write a short summary of TypeScript generics"
+```
+
+- [ ] **Verify prompt injection** — check that planner sees researcher + writer as destinations, writer sees core/core
+```
+cat .ai/workers/test-free/planner/system-prompt.md | grep -A 20 "Message Routing"
+```
+
+- [ ] **Verify routing works** — planner routes to researcher, researcher routes to writer, writer completes to core
+```
+tx spy test-free
+```
+
+- [ ] **Test completion gating** — researcher should NOT see core/core (only writer is in completion_agents)
+```
+cat .ai/workers/test-free/researcher/system-prompt.md | grep "core/core"
+```
+
+- [ ] **Test fan-out entry (no entry_point)** — remove entry_point from config, restart
+```
+# Edit meshes/test-free/config.yaml — comment out entry_point line
+tx start test-free "Test fan-out entry"
+# All 3 agents should spawn simultaneously
+tx status
+```
+
+### Files Changed
+- `src/shared/types.ts` — RoutingMode union
+- `src/prompt/sections/routing.ts` — buildFreeRoutingSection
+- `src/workspace/injector.ts` — freeRouting branch
+- `src/worker/dispatcher.ts` — free mode prompt assembly + fan-out entry
+- `src/core/consumer.ts` — entry point resolution for free mode
+- `src/worker/mesh-validator.ts` — free mode validation
+- `src/mesh/config-loader.ts` — skip agent routing extraction for free mode
+- `meshes/test-free/` — test mesh (config + 3 prompts)
+- `.claude/skills/mesh-builder/SKILL.md` — documented free mode
+
+---
+
 ## PCQ Test Strategy — Coverage, CLI, Quality Gates
 Date: 2026-03-29
 Session: pcq-test-strategy

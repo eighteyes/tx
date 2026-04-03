@@ -150,6 +150,55 @@ export function buildDispatcherRoutingSection(
 }
 
 /**
+ * Build free-mode routing section for an agent prompt.
+ * Injects full agent roster as valid destinations. Agents self-route.
+ * core/core included based on completion_agents config.
+ */
+export function buildFreeRoutingSection(
+  agentName: string,
+  allAgents: string[],
+  completionAgents?: string[]
+): string {
+  const lines: string[] = [];
+  lines.push('## Message Routing\n');
+  lines.push('You decide where to route your message. Choose the best destination for the task at hand.\n');
+  lines.push('Available agents:\n');
+
+  for (const agent of allAgents) {
+    if (agent !== agentName) {
+      lines.push(`- \`${agent}\``);
+    }
+  }
+
+  // core/core: if completion_agents defined, only those see it; otherwise all do
+  const canComplete = !completionAgents || completionAgents.length === 0 || completionAgents.includes(agentName);
+  if (canComplete) {
+    lines.push(`- \`core/core\` — task is fully complete, report final result`);
+  }
+
+  lines.push('');
+  lines.push('Set the `to` field in your message frontmatter to your chosen destination.');
+  lines.push('Single-word names (e.g. `researcher`) auto-route within your mesh. Use `mesh/agent` only for cross-mesh messages.');
+  lines.push('');
+  lines.push('**After sending your routing message, STOP. Do not read files, analyze state, write prose, or perform any further work. Send ONE message and exit immediately.**');
+
+  return lines.join('\n');
+}
+
+/**
+ * Inject free-mode routing instructions into a system prompt
+ */
+export function injectFreeRoutingInstructions(
+  systemPrompt: string,
+  agentName: string,
+  allAgents: string[],
+  completionAgents?: string[]
+): string {
+  const section = buildFreeRoutingSection(agentName, allAgents, completionAgents);
+  return `${systemPrompt}\n\n${section}`;
+}
+
+/**
  * Inject dispatcher-mode routing instructions into a system prompt
  */
 export function injectDispatcherRoutingInstructions(

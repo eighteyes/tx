@@ -21,6 +21,7 @@ Every config option added is complexity that can break. The default question for
 | `fsm:` | Routing depends on computed state/counters/file presence — NOT agent judgment | Omit |
 | `parallelism:` | Agents truly run in parallel and need a sync gate | Omit |
 | `routing_mode: dispatcher` | Fan-out to N parallel workers is the core mechanic | Omit |
+| `routing_mode: free` | Agents self-organize — each sees full roster, decides routing autonomously | Omit |
 | `routing_mode: manifest` | Workflow is a file pipeline — agents produce files that unlock downstream agents | Omit |
 | `type: persistent` / `auto_despawn: false` | Mesh must survive indefinitely (daemon pattern) | Omit |
 | `continuation: false` | You explicitly need cold starts for isolation | Omit (continuation is default-on) |
@@ -593,6 +594,32 @@ routing:
 - `transform: summarize` — optional haiku pre-pass to compress responses before delivery
 - Fan-out members get implicit routing (no individual entries needed)
 - Members send `outcome: complete` to signal done, `outcome: discuss` + `route_to:` for peer chat
+
+### Free Routing Mode
+
+Agents self-organize from full roster. No routing table — each agent sees all peers and decides where to route next.
+
+```yaml
+routing_mode: free
+
+agents:
+  - name: planner
+    prompt: planner.md
+  - name: researcher
+    prompt: researcher.md
+  - name: writer
+    prompt: writer.md
+
+entry_point: planner          # Optional: omit to fan-out to all agents
+completion_agents:            # Optional: omit to let any agent complete
+  - writer
+```
+
+- No `routing:` block needed (warned if present)
+- Agents set `to: agent-name` directly in frontmatter (same as agent mode)
+- `completion_agents` controls who sees `core/core` as destination. Omit = all agents can complete
+- `entry_point` omitted → all agents receive the initial task simultaneously
+- Not compatible with FSM (warned if present)
 
 **Fan-in delivery modes** (`fan_in`):
 

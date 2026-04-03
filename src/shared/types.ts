@@ -152,9 +152,13 @@ export interface SessionMetrics {
 // Dispatcher routing types
 
 /**
- * Routing mode: agent-owned (default), dispatcher-owned (opt-in), or manifest-driven (filesystem state)
+ * Routing mode:
+ * - agent: agent-owned routing via per-agent routing table (default)
+ * - dispatcher: centralized routing via dispatch sentinel
+ * - manifest: filesystem-state-driven routing
+ * - free: agents self-organize from full roster, no routing table
  */
-export type RoutingMode = 'agent' | 'dispatcher' | 'manifest';
+export type RoutingMode = 'agent' | 'dispatcher' | 'manifest' | 'free';
 
 /**
  * Fan-out options: trailing object in a fan-out array

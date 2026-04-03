@@ -40,7 +40,7 @@ import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type Ad
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
-import { buildRoutingSection, buildDispatcherRoutingSection } from '../prompt/sections/routing.ts';
+import { buildRoutingSection, buildDispatcherRoutingSection, buildFreeRoutingSection } from '../prompt/sections/routing.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
@@ -2026,6 +2026,30 @@ export class WorkerDispatcher extends EventEmitter {
         if (meshConfig.fsm) {
           await this.initializeSingleFSM(meshName, meshConfig);
         }
+      }
+
+      // Free routing fan-out: no entry_point → spawn all agents with the trigger message
+      if (meshConfig.routing_mode === 'free' && !meshConfig.entry_point) {
+        const pendingMsg = this.queue.peekOne(agentId);
+        const body = pendingMsg?.payload?.body || pendingMsg?.payload?.headline || '';
+
+        // Fan-out: write task files for all agents except the first (who gets the original message)
+        const allAgents = meshConfig.agents.map(a => a.name);
+        for (let i = 1; i < allAgents.length; i++) {
+          const targetAgentId = `${meshName}/${allAgents[i]}`;
+          this.systemWriter.write({
+            to: targetAgentId,
+            from: 'system/fan-out',
+            type: 'task',
+            headline: `Free mode fan-out from ${pendingMsg?.from_agent || 'core/core'}`,
+            body: String(body),
+          });
+        }
+        log.info('dispatcher', 'Free mode fan-out: spawning all agents', {
+          meshName,
+          agents: allAgents,
+        });
+        // First agent proceeds with normal spawn below
       }
 
       // Manifest routing: resolve and spawn eligible agents instead of normal flow
@@ -4673,9 +4697,24 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       let routingConfig: Record<string, Record<string, string>> | undefined;
       let dispatcherRoutingCtx: import('../shared/types.ts').DispatchInjectionContext | undefined;
 
+      let freeRoutingCtx: { agentName: string; allAgents: string[]; completionAgents?: string[] } | undefined;
+
       if (meshConfig?.routing_mode === 'manifest') {
         // Manifest mode: no inter-agent routing — agents write files, resolver handles orchestration
         log.debug('dispatcher', 'Manifest routing mode — skipping routing injection', { agentId });
+      } else if (meshConfig?.routing_mode === 'free') {
+        // Free mode: agents self-route from full roster
+        const allAgents = meshConfig.agents.map(a => a.name);
+        freeRoutingCtx = {
+          agentName: agent.name,
+          allAgents,
+          completionAgents: meshConfig.completion_agents,
+        };
+        log.info('dispatcher', 'Built free routing context', {
+          agentId,
+          agents: allAgents,
+          completionAgents: meshConfig.completion_agents,
+        });
       } else if (meshConfig?.routing_mode === 'dispatcher' && meshConfig.routing) {
         const agentNames = meshConfig.agents.map(a => a.name);
         const router = new DispatchRouter(
@@ -4705,6 +4744,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         meshName: meshName!,
         routing: routingConfig,
         dispatcherRouting: dispatcherRoutingCtx,
+        freeRouting: freeRoutingCtx,
       });
       systemPrompt += '\n\n' + messagingSection;
 
@@ -6365,6 +6405,12 @@ ${output}
         .map(e => e.id);
       if (writes.length === 0) return undefined;
       return `## Routing Reminder\nYou are in manifest routing mode. Write your output files to complete your task:\n${writes.map(w => `- \`${w}\``).join('\n')}\nThe system spawns the next agent when your files exist on disk.`;
+    }
+
+    if (meshConfig.routing_mode === 'free') {
+      // Free mode: remind agent of full roster
+      const allAgents = meshConfig.agents.map(a => a.name);
+      return buildFreeRoutingSection(agentName, allAgents, meshConfig.completion_agents);
     }
 
     if (meshConfig.routing_mode === 'dispatcher' && meshConfig.routing) {

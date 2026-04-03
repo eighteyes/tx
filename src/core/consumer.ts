@@ -104,7 +104,7 @@ interface CachedMeshConfig {
  */
 interface MeshConfig {
   mesh: string;
-  routing_mode?: 'agent' | 'dispatcher';
+  routing_mode?: 'agent' | 'dispatcher' | 'free';
   routing?: Record<string, Record<string, Record<string, string>>> | DispatcherRoutingConfig;
   agents?: Array<{ name: string; [key: string]: unknown }>;
   completion_agent?: string;  // DEPRECATED: Use completion_agents
@@ -253,12 +253,14 @@ export class MessageConsumer extends EventEmitter {
         return false;
       }
 
-      // Register entry point
-      const entryPoint = (config.entry_point as string) || 'worker';
+      // Register entry point (free mode with no entry_point uses first agent)
+      const agents = config.agents as Array<{ name: string }> | undefined;
+      const entryPoint = (config.entry_point as string) ||
+        (config.routing_mode === 'free' && agents?.[0]?.name) ||
+        'worker';
       this.meshEntryPoints.set(meshName, entryPoint);
 
       // Register agent names for partial name resolution
-      const agents = config.agents as Array<{ name: string }> | undefined;
       if (agents && Array.isArray(agents)) {
         const agentNames = new Set(agents.map((a) => a.name));
         this.meshAgents.set(meshName, agentNames);
@@ -309,11 +311,14 @@ export class MessageConsumer extends EventEmitter {
 
       const loadConfig = (config: Record<string, unknown>) => {
         const meshName = config.mesh as string;
-        const entryPoint = (config.entry_point as string) || 'worker';
+        const agents = config.agents as Array<{ name: string }> | undefined;
+        // Free mode with no entry_point: use first agent as landing target for mesh-name routing
+        const entryPoint = (config.entry_point as string) ||
+          (config.routing_mode === 'free' && agents?.[0]?.name) ||
+          'worker';
         this.meshEntryPoints.set(meshName, entryPoint);
 
         // Load agent names for partial name resolution
-        const agents = config.agents as Array<{ name: string }> | undefined;
         if (agents && Array.isArray(agents)) {
           const agentNames = new Set(agents.map((a) => a.name));
           this.meshAgents.set(meshName, agentNames);

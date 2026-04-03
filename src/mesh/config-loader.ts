@@ -641,7 +641,7 @@ export class MeshConfigLoader extends EventEmitter {
     meshConfig?: MeshConfig
   ): Record<string, Record<string, string>> | undefined {
     if (!meshConfig?.routing) return undefined;
-    if (meshConfig.routing_mode === 'dispatcher') return undefined;
+    if (meshConfig.routing_mode === 'dispatcher' || meshConfig.routing_mode === 'free') return undefined;
 
     const agentRouting = (meshConfig.routing as MeshRouting)[agentName];
     if (!agentRouting) return undefined;
