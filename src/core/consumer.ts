@@ -943,7 +943,15 @@ export class MessageConsumer extends EventEmitter {
             from: fromAgent,
             to: toAgent,
           });
-          // Don't route the message - FSM validation failed
+          // Write feedback so the agent knows its message was rejected
+          if (this.systemWriter) {
+            this.systemWriter.write({
+              to: fromAgent,
+              from: 'system/fsm-validator',
+              headline: 'Message rejected by FSM validation',
+              body: `Your message to \`${toAgent}\` was rejected because it does not match the current FSM state. Check the mesh FSM configuration and ensure your message is valid for the current state.`,
+            });
+          }
           return;
         }
       }
