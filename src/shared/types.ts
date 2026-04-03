@@ -2,26 +2,12 @@
  * V4 Shared Types
  */
 
-// Message types
-// Core types: task (start work), task-complete (finish work), message (everything else)
-// DEPRECATED: ask, ask-response, ask-human - use routing inference instead
-export type MessageType =
-  | 'task'
-  | 'task-complete'
-  | 'message'           // New: generic inter-agent communication
-  | 'ask'               // DEPRECATED: use 'message', routing determines semantics
-  | 'ask-response'      // DEPRECATED: use 'message', inferred from core/core origin
-  | 'ask-human'         // DEPRECATED: use 'message' to core/core, inferred from routing
-  | 'update'
-  | 'lifecycle';
-
 export type MessageStatus = 'pending' | 'delivered';
 
 export interface Message {
   id?: number;
   from_agent: string;
   to_agent: string;
-  type: MessageType;
   status?: MessageStatus;
   payload: MessagePayload;
   created_at?: number;
@@ -318,7 +304,7 @@ export interface FSMStateConfig {
 export interface FSMTransitionConfig {
   from: string;
   to: string;
-  trigger: 'message' | 'task-complete' | 'manual' | 'ask';  // 'ask' DEPRECATED: use 'message'
+  trigger: 'message' | 'complete' | 'manual';
   triggerAgent?: string;  // Agent that triggers this transition
   script?: string;  // Transition script
 }
