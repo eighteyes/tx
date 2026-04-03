@@ -52,7 +52,7 @@ test('buildRoutingSection - should dedupe destinations and collect reasons', () 
       ask: {
         reviewer: 'Ask for review',
       },
-      'ask-response': {
+      'ask-response': { // Note: routing category keys are opaque mesh config values, not system message types
         reviewer: 'Review response',
       },
     };

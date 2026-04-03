@@ -61,7 +61,6 @@ test('PromptBuilder - prompt with task message', () => {
   const taskMessage = `---
 to: test/worker
 from: core/core
-type: task
 msg-id: test-123
 headline: Test task
 ---
@@ -82,13 +81,12 @@ Please do something important.`;
   // Should include task context
   assert.ok(prompt.includes('## Task Context'));
   assert.ok(prompt.includes('**From**: core/core'));
-  assert.ok(prompt.includes('**Type**: task'));
   assert.ok(prompt.includes('**Headline**: Test task'));
   assert.ok(prompt.includes('Please do something important'));
 
   // Should include response instructions
   assert.ok(prompt.includes('Write response messages to'));
-  assert.ok(prompt.includes('task-complete message'));
+  assert.ok(prompt.includes('status: complete'));
 
   teardown();
 });
