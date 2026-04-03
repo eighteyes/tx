@@ -183,24 +183,6 @@ export interface RevisionMessageEvent {
 }
 
 /**
- * Event emitted by Consumer when an ask message is detected
- * Enhanced with boundary detection for terminal-by-default
- */
-export interface AskMessageEvent {
-  id: number;
-  filepath: string;
-  from: string;  // Agent that sent the message (e.g., "narrative-engine/narrator")
-  to: string;    // Recipient agent (e.g., "narrative-engine/system")
-  type: string;  // 'message' (preferred) or 'ask'/'ask-human' (DEPRECATED)
-  headline?: string;
-  msgId?: string;
-  // Boundary detection
-  crossesHumanBoundary?: boolean;  // true if to === 'core/core'
-  crossesCompletionBoundary?: boolean;  // true if from is a completion_agent messaging core
-  isTerminal?: boolean;  // true if sender should suspend awaiting response
-}
-
-/**
  * Event emitted by Consumer when a blocking HITL message is detected
  * Agent sends message with `human: blocking` — worker stays alive awaiting response
  */
@@ -209,26 +191,21 @@ export interface BlockingHitlMessageEvent {
   filepath: string;
   from: string;
   to: string;
-  type: string;
   headline?: string;
   msgId?: string;
 }
 
 /**
- * Event emitted by Consumer when an ask-response message is detected
- * Enhanced with boundary detection for terminal-by-default
+ * Event emitted by Consumer when a worker-resume message is detected
  */
-export interface AskResponseMessageEvent {
+export interface WorkerResumeEvent {
   id: number;
   filepath: string;
-  from: string;  // Agent that responded (e.g., "narrative-engine/system")
-  to: string;    // Agent receiving the response (e.g., "narrative-engine/narrator")
+  from: string;
+  to: string;
   content: string;
   headline?: string;
   msgId?: string;
-  // Boundary detection
-  fromHumanBoundary?: boolean;  // true if from === 'core/core' (human response)
-  resumesSuspension?: boolean;  // true if this should resume a suspended session
 }
 
 /**
