@@ -19,7 +19,6 @@ import { log } from '../shared/logger.ts';
 export interface SystemMessageOptions {
   to: string;
   from: string;
-  type: string;
   headline: string;
   body: string;
   msgId?: string;
@@ -57,14 +56,13 @@ export class SystemMessageWriter {
     const msgId = options.msgId || `sys-${timestamp}-${rand}`;
     const safeFrom = options.from.replace(/\//g, '-');
     const safeTo = options.to.replace(/\//g, '-');
-    const filename = `${timestamp}-${options.type}-${safeFrom}--${safeTo}-${msgId}.md`;
+    const filename = `${timestamp}-${safeFrom}--${safeTo}-${msgId}.md`;
     const filepath = path.join(this.msgsDir, filename);
 
     // Build frontmatter
     const frontmatterLines = [
       `to: ${options.to}`,
       `from: ${options.from}`,
-      `type: ${options.type}`,
       `msg-id: ${msgId}`,
       `headline: ${options.headline}`,
       `timestamp: ${new Date(timestamp).toISOString()}`,
@@ -90,7 +88,6 @@ export class SystemMessageWriter {
     const queueId = this.queue.insert({
       from_agent: options.from,
       to_agent: options.to,
-      type: options.type,
       source_file: filepath,
       payload: {
         'msg-id': msgId,
@@ -126,7 +123,6 @@ export class SystemMessageWriter {
       filepath,
       agentId: options.to,
       from: options.from,
-      type: options.type,
       event: 'add',
       injectResponse: options.injectResponse || false,
     });
@@ -135,7 +131,6 @@ export class SystemMessageWriter {
       id: queueId,
       to: options.to,
       from: options.from,
-      type: options.type,
       msgId,
     });
 
