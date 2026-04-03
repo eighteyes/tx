@@ -26,9 +26,9 @@ describe('MeshFSM', () => {
       { name: 'complete', coordinator: 'planner' },
     ],
     transitions: [
-      { from: 'planning', to: 'implementation', trigger: 'ask', triggerAgent: 'planner' },
-      { from: 'implementation', to: 'review', trigger: 'task-complete', triggerAgent: 'developer' },
-      { from: 'review', to: 'complete', trigger: 'task-complete', triggerAgent: 'reviewer' },
+      { from: 'planning', to: 'implementation', trigger: 'message', triggerAgent: 'planner' },
+      { from: 'implementation', to: 'review', trigger: 'complete', triggerAgent: 'developer' },
+      { from: 'review', to: 'complete', trigger: 'complete', triggerAgent: 'reviewer' },
     ],
   };
 
