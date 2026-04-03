@@ -99,7 +99,7 @@ describe('Ask-Human Batching', () => {
 
     // Simulate dispatcher: resolve pending asks when responses arrive
     // (Consumer validates but dispatcher resolves - matches production behavior)
-    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+    consumer.on('worker-resume', (event: { from: string; to: string; msgId?: string }) => {
       queue.resolvePendingAsk(event.from, event.to, event.msgId);
     });
   });
@@ -178,7 +178,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-1',
         body: 'Answer 1'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Verify 2 pending
       pending = queue.getPendingAsks(agentId);
@@ -192,7 +192,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-2',
         body: 'Answer 2'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Verify 1 pending
       pending = queue.getPendingAsks(agentId);
@@ -206,7 +206,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-3',
         body: 'Answer 3'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Verify 0 pending
       pending = queue.getPendingAsks(agentId);
@@ -236,7 +236,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-3',
         body: 'Answer 3'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       let pending = queue.getPendingAsks(agentId);
       assert.strictEqual(pending.length, 2);
@@ -249,7 +249,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-1',
         body: 'Answer 1'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       pending = queue.getPendingAsks(agentId);
       assert.strictEqual(pending.length, 1);
@@ -262,7 +262,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'ask-2',
         body: 'Answer 2'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       pending = queue.getPendingAsks(agentId);
       assert.strictEqual(pending.length, 0, 'All should be resolved');
@@ -342,7 +342,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'delay-resp-1',
         body: 'Answer 1'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Delay before second response
       await sleep(200);
@@ -358,7 +358,7 @@ describe('Ask-Human Batching', () => {
         msgId: 'delay-resp-2',
         body: 'Answer 2'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       pending = queue.getPendingAsks(agentId);
       assert.strictEqual(pending.length, 0, 'All should be resolved');
@@ -392,7 +392,7 @@ describe('Ask-Human Batching', () => {
 
       // Respond to agent 1's first ask
       writeMessage(msgsDir, { from: 'core/core', to: agent1, type: 'ask-response', msgId: 'a1-1' });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Verify agent 2 unaffected
       pending1 = queue.getPendingAsks(agent1);
@@ -402,7 +402,7 @@ describe('Ask-Human Batching', () => {
 
       // Clear agent 1
       writeMessage(msgsDir, { from: 'core/core', to: agent1, type: 'ask-response', msgId: 'a1-2' });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       pending1 = queue.getPendingAsks(agent1);
       pending2 = queue.getPendingAsks(agent2);

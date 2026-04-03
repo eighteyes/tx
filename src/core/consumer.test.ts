@@ -206,7 +206,7 @@ describe('Ask-Parity-Gate', () => {
 
     // Simulate dispatcher: resolve pending asks when responses arrive
     // (Consumer validates but dispatcher resolves - matches production behavior)
-    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+    consumer.on('worker-resume', (event: { from: string; to: string; msgId?: string }) => {
       mockQueue.resolvePendingAsk(event.from, event.to, event.msgId);
     });
   });
@@ -244,7 +244,7 @@ describe('Ask-Parity-Gate', () => {
       });
 
       // Wait for ask-response to be processed
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // 3. Worker sends task-complete (to another worker, not core)
       const workerMessagePromise = waitForEvent(consumer, 'worker-message');
@@ -287,7 +287,7 @@ describe('Ask-Parity-Gate', () => {
         body: 'The API uses JSON format.'
       });
 
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // 3. Worker sends task-complete to core
       const coreMessagePromise = waitForEvent(consumer, 'core-message');
@@ -422,7 +422,7 @@ describe('Ask-Parity-Gate', () => {
         msgId: msgId1,
         body: 'Answer to first'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // 4. Worker tries to complete - should be blocked (bar still pending)
       const parityPromise = waitForEvent(consumer, 'parity-reminder');
@@ -479,7 +479,7 @@ describe('Ask-Parity-Gate', () => {
         type: 'ask-response',
         msgId: msgId1,
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       writeMessage(temp.dir, {
         from: 'qa/worker',
@@ -487,7 +487,7 @@ describe('Ask-Parity-Gate', () => {
         type: 'ask-response',
         msgId: msgId2,
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // 4. Worker completes - should pass
       const coreMessagePromise = waitForEvent(consumer, 'core-message');
@@ -599,7 +599,7 @@ describe('Ask-Parity-Gate', () => {
       const unknownMsgId = 'unknown-ask-999';
 
       // Send ask-response for non-existent ask
-      const askResponsePromise = waitForEvent(consumer, 'ask-response-message');
+      const askResponsePromise = waitForEvent(consumer, 'worker-resume');
 
       writeMessage(temp.dir, {
         from: 'brain/brain',
@@ -609,7 +609,7 @@ describe('Ask-Parity-Gate', () => {
         body: 'Response to unknown ask'
       });
 
-      // Should still emit the ask-response-message event
+      // Should still emit the worker-resume event
       const event = await askResponsePromise as { msgId: string };
       assert.strictEqual(event.msgId, unknownMsgId);
 
@@ -628,7 +628,7 @@ describe('Ask-Parity-Gate', () => {
 
     it('should handle ask-response when agent has no pending asks at all', async () => {
       // Never sent any asks, just send a response
-      const askResponsePromise = waitForEvent(consumer, 'ask-response-message');
+      const askResponsePromise = waitForEvent(consumer, 'worker-resume');
 
       writeMessage(temp.dir, {
         from: 'brain/brain',
@@ -643,7 +643,7 @@ describe('Ask-Parity-Gate', () => {
   });
 
   describe('Scenario 6: ask-response should NOT emit worker-message', () => {
-    it('should emit ONLY ask-response-message, NOT worker-message for ask-response', async () => {
+    it('should emit ONLY worker-resume, NOT worker-message for ask-response', async () => {
       const agentId = 'dev/worker';
       const msgId = 'ask-exclusive-001';
 
@@ -657,8 +657,8 @@ describe('Ask-Parity-Gate', () => {
       });
       await waitForEvent(consumer, 'ask-message');
 
-      // 2. Brain responds - should emit ONLY ask-response-message
-      const askResponsePromise = waitForEvent(consumer, 'ask-response-message');
+      // 2. Brain responds - should emit ONLY worker-resume
+      const askResponsePromise = waitForEvent(consumer, 'worker-resume');
       const noWorkerMessagePromise = expectNoEvent(consumer, 'worker-message', 500);
 
       writeMessage(temp.dir, {
@@ -669,7 +669,7 @@ describe('Ask-Parity-Gate', () => {
         body: 'The answer is 42'
       });
 
-      // Verify ask-response-message is emitted
+      // Verify worker-resume is emitted
       const event = await askResponsePromise as { from: string; to: string; msgId: string };
       assert.strictEqual(event.from, 'brain/brain');
       assert.strictEqual(event.to, agentId);
@@ -690,7 +690,7 @@ describe('Ask-Parity-Gate', () => {
       // Track all emitted events
       const emittedEvents: string[] = [];
       consumer.on('ask-message', () => emittedEvents.push('ask-message'));
-      consumer.on('ask-response-message', () => emittedEvents.push('ask-response-message'));
+      consumer.on('worker-resume', () => emittedEvents.push('worker-resume'));
       consumer.on('worker-message', () => emittedEvents.push('worker-message'));
 
       // 1. Coordinator sends parallel asks to two prep agents
@@ -714,7 +714,7 @@ describe('Ask-Parity-Gate', () => {
       emittedEvents.length = 0;
 
       // 2. Both prep agents respond - should NOT spawn workers
-      const response1Promise = waitForEvent(consumer, 'ask-response-message');
+      const response1Promise = waitForEvent(consumer, 'worker-resume');
       writeMessage(temp.dir, {
         from: prepAgent1,
         to: coordinatorId,
@@ -724,7 +724,7 @@ describe('Ask-Parity-Gate', () => {
       });
       await response1Promise;
 
-      const response2Promise = waitForEvent(consumer, 'ask-response-message');
+      const response2Promise = waitForEvent(consumer, 'worker-resume');
       writeMessage(temp.dir, {
         from: prepAgent2,
         to: coordinatorId,
@@ -737,11 +737,11 @@ describe('Ask-Parity-Gate', () => {
       // Wait a bit to ensure no late worker-message events
       await new Promise(resolve => setTimeout(resolve, 200));
 
-      // Verify: should have exactly 2 ask-response-message events, ZERO worker-message events
-      const askResponseCount = emittedEvents.filter(e => e === 'ask-response-message').length;
+      // Verify: should have exactly 2 worker-resume events, ZERO worker-message events
+      const askResponseCount = emittedEvents.filter(e => e === 'worker-resume').length;
       const workerMessageCount = emittedEvents.filter(e => e === 'worker-message').length;
 
-      assert.strictEqual(askResponseCount, 2, 'Should emit exactly 2 ask-response-message events');
+      assert.strictEqual(askResponseCount, 2, 'Should emit exactly 2 worker-resume events');
       assert.strictEqual(workerMessageCount, 0, 'Should emit ZERO worker-message events (this was the bug)');
     });
   });
@@ -860,7 +860,7 @@ describe('Terminal-by-Default Messaging', () => {
     await consumer.start();
 
     // Simulate dispatcher: resolve pending asks when responses arrive
-    consumer.on('ask-response-message', (event: { from: string; to: string; msgId?: string }) => {
+    consumer.on('worker-resume', (event: { from: string; to: string; msgId?: string }) => {
       mockQueue.resolvePendingAsk(event.from, event.to, event.msgId);
     });
   });
@@ -909,7 +909,7 @@ describe('Terminal-by-Default Messaging', () => {
       await waitForEvent(consumer, 'ask-message');
 
       // Human responds WITHOUT type field
-      const responsePromise = waitForEvent(consumer, 'ask-response-message');
+      const responsePromise = waitForEvent(consumer, 'worker-resume');
 
       writeMessageNoType(temp.dir, {
         from: 'core/core',
@@ -1016,7 +1016,7 @@ describe('Terminal-by-Default Messaging', () => {
         to: agentId,
         body: 'Approved'
       });
-      await waitForEvent(consumer, 'ask-response-message');
+      await waitForEvent(consumer, 'worker-resume');
 
       // Now task-complete should pass
       const coreMessagePromise = waitForEvent(consumer, 'core-message');
