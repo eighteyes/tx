@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { TmuxSession, findClaudePath, getSessionName, injectPrompt, isClaudeIdle } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
-import { MessageConsumer } from '../core/consumer.ts';
+import { MessageConsumer, type MeshCompleteEvent } from '../core/consumer.ts';
 import { WorkerDispatcher } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
@@ -1165,6 +1165,19 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
         log.error('injector', 'pushWwwStatus error (routing)', { error: (err as Error).message });
       });
     }
+  });
+
+  // Handle mesh-complete: FSM meshes may reach terminal state without a completion
+  // agent message to core/core (e.g., finalizer writes a gate file but no message).
+  // Pop the outgoing task and trigger inject-response if flagged.
+  consumer.on('mesh-complete', ({ meshName }: MeshCompleteEvent) => {
+    const removedTask = removeOutgoingTask(meshName);
+    if (removedTask?.injectResponse) {
+      log.info('injector', 'mesh-complete: injecting completion for FSM mesh', { meshName });
+      const completionMsg = `[mesh complete: ${meshName}]\n\nMesh "${meshName}" reached terminal state.`;
+      tryInjectResponse(-1, '', meshName, completionMsg);
+    }
+    writeStatusFile();
   });
 
   // Initialize status bar and status file
