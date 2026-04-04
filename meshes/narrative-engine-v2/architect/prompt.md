@@ -197,7 +197,7 @@ What could the world do?
 ```
 You generate world event entries for a narrative turn AND write a weighted entropy table for them. You see ONLY setting and physical context — no story arc, no NPC decisions.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Setting
 {from setting.yaml — relevant world rules, geography, tone}
@@ -265,7 +265,7 @@ What past threads surface?
 ```
 You generate world event entries for delayed consequences AND write a weighted entropy table. You see ONLY trajectory state and recent history — no NPC decisions, no arc direction.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Active Trajectories
 {from calc-trajectory-status.sh output — ALL trajectories with status}
@@ -367,7 +367,7 @@ The architect MUST read the last 3 turn summaries and build the saturation list:
 ```
 You generate ambient texture entries AND write a weighted table. You see ONLY author voice preferences and scene mood — no plot, no NPC decisions.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Author Voice
 {from author.yaml — sensory preferences, stylistic constraints, balance settings}
@@ -419,7 +419,7 @@ Fire one Task per character present in the scene. Each extracts available life t
 ```
 You extract life threads from a character entity file — the things running underneath this scene for this character. You see ONLY the character's entity data and current emotional state.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Character Entity
 {full character entity file — especially the `life` section}
@@ -471,7 +471,7 @@ Extracts threads that are already active in the narrative — unresolved questio
 ```
 You extract scene-level threads — narrative tensions and unresolved questions that are active in this scene. You see continuity data and recent turn history.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Continuity
 {from continuity.yaml — established facts, unresolved hooks}
@@ -569,7 +569,10 @@ Both POV and NPC Tasks use this base template. NPC Tasks add the Initiator Resol
 ```
 You analyze one character's motivations, outcomes, AND build their weighted entropy table for a narrative turn.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read these files before generating:**
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` — constraints and thread integration
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/world-rules.md` — distribution shapes, chaos register, trait pressures
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/table-format.md` — subtable format, dialogue density, output rules
 
 ## Character
 {character-brief.sh output OR entity file extract — traits, pressures, bonds, state}
@@ -584,8 +587,6 @@ These shape HOW this character acts — their concerns intrude, their expertise 
 ## Life Threads (Available This Scene)
 {from threads-{character_id}.yaml — threads marked available: true}
 {from collisions.yaml — collisions involving this character}
-
-Life threads are things running underneath — they may surface in subtable entries as texture. When generating subtable entries, consider: could this outcome trigger a thread to surface? If so, reference it in the mechanical_note. Threads don't replace outcome types — they color the specific manifestation within each type.
 
 ## Scene
 {scene context — location, who's present, recent events}
@@ -605,17 +606,7 @@ Base distribution: catastrophic {N}%, failure {N}%, mixed {N}%, success {N}%, br
 ## Rules
 - Think ONLY from {character_name}'s perspective
 - What is {character_name} trying to do in this moment? (their primary action/motivation)
-- Generate exactly 5 outcome shapes across the spectrum:
-  1. catastrophic — worst realistic version
-  2. failure — it doesn't work
-  3. mixed — partial, costly, complicated
-  4. success — it works as intended
-  5. breakthrough — better than intended, something shifts
-- Build weighted ranges from the distribution shape (ranges sum to 100)
-- For EACH outcome, generate a subtable with EXACTLY 4 entries:
-  - 3 register-toned (matching chaos_register, each a DIFFERENT register)
-  - 1 thematic (coincidental story resonance)
-- **Subtable `result` fields: 15 words max.** Seed the direction, not the choreography. Downstream agents generate scene detail.
+- Follow outcome shapes, subtable format, and dialogue density rules from refs
 
 Write TWO files:
 
@@ -696,7 +687,9 @@ Fire parallel haiku Tasks — one per character in the scene. These generate dir
 ```
 You build a direction table for one character — what life threads could surface in this scene and how they'd manifest. You see ONLY this character's available threads and relevant collisions.
 
-**FILESYSTEM BOUNDARY:** ONLY read files within the workspace path and game_path provided in this prompt. NEVER read files from other games or campaigns. Do NOT explore the filesystem for examples. Use ONLY the data provided in the task prompt.
+**Read these files before generating:**
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` — constraints and thread integration
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/world-rules.md` — chaos register, trait pressures
 
 ## Character
 {character_id}
@@ -1162,120 +1155,26 @@ The single most common failure mode is generating world events that are entirely
 
 **Phones say things.** "Phone buzzes" is not a world event. "Phone buzzes with a text from a friend that says 'where are you, prof is asking'" is a world event. "Group chat has 47 unread messages about campus drama" is a world event. Technology intrudes with specific content that creates actual pull on attention. (**At `minimal` intervention level:** phones are part of the deferred world. Do not generate phone content events — the characters have chosen to ignore them, and the world respects that silence unless a trajectory forces a breakthrough.)
 
-## Chaos Register (Author-Controlled Tone)
+## Chaos Register, Distribution Shapes, Trait Rules
 
-Read `chaos_register` from `author.yaml`. This controls the **tone** of chaos and register-toned entries — not the structure (always 3 register + 1 thematic per subtable) or the ratio (always ≥ half chaos). What changes is what the chaos FEELS like.
+**See `$TX_ROOT/meshes/narrative-engine-v2/refs/world-rules.md`** for chaos register tones, distribution shape tables, NPC trait pressure adjustments, arc position emphasis, and trait friction rules.
 
-| Register | Chaos tone | Subtable character | Environmental examples | **Social examples** |
-|----------|-----------|-------------------|----------|----------|
-| `mundane` | Boring, inconvenient, anti-dramatic | Flat, annoying, life-is-tedious | TV too loud, dripping gutter, phone buzzes with spam | Stranger asks for directions mid-moment, someone hands them a flyer, person walks between them without noticing |
-| `naturalistic` | Colorful, specific, life-like | Vivid but believable, specific details | Raccoon on porch, delivery driver bad day, kid asks awkward question | Old woman smiles knowingly at them, jogger gives a thumbs-up, nearby couple is bickering about parking |
-| `gothic` | Ominous, uncanny, atmospheric | Unsettling, things feel wrong | Crow watches too long, wind slams door, street light dies | Someone stares too long from a window, person mutters something inaudible while passing, child watches without blinking |
-| `surreal` | Dream-logic, reality slips | Disorienting, can't-quite-name-it | Same car drives past three times, door that wasn't there | Person walks past carrying something inexplicable, stranger says something that exactly echoes their thoughts |
-| `comic` | Situationally funny, awkward, cringe | Embarrassing, socially painful, wince-worthy | Sprinkler hits at wrong moment, phone plays loud ringtone | Someone yells "get a room!", kid loudly asks parent "why are they hugging?", person wolf-whistles, acquaintance appears at worst time |
-| `farcical` | Slapstick, absurdist, full cartoon | Escalating disasters, physical comedy, zany | 47 rubber ducks, bulk lube delivery, starlings shit in unison | Stranger asks if they're doing a flash mob, person tries to join the hug, someone starts filming for social media, tour group rounds the corner |
-| `hostile` | World fights back, noir energy | Antagonistic, punishing, Murphy's Law | Pipe bursts, puddle splash, lock jams | Someone sneers, catcall from passing vehicle, person loudly disapproves, acquaintance says something cutting |
+**Architect-specific chaos rules (not in ref):**
 
-**Two formats supported in author.yaml:**
+**Chaos register blend enforcement:** Before finalizing, tally register-toned entries by register across ALL tables (world AND character). If any register is >10 points off target percentage, rewrite entries to rebalance. Thematic entries (1 per root/tier) are NOT register-toned — they echo the story's themes through coincidence.
 
-**Simple** (single register):
-```yaml
-chaos_register: naturalistic
-```
-
-**Weighted blend** (percentage mix):
-```yaml
-chaos_register:
-  naturalistic: 60
-  comic: 20
-  hostile: 10
-  farcical: 10
-```
-
-**How to apply weighted blend:**
-- Percentages guide the DISTRIBUTION of register-toned entries across ALL register-toned slots — both world chaos (3 per root) AND character subtables (3 per outcome tier)
-- For a turn with ~99 register-toned entries (69 world + 30 character), a 30/35/20/15 split means roughly: 30 naturalistic, 35 comic, 20 hostile, 15 farcical
-- **COUNT your entries.** Before finalizing, tally register-toned entries by register across ALL tables (world AND character). If any register is >10 points off target percentage, rewrite entries to rebalance.
-- Higher-weight registers appear more often; low-weight registers are seasoning, not absence
-- **Thematic entries** (1 per root/tier) are NOT register-toned — they echo the story's themes through coincidence. A thematic entry in a story about isolation might be: neighbor's "going away" party invitation slid under wrong door. The world accidentally mirrors the characters.
-
-**ANTI-BIAS WARNING — READ THIS:**
-- LLMs default to **hostile** and **comic** because they feel "dramatic." This is a BUG, not a feature.
-- **Naturalistic IS chaos.** A raccoon on the porch, a delivery driver having a bad day, a kid asking an awkward question — these are vivid, specific, alive. They're not boring. They're the chaos of LIFE.
-- **Farcical IS chaos.** 47 rubber ducks, a drunk mascot, bulk lube delivery to the wrong address — these are rare but they MUST appear at their target weight. Farcical is not "too silly." It's reality at its most absurd.
-- **Hostile is seasoning at 20%, not the default.** Not everything fights back. Not every pipe bursts. Not every stranger is menacing. A 20% hostile blend means ~1 in 5, not ~1 in 3.
-- **If you're unsure what register an entry is, it's probably hostile or comic. Pick a different register.**
-- Think of it this way: in a 30/35/20/15 blend, walking through a real neighborhood at dawn you'd see 3 naturalistic things (cat stretching, jogger waving, sprinkler hitting sidewalk) for every 2 hostile things (car splashing puddle, dog lunging). More life, less noir.
-
-**ANTI-BLANDNESS WARNING — READ THIS TOO:**
-- LLMs also default to **environmental-only** world events (weather, lighting, infrastructure) because they feel "safe." This is equally a BUG.
-- **The world is people.** If your world events are all weather gradients, shower water pressure, and hallway lighting — you've built a physics simulation, not a world. Real world events involve humans who have opinions, attitudes, and their own lives.
-- **Bystanders react.** "Person passes without looking" is not a world event — it's set dressing. Someone who sees the characters and has a visible reaction (approval, disgust, amusement, envy, discomfort, commentary) is a world event. The reaction doesn't have to be hostile — a stranger smiling warmly is as alive as someone sneering.
-- **Social friction exists on a spectrum.** Between "nobody notices" and "dramatic confrontation" there's a huge middle ground: muttered comments, pointed looks, unsolicited opinions, crude humor, awkward encounters with acquaintances, catcalls, genuine kindness from strangers. This middle is where the world feels ALIVE.
-- **Bodies are embarrassing.** Characters who have been awake for hours, outside in cold, emotionally drained — they need to pee, they have morning breath, their stomachs growl, their hair is wrecked, they smell. These details aren't degrading. They're the physical reality that separates real people from mannequins. Include at least one unglamorous body event per turn.
-- **Technology has content.** "Phone buzzes" is not specific enough to be a world event. What does the notification SAY? Who sent it? What does it demand? A text that says "where tf are you" from a friend hits differently than a generic buzz. Give technology actual content that creates actual pull on attention.
-- **COUNT your social events.** Before finalizing, check: do at least half your world events involve a human being doing something social? If your events are all weather + infrastructure + logistics, rewrite until people show up.
-- **INTERVENTION LEVEL OVERRIDE:** All the above warnings apply at `full` intervention level. At `minimal` (private intimate scenes), environmental-only IS correct — there are no people to react, no phones to answer, no bystanders to comment. The anti-blandness warning does not apply when the world is genuinely absent from the scene. At `reduced`, relax the people requirement but don't eliminate it.
-
-**How to apply single register:**
-- **3 out of 4** subtable entries per chaos root should match the register tone
-- **1 out of 4** should be thematic (coincidental story resonance)
-- The register sets the CEILING — `naturalistic` means raccoons not rubber ducks; `farcical` means rubber ducks are welcome
-
-**General rules (both formats):**
-- Root manifestations (the 7-10 top-level events) should also match register tone distribution
-- **Character register entries follow the same blend.** A register-toned protagonist success at `comic` might be: they speak perfectly unguarded, then realize they have pillow creases on their face and morning breath. A `farcical` NPC failure: they try to respond guardedly but a bird lands on the railing and stares at them and they can't maintain composure. The outcome TYPE is unchanged — the TEXTURE carries the register.
-- When dominant register is `mundane` or `grounded`, chaos events are STILL chaotic (random, not thematic) — they're just not funny or weird. A garbage truck at dawn is chaos because the world doesn't care, not because it's zany.
-- **One chaos world event must be thematically connected** — its source/category mirrors the story. Other chaos events are purely random. The thematic chaos event still has 7-10 roots × 4 subtable entries.
-
-**Default:** `naturalistic` (if author.yaml missing or field absent)
+**Application rules:**
+- Single register: 3 of 4 subtable entries match register tone, 1 thematic
+- Weighted blend: percentages guide distribution across ALL register-toned slots
+- Root manifestations should also match register tone distribution
+- One chaos world event must be thematically connected to the story
+- When dominant register is `mundane` or `grounded`, chaos events are STILL chaotic — just not funny or weird
 
 ## POV-Aware World Events
 
 **Check `context.yaml` for `pov_character` field.**
 
 When POV has switched, the original protagonist becomes an NPC. Their actions are world events constrained by their trait pressures.
-
-## Distribution Shapes (Arc-Driven)
-
-| Arc Phase | Pressure | Shape | Character |
-|-----------|----------|-------|-----------|
-| Hook | 0-25 | `hook` | Interesting things happen |
-| Rising | 26-60 | `normal` | Middle dominates |
-| Complication | 61-85 | `right_skew` | Success becomes available |
-| Crisis | 86-120 | `bimodal` | Outcomes polarize |
-| Climax | 121-160 | `fat_tails` | Extremes dominate |
-| Catastrophe | 161+ | `explosive` | Past breaking point |
-
-## NPC Trait Pressures (Mechanical)
-
-| NPC Trait State | Weight Adjustment |
-|-----------------|-------------------|
-| EXHAUSTED: 5 | +20% shutdown/enforcement, -20% warmth |
-| BOUNDARIED: 4+ | +15% boundary enforcement, -15% opening |
-| WARM: 1 | -25% any warm response |
-| MERCURIAL: 3+ | Wider distribution — unpredictable |
-
-NPC trait pressures are as binding as protagonist traits. An NPC with EXHAUSTED: 5 doesn't suddenly have patience.
-
-## Arc Position to Shape Emphasis
-
-| Arc Position | Shapes to Emphasize |
-|--------------|---------------------|
-| Early (building) | mixed, failure — complicate everything |
-| Mid (pressurized) | failure, mixed — questions should HURT |
-| Pre-climax | failure, catastrophic — stakes are real |
-| Climax | transformational, catastrophic — extremes only |
-| Denouement | success, transformational — earned rest |
-
-## Trait Friction (Player Agency)
-
-Traits affect EXECUTION quality, not WHETHER action happens. The player is the author. Their action is canon.
-
-**When player action contradicts character traits:**
-- Trait-aligned → easier success, less friction
-- Trait-opposing → harder success, MORE dramatic weight, evolution potential unlocked
-- NEVER underweight because "character wouldn't"
 
 ## Trajectory Handling
 
@@ -1351,11 +1250,7 @@ All scripts are at: `$TX_ROOT/meshes/narrative-engine-v2/scripts/` (`$SCRIPTS`).
 
 ## Branching Rules
 
-- **Two branch levels maximum.** Primary → subtable. Flatten deeper.
-- **2-5 outcomes per level.** Enough variety for entropy to matter.
-- **Branches are optional.** Simple events rarely branch. Consequences and high-pressure events branch more.
-- **Null branches valid.** `branches: null` means no follow-up roll.
-- **Outcomes span a range** — mild to spicy. Let entropy decide intensity.
+See `$TX_ROOT/meshes/narrative-engine-v2/refs/table-format.md` for branching depth, outcome counts, and range rules.
 
 ## Output File Schemas (STRICT)
 
