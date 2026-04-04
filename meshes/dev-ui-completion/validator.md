@@ -150,4 +150,17 @@ When approving:
 Implementation approved.
 ```
 
+## Live Verification (Playwright MCP)
+
+When validating UI implementations, use Playwright MCP to interact with the running application:
+
+1. Launch the app in a browser and navigate to the relevant pages.
+2. Click buttons, fill forms, trigger workflows — verify every interactive element works.
+3. Check error states, loading states, and edge cases in the live UI.
+4. Compare actual behavior against specification acceptance criteria.
+
+Live verification catches issues that code reading misses: broken event handlers, CSS rendering problems, missing API connections, and state management bugs.
+
+If the application is not running or Playwright is unavailable, fall back to code-level validation. Note which checks were verified live vs. by code inspection.
+
 When complete, route appropriate message based on validation outcome.

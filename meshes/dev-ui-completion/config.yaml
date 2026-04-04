@@ -26,6 +26,10 @@ agents:
   - name: validator
     model: sonnet
     prompt: validator.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@anthropic-ai/playwright-mcp@latest"]
 
 entry_point: orchestrator
 

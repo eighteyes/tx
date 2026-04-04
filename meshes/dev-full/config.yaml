@@ -62,6 +62,10 @@ agents:
   - name: evaluator
     model: opus
     prompt: evaluator/prompt.md
+    mcpServers:
+      playwright:
+        command: npx
+        args: ["@anthropic-ai/playwright-mcp@latest"]
 
   - name: ultrareview
     model: opus
@@ -80,7 +84,7 @@ agents:
 
 entry_point: prebuild
 completion_agents: [handoff]
-continuation: false
+continuation: true
 
 routing:
   prebuild:
@@ -190,6 +194,7 @@ lifecycle:
   pre:
     - worktree:create
   post:
+    - typecheck
     - commit:auto
     - brain-update
     - worktree:cleanup

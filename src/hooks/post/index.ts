@@ -19,6 +19,7 @@ import { brainUpdateHook } from './brain-update.ts';
 import { forensicsAnalyzeHook } from './forensics-analyze.ts';
 import { suggestManifestHook } from './suggest-manifest.ts';
 import { validationCodeHook } from './validation-code.ts';
+import { typecheckHook } from './typecheck.ts';
 
 export { worktreeCleanupHook } from './worktree-cleanup.ts';
 export { qualityEvaluateHook } from './quality-evaluate.ts';
@@ -34,6 +35,7 @@ export { brainUpdateHook } from './brain-update.ts';
 export { forensicsAnalyzeHook } from './forensics-analyze.ts';
 export { suggestManifestHook } from './suggest-manifest.ts';
 export { validationCodeHook } from './validation-code.ts';
+export { typecheckHook } from './typecheck.ts';
 
 /**
  * All post-hook definitions
@@ -53,6 +55,7 @@ export const postHooks = [
   suggestManifestHook,
   brainUpdateHook,
   validationCodeHook,
+  typecheckHook,
 ];
 
 /**
