@@ -84,9 +84,9 @@ Please do something important.`;
   assert.ok(prompt.includes('**Headline**: Test task'));
   assert.ok(prompt.includes('Please do something important'));
 
-  // Should include response instructions
-  assert.ok(prompt.includes('Write response messages to'));
-  assert.ok(prompt.includes('status: complete'));
+  // Should include message delivery instructions
+  assert.ok(prompt.includes('Message delivery'));
+  assert.ok(prompt.includes('.ai/tx/msgs/'));
 
   teardown();
 });
