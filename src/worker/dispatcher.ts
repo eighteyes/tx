@@ -199,7 +199,8 @@ type ResumeReason =
   | 'incoming-ask-reminder'
   | 'system-feedback'
   | 'artifact-retry'
-  | 'blocking-hitl';
+  | 'blocking-hitl'
+  | 'stale-nudge';
 
 /**
  * Options for unified session resume
@@ -1435,6 +1436,24 @@ export class WorkerDispatcher extends EventEmitter {
           )},
         });
       },
+      nudgeAgent: async (agentId: string, reason: string): Promise<boolean> => {
+        const worker = this.workerLifecycle.getFirst(agentId);
+        if (!worker) return false;
+
+        const sessionId = worker.runner.getSessionId();
+        if (!sessionId) return false;
+
+        const result = await this.resumeSession({
+          reason: 'stale-nudge',
+          agentId,
+          sessionId,
+          prompt: 'You appear to have stalled. Continue your current task. If you are finished, write your output message.',
+          runner: worker.runner,
+          interrupt: true,
+        });
+
+        return result.success;
+      },
     });
     this.reliability.start();
 
@@ -1708,6 +1727,37 @@ export class WorkerDispatcher extends EventEmitter {
             });
           }
           return;
+        }
+      }
+
+      // Permission ask: worker is alive but blocked in canUseTool callback.
+      // Route human response (from core/core) to resolve the pending permission.
+      const [oaomMeshName] = agentId.split('/');
+      if (oaomMeshName && this.hasPendingPermissionForMesh(oaomMeshName)) {
+        const peeked = this.queue.peekOne(agentId);
+        if (peeked && peeked.from_agent === 'core/core') {
+          const pendingEntry = this.getPendingPermissionForMesh(oaomMeshName);
+          if (pendingEntry) {
+            const message = this.queue.pollOne(agentId);
+            if (message) {
+              const payload = message.payload || {};
+              const responseBody = typeof payload.body === 'string' ? payload.body : JSON.stringify(payload);
+              const allow = this.parsePermissionResponse(responseBody);
+
+              log.info('dispatcher', `Permission response (OAOM path) — ${allow ? 'ALLOW' : 'DENY'}`, {
+                meshName: oaomMeshName,
+                agentId: pendingEntry.agentId,
+                toolUseID: pendingEntry.toolUseID,
+                responseBody: responseBody.slice(0, 200),
+              });
+
+              pendingEntry.runner.resolvePermission(pendingEntry.toolUseID, allow, allow ? undefined : responseBody);
+              this.pendingPermissionAsks.delete(pendingEntry.agentId);
+              this.clearHaltedFile(oaomMeshName);
+              this.processQueuedMeshMessages(oaomMeshName);
+              return;
+            }
+          }
         }
       }
 
