@@ -46,7 +46,7 @@ function readStatus(): {
 }
 
 function readPending(): {
-  messages: Array<{ id: number; from: string; type: string; file: string; timestamp?: string }>;
+  messages: Array<{ id: number; from: string; type?: string; file: string; timestamp?: string }>;
   lastWritten: number;
 } {
   const pendingPath = join(dataDir, 'pending-for-core.json');
@@ -244,7 +244,7 @@ function outputHookContext(): void {
   // 6. Build and output XML context
   const messagesXml = newMessages.length > 0
     ? newMessages.map(m =>
-        `    <message from="${escapeXml(m.from)}" type="${escapeXml(m.type)}" file="${escapeXml(m.file)}" />`
+        `    <message from="${escapeXml(m.from)}"${m.type ? ` type="${escapeXml(m.type)}"` : ''} file="${escapeXml(m.file)}" />`
       ).join('\n')
     : '';
 

@@ -1,0 +1,308 @@
+# dev-full-ensemble mesh
+# Fork of dev-full — adds ensemble implementers and semi-formal verification
+# Pipeline: prebuild → [implementer ×3] → verifier → tester → reviewer → evaluator → ultrareview → handoff
+# Key innovation: N atomic implementations compared via semi-formal equivalence certificate
+
+mesh: dev-full-ensemble
+description: "Big-feature dev with ensemble implementers, semi-formal verification, and certified evaluation"
+brain: true
+
+intents:
+  patterns:
+    - build
+    - implement
+    - develop
+    - refactor
+
+agents:
+  - name: prebuild
+    model: sonnet
+    command: "/know:prebuild {feature}"
+    prompt: prebuild/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Glob
+        - Grep
+        - Bash
+        - Skill
+
+  - name: implementer-a
+    model: sonnet
+    prompt: implementer/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Skill
+        - Bash
+
+  - name: implementer-b
+    model: sonnet
+    prompt: implementer/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Skill
+        - Bash
+
+  - name: implementer-c
+    model: sonnet
+    prompt: implementer/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Skill
+        - Bash
+
+  - name: verifier
+    model: opus
+    prompt: verifier/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Glob
+        - Grep
+        - Bash
+
+  - name: tester
+    model: sonnet
+    prompt: tester/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+        - Bash
+
+  - name: reviewer
+    model: opus
+    prompt: reviewer/prompt.md
+
+  - name: evaluator
+    model: opus
+    prompt: evaluator/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Glob
+        - Grep
+        - Bash
+
+  - name: ultrareview
+    model: opus
+    prompt: ultrareview/prompt.md
+
+  - name: handoff
+    model: sonnet
+    prompt: handoff/prompt.md
+    permissions:
+      allowedTools:
+        - Read
+        - Write
+        - Edit
+        - Glob
+        - Grep
+
+entry_point: prebuild
+completion_agents: [handoff]
+continuation: false
+
+parallelism:
+  - agents: [implementer-a, implementer-b, implementer-c]
+    entry: prebuild
+    exit: verifier
+    timeout: 300000
+    on_partial: continue
+
+routing:
+  prebuild:
+    complete:
+      implementer-a: "Context and criteria ready — attempt A"
+      implementer-b: "Context and criteria ready — attempt B"
+      implementer-c: "Context and criteria ready — attempt C"
+    blocked:
+      core: "Criteria need human validation"
+
+  implementer-a:
+    complete:
+      verifier: "Implementation attempt A complete"
+    blocked:
+      core: "Need clarification from human"
+
+  implementer-b:
+    complete:
+      verifier: "Implementation attempt B complete"
+    blocked:
+      core: "Need clarification from human"
+
+  implementer-c:
+    complete:
+      verifier: "Implementation attempt C complete"
+    blocked:
+      core: "Need clarification from human"
+
+  verifier:
+    complete:
+      tester: "Verified implementation selected"
+    blocked:
+      core: "No viable implementation — human decision needed"
+
+  tester:
+    complete:
+      reviewer: "Tests passing, ready for review"
+    blocked:
+      verifier: "Tests failing — re-verify or select alternate"
+
+  reviewer:
+    complete:
+      evaluator: "Code quality approved"
+    blocked:
+      verifier: "Code quality issues — re-verify with constraints"
+
+  evaluator:
+    complete:
+      ultrareview: "All criteria certified — ready for final review"
+    blocked:
+      implementer-a: "Criteria gaps — re-attempt with feedback"
+      implementer-b: "Criteria gaps — re-attempt with feedback"
+      implementer-c: "Criteria gaps — re-attempt with feedback"
+
+  ultrareview:
+    complete:
+      handoff: "Final review passed — generate human review steps"
+    blocked:
+      implementer-a: "Holistic issues found — revision needed"
+      implementer-b: "Holistic issues found — revision needed"
+      implementer-c: "Holistic issues found — revision needed"
+
+  handoff:
+    complete:
+      core: "Feature complete with human review steps"
+
+workspace:
+  path: ".ai/output/dev-full-ensemble/{feature}/"
+
+manifest:
+  - id: context
+    location: "{workspace}/context.md"
+    description: "Codebase context: relevant files, patterns, constraints, integration points"
+    writes: [prebuild]
+    reads: [implementer-a, implementer-b, implementer-c, verifier, ultrareview, handoff]
+
+  - id: criteria
+    location: "{workspace}/criteria.md"
+    description: "HITL-validated success criteria — the sole evaluation rubric"
+    writes: [prebuild]
+    reads: [implementer-a, implementer-b, implementer-c, verifier, tester, reviewer, evaluator, ultrareview, handoff]
+
+  - id: working-notes
+    location: "{workspace}/working-notes.md"
+    description: "Implementation insights, gotchas, patterns discovered"
+    writes: [implementer-a, implementer-b, implementer-c]
+    reads: [verifier, reviewer, ultrareview, handoff]
+    persistent: true
+
+  - id: decisions
+    location: "{workspace}/decisions.md"
+    description: "Key decisions with rationale and trade-offs"
+    writes: [implementer-a, implementer-b, implementer-c]
+    reads: [verifier, reviewer, ultrareview, handoff]
+    persistent: true
+
+  - id: verification-certificate
+    location: "{workspace}/verification.md"
+    description: "Semi-formal equivalence certificate from verifier"
+    writes: [verifier]
+    reads: [tester, evaluator, ultrareview, handoff]
+    persistent: true
+
+  - id: scorecard
+    location: "{workspace}/scorecard.md"
+    description: "Evaluator's certified criteria assessment with semi-formal evidence"
+    writes: [evaluator]
+    reads: [implementer-a, implementer-b, implementer-c, evaluator, ultrareview, handoff]
+    persistent: true
+
+  - id: ultrareview-report
+    location: "{workspace}/ultrareview.md"
+    description: "Final holistic review with semi-formal verification certificate"
+    writes: [ultrareview]
+    reads: [implementer-a, implementer-b, implementer-c, ultrareview, handoff]
+    persistent: true
+
+  - id: human-review
+    location: "HUMAN_REVIEW.md"
+    description: "Appended human review checklist for manual verification"
+    writes: [handoff]
+    reads: [handoff]
+
+lifecycle:
+  pre:
+    - worktree:create
+  post:
+    - commit:auto
+    - brain-update
+    - worktree:cleanup
+
+rearmatter:
+  required: true
+  schema:
+    status: "complete | blocked | needs-review | needs-iteration"
+    confidence: "1-5 scale"
+    gotchas: "Issues discovered"
+    learnings: "Insights for brain"
+
+guardrails: {}
+
+playbook_notes: |
+  Fork of dev-full. Two semi-formal reasoning integration points from
+  Ugare & Chandra 2026 ("Agentic Code Reasoning"):
+
+  [A] Post-ensemble verification (verifier agent):
+  - 3 implementers run in parallel via parallelism block
+  - Each produces atomic, focused changes against criteria
+  - Verifier applies semi-formal equivalence certificate (templates/equivalence.md)
+  - Traces each implementation against criteria, compares approaches
+  - Selects best or synthesizes, writes evidence chain to verification.md
+  - Paper result: 73% (text similarity) → 93% (semi-formal) on patch comparison
+
+  [V] Certified evaluation (evaluator agent):
+  - Uses semi-formal evaluate certificate (templates/evaluate.md)
+  - Must state premises, trace code paths, prove each criterion
+  - Cannot say "PASS" without execution trace evidence
+  - Certificate written to scorecard.md
+  - Paper result: 78% → 88% on curated verification examples
+
+  Iteration model:
+  - Round 1: 3 implementers explore solution space → verifier picks best
+  - Round 2+: evaluator blocks → 3 implementers re-attempt with feedback
+  - Verifier re-selects on each round
+  - Semi-formal certificates provide targeted feedback (traces, not just "FAIL")
+
+  Certificate templates in templates/ dir:
+  - equivalence.md — verifier: post-ensemble comparison
+  - evaluate.md — evaluator: criteria certification
+  - review.md — ultrareview: holistic verification
+
+  Engine note: parallelism re-entry (evaluator → 3 implementers) sends 3
+  independent messages without sync gate. Verifier handles 1-3 results
+  gracefully. Full re-entry gating is a future engine enhancement.
+
+  Cost profile: 4 sonnet (prebuild + 3 impl) + 4 opus (verifier + reviewer +
+  evaluator + ultra) + 1 sonnet (handoff) = high. Offset by fewer iteration
+  loops from better first-pass selection and targeted feedback.

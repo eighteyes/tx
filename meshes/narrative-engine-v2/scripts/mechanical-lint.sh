@@ -326,6 +326,72 @@ if [ -n "$mech_matches" ]; then
 fi
 
 # ============================================================================
+# SECTION: Motivation-Explanation / Moralizing Detection
+# Catches narrator translating character subtext into thesis statements.
+# ============================================================================
+
+# Strip the rearmatter table (everything after final ---) for prose-only scanning
+PROSE_BODY=$(sed '/^---$/,$ d' "$PROSE")
+
+# Pattern 1: "The real answer/reason/truth" — narrator editorializing subtext
+real_answer_matches=$(echo "$PROSE_BODY" | grep -inE '(the real (answer|reason|truth|meaning)|what (she|he|they) (really|actually) (felt|meant|wanted|needed|thought))' 2>/dev/null || true)
+if [ -n "$real_answer_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "real-answer-pattern" "$content" "Narrator translating subtext into thesis. The body should show it, not the narrator explain it."
+  done <<< "$real_answer_matches"
+fi
+
+# Pattern 2: "Something [adj] between them" — emotion label as narrative beat
+something_matches=$(echo "$PROSE_BODY" | grep -inE 'something (tender|electric|fragile|delicate|unspoken|unnamed|raw|fierce|quiet|warm|careful|heavy|palpable|charged) between (them|the two|her|him)' 2>/dev/null || true)
+if [ -n "$something_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "vague-emotion-label" "$content" "Emotion label wearing a scene costume. Name the physical sensation or cut."
+  done <<< "$something_matches"
+fi
+
+# Pattern 3: "She recognized/realized/understood/saw clearly" — granted insight
+insight_matches=$(echo "$PROSE_BODY" | grep -inE '(she|he) (recognized|realized|understood|saw clearly|became aware|acknowledged|grasped|comprehended)' 2>/dev/null || true)
+if [ -n "$insight_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "granted-insight" "$content" "Narrator granting analytical insight. Show the behavior that reveals the insight instead."
+  done <<< "$insight_matches"
+fi
+
+# Pattern 4: "Not because X but because Y" — motivation hierarchy explanation
+not_because_matches=$(echo "$PROSE_BODY" | grep -inE 'not because .{5,60} but because' 2>/dev/null || true)
+if [ -n "$not_because_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "motivation-hierarchy" "$content" "Narrator explaining the hierarchy of motivations. Let the action show which motivation won."
+  done <<< "$not_because_matches"
+fi
+
+# Pattern 5: "Which meant" / "What it meant was" — narrator glossing
+which_meant_matches=$(echo "$PROSE_BODY" | grep -inE '(which meant|what (it|this|that) meant|the (weight|significance|implication) of)' 2>/dev/null || true)
+if [ -n "$which_meant_matches" ]; then
+  while IFS=: read -r linenum content; do
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "narrator-gloss" "$content" "Narrator explaining what the scene means. The scene means itself."
+  done <<< "$which_meant_matches"
+fi
+
+# Pattern 6: Duplicate interiority — same analytical phrase repeated in italic internal voice
+# Extract multi-word phrases (3+ words) from italic lines, flag any that appear 2+ times
+ITALIC_PHRASES=$(mktemp)
+echo "$PROSE_BODY" | grep -oE '\*[^*]{15,}?\*' | sed 's/^\*//;s/\*$//' | \
+  tr '[:upper:]' '[:lower:]' | sort > "$ITALIC_PHRASES"
+if [ -s "$ITALIC_PHRASES" ]; then
+  # Extract 3-word ngrams from italic content, find repeats
+  while IFS= read -r phrase; do
+    echo "$phrase" | tr ' ' '\n' | paste - - - 2>/dev/null
+  done < "$ITALIC_PHRASES" | sort | uniq -d | while IFS= read -r ngram; do
+    [ -z "$ngram" ] && continue
+    first_line=$(echo "$PROSE_BODY" | grep -inF "$ngram" 2>/dev/null | head -1 || true)
+    linenum=$(echo "$first_line" | cut -d: -f1)
+    [ -n "$linenum" ] && add_violation "moralizing" "CREATIVE" "$linenum" "duplicate-insight" "Repeated interiority phrase: ${ngram}" "Same analytical insight rendered multiple times. Trust the first rendering."
+  done
+fi
+rm -f "$ITALIC_PHRASES"
+
+# ============================================================================
 # MERGE VIOLATIONS INTO violations.yaml
 # ============================================================================
 

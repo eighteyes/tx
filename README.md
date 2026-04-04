@@ -203,7 +203,7 @@ See [Guardrails Reference](docs/guardrails.md) for full configuration details.
 
 ## Observability
 > Use a new terminal session, run from the same folder as `tx`.
-- `tx msgs` — watch messages flowing in the system
+- `tx trace` — view message trace
 - `tx logs` — see system-level processes
 - `tx spy` — watch agent outputs and tasks
 

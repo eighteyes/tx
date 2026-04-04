@@ -4817,6 +4817,23 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       });
       systemPrompt += '\n\n' + messagingSection;
 
+      // Section 10b: OAOM stop signal (non-orchestrator agents only)
+      const routingTargets = this.promptInjector.extractRoutingTargets({
+        agentName: agent.name,
+        routing: routingConfig,
+        dispatcherRouting: dispatcherRoutingCtx,
+        freeRouting: freeRoutingCtx,
+      });
+      const oaomSection = this.promptInjector.buildOaomStopSection(
+        agent.name,
+        !!agent.orchestrator,
+        routingTargets
+      );
+      if (oaomSection) {
+        systemPrompt += '\n\n' + oaomSection;
+        log.debug('dispatcher', 'Appended OAOM stop signal', { agentId });
+      }
+
       // Section 11: Worker recovery guidance (always-on, every agent)
       systemPrompt += '\n\n' + this.promptInjector.buildWorkerRecoverySection(meshName!, agent.name);
 

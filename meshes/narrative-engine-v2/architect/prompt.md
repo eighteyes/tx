@@ -87,7 +87,7 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
    - `$SCRIPTS/campaign-read.sh {game_path} character --list` then `$SCRIPTS/campaign-read.sh {game_path} character/{id}` for each — ALL character entity files (trait pressures, agendas, states, **life sections**)
      - Use `--section=life` for: active_concerns, expertise, social_web, opinions, voice_markers — these inform dramaturg guidance and character action tables
    - `$SCRIPTS/campaign-read.sh {game_path} bond --list` then `$SCRIPTS/campaign-read.sh {game_path} bond/{id}` for each — ALL bond files (relationship intensities, dynamics)
-   - `$SCRIPTS/campaign-read.sh {game_path} arc` — dramatic questions, seeds, phases, thread pressure
+   - `$SCRIPTS/arc-read.sh {game_path} --agent=architect` — act-scoped arc context: dramatic questions, active seeds, current phase, trajectory. Future acts and activation conditions filtered.
    - `$SCRIPTS/campaign-read.sh {game_path} state` — arc pressure, momentum, phase, location, present characters
    - `$SCRIPTS/campaign-read.sh {game_path} trajectories` — committed futures (Chekhov's Guns) — **skip if missing**
    - `$SCRIPTS/campaign-read.sh {game_path} continuity` — query continuity data:
@@ -615,6 +615,7 @@ Base distribution: catastrophic {N}%, failure {N}%, mixed {N}%, success {N}%, br
 - For EACH outcome, generate a subtable with EXACTLY 4 entries:
   - 3 register-toned (matching chaos_register, each a DIFFERENT register)
   - 1 thematic (coincidental story resonance)
+- **Subtable `result` fields: 15 words max.** Seed the direction, not the choreography. Downstream agents generate scene detail.
 
 Write TWO files:
 
@@ -660,16 +661,16 @@ outcomes:
 subtables:
   catastrophic:
     - range: 1-25
-      result: "{register-toned A}"
+      result: "{register-toned A — 15 words max}"
       mechanical_note: "{detail}"
     - range: 26-50
-      result: "{register-toned B}"
+      result: "{register-toned B — 15 words max}"
       mechanical_note: "{detail}"
     - range: 51-75
-      result: "{register-toned C}"
+      result: "{register-toned C — 15 words max}"
       mechanical_note: "{detail}"
     - range: 76-100
-      result: "{thematic}"
+      result: "{thematic — 15 words max}"
       mechanical_note: "{detail}"
   failure:
     # ... 4 entries each
@@ -1332,7 +1333,8 @@ All scripts are at: `$TX_ROOT/meshes/narrative-engine-v2/scripts/` (`$SCRIPTS`).
 | Script | Usage | Output |
 |--------|-------|--------|
 | `turn-read.sh <workspace> [artifact] [flags]` | Read turn-level data | JSON |
-| `campaign-read.sh <campaign_path> [artifact] [flags]` | Read campaign-level data (entities, arc, state, etc.) | JSON |
+| `campaign-read.sh <campaign_path> [artifact] [flags]` | Read campaign-level data (entities, state, etc.) | JSON |
+| `arc-read.sh <campaign_path> [--agent=architect]` | Act-scoped arc context (future acts filtered) | YAML |
 | `game-read.sh <game_path> [artifact] [flags]` | Read game-level data (setting, author) | JSON |
 | `turn-write.sh <workspace> <artifact>` | Write turn-level data (stdin JSON) | YAML file |
 

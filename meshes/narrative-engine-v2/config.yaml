@@ -622,11 +622,11 @@ manifest:
 
   # --- Campaign State ---
   - id: arc.yaml
-    description: "Story arc structure, act progression, and tension curves. Scribe writes via campaign.sh arc commands."
+    description: "Story arc structure, act progression, and tension curves. Agents read via arc-read.sh (act-scoped filter). Scribe has full access for writes."
     location: campaign
     persistent: true
-    autoInject: false  # 41K at 46 turns — 80% is turn_history log. Narrator/architect can read on demand; context.yaml carries current arc state.
-    reads: [narrator, scribe, calibrator, architect, gravity]
+    autoInject: false  # Agents use arc-read.sh for filtered access. Scribe reads full file directly.
+    reads: [scribe, calibrator]  # Scribe/calibrator get full access. Other agents use arc-read.sh.
     writes: [scribe, calibrator]  # Scribe writes via campaign.sh
 
   - id: turns/

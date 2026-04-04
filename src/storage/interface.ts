@@ -19,7 +19,7 @@ export interface AgentMessage {
   id?: string;
   from: string;
   to: string;
-  type: string;
+  type?: string;
   body: string;
   headline?: string;
   msgId?: string;

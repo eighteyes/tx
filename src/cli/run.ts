@@ -32,6 +32,7 @@ interface ParsedMessage {
   to: string;
   type: string;
   status?: string;
+  outcome?: string;
   body: string;
   timestamp: string;
   filepath: string;
@@ -174,11 +175,9 @@ export async function run(options: RunOptions = {}): Promise<void> {
 
     // Track if this is a question requiring user input
     // Message to core/core or user/repl = needs response, blocked = needs help
-    // DEPRECATED ASK: ask-human/ask types, use 'message' + routing
-    if (msg.type === 'ask-human' || msg.type === 'ask') {
-      log.warn('deprecated-message-type', `Legacy type="${msg.type}" used in run.ts`, { type: msg.type, file: 'run.ts', detail: 'Use message type with human: true frontmatter instead' });
-    }
-    pendingQuestion = msg.type === 'ask-human' || msg.type === 'ask' || msg.type === 'message' || msg.status === 'blocked';
+    // A message to core/core that isn't a completion is a pending question
+    const isCompletion = msg.status === 'complete' || msg.outcome === 'complete';
+    pendingQuestion = !isCompletion || msg.status === 'blocked';
 
     displayResponse(msg);
   });
@@ -367,6 +366,7 @@ function parseMessageFile(filepath: string): ParsedMessage | null {
       to: frontmatter['to'] || 'unknown',
       type: frontmatter['type'] || 'unknown',
       status: frontmatter['status'],
+      outcome: frontmatter['outcome'],
       body: parts[2].trim(),
       timestamp: frontmatter['timestamp'] || new Date().toISOString(),
       filepath,

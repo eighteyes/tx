@@ -93,7 +93,7 @@ From **workspace** (turn directory) via `turn-read.sh`:
 
 From **campaign** (campaign directory) via `campaign-read.sh`:
 - `$SCRIPTS/campaign-read.sh {campaign} state` — arc pressure, momentum, phase, location
-- `$SCRIPTS/campaign-read.sh {campaign} arc` — dramatic questions, phases
+- `$SCRIPTS/arc-read.sh {campaign}` — act-scoped arc context: dramatic questions, active seeds, current phase, trajectory. Future acts and activation conditions filtered.
 - `$SCRIPTS/campaign-read.sh {campaign} trajectories` — committed futures (Chekhov's Guns) — skip if missing
 
 From **game root** via `game-read.sh`:

@@ -87,6 +87,8 @@ export interface DispatcherBindings {
   killAgent: (agentId: string, reason: string) => number;
   /** Write a message into the queue (for requeue recovery) */
   requeueMessage: (from: string, to: string, payload: Record<string, unknown>, extraFrontmatter?: Record<string, string>) => void;
+  /** Interrupt stale worker and resume session with nudge prompt. Returns true if nudge was sent. */
+  nudgeAgent?: (agentId: string, reason: string) => Promise<boolean>;
 }
 
 export class ReliabilityManager {
@@ -134,6 +136,31 @@ export class ReliabilityManager {
       log.warn('reliability', `Agent stale: ${health.agentId}`, {
         silenceMs: health.silenceMs,
       });
+
+      // Nudge the stale worker: interrupt + resume with "continue" prompt
+      if (this.bindings?.nudgeAgent) {
+        this.bindings.nudgeAgent(health.agentId,
+          `heartbeat stale: ${Math.round(health.silenceMs / 1000)}s silent`
+        ).then(nudged => {
+          if (nudged) {
+            log.info('reliability', 'Stale agent nudged', {
+              agentId: health.agentId,
+              silenceMs: health.silenceMs,
+            });
+            log.activity('reliability:heartbeat-nudge', health.agentId,
+              `Nudged after ${Math.round(health.silenceMs / 1000)}s silence`);
+          } else {
+            log.warn('reliability', 'Stale agent nudge failed (no active session)', {
+              agentId: health.agentId,
+            });
+          }
+        }).catch(err => {
+          log.error('reliability', 'Stale agent nudge error', {
+            agentId: health.agentId,
+            error: (err as Error).message,
+          });
+        });
+      }
     });
 
     this.heartbeat.on('dead', (health) => {
@@ -299,7 +326,7 @@ export class ReliabilityManager {
       session_id: ctx?.sessionId || undefined,
       from_agent: ctx?.fromAgent || agentId,
       to_agent: ctx?.toAgent || agentId,
-      type: ctx?.msgType || 'task',
+      type: ctx?.msgType || 'message',
       payload: ctx?.payload || {},
       source_file: ctx?.sourceFile,
       failure_reason: reason,

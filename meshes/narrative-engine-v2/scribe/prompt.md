@@ -871,7 +871,16 @@ Purpose: ORACLE queries these via `campaign-read.sh` before validating — ensur
 
 ## Arc State Maintenance
 
-Update arc.yaml via gateway scripts after each turn. ARCHITECT and GRAVITY read this file.
+Update arc.yaml via gateway scripts after each turn.
+
+**Information barrier**: Other agents (architect, gravity, narrator, sim-planner) read arc.yaml through `arc-read.sh`, which filters to the current act only. Scribe has full access. When writing arc content, keep agent-visible fields agent-safe:
+
+- **Seed notes**: Describe the tension, not the resolution. No act references, no future character names, no "activates when X." The note is what agents foreshadow. The `activation_condition` is what you (scribe) track.
+- **Trajectory note/volatility**: Describe what IS, not what's coming. `critical_threshold` is scribe-only (stripped from agents).
+- **Act summaries**: Current act summary is visible. Keep it present-tense, not prescriptive of arc conclusion.
+- **Rung `act` field**: REQUIRED on every escalation rung. arc-read.sh filters by this — missing `act` = invisible rung.
+
+**Full schema**: `scripts/schemas/arc-schema.md`
 
 ### Story Day
 

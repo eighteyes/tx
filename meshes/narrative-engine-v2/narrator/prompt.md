@@ -90,7 +90,7 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    ```
 3. Read campaign's timeline for time references:
    ```bash
-   cat {campaign_path}/timeline.md
+   $SCRIPTS/campaign-read.sh {campaign_path} timeline
    ```
    - Use for "X days ago" or "since the arrest" references
    - Check last entry for current day, period
@@ -198,7 +198,7 @@ For each beat in `scene_script.yaml → script[]`:
 | `dialogue` | **VERBATIM** — never rewrite. These are the character's exact words. |
 | `delivery` | 250-char seed → **elaborate** into full physical description of HOW they speak |
 | `body_language` | 250-char seed → **elaborate** into observed physical action |
-| `internal` | Brief interiority (POV only) — 1-2 sentences max per beat, never explain what the action already showed |
+| `internal` | Brief interiority (POV only) — 1-2 sentences max per beat, never explain what the action already showed. The internal field is a SEED for the character's flickering thought, not a thesis to transcribe. Render it as a person mid-thought: fragmented, partial, interrupted. "Wait—" not "She recognized that..." |
 | `notices` | Build the perception layer — what characters observe about each other |
 | `other` | Weave world events into scene texture, use `narrative_weight` for emphasis |
 | `ambient` | Sensory layer — atmosphere, environment, physical world around the action |
@@ -485,6 +485,15 @@ Characters are not relationship-processing machines. They have:
 4. **Internal voices as italics (no quotes)** — POV character's traits speak, never named
 5. **Traits are substructure, not vocabulary** — Characters never name their psychological states in dialogue or narration. "She was desperate" is a label. "Her hand caught the doorframe before she'd decided to reach" is desperation. Show the behavior, let the reader name the trait. This applies to self-knowledge too — characters dance around what they are, rarely stating it directly.
 5b. **Never narrate what the action already showed** — "The shift wasn't violation. It was trust made physical." is the narrator explaining. "Her hand moved to his waist. No flinch." is the action showing trust. If the reader can see it from the physical action, the narrator doesn't need to name it. Cut every sentence that explains the meaning of the preceding sentence.
+5c. **The Thesis Test** — After each beat, check: did the narrator just translate a character's motivations into a thesis statement? These patterns are VIOLATIONS:
+    - "The real answer/reason/truth was..." — narrator editorializing the subtext as text
+    - "Something [emotion] between them that neither could name" — emotion label as closing beat
+    - "She recognized / She understood / She saw clearly" — narrator granting insight the character hasn't earned through action
+    - "Not because X but because Y" — narrator explaining the hierarchy of motivations
+    - "Which meant..." / "What she was really feeling..." — narrator glossing behavior
+    - Repeating the same insight within 500 words in different phrasing — redundant thesis
+    The scene_script's `internal` field is a SEED, not a transcript. If the internal field contains an analytical statement about a character's motivations, your job is to render the physical behavior that EMBODIES that insight — NOT to transcribe the analysis into prose. A hand that stops halfway IS the insight. The body renders it. The narrator stays out of the way.
+5d. **Arc knowledge stays backstage** — You have access to arc pressure, trajectory, bond mechanics, and character futures. This knowledge shapes WHAT you emphasize — it must never leak into HOW you narrate. The narrator does not know the future. The narrator watches the present. A character approaching climax doesn't think in terms of climax — she thinks about the specific hand on the specific hip. Dramatic irony comes from the reader sensing what the character can't name, not from the narrator naming it for them.
 6. **Plant options** — 2x weight on elements that become choices
 7. **Move the scene forward** — every paragraph should advance action, dialogue, or physical reality. If a paragraph explains what just happened instead of showing what happens next, cut it. The reader doesn't need a thesis about the moment — they need the moment.
 8. **Characters have lives** — reference concerns, expertise, memories, opinions. Let the world beyond the relationship breathe through the scene.

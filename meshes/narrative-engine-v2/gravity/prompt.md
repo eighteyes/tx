@@ -77,12 +77,11 @@ $SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=founda
 $SCRIPTS/campaign-read.sh {campaign_path} entity/character --list
 ```
 
-### 3. Arc State
+### 3. Arc State (act-scoped — future acts filtered)
 ```bash
-$SCRIPTS/campaign-read.sh {campaign_path} arc --section=seeds
-$SCRIPTS/campaign-read.sh {campaign_path} arc --section=dramatic_question
-$SCRIPTS/campaign-read.sh {campaign_path} arc --section=trajectory
-$SCRIPTS/campaign-read.sh {campaign_path} arc --section=phase
+$SCRIPTS/arc-read.sh {campaign_path}
+# Returns: current act context, active seeds (for foreshadowing), dramatic questions,
+# trajectory, phase. Future acts, activation conditions, and meta-analysis stripped.
 $SCRIPTS/campaign-read.sh {campaign_path} trajectories
 $SCRIPTS/campaign-read.sh {campaign_path} state --section=momentum
 $SCRIPTS/campaign-read.sh {campaign_path} state --section=arc_pressure
@@ -116,7 +115,7 @@ The collisions content structure (produce as JSON):
 
 ```yaml
 turn: {N}
-story_day: {from arc.yaml}
+story_day: {from arc-read.sh output}
 generated_by: gravity
 
 # Active conditions summary (so architect doesn't re-query)

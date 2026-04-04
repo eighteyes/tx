@@ -13,6 +13,10 @@ export type { CorePromptConfig } from './core.js';
 // Routing section (extracted from dispatcher)
 export { buildRoutingSection, injectRoutingInstructions, buildDispatcherRoutingSection, injectDispatcherRoutingInstructions } from './sections/routing.js';
 
+// OAOM stop signal section
+export { buildOaomSection } from './sections/oaom.js';
+export type { OaomContext } from './sections/oaom.js';
+
 // Convenience functions
 import { PromptBuilder } from './builder.js';
 import type { PromptContext, BuildOptions } from './types.js';

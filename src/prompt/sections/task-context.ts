@@ -39,8 +39,7 @@ export function buildTaskContext(context: PromptContext): string {
 
   section += '\n---\n\n';
   const msgsDir = `${process.env.TX_CWD || process.cwd()}/.ai/tx/msgs/`;
-  section += `Write response messages to: ${msgsDir}\n`;
-  section += 'When done, write a message with `status: complete` to `core/core`.\n';
+  section += `**Message delivery**: Use the Write tool to create .md files in \`${msgsDir}\`. Messages are FILES, not conversational output. The Messaging Protocol section (end of prompt) has the filename format and frontmatter spec.\n`;
 
   return section;
 }

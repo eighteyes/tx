@@ -122,7 +122,7 @@ export class DeadLetterQueue {
     session_id?: string;
     from_agent: string;
     to_agent: string;
-    type: string;
+    type?: string;
     payload: Record<string, unknown>;
     source_file?: string;
     failure_reason: string;
@@ -159,7 +159,7 @@ export class DeadLetterQueue {
       entry.session_id || null,
       entry.from_agent,
       entry.to_agent,
-      entry.type,
+      entry.type || 'message',
       JSON.stringify(entry.payload),
       entry.source_file || null,
       entry.failure_reason,

@@ -1,5 +1,5 @@
 /**
- * tx msg - View and interact with messages
+ * tx trace - View and interact with messages
  *
  * Features:
  * - Interactive mode with vim-style navigation
@@ -223,6 +223,7 @@ function buildInjectedPrompt(msg: ParsedMessage, msgsDir: string): string {
   parts.push('## Task Context');
   parts.push('');
   parts.push(`**From**: ${msg.from}`);
+  // Note: type is vestigial ('message' for all new messages). Display uses payload fields for routing context.
   parts.push(`**Type**: ${msg.type}`);
   if (msg.headline) {
     parts.push(`**Headline**: ${msg.headline}`);
@@ -1277,7 +1278,7 @@ async function msgJson(logDir: string, options: MsgOptions): Promise<void> {
 /**
  * Main msg command
  */
-export async function msg(options: MsgOptions = {}): Promise<void> {
+export async function trace(options: MsgOptions = {}): Promise<void> {
   const workDir = process.env.TX_CWD || process.cwd();
   const logDir = path.join(workDir, '.ai/tx/msgs');
   const sessionMsgsDir = path.join(workDir, '.ai/tx/sessions/msgs');

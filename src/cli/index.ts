@@ -6,7 +6,7 @@
 import dotenv from 'dotenv';
 import { start, stop, restart } from './start.ts';
 import { status, printStatus } from './status.ts';
-import { msg } from './msg.ts';
+import { trace } from './msg.ts';
 import { logs } from './logs.ts';
 import { spy } from './spy.ts';
 import { tasks } from './tasks.ts';
@@ -110,7 +110,7 @@ Commands:
   tx recover        View and resume interrupted work from crashes
   tx server         Start HTTP/WebSocket server (multi-tenant)
   tx run            Headless mesh REPL (no core)
-  tx msg            View messages
+  tx trace          View messages
   tx logs           View logs
   tx spy            Real-time activity stream
   tx tasks          View task queue
@@ -181,9 +181,9 @@ Options: Same as 'tx start' (--model, --low, --ultra-low, --debug, --inbox, etc.
 
 If no tmux session exists, behaves like 'tx start'.`,
 
-  msg: `tx msg - View messages
+  trace: `tx trace - View messages
 
-Usage: tx msg [options]
+Usage: tx trace [options]
 
 Options:
   -t, --type <type>     Filter by message type
@@ -493,7 +493,7 @@ async function main() {
 
   // Block AI agents from running commands that spawn mesh workers
   // --force bypasses this guard (for supervised Claude Code sessions)
-  const blockedCommands = ['start', 'run', 'msg', 'restart'];
+  const blockedCommands = ['start', 'run', 'trace', 'restart'];
   if (process.env.CLAUDECODE === '1' && blockedCommands.includes(command) && !flags.force) {
     console.error('\n🚫 AI USE NOT ALLOWED\n');
     console.error(`The "${command}" command cannot be run from Claude Code.`);
@@ -577,9 +577,9 @@ async function main() {
       });
       break;
 
-    case 'msg':
-      if (wantsHelp) { showHelp('msg'); break; }
-      await msg({
+    case 'trace':
+      if (wantsHelp) { showHelp('trace'); break; }
+      await trace({
         type: flags.t as string || flags.type as string,
         agent: flags.a as string || flags.agent as string,
         mesh: flags.m as string || flags.mesh as string,

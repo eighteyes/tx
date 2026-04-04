@@ -1,4 +1,4 @@
-Do NOT run `tx start`, `tx msg` or `tx run` or you will be terminated.
+Do NOT run `tx start`, `tx trace` or `tx run` or you will be terminated.
 TRUST the meshes to run and respond to you. Only investigate if prompted.
 
 ## Architecture

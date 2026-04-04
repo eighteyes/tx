@@ -238,7 +238,7 @@ character: {character_id}
 dialogue: "{Actual words in their voice/rhythm/vocabulary. NO LENGTH LIMIT. Empty string if silent.}"
 delivery: "{How they say it — tone, pace, volume, what's underneath. MAX 250 CHARS.}"
 body_language: "{What their body does — specific, physical, observable. MAX 250 CHARS.}"
-internal: "{What they think/feel — THEIR perspective only, may be wrong about others. MAX 250 CHARS.}"
+internal: "{Mid-thought reaction — fragmented, partial, what flickers through their mind. NOT analysis of their own motivations. MAX 250 CHARS.}"
 notices: "{What they observe — ONLY visible/audible things. MAX 250 CHARS.}"
 ```
 
@@ -250,6 +250,7 @@ Rules:
 - If silent, dialogue: "" — let body_language carry it. Silence must be earned.
 - Internal may be wrong about the other person. That's correct.
 - Never reference trait names, arc pressure, or mechanical language.
+- **Internal is REACTION, not analysis.** The character catches themselves mid-thought, not mid-thesis. Write what flickers through their mind — fragmented, partial, interrupted. NOT "she recognized what she was doing" (that's a narrator thesis). YES "wait — is this what it looks like from outside?" (that's a person thinking). The internal field is a person's inner voice in real time, not a psychologist's case notes. No character thinks in complete analytical sentences about their own motivations during a scene.
 
 **Use the Agent tool with model: sonnet for ALL character voice Tasks. NEVER invoke `claude` via Bash.**
 

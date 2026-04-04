@@ -50,7 +50,7 @@ Body content here.
 
 | Field            | Default | Description                                      |
 |------------------|---------|--------------------------------------------------|
-| type             | -       | Inferred from routing. Explicit: task, task-complete, error |
+| type             | -       | Deprecated. Use status/outcome frontmatter for completion signals |
 | status           | -       | Routing outcome: complete, error, blocked        |
 | command          | -       | Slash command to trigger (e.g., /know:build)     |
 | feature          | -       | Feature name for worktree meshes (kebab-case)    |
@@ -65,17 +65,18 @@ Body content here.
 
 ## Filename Convention
 
-{timestamp}-{type}-{from}--{to}-{msg-id}.md
+{timestamp}-{from}--{to}-{msg-id}.md
 
-Example: 1772565000-task-core--dev-worker-task-123.md
+Example: 1772565000-core--dev-worker-task-123.md
 
-## Type Inference (Terminal-by-Default)
+## Routing (replaces type inference)
 
-Type is inferred when omitted:
-- To core/core with status: complete → task-complete
-- To core/core without status → ask-human (suspends sender)
-- To worker agent → task
-- From core/core → ask-response (resumes suspended agent)
+Messages route by context, not type strings:
+- To core/core with status: complete → completion
+- To core/core without status → agent question (suspends sender)
+- From core/core with pending ask → resume suspended session
+- From core/core without pending ask → new work for agent
+- Agent to agent → regular inter-agent message
 `,
 
   parallel: `# Parallel Mesh Instances

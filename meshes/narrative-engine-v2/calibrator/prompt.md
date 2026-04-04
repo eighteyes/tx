@@ -631,6 +631,133 @@ echo '<json>' | $SCRIPTS/game-write.sh {game_path} bond/{a_b}
 - No `entities.yaml` flat file. Each character and bond gets individual file.
 - Calibrator creates game-level artifacts only. Init-turn creates all campaigns (campaign-1, campaign-2, etc.).
 
+## Arc Schema — Canonical Structure
+
+arc.yaml supports a full dramatic architecture: acts, escalation rungs, seeds, questions, trajectory. Other agents see arc.yaml through `arc-read.sh`, which filters by current act. Only scribe and calibrator see the full file.
+
+**Full schema reference:** `scripts/schemas/arc-schema.md`
+
+### Information Barrier
+
+Agents (narrator, architect, gravity, sim-planner) receive act-scoped context via `arc-read.sh`. They NEVER see:
+- Future act summaries, objectives, or endings
+- Escalation rungs belonging to future acts
+- `activation_condition` on any seed (when/how it fires)
+- `seeds_to_plant` on rungs (director stage direction)
+- `dramatic_question.meta` or `.reader_question` (author intent)
+- `central_tension.structural` (narrative machine analysis)
+- `trajectory.critical_threshold` (what triggers next phase)
+- Recurring motif placements beyond the next marker
+
+Agents DO see all seed ids and notes (for foreshadowing), active questions, current trajectory, and the current act's rungs.
+
+### Writing Agent-Safe Content
+
+When writing to arc.yaml, content must be safe for agent consumption after filtering:
+
+**Seeds**: notes describe the TENSION, not the resolution. Avoid act references.
+- Good: "Character's talent deployed in another's service. What have they built for themselves?"
+- Bad: "Activates in Act III when V asks the question."
+
+**Act summaries**: The current act summary is visible to agents. Keep it descriptive of the present situation, not prescriptive of the arc's conclusion.
+
+**Trajectory**: `note` and `volatility` describe what IS. `critical_threshold` describes what's COMING (stripped from agents).
+
+### Acts
+
+Each act has a `status` field: `in_progress`, `complete`, or `dormant`. Only one act can be `in_progress` at a time. arc-read.sh uses this to determine scope.
+
+```yaml
+acts:
+  I:
+    name: string
+    status: in_progress     # Only this act visible to agents
+    objective: string       # What must happen for act to complete
+    summary: string         # Current state description
+    dramatic_question: string
+    current_position: string
+    ends_when: string       # REDACTED from agents — director knowledge
+```
+
+Transition: set current act to `complete`, next act to `in_progress`.
+
+### Escalation Ladder
+
+Rungs represent capability plateaus with 3-5 scenes each. Every rung MUST have an `act` field — arc-read.sh filters by this.
+
+```yaml
+escalation_ladder:
+  principle: string         # General guidance
+  reader_principle: string  # Reader experience
+
+  rung_N:
+    name: string
+    act: string             # REQUIRED — "I", "II", "III", etc.
+    status: string          # "complete" | "active" | "dormant"
+    capability: string      # What this rung proves when complete
+    principle: string       # How scenes interleave
+    scenes_needed:          # 3-5 named scenes
+      - name: string        # kebab-case scene identifier
+        description: string # Full scene description
+    scenes_delivered: []    # Completed scene descriptions
+    unlocks: string         # What this enables
+    seeds_to_plant: []      # REDACTED from agents — director stage direction
+```
+
+### Seeds
+
+Seeds are foreshadowing material. ALL seeds visible to agents regardless of status. `activation_condition` always stripped.
+
+```yaml
+seeds:
+  dormant:
+    - id: string                    # Visible — agent uses for foreshadowing
+      status: dormant
+      note: string                  # Visible — describes the tension
+      activation_condition: string  # REDACTED — when/how it fires
+  planted:
+    - id: string
+      status: planted
+      planted_turn: int
+      note: string                  # Visible
+      surface_when: string          # Visible — how it manifests
+  bloomed:
+    - id: string
+      status: bloomed
+      bloomed_turn: int
+      note: string                  # Visible
+```
+
+### Questions
+
+Dramatic questions tracked with pressure (0-100) and status.
+
+```yaml
+questions:
+  - id: string
+    question: string        # Visible
+    pressure: int           # Visible
+    status: string          # active | answered | dormant | planted
+    note: string            # Visible for active/answered, REDACTED for dormant
+    resolution: string      # Visible if answered
+```
+
+### Recurring Motifs
+
+Optional. For narrative elements that surface at key moments (an inner voice, a recurring image, a thematic callback). Keyed by marker ID.
+
+```yaml
+motif_name:                 # Any descriptive key (grandmother, recurring_dream, etc.)
+  principle: string         # When/why this surfaces
+  remaining:
+    M1:
+      location: string      # REDACTED — director knowledge
+      content: string       # Next marker visible, rest redacted
+    M2:
+      location: string
+      content: string
+```
+
 ### Game Name → game-id
 Convert to kebab-case: "The Last Light" → `the-last-light`
 

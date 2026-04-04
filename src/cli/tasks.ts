@@ -44,9 +44,15 @@ const STATUS_COLORS: Record<string, (s: string) => string> = {
 function buildTaskViews(queue: MessageQueue, options: TasksOptions): TaskView[] {
   const limit = options.limit ? parseInt(options.limit, 10) : 50;
 
-  // Get all task and task-complete messages
-  const taskMsgs = queue.queryMessages({ type: 'task', limit: limit * 2 });
-  const completeMsgs = queue.queryMessages({ type: 'task-complete', limit: limit * 2 });
+  // Tasks = messages from core/core to a worker (not core/core)
+  const fromCoreMsgs = queue.queryMessages({ from_agent: 'core/core', limit: limit * 2 });
+  const taskMsgs = fromCoreMsgs.filter(m => m.to_agent !== 'core/core');
+
+  // Completions = messages to core/core with status/outcome: complete in payload
+  const toCoreMsg = queue.queryMessages({ to_agent: 'core/core', limit: limit * 4 });
+  const completeMsgs = toCoreMsg.filter(m =>
+    m.payload['status'] === 'complete' || m.payload['outcome'] === 'complete'
+  );
 
   // Build a map of msg-id -> completion
   const completionMap = new Map<string, Message>();

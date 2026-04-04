@@ -19,6 +19,8 @@ import { log } from '../shared/logger.ts';
 import type { SessionStore, SessionMetadata, FileChangeSummary } from '../session/index.ts';
 import { buildRoutingSection, buildDispatcherRoutingSection, buildFreeRoutingSection } from '../prompt/sections/routing.js';
 import type { RoutingConfig } from '../prompt/sections/routing.js';
+import { buildOaomSection } from '../prompt/sections/oaom.js';
+import type { OaomContext } from '../prompt/sections/oaom.js';
 
 export interface InjectionContext {
   workspace: WorkspaceInfo;
@@ -813,6 +815,78 @@ Your failure message is the operator's diagnostic data. Make it specific.`;
     }
 
     return parts.join('\n');
+  }
+
+  // ============================================
+  // OAOM Stop Signal
+  // ============================================
+
+  /**
+   * Build the OAOM (One Agent, One Message) stop signal section.
+   * Instructs non-orchestrator agents to STOP after writing their output message.
+   *
+   * @param agentName - Name of the agent
+   * @param isOrchestrator - Whether the agent is an orchestrator
+   * @param routingTargets - Valid routing destinations extracted from routing config
+   * @returns Prompt section string, or empty string for orchestrators
+   */
+  buildOaomStopSection(agentName: string, isOrchestrator: boolean, routingTargets: string[]): string {
+    const context: OaomContext = {
+      agentName,
+      isOrchestrator,
+      routingTargets,
+    };
+    return buildOaomSection(context);
+  }
+
+  /**
+   * Extract valid routing targets from the routing context used in prompt assembly.
+   * Handles all three routing modes: agent, dispatcher, and free.
+   */
+  extractRoutingTargets(config: {
+    agentName: string;
+    routing?: RoutingConfig;
+    dispatcherRouting?: DispatchInjectionContext;
+    freeRouting?: { agentName: string; allAgents: string[]; completionAgents?: string[] };
+  }): string[] {
+    if (config.freeRouting) {
+      const targets: string[] = [];
+      for (const agent of config.freeRouting.allAgents) {
+        if (agent !== config.agentName) targets.push(agent);
+      }
+      const canComplete = !config.freeRouting.completionAgents ||
+        config.freeRouting.completionAgents.length === 0 ||
+        config.freeRouting.completionAgents.includes(config.agentName);
+      if (canComplete) targets.push('core/core');
+      return targets;
+    }
+
+    if (config.dispatcherRouting) {
+      const targets: string[] = [config.dispatcherRouting.sentinel];
+      // Peers are also valid discuss targets
+      if (config.dispatcherRouting.peers) {
+        for (const peer of config.dispatcherRouting.peers) {
+          if (!targets.includes(peer)) targets.push(peer);
+        }
+      }
+      return targets;
+    }
+
+    if (config.routing) {
+      // Agent-mode: flatten all destinations from the routing table
+      const destinations = new Set<string>();
+      for (const categoryDestinations of Object.values(config.routing)) {
+        for (const destination of Object.keys(categoryDestinations)) {
+          const target = destination === 'core' ? 'core/core' :
+                        destination.includes('/') ? destination :
+                        destination;
+          destinations.add(target);
+        }
+      }
+      return Array.from(destinations);
+    }
+
+    return [];
   }
 
   // ============================================

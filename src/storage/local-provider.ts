@@ -143,14 +143,14 @@ export class LocalStorageProvider implements StorageProvider {
     const timestamp = message.timestamp || Date.now();
     const safeFrom = message.from.replace(/\//g, '-');
     const safeTo = message.to.replace(/\//g, '-');
-    const filename = `${timestamp}-${message.type}-${safeFrom}--${safeTo}-${msgId}.md`;
+    const filename = `${timestamp}-${message.type || 'message'}-${safeFrom}--${safeTo}-${msgId}.md`;
     const filepath = path.join(msgDir, filename);
 
     // Build frontmatter
     const frontmatter: Record<string, string> = {
       to: message.to,
       from: message.from,
-      type: message.type,
+      type: message.type || 'message',
       'msg-id': msgId,
       timestamp: new Date(timestamp).toISOString(),
     };
