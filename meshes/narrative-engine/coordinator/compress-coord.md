@@ -62,22 +62,11 @@ context: {workspace}/context.yaml
 
 ## Completion Message to Core
 
-**Address: `to: core/core`** — this is mandatory. Never send to `dispatcher` or any other target.
+Send completion to `core/core` per Messaging Protocol (`status: complete`, `format: verbatim`).
+Use `msg-id: turn{N}-complete`, `headline: Turn {N} complete`.
 
-```yaml
----
-to: core/core
-from: narrative-engine/compress-coord
-type: task-complete
-msg-id: turn{N}-complete
-headline: Turn {N} complete
-format: verbatim
----
+Body: full prose.md text, followed by rearmatter:
 ```
-
-```
-{prose.md content - full text}
-
 ---
 ## Rearmatter
 | Field | Value |

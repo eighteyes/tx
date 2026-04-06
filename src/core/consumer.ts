@@ -1394,10 +1394,12 @@ export class MessageConsumer extends EventEmitter {
 
   /**
    * Check if a message represents a completion signal
-   * Replaces type-string inference — uses frontmatter fields directly
+   * Primary: status/outcome fields. Fallback: legacy type field for backward compat.
    */
   private isCompletion(frontmatter: Record<string, string | undefined>): boolean {
-    return frontmatter.status === 'complete' || frontmatter.outcome === 'complete';
+    return frontmatter.status === 'complete'
+      || frontmatter.outcome === 'complete'
+      || frontmatter.type === 'task-complete';
   }
 
   // ==========================================================================

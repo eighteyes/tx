@@ -801,18 +801,10 @@ When message contains `type: prologue`:
    turn: 0
    status: active
    ```
-4. Send completion to core with prologue text:
-   ```yaml
-   ---
-   to: core/core
-   from: narrative-engine/scribe
-   type: task-complete
-   msg-id: prologue-complete
-   headline: Prologue complete
-   format: verbatim
-   ---
-   {prologue.md content - full text}
-
+4. Send completion to core per Messaging Protocol (`status: complete`, `format: verbatim`).
+   Use `msg-id: prologue-complete`, `headline: Prologue complete`.
+   Body: full prologue.md text, followed by rearmatter:
+   ```
    ---
    ## Rearmatter
    | Field | Value |
@@ -840,21 +832,10 @@ After all compression work is done, scribe finalizes the turn:
 
 3. Read `{workspace}/prose.md` content
 
-4. Send completion message to `core/core`:
-   ```yaml
-   ---
-   to: core/core
-   from: narrative-engine/scribe
-   type: task-complete
-   msg-id: turn{N}-complete
-   headline: Turn {N} complete
-   format: verbatim
-   ---
+4. Send completion to core per Messaging Protocol (`status: complete`, `format: verbatim`).
+   Use `msg-id: turn{N}-complete`, `headline: Turn {N} complete`.
+   Body: full prose.md text, followed by rearmatter:
    ```
-   Body:
-   ```
-   {prose.md content - full text}
-
    ---
    ## Rearmatter
    | Field | Value |

@@ -2464,6 +2464,9 @@ export class WorkerDispatcher extends EventEmitter {
         const pendingAskHumans = pendingAsks.filter(a => a.to_agent === 'core/core');
         const pendingCount = pendingAskHumans.length;
 
+        // Pause heartbeat monitoring — agent is intentionally idle awaiting human response
+        this.reliability?.unregisterAgent(senderAgentId);
+
         // Store session for later resume (via SessionManager)
         this.sessionManager.suspend(senderAgentId, {
           sessionId,
@@ -5089,9 +5092,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
       // Wire up SDK events to FSM
       worker.on('start', async (data) => {
-        // Only call start if not already running (e.g., resumed from await state)
-        if (machine.currentState.status !== 'running') {
+        // Route to correct FSM transition based on current state:
+        // - initializing → start() (normal spawn, initialize() already called)
+        // - idle → processNext() (HITL resume after message:idle)
+        // - running/awaiting → skip (already active)
+        const status = machine.currentState.status;
+        if (status === 'initializing') {
           await machine.start(data.pid || process.pid);
+        } else if (status === 'idle') {
+          await machine.processNext();
         }
         startedResolve();  // Signal that FSM is now in 'running' state
         this.emit('worker:start', data);
