@@ -144,7 +144,7 @@ export interface SessionMetrics {
  * - manifest: filesystem-state-driven routing
  * - free: agents self-organize from full roster, no routing table
  */
-export type RoutingMode = 'agent' | 'dispatcher' | 'manifest' | 'free';
+export type RoutingMode = 'agent' | 'dispatcher' | 'manifest' | 'free' | 'static';
 
 /**
  * Fan-out options: trailing object in a fan-out array

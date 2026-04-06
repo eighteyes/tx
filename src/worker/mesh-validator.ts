@@ -148,8 +148,8 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   keepalive: { type: 'boolean' },
   grace_period_ms: { type: 'number', minimum: 0, maximum: 60000 },
   topology: { type: 'string', enum: ['static', 'dynamic'] },
-  routing_mode: { type: 'string', enum: ['agent', 'dispatcher', 'manifest', 'free'] },
-  routing: { type: 'object' },
+  routing_mode: { type: 'string', enum: ['agent', 'dispatcher', 'manifest', 'free', 'static'] },
+  routing: { type: 'object|array' },
   rearmatter: { type: 'object' },
   workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
   brain: { type: 'boolean' },
