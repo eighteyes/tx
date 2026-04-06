@@ -282,6 +282,31 @@ routing:
       const config = loader.get('routing-static-bad-agent');
       assert.strictEqual(config, undefined, 'static routing with unknown agent should fail validation');
     });
+
+    it('static routing sets entry_point to routing[0] and completion_agents to [routing[last]]', () => {
+      createMeshWithCustomAgents('routing-static-derived', `routing_mode: static
+routing:
+  - alpha
+  - beta
+  - gamma
+entry_point: beta
+agents:
+  - name: alpha
+    model: sonnet
+    prompt: alpha/prompt.md
+  - name: beta
+    model: sonnet
+    prompt: beta/prompt.md
+  - name: gamma
+    model: sonnet
+    prompt: gamma/prompt.md
+`);
+      loader.loadAll();
+      const config = loader.get('routing-static-derived');
+      assert.ok(config, 'mesh should be loaded');
+      assert.strictEqual(config!.entry_point, 'alpha', 'entry_point overridden to routing[0]');
+      assert.deepStrictEqual(config!.completion_agents, ['gamma'], 'completion_agents set to [routing[last]]');
+    });
   });
 
   describe('boundary_agents (deprecated alias for completion_agents)', () => {

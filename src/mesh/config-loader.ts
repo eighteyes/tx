@@ -510,6 +510,12 @@ export class MeshConfigLoader extends EventEmitter {
         log.warn('config-loader', `Mesh '${config.mesh}' uses deprecated top-level routing_fallback/routing_retry_max — move to guardrails.routing_error`);
       }
 
+      // Static routing: derive entry_point and completion_agents from chain order
+      if (config.routing_mode === 'static' && Array.isArray(config.routing) && config.routing.length > 0) {
+        config.entry_point = config.routing[0];
+        config.completion_agents = [config.routing[config.routing.length - 1]];
+      }
+
       // Store base path for relative prompt resolution
       config._basePath = basePath;
 
