@@ -1288,7 +1288,7 @@ export class WorkerDispatcher extends EventEmitter {
    * Process any queued messages for agents in a mesh after the mesh is un-halted.
    * This is called when a suspended session resumes and completes.
    */
-  private processQueuedMeshMessages(meshName: string): void {
+  processQueuedMeshMessages(meshName: string): void {
     const meshConfig = this.meshConfigs.get(meshName);
     if (!meshConfig) return;
 
@@ -5106,13 +5106,20 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       worker.on('start', async (data) => {
         // Route to correct FSM transition based on current state:
         // - initializing → start() (normal spawn, initialize() already called)
-        // - idle → processNext() (HITL resume after message:idle)
+        // - idle + new PID → restart() (respawn after process death)
+        // - idle + same PID → processNext() (HITL resume after message:idle)
         // - running/awaiting → skip (already active)
         const status = machine.currentState.status;
+        const newPid = data.pid || process.pid;
         if (status === 'initializing') {
-          await machine.start(data.pid || process.pid);
+          await machine.start(newPid);
         } else if (status === 'idle') {
-          await machine.processNext();
+          const currentPid = (machine.currentState as any).pid;
+          if (currentPid !== newPid) {
+            await machine.restart(newPid);
+          } else {
+            await machine.processNext();
+          }
         }
         startedResolve();  // Signal that FSM is now in 'running' state
         this.emit('worker:start', data);

@@ -3,7 +3,7 @@
  *
  * Manages lifecycle of ephemeral SDK workers:
  * pending → initializing → running → idle ⟲ → complete
- *                             ↓
+ *                             ↓         ↑ restart(pid)
  *                          error → retry (with limits)
  */
 
@@ -138,6 +138,18 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       return { valid: true };
     });
 
+    // Guard: idle → running (respawn with new PID)
+    this.registerGuard('restart', async (from, to) => {
+      if (from.status !== 'idle') {
+        return { valid: false, reason: `Cannot restart from ${from.status}` };
+      }
+      const toState = to as any;
+      if (!toState.pid || toState.pid <= 0) {
+        return { valid: false, reason: 'PID must be positive' };
+      }
+      return { valid: true };
+    });
+
     // Guard: running|idle → awaiting
     this.registerGuard('await', async (from) => {
       if (from.status !== 'running' && from.status !== 'idle') {
@@ -241,6 +253,25 @@ export class WorkerStateMachine extends StateMachine<WorkerState, WorkerContext>
       config: from.config,
       startedAt: (from as any).startedAt,
       pid: (from as any).pid
+    });
+  }
+
+  /**
+   * Transition: idle → running (respawn with new PID)
+   * Process backing idle worker died; attach replacement.
+   */
+  async restart(pid: number): Promise<void> {
+    const from = this.state;
+    if (from.status !== 'idle') {
+      log.warn('tx-fsm', `Cannot restart from ${from.status}, ignoring`, { entityId: this.id, status: from.status });
+      return;
+    }
+
+    await this.transition('restart', {
+      status: 'running',
+      config: from.config,
+      startedAt: (from as any).startedAt,
+      pid
     });
   }
 
