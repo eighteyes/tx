@@ -229,6 +229,59 @@ manifest:
       assert.ok(config, 'mesh should be loaded');
       assert.strictEqual(config!.routing_mode, 'manifest');
     });
+
+    it('loads routing_mode: static with array routing', () => {
+      createMeshWithCustomAgents('routing-static', `agents:
+  - name: worker-a
+    model: sonnet
+    prompt: prompt.md
+  - name: worker-b
+    model: sonnet
+    prompt: prompt.md
+  - name: worker-c
+    model: sonnet
+    prompt: prompt.md
+`, `routing_mode: static
+routing:
+  - worker-a
+  - worker-b
+  - worker-c
+`);
+      loader.loadAll();
+      const config = loader.get('routing-static');
+      assert.ok(config, 'mesh should be loaded');
+      assert.strictEqual(config!.routing_mode, 'static');
+      assert.ok(Array.isArray(config!.routing), 'routing should be an array');
+      assert.deepStrictEqual(config!.routing, ['worker-a', 'worker-b', 'worker-c']);
+    });
+
+    it('rejects routing_mode: static with empty routing array', () => {
+      createMeshWithCustomAgents('routing-static-empty', `agents:
+  - name: worker-a
+    model: sonnet
+    prompt: prompt.md
+`, `routing_mode: static
+routing: []
+`);
+      loader.loadAll();
+      const config = loader.get('routing-static-empty');
+      assert.strictEqual(config, undefined, 'empty static routing should fail validation');
+    });
+
+    it('rejects routing_mode: static with agent name not in agents list', () => {
+      createMeshWithCustomAgents('routing-static-bad-agent', `agents:
+  - name: worker-a
+    model: sonnet
+    prompt: prompt.md
+`, `routing_mode: static
+routing:
+  - worker-a
+  - ghost-agent
+`);
+      loader.loadAll();
+      const config = loader.get('routing-static-bad-agent');
+      assert.strictEqual(config, undefined, 'static routing with unknown agent should fail validation');
+    });
   });
 
   describe('boundary_agents (deprecated alias for completion_agents)', () => {

@@ -372,6 +372,25 @@ export class MeshValidator {
       );
     }
 
+    // Validate static routing mode: routing must be a non-empty string array,
+    // every entry must match a defined agent name
+    if (cfg.routing_mode === 'static') {
+      if (!cfg.routing || !Array.isArray(cfg.routing)) {
+        errors.push(`routing_mode: static requires routing to be a non-empty array of agent names${context}`);
+      } else if (cfg.routing.length === 0) {
+        errors.push(`routing_mode: static requires at least one agent in routing array${context}`);
+      } else {
+        const agentNames = new Set((cfg.agents || []).map((a: any) => a.name));
+        for (const name of cfg.routing) {
+          if (typeof name !== 'string') {
+            errors.push(`routing_mode: static — routing array entries must be strings, got ${typeof name}${context}`);
+          } else if (!agentNames.has(name)) {
+            errors.push(`routing_mode: static — agent '${name}' in routing array not found in agents list${context}`);
+          }
+        }
+      }
+    }
+
     // Validate free routing mode
     if (cfg.routing_mode === 'free') {
       // Warning: free mode with routing section (ignored at runtime)
