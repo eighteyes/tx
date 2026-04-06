@@ -4802,6 +4802,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           validOutcomes: dispatcherRoutingCtx.validOutcomes,
           peers: dispatcherRoutingCtx.peers,
         });
+      } else if (meshConfig?.routing_mode === 'static') {
+        // Static mode: no routing injection — agents just do their work and exit
+        log.debug('dispatcher', 'Static routing mode — skipping routing injection', { agentId });
       } else {
         routingConfig = this.extractAgentRouting(meshName, agent.name, meshConfig);
         if (routingConfig && Object.keys(routingConfig).length > 0) {
