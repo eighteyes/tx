@@ -121,9 +121,23 @@ routing:
 ```
 
 ### `routing_mode`
-- **Type**: `'agent' | 'dispatcher'`
+- **Type**: `'agent' | 'dispatcher' | 'static' | 'manifest' | 'free'`
 - **Required**: No (defaults to `agent`)
-- **Behavior**: When `dispatcher`, agents write to `mesh/dispatch` sentinel and the system routes based on `outcome:` frontmatter.
+- **Behavior**: Controls how agents are sequenced within a mesh.
+
+**Static routing** — ordered chain, worker exit fires next agent:
+```yaml
+routing_mode: static
+routing:
+  - preprocessor
+  - analyzer
+  - reporter
+```
+- `routing[0]` is entry point (overrides `entry_point`)
+- `routing[last]` is implicit completion agent
+- No inter-agent messaging — agents do their work and exit
+- On error: chain halts, error surfaces to `core/core`
+- Routing resolved at mesh load time, not runtime
 
 **Dispatcher routing format**:
 ```yaml
