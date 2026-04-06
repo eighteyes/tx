@@ -40,6 +40,7 @@ import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type Ad
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
+import { StaticRouter } from './static-router.ts';
 import { buildRoutingSection, buildDispatcherRoutingSection, buildFreeRoutingSection } from '../prompt/sections/routing.ts';
 import { WriteGate } from './write-gate.ts';
 import { ReadGate } from './read-gate.ts';
@@ -281,6 +282,7 @@ export class WorkerDispatcher extends EventEmitter {
   private running = false;
   private meshConfigs: Map<string, MeshConfig> = new Map();
   private meshFSMs: Map<string, MeshFSM> = new Map();  // mesh name -> FSM instance
+  private staticRouters: Map<string, StaticRouter> = new Map();
   private workspaceManager: WorkspaceManager;
   private promptInjector: PromptInjector;
   private lifecycleHooks: LifecycleHooks;
@@ -3676,6 +3678,13 @@ The system will resume your session when the human responds.`;
             this.guardrails.registerMesh(meshName, config.guardrails);
           }
 
+          // Re-init static router
+          if (config.routing_mode === 'static' && Array.isArray(config.routing)) {
+            this.staticRouters.set(meshName, new StaticRouter(meshName, config.routing as string[]));
+          } else {
+            this.staticRouters.delete(meshName);
+          }
+
           // Re-init FSM only if no active workers for this mesh
           const activeWorkers = this.workerLifecycle.getWorkersForMesh(meshName);
           if (activeWorkers.length === 0 && config.fsm) {
@@ -5987,6 +5996,43 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           if (meshConfig?.parallelism) {
             this.handleParallelBlockCompletion(meshName, agent.name, meshConfig);
           }
+
+          // Static routing: fire next agent in chain on clean exit
+          if (meshConfig?.routing_mode === 'static') {
+            const staticRouter = this.staticRouters.get(meshName);
+            if (staticRouter) {
+              const nextRoute = staticRouter.next(agent.name);
+              if (nextRoute) {
+                const [, nextAgentName] = nextRoute.target.split('/');
+                const nextAgentConfig = meshConfig.agents.find(a => a.name === nextAgentName);
+                if (nextAgentConfig) {
+                  log.info('dispatcher', 'Static chain: firing next agent', {
+                    meshName, completed: agent.name,
+                    next: nextRoute.target, index: nextRoute.index,
+                  });
+                  log.activity('static:chain', nextRoute.target, `Chained from ${agent.name}`);
+
+                  // Insert synthetic task message so spawnWorker can poll it
+                  this.queue.insert({
+                    from_agent: `${meshName}/${agent.name}`,
+                    to_agent: nextRoute.target,
+                    payload: {
+                      headline: 'Static chain: previous agent completed',
+                      body: `Agent '${agent.name}' completed. You are next in the chain.`,
+                    },
+                  });
+
+                  this.spawnWorker(meshName, nextAgentConfig);
+                } else {
+                  log.error('dispatcher', 'Static chain: next agent config not found', {
+                    meshName, next: nextAgentName,
+                  });
+                }
+              } else {
+                log.info('dispatcher', 'Static chain complete', { meshName, finalAgent: agent.name });
+              }
+            }
+          }
         }
 
         this.emit('worker:complete', {
@@ -6093,6 +6139,15 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.cleanupWorker(agentId, errorWorkerId);
           this.processNextQueuedMessage(agentId);
           return;
+        }
+
+        // Static chain: halt on error — don't fire next agent
+        if (meshConfig?.routing_mode === 'static') {
+          log.error('dispatcher', 'Static chain halted on error', {
+            meshName, failedAgent: agent.name,
+            error: data.error,
+          });
+          // Error already surfaces to core via normal error handling path below
         }
 
         // ENSEMBLE MODE: Record error and return early (no FSM retry logic)
@@ -6359,6 +6414,12 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
     for (const [meshName, config] of this.meshConfigs) {
       if (config.guardrails) {
         this.guardrails.registerMesh(meshName, config.guardrails);
+      }
+      if (config.routing_mode === 'static' && Array.isArray(config.routing)) {
+        this.staticRouters.set(meshName, new StaticRouter(meshName, config.routing as string[]));
+        log.info('dispatcher', 'Initialized static router', {
+          meshName, chain: config.routing,
+        });
       }
       if (config.dev_mode) {
         log.warn('dispatcher', `[DEV MODE] Mesh '${meshName}' has dev_mode enabled — all agents forced to haiku`, {
