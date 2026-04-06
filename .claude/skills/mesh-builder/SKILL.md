@@ -22,6 +22,7 @@ Every config option added is complexity that can break. The default question for
 | `parallelism:` | Agents truly run in parallel and need a sync gate | Omit |
 | `routing_mode: dispatcher` | Fan-out to N parallel workers is the core mechanic | Omit |
 | `routing_mode: free` | Agents self-organize — each sees full roster, decides routing autonomously | Omit |
+| `routing_mode: static` | Sequential agent chain — worker exit fires next agent, no messaging | Omit |
 | `routing_mode: manifest` | Workflow is a file pipeline — agents produce files that unlock downstream agents | Omit |
 | `type: persistent` / `auto_despawn: false` | Mesh must survive indefinitely (daemon pattern) | Omit |
 | `continuation: false` | You explicitly need cold starts for isolation | Omit (continuation is default-on) |
@@ -620,6 +621,32 @@ completion_agents:            # Optional: omit to let any agent complete
 - `completion_agents` controls who sees `core/core` as destination. Omit = all agents can complete
 - `entry_point` omitted → all agents receive the initial task simultaneously
 - Not compatible with FSM (warned if present)
+
+### Static Routing Mode
+
+Ordered agent chain — each agent runs sequentially, worker exit fires the next agent automatically. No message passing between agents.
+
+```yaml
+# Static routing — sequential chain, no agent messaging
+routing_mode: static
+routing:
+  - preprocessor
+  - analyzer
+  - reporter
+# routing[0] = entry_point (preprocessor)
+# routing[last] = completion agent (reporter)
+# Each agent runs, exits, next fires automatically
+# On error: chain halts, error surfaces to core/core
+```
+
+- `routing` must be an ordered array of agent names
+- First agent in array is the entry point (receives initial task)
+- Last agent in array is the completion agent (routes to core/core on completion)
+- No `entry_point` or `completion_agents` needed (derived from routing chain)
+- Each agent's completion triggers the next agent's spawn automatically
+- Agents do NOT write messages to mesh addresses — chain advances on exit
+- Error in any agent halts the chain; error surfaces to core/core
+- Not compatible with FSM or free routing (warned if mixed)
 
 **Fan-in delivery modes** (`fan_in`):
 
@@ -1493,7 +1520,7 @@ Full reference: `docs/guardrails.md`
 
 ```bash
 tx status    # Workers, queue
-tx msg       # Message viewer
+tx trace     # Message trace viewer
 tx spy       # Real-time activity
 tx logs      # System logs
 ```

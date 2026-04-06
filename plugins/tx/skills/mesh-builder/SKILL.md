@@ -339,6 +339,32 @@ Fan-out members with `discuss: true` receive a peer list in their prompt. They u
 
 Type detection: string value = linear, object value = branch, array value = fan-out, absent = terminal.
 
+### Static Routing Mode
+
+Ordered agent chain — each agent runs sequentially, worker exit fires the next agent automatically. No message passing between agents.
+
+```yaml
+# Static routing — sequential chain, no agent messaging
+routing_mode: static
+routing:
+  - preprocessor
+  - analyzer
+  - reporter
+# routing[0] = entry_point (preprocessor)
+# routing[last] = completion agent (reporter)
+# Each agent runs, exits, next fires automatically
+# On error: chain halts, error surfaces to core/core
+```
+
+- `routing` must be an ordered array of agent names
+- First agent in array is the entry point (receives initial task)
+- Last agent in array is the completion agent (routes to core/core on completion)
+- No `entry_point` or `completion_agents` needed (derived from routing chain)
+- Each agent's completion triggers the next agent's spawn automatically
+- Agents do NOT write messages to mesh addresses — chain advances on exit
+- Error in any agent halts the chain; error surfaces to core/core
+- Not compatible with FSM or free routing (warned if mixed)
+
 ## Common Patterns
 
 **Session reuse** (default behavior): `continuation: true` is the default — sessions persist naturally. Set `continuation: false` to force cold starts (needed for `checkpoint`/`fork_from` isolation).
@@ -882,7 +908,7 @@ Full reference: `docs/guardrails.md`
 
 ```bash
 tx status    # Workers, queue
-tx msg       # Message viewer
+tx trace     # Message trace viewer
 tx spy       # Real-time activity
 tx logs      # System logs
 ```
