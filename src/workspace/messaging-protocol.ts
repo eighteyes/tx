@@ -91,8 +91,12 @@ Set \`status\` in frontmatter to indicate outcome:
  * Dispatcher-mode messaging protocol.
  * Omits core/core references — dispatcher agents route through their sentinel.
  * The routing section (injected separately) tells agents exactly where to send.
+ *
+ * @param meshName - The mesh name, used to construct the sentinel address (e.g., "llm-council")
  */
-export const DISPATCHER_MESSAGING_PROTOCOL = `
+export function buildDispatcherMessagingProtocol(meshName: string): string {
+  const sentinel = `${meshName}/dispatch`;
+  return `
 ## Messaging Protocol
 
 Write messages to \`.ai/tx/msgs/\` with this filename format:
@@ -105,7 +109,7 @@ To generate filenames, run this command and use its output:
 echo "$(date +%s)-{mesh-agent}--{target-mesh-agent}-$(date +%s%N | tail -c 6).md"
 \`\`\`
 
-Example output: \`1733901000-dev-worker--dev-dispatch-123456.md\`
+Example output: \`1733901000-${meshName}-worker--${sentinel.replace('/', '-')}-123456.md\`
 
 **The filename must contain actual numbers, not shell syntax.** Run the command, then use the resulting string.
 
@@ -113,8 +117,8 @@ Example output: \`1733901000-dev-worker--dev-dispatch-123456.md\`
 
 \`\`\`yaml
 ---
-to: dispatch              # Always send to your mesh's dispatch sentinel
-from: mesh/agent          # Always use full qualified name (e.g., dev/worker)
+to: ${sentinel}           # Always send to your mesh's dispatch sentinel
+from: ${meshName}/agent   # Always use full qualified name (e.g., ${meshName}/worker)
 outcome: complete         # Required: your routing outcome
 route_to: agent-name      # Optional: direct to a specific agent
 msg-id: unique-id         # Short identifier for correlation
@@ -126,7 +130,7 @@ Message body content here.
 
 ### Routing
 
-Send ALL messages to the dispatch sentinel specified in the routing section below. Set \`outcome:\` to indicate your result. The sentinel handles all routing decisions.
+Send ALL messages to \`${sentinel}\` (the dispatch sentinel specified in the routing section below). Set \`outcome:\` to indicate your result. The sentinel handles all routing decisions.
 
 ### Status Field
 
@@ -136,3 +140,10 @@ Set \`status\` in frontmatter to indicate outcome:
 - \`blocked\` - Cannot proceed, needs intervention
 .
 `;
+}
+
+/**
+ * @deprecated Use buildDispatcherMessagingProtocol(meshName) instead.
+ * Kept for backward compatibility — omits mesh name from sentinel example.
+ */
+export const DISPATCHER_MESSAGING_PROTOCOL = buildDispatcherMessagingProtocol('mesh');

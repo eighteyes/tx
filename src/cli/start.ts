@@ -280,6 +280,9 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
         } else if (ctrl.action === 'reload-meshes') {
           disp.reloadMeshConfigs(ctrl.mesh);
           log.info('start', 'SIGUSR2: reloaded mesh configs', { mesh: ctrl.mesh || 'all' });
+        } else if (ctrl.action === 'unstick-mesh' && ctrl.mesh) {
+          disp.processQueuedMeshMessages(ctrl.mesh);
+          log.info('start', 'SIGUSR2: unstick mesh — processing queued messages', { mesh: ctrl.mesh });
         } else if (ctrl.action === 'dlq-recover') {
           if (disp.reliability) {
             const results = ctrl.mesh === '_all'

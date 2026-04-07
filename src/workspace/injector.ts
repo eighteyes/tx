@@ -10,7 +10,7 @@
  */
 
 import type { WorkspaceInfo } from './manager.ts';
-import { MESSAGING_PROTOCOL, DISPATCHER_MESSAGING_PROTOCOL } from './messaging-protocol.ts';
+import { MESSAGING_PROTOCOL, buildDispatcherMessagingProtocol } from './messaging-protocol.ts';
 import type { FSMStateConfig } from '../shared/types.ts';
 import type { DispatchInjectionContext } from '../shared/types.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -795,7 +795,10 @@ Your failure message is the operator's diagnostic data. Make it specific.`;
     const parts: string[] = [];
 
     // Messaging protocol — dispatcher-mode agents get a variant that omits core/core
-    const protocol = config.dispatcherRouting ? DISPATCHER_MESSAGING_PROTOCOL : MESSAGING_PROTOCOL;
+    // Uses mesh-qualified sentinel (e.g., "llm-council/dispatch") in the example frontmatter
+    const protocol = config.dispatcherRouting
+      ? buildDispatcherMessagingProtocol(config.meshName)
+      : MESSAGING_PROTOCOL;
     parts.push(protocol.trim());
 
     // Routing destinations (appended to messaging for cohesion)

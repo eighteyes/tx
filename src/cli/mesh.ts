@@ -765,7 +765,7 @@ async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
     if (suspendedCleared === 0 && asksCleared === 0) {
       console.log(chalk.dim('\n  No halt state to clear.'));
     } else {
-      console.log(chalk.dim('\n  Mesh will resume processing on next message or restart.'));
+      console.log(chalk.dim('\n  Mesh halt cleared — signaling dispatcher to resume processing.'));
     }
     console.log();
 
@@ -775,6 +775,24 @@ async function unstickMesh(meshName: string, flags: MeshFlags): Promise<void> {
       asksCleared,
       queuedMessages: pendingMessages.length,
     });
+
+    // Signal running dispatcher to process queued messages immediately
+    const pidFile = path.join(cwd, '.ai/tx/data/.pid');
+    const controlFile = path.join(cwd, '.ai/tx/data/control.json');
+    if (fs.existsSync(pidFile)) {
+      try {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        if (!isNaN(pid)) {
+          fs.writeFileSync(controlFile, JSON.stringify({ action: 'unstick-mesh', mesh: meshName }));
+          process.kill(pid, 'SIGUSR2');
+          if (!flags.json) {
+            console.log(chalk.dim('  Signaled running dispatcher to process queued messages.'));
+          }
+        }
+      } catch {
+        // Process not running — DB clear is sufficient
+      }
+    }
   } finally {
     queue.close();
   }

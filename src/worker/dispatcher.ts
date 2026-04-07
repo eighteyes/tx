@@ -6941,7 +6941,9 @@ ${output}
         // Branch on fan_in mode
         if (fanIn === 'batch') {
           // Batch: combine all messages into one, spawn single worker
-          this.deliverBatchToJoinAgent(meshName, joinAgentId, transform);
+          // Pass expected count so batch can wait for all messages to be queued
+          // (fan-out-complete fires before queue insert — race condition)
+          this.deliverBatchToJoinAgent(meshName, joinAgentId, transform, group.agents.size);
         } else {
           // Queue mode: current OAOM behavior (N cold starts)
           this.processNextQueuedMessage(joinAgentId);
@@ -6999,15 +7001,41 @@ ${output}
   private async deliverBatchToJoinAgent(
     meshName: string,
     joinAgentId: string,
-    transform?: 'summarize'
+    transform?: 'summarize',
+    expectedCount?: number
   ): Promise<void> {
+    // Race condition: fan-out-complete fires before queue insert completes.
+    // If we have an expected count, peek with retries until all messages land,
+    // then poll once to consume them all atomically.
+    if (expectedCount) {
+      const maxRetries = 10;
+      for (let i = 0; i < maxRetries; i++) {
+        const pending = this.queue.queryMessages({
+          to_agent: joinAgentId, status: 'pending', limit: expectedCount,
+        });
+        if (pending.length >= expectedCount) break;
+        log.info('dispatcher', 'Batch delivery: waiting for all messages to be queued', {
+          meshName, joinAgentId,
+          have: pending.length, expected: expectedCount, retry: i + 1,
+        });
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
     const messages = this.queue.poll(joinAgentId);
+
     if (messages.length === 0) {
       log.warn('dispatcher', 'Batch delivery: no pending messages for join agent', {
         meshName, joinAgentId,
       });
       this.processNextQueuedMessage(joinAgentId);
       return;
+    }
+
+    if (expectedCount && messages.length < expectedCount) {
+      log.warn('dispatcher', 'Batch delivery: proceeding with partial batch', {
+        meshName, joinAgentId,
+        have: messages.length, expected: expectedCount,
+      });
     }
 
     log.info('dispatcher', 'Batch delivery: combining messages for join agent', {

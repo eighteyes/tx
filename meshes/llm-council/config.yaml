@@ -1,0 +1,91 @@
+# llm-council
+# Clone of Karpathy's LLM Council adapted for TX
+# Pipeline: coordinator → [alpha, beta, gamma] → anonymizer → [alpha-review, beta-review, gamma-review] → chairman
+#
+# Diversity source: framework constraints + model tier, not personas
+#   alpha  (haiku)  — DECOMPOSE: subproblems, constraint-first, modular
+#   beta   (sonnet) — INVERT: assume obvious is wrong, steelman alternatives
+#   gamma  (opus)   — TRACE: 2nd/3rd order effects, systemic implications
+#
+# Two chained fan-outs via dispatcher routing:
+#   Stage 1: parallel opinions → batch to anonymizer
+#   Stage 2: anonymous peer review → batch to chairman synthesis
+
+mesh: llm-council
+description: "Multi-perspective council: parallel opinions, anonymous peer review, chairman synthesis"
+
+# dev_mode: true  # Disabled — model tier diversity is the point
+
+routing_mode: dispatcher
+load_claude_md: false
+
+agents:
+  - name: coordinator
+    model: haiku
+    prompt: coordinator/prompt.md
+    orchestrator: true
+
+  - name: alpha
+    model: haiku
+    prompt: members/decompose.md
+
+  - name: beta
+    model: sonnet
+    prompt: members/invert.md
+
+  - name: gamma
+    model: opus
+    prompt: members/trace.md
+
+  - name: anonymizer
+    model: haiku
+    prompt: anonymizer/prompt.md
+
+  - name: alpha-review
+    model: haiku
+    prompt: reviewers/decompose.md
+
+  - name: beta-review
+    model: sonnet
+    prompt: reviewers/invert.md
+
+  - name: gamma-review
+    model: opus
+    prompt: reviewers/trace.md
+
+  - name: chairman
+    model: opus
+    prompt: chairman/prompt.md
+
+entry_point: coordinator
+completion_agents: [chairman]
+
+routing:
+  coordinator: [alpha, beta, gamma, { complete: anonymizer, fan_in: batch }]
+  anonymizer: [alpha-review, beta-review, gamma-review, { complete: chairman, fan_in: batch }]
+
+workspace:
+  path: ".ai/tx/workspaces/llm-council"
+  create_on_init: true
+
+playbook_notes: |
+  Cloned from Karpathy's github.com/karpathy/llm-council (16.7k stars).
+  Original uses OpenRouter to hit GPT/Gemini/Claude/Grok for model-architecture
+  diversity. TX only has Claude, so diversity comes from two orthogonal axes:
+
+  1. Framework constraints (procedural divergence):
+     - DECOMPOSE forces modular, constraint-first analysis
+     - INVERT forces contrarian reasoning, steelmanning alternatives
+     - TRACE forces systemic, second-order-effect mapping
+     These produce structurally different reasoning PATHS even from same model.
+
+  2. Model tier (cognitive divergence):
+     - haiku: fast, stripped-down, catches simplicity opus overcomplicates
+     - sonnet: balanced, good for structured contrarian analysis
+     - opus: deep, traces implications others miss entirely
+
+  Kill signal: If all three members reach same conclusion via same reasoning
+  path, lenses have failed. Monitor review stage — if reviewers rank all
+  responses equally, diversity injection is too weak.
+
+  Systems analysis: .ai/systems/2026-04-05-llm-council-lens-diversity.md

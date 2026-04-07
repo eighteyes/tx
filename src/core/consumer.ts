@@ -634,6 +634,7 @@ export class MessageConsumer extends EventEmitter {
       // DISPATCHER ROUTING — resolve mesh/dispatch sentinel to real target
       // =================================================================
       let dispatcherResolved = false;
+      let deferredFanOutComplete: { meshName: string; agentName: string; joinAgent: string } | undefined;
       const [sentinelMesh, sentinelAgent] = toAgent.split('/');
       if (sentinelAgent === 'dispatch') {
         const resolved = await this.resolveDispatcherRouting(
@@ -643,7 +644,8 @@ export class MessageConsumer extends EventEmitter {
           // Resolution failed — nudge/escalation already handled
           return;
         }
-        toAgent = resolved;
+        toAgent = typeof resolved === 'string' ? resolved : resolved.target;
+        deferredFanOutComplete = typeof resolved === 'string' ? undefined : resolved.fanOutComplete;
         dispatcherResolved = true;
       }
 
@@ -1022,6 +1024,12 @@ export class MessageConsumer extends EventEmitter {
         file: filename,
         event
       });
+
+      // Emit deferred fan-out-complete AFTER queue insert to prevent race condition.
+      // The gate opens and poll() runs synchronously — the message must be in SQLite first.
+      if (deferredFanOutComplete) {
+        this.emit('fan-out-complete', deferredFanOutComplete);
+      }
 
       // Emit events for event-driven dispatch (no polling needed)
       // Skip headless messages - they're handled by tx run, not the dispatcher
@@ -1484,7 +1492,7 @@ export class MessageConsumer extends EventEmitter {
     fromAgent: string,
     frontmatter: Frontmatter,
     filepath: string
-  ): Promise<string | null> {
+  ): Promise<string | { target: string; fanOutComplete?: { meshName: string; agentName: string; joinAgent: string } } | null> {
     const meshConfig = await this.loadMeshConfig(meshName);
     if (!meshConfig || meshConfig.routing_mode !== 'dispatcher') {
       log.warn('consumer', 'Message to mesh/dispatch but mesh is not in dispatcher mode', {
@@ -1555,17 +1563,15 @@ export class MessageConsumer extends EventEmitter {
         });
       }
 
-      // Check if this agent is completing into a fan-out join agent
-      // Source 'branch' covers both explicit and implicit fan-out member routing
-      if (outcome === 'complete' && resolved.target !== 'core/core') {
-        this.emit('fan-out-complete', {
-          meshName,
-          agentName: senderAgent,
-          joinAgent: resolved.target.split('/')[1],
-        });
-      }
-
-      return resolved.target;
+      // Fan-out-complete: return metadata for caller to emit AFTER queue insert.
+      // Emitting here (before queue insert) causes a race: the gate opens and
+      // poll() runs before the message lands in SQLite.
+      return {
+        target: resolved.target,
+        fanOutComplete: (outcome === 'complete' && resolved.target !== 'core/core')
+          ? { meshName, agentName: senderAgent, joinAgent: resolved.target.split('/')[1] }
+          : undefined,
+      };
     }
 
     // Resolution failed — nudge the agent
