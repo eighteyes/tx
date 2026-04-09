@@ -1,0 +1,27 @@
+/**
+ * Capability Module
+ *
+ * Bidirectional capability matching for meshes and plans.
+ *
+ * Responsibilities:
+ * - Re-export schema types, enums, and validation
+ * - Serve as entry point for router, factory, and validator (future)
+ */
+
+export {
+  DOMAIN_VALUES,
+  INPUT_VALUES,
+  OUTPUT_VALUES,
+  TOOL_VALUES,
+  INTERACTION_VALUES,
+  TOPOLOGY_VALUES,
+  type Domain,
+  type Input,
+  type Output,
+  type Tool,
+  type Interaction,
+  type Topology,
+  type CapabilityDeclaration,
+  type CapabilityNeeded,
+  isValidCapability,
+} from './schema.ts';
