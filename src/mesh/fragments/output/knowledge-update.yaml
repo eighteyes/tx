@@ -1,0 +1,23 @@
+id: output/knowledge-update
+sections:
+  description: |
+    Spec-graph mutations, documentation updates, or structured knowledge changes.
+    Complete when all changes are additive or explicitly replace existing entries,
+    and no existing references are broken.
+
+  format:
+    - "Structured data matching the target schema (spec-graph JSON, markdown, YAML)"
+    - "Each mutation identifies the entity and operation (add, update, replace)"
+    - "Cross-references use existing entity IDs — no dangling pointers"
+
+  completeness:
+    - "All changes are additive or explicitly marked as replacements"
+    - "Existing references remain valid after the update"
+    - "New entities include required fields per the target schema"
+    - "Change rationale documented — why this knowledge was added or modified"
+
+  anti-patterns:
+    - "Creating duplicate entries instead of updating existing ones"
+    - "Breaking existing cross-references by renaming without updating dependents"
+    - "Adding knowledge without source attribution or confidence signal"
+    - "Mutating schema structure instead of populating it with data"

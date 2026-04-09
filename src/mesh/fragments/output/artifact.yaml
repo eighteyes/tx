@@ -1,0 +1,21 @@
+id: output/artifact
+sections:
+  description: |
+    Generic file output — configs, data files, scripts, templates.
+    Complete when the file is syntactically valid and usable without manual editing.
+
+  format:
+    - "Use the correct file format and extension for the content type"
+    - "Valid syntax — parseable by the relevant tool (JSON, YAML, TOML, shell, etc.)"
+    - "Include a header comment identifying the file's purpose where the format allows"
+
+  completeness:
+    - "File is immediately usable — no manual search-and-replace required"
+    - "All referenced paths, URLs, and identifiers resolve correctly"
+    - "Executable scripts include proper shebang and are marked executable"
+
+  anti-patterns:
+    - "Leaving placeholder values (CHANGE_ME, YOUR_VALUE_HERE) in output"
+    - "Writing a format the consumer cannot parse (e.g., YAML with tabs)"
+    - "Omitting required fields that cause silent failures downstream"
+    - "Hardcoding environment-specific values that should be parameterized"

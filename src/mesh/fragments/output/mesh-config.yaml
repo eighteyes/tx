@@ -1,0 +1,24 @@
+id: output/mesh-config
+sections:
+  description: |
+    Generated mesh configuration (config.yaml and agent prompt files).
+    Complete when the config passes validation, all agents are routable,
+    and guardrails prevent runaway execution.
+
+  format:
+    - "Valid config.yaml per mesh-builder spec with correct schema version"
+    - "Agent prompt files co-located in the mesh directory"
+    - "Routing paths cover all expected message flows between agents"
+    - "Guardrails configured with explicit limits (max_messages, max_turns)"
+
+  completeness:
+    - "Config passes mesh validation without errors"
+    - "Every agent is reachable from at least one routing path"
+    - "Guardrails set on every agent — no unbounded execution"
+    - "Permissions scoped to what each agent actually needs"
+
+  anti-patterns:
+    - "Orphaned agents with no inbound routes"
+    - "Missing guardrails allowing infinite message loops"
+    - "Over-permissioned agents — granting broad access when narrow suffices"
+    - "Prompt files that reference tools or capabilities not granted in config"

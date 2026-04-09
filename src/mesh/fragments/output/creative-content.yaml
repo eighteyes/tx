@@ -1,0 +1,22 @@
+id: output/creative-content
+sections:
+  description: |
+    Narrative, prose, or creative writing output.
+    Complete when the piece has a coherent arc, consistent voice, and no unresolved threads.
+
+  format:
+    - "Markdown with clear structural hierarchy (headings, sections, breaks)"
+    - "Consistent narrative voice and tense throughout"
+    - "Dialogue and attribution formatted per the target style guide"
+
+  completeness:
+    - "Complete arc — beginning, development, resolution (no dangling threads)"
+    - "Every introduced element (character, concept, question) is resolved or intentionally open"
+    - "Tone and register match the brief from start to finish"
+    - "Word count falls within the specified range, if one was given"
+
+  anti-patterns:
+    - "Ending abruptly without resolution or intentional cliffhanger"
+    - "Shifting tone or voice mid-piece without narrative justification"
+    - "Generic AI-sounding prose — 'In conclusion', 'It's important to note', 'delve'"
+    - "Summarizing instead of dramatizing — telling where showing was requested"

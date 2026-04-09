@@ -1,0 +1,23 @@
+id: output/analysis
+sections:
+  description: |
+    Investigative findings and diagnostics.
+    Complete when all investigated areas are covered, evidence supports each finding,
+    and confidence levels distinguish certainty from speculation.
+
+  format:
+    - "Structured findings: observation, evidence, confidence level, implication"
+    - "Confidence rated per finding — high / medium / low with reasoning"
+    - "Gaps and uninvestigated areas called out explicitly"
+
+  completeness:
+    - "All areas in the investigation scope addressed or noted as out-of-scope"
+    - "Every finding has supporting evidence (logs, data, code references)"
+    - "Gaps between findings acknowledged — what remains unknown"
+    - "Root cause distinguished from symptoms where applicable"
+
+  anti-patterns:
+    - "Presenting speculation as confirmed finding — always tag confidence"
+    - "Omitting negative results — what was checked and found clean matters"
+    - "Missing confidence ratings — reader cannot triage without them"
+    - "Jumping to root cause without showing the diagnostic chain"

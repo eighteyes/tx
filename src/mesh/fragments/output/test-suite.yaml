@@ -1,0 +1,24 @@
+id: output/test-suite
+sections:
+  description: |
+    Test files and test plans.
+    Complete when tests are executable, follow project conventions,
+    and cover happy path, edge cases, and error conditions.
+
+  format:
+    - "Executable tests using the project's existing test framework and conventions"
+    - "Test names describe the behavior being verified, not the implementation"
+    - "One assertion focus per test — test isolation over test economy"
+    - "Setup and teardown handle their own state — no test ordering dependencies"
+
+  completeness:
+    - "Happy path covered for every function or flow under test"
+    - "Edge cases identified and tested (empty input, boundaries, nulls)"
+    - "Error cases covered — invalid input, failure modes, timeouts"
+    - "Tests run green in isolation and in suite — no hidden dependencies"
+
+  anti-patterns:
+    - "Tests that always pass regardless of implementation (tautological assertions)"
+    - "Testing implementation details instead of observable behavior"
+    - "Shared mutable state between tests causing order-dependent results"
+    - "Duplicating production logic in test setup — test the code, not a copy of it"

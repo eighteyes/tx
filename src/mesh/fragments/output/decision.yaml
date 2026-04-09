@@ -1,0 +1,24 @@
+id: output/decision
+sections:
+  description: |
+    A recommendation with structured reasoning and alternatives.
+    Complete when alternatives are genuinely evaluated, tradeoffs are explicit,
+    and the reader can disagree with the recommendation using the same evidence.
+
+  format:
+    - "Structure: recommendation, reasoning, alternatives considered, risks"
+    - "Each alternative evaluated on the same criteria as the recommendation"
+    - "Risks stated with likelihood and impact, not just listed"
+    - "Reversibility of each option noted — cheap-to-reverse preferred"
+
+  completeness:
+    - "Recommendation stated clearly and unambiguously up front"
+    - "Alternatives are real contenders, not strawmen set up to lose"
+    - "Tradeoffs explicit — what the recommendation costs and what it gains"
+    - "Decision criteria stated so the reader can re-evaluate with different weights"
+
+  anti-patterns:
+    - "Recommending without showing what was considered and rejected"
+    - "False certainty — presenting a judgment call as the only viable option"
+    - "Listing risks without assessing likelihood or severity"
+    - "Strawman alternatives that no reasonable person would choose"

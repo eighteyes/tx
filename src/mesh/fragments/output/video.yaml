@@ -1,0 +1,23 @@
+id: output/video
+sections:
+  description: |
+    Rendered video output.
+    Complete when the video renders without errors, matches the target spec
+    (resolution, format, codec, duration), and all tracks are present.
+
+  format:
+    - "Target resolution, aspect ratio, and frame rate as specified"
+    - "Correct container format and codec (e.g., MP4/H.264, WebM/VP9)"
+    - "Audio and video tracks synchronized and present where required"
+
+  completeness:
+    - "Renders to completion without errors or corrupted frames"
+    - "Duration matches the spec or source material"
+    - "All specified tracks present — video, audio, subtitles as required"
+    - "Output file playable in standard players without transcoding"
+
+  anti-patterns:
+    - "Missing audio track on a video that requires sound"
+    - "Wrong aspect ratio causing stretched or cropped content"
+    - "Submitting partially rendered output with missing segments"
+    - "Ignoring codec/format constraints — delivering a format the consumer cannot play"

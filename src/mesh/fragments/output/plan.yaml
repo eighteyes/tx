@@ -1,0 +1,24 @@
+id: output/plan
+sections:
+  description: |
+    Implementation plan or execution strategy.
+    Complete when someone can execute every step without re-researching
+    the codebase, and each step has a way to verify it worked.
+
+  format:
+    - "Numbered tasks with explicit dependencies between them"
+    - "Each task names the target file paths and functions"
+    - "Success criteria per task — how to verify the step is done"
+    - "Estimated risk or complexity noted for non-trivial steps"
+
+  completeness:
+    - "Every task is self-contained enough to execute without re-discovery"
+    - "Dependencies between tasks are explicit — ordering is intentional"
+    - "Verification steps included — each task tells you how to confirm it worked"
+    - "Scope boundaries stated — what the plan covers and what it defers"
+
+  anti-patterns:
+    - "Vague steps like 'update the config' without naming the file or field"
+    - "Missing file paths — forcing the executor to search the codebase"
+    - "No verification steps — no way to confirm a task succeeded"
+    - "Unbounded scope — plans that grow to cover everything instead of the goal"

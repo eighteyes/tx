@@ -1,0 +1,24 @@
+id: output/report
+sections:
+  description: |
+    Structured analysis or summary document.
+    Complete when every claim is sourced, every recommendation is actionable,
+    and the key findings are accessible within 30 seconds of reading.
+
+  format:
+    - "Structure: executive summary, findings, supporting detail, recommendations"
+    - "Executive summary is self-contained — a reader who stops there gets the point"
+    - "Findings numbered and cross-referenced to supporting evidence"
+    - "Recommendations include who acts, what they do, and expected outcome"
+
+  completeness:
+    - "Every claim backed by cited evidence or explicit assumption"
+    - "Every recommendation is actionable — includes concrete next step"
+    - "Scope and limitations stated — what the report covers and what it does not"
+    - "No finding introduced in detail section that is absent from the summary"
+
+  anti-patterns:
+    - "Walls of undifferentiated text with no hierarchy or callouts"
+    - "Burying the key finding on page three — lead with what matters"
+    - "Recommendations without tradeoffs or resource implications"
+    - "Missing executive summary — forcing the reader to extract their own"

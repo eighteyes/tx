@@ -1,0 +1,22 @@
+id: output/code-changes
+sections:
+  description: |
+    Modified or new source files delivered as in-place edits.
+    Complete when all changes compile, pass tests, and contain no deferred work.
+
+  format:
+    - "Apply changes in-place — no separate diff or patch files"
+    - "Follow existing code style, indentation, and naming conventions in the target file"
+    - "Group related changes into logical units — one concern per edit"
+
+  completeness:
+    - "All planned changes applied — no partial implementations"
+    - "Tests pass (existing and new) with no regressions"
+    - "No TODO, FIXME, or placeholder comments left in changed code"
+    - "Imports, exports, and type signatures updated to reflect changes"
+
+  anti-patterns:
+    - "Leaving stub implementations with 'finish later' comments"
+    - "Changing files outside the stated scope without flagging it"
+    - "Generating diff output instead of applying the edit"
+    - "Adding debug artifacts (console.log, print statements) to committed code"
