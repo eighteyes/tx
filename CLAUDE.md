@@ -3,11 +3,13 @@ TRUST the meshes to run and respond to you. Only investigate if prompted.
 
 ## Architecture
 - `.ai/tx/` - system state
-- `src/cli/` - CLI commands (start, status, msg, spy)
+- `src/cli/` - CLI commands (start, status, msg, spy, factory)
 - `src/core/` - Consumer (file watcher), tmux utilities
 - `src/queue/` - SQLite message queue
 - `src/worker/` - SDK-based ephemeral workers
+- `src/mesh/capability/` - Capability schema, router, factory, fragments
 - `meshes/` - Agent configs and prompts
+- `src/mesh/fragments/` - Prompt fragment library (42 YAML files)
 
 
 # Overview
@@ -98,6 +100,39 @@ Override chain: agent > mesh > global > hardcoded default. `strict` and `warning
 `max_messages`/`max_turns` accept bare number (backward compatible) or `{strict, warning, limit}` object.
 
 Full reference: `docs/guardrails.md`
+
+## Mesh Factory
+
+Generate meshes from capability requirements or plan directories.
+
+```bash
+tx factory capabilities.yaml              # from capability YAML
+tx factory .ai/plan/my-plan/              # from plan directory (haiku derives caps)
+tx factory caps.yaml --output meshes/foo  # custom output path
+```
+
+**Capability schema** — bidirectional contract (meshes declare, plans request):
+```yaml
+capability:
+  domain: [dev, research, ...]       # problem space
+  input: [codebase, spec, ...]       # what the mesh accepts
+  output: [code-changes, report, ...]# what the mesh produces
+  tools: [git, web-search, ...]      # special tools needed
+  interaction: [none, gate-exit, ...]# human involvement
+  topology: static                   # wiring pattern (plan-side only)
+```
+
+**Pipeline:** router checks catalog for existing mesh match → no match → factory compiles fragments + topology into config.yaml + agent prompts → validates → outputs mesh directory.
+
+**Plan-input mode:** reads plan.md + tasks.md, calls haiku to extract capabilities, caches as `capabilities_needed.yaml` in plan dir. Second run skips LLM.
+
+**Key files:**
+- `src/mesh/capability/schema.ts` — enums, types, validation
+- `src/mesh/capability/router.ts` — mechanical set-coverage scoring
+- `src/mesh/capability/factory.ts` — fragment assembler + config generator
+- `src/mesh/capability/plan-deriver.ts` — plan→capabilities extraction
+- `src/mesh/fragments/` — 42 YAML prompt fragments (domain, input, output, tools, interaction, topology)
+- `src/cli/factory.ts` — CLI entry point
 
 <!-- know:start -->
 <know-instructions>
