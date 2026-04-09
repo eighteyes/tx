@@ -39,3 +39,5 @@ export {
 } from './validator.ts';
 
 export { FragmentLoader, type PromptFragment } from './fragment-loader.ts';
+
+export { MeshFactory, type CompileResult } from './factory.ts';
