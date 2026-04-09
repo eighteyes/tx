@@ -24,6 +24,7 @@ import type { WorkspaceConfig } from '../workspace/manager.ts';
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
 import type { AgentPermissions } from '../worker/permissions.ts';
+import type { CapabilityDeclaration } from './capability/schema.ts';
 
 /**
  * Routing destination in mesh config
@@ -132,6 +133,7 @@ export interface AgentConfig {
 export interface MeshConfig {
   mesh: string;
   description?: string;
+  capability?: CapabilityDeclaration;
   agents: AgentConfig[];
   entry_point?: string;
   completion_agent?: string;  // DEPRECATED: Use completion_agents
