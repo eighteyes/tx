@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stamp-decomposition.sh - Write init-turn's decomposition into intent.yaml and action-lock.yaml
+# stamp-decomposition.sh - Write init-turn's decomposition into intent.yaml (includes lock fields)
 # Takes structured JSON args, writes via yq. LLM provides values, script writes files.
 # This ensures raw_input is never overwritten and all fields are properly escaped.
 #
@@ -96,7 +96,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 INTENT_FILE="$WORKSPACE/intent.yaml"
-LOCK_FILE="$WORKSPACE/action-lock.yaml"
 
 # ─────────────────────────────────────────────
 # VALIDATE: raw_input must already exist
@@ -200,71 +199,62 @@ fi
 log "intent.yaml updated (decomposition appended, raw_input untouched)"
 
 # ─────────────────────────────────────────────
-# WRITE action-lock.yaml (fresh file)
+# WRITE lock fields INTO intent.yaml
 # ─────────────────────────────────────────────
 
 export _LOCK_DESC="${LOCK_DESCRIPTION:-$INTERPRETED_ACTION}"
 
-yq -n '
-  .turn = '"$TURN"' |
-  .locked_action.description = strenv(_LOCK_DESC) |
-  .locked_action.actor = strenv(_D_ACTOR) |
-  .locked_action.action = strenv(_D_ACTION) |
-  .locked_action.target = strenv(_D_TARGET) |
-  .locked_action.method = strenv(_D_METHOD) |
-  .locked_action.scope = strenv(_D_SCOPE)
-' > "$LOCK_FILE"
+yq -i '
+  .locked = true |
+  .action = strenv(_LOCK_DESC) |
+  .sequence.actor = strenv(_D_ACTOR) |
+  .sequence.action = strenv(_D_ACTION) |
+  .sequence.target = strenv(_D_TARGET) |
+  .sequence.method = strenv(_D_METHOD) |
+  .sequence.scope = strenv(_D_SCOPE)
+' "$INTENT_FILE"
 
-# Physical facts
-yq -i '.locked_action.physical_facts = []' "$LOCK_FILE"
+# Physical state
+yq -i '.physical_state.facts = []' "$INTENT_FILE"
 for f in "${PHYSICAL_FACTS[@]}"; do
   export _F="$f"
-  yq -i '.locked_action.physical_facts += [strenv(_F)]' "$LOCK_FILE"
+  yq -i '.physical_state.facts += [strenv(_F)]' "$INTENT_FILE"
 done
 
 # Ambiguous fields in lock
-yq -i '.ambiguous_fields = {}' "$LOCK_FILE"
 if [[ ${#AMBIGUOUS_METHOD[@]} -gt 0 ]]; then
-  yq -i '.locked_action.method = null | .ambiguous_fields.method = []' "$LOCK_FILE"
+  yq -i '.sequence.method = null | .sequence.method_options = []' "$INTENT_FILE"
   for m in "${AMBIGUOUS_METHOD[@]}"; do
     export _M="$m"
-    yq -i '.ambiguous_fields.method += [strenv(_M)]' "$LOCK_FILE"
+    yq -i '.sequence.method_options += [strenv(_M)]' "$INTENT_FILE"
   done
 fi
 if [[ ${#AMBIGUOUS_TARGET[@]} -gt 0 ]]; then
-  yq -i '.locked_action.target = null | .ambiguous_fields.target = []' "$LOCK_FILE"
+  yq -i '.sequence.target = null | .sequence.target_options = []' "$INTENT_FILE"
   for t in "${AMBIGUOUS_TARGET[@]}"; do
     export _T="$t"
-    yq -i '.ambiguous_fields.target += [strenv(_T)]' "$LOCK_FILE"
+    yq -i '.sequence.target_options += [strenv(_T)]' "$INTENT_FILE"
   done
 fi
 
-# Dialogue lock (default: none provided)
-yq -i '
-  .locked_dialogue.provided = false |
-  .locked_dialogue.lines = [] |
-  .locked_dialogue.adaptation_permitted = "full"
-' "$LOCK_FILE"
-
 # Entropy boundaries
-yq -i '.subject_to_entropy = []' "$LOCK_FILE"
+yq -i '.subject_to_entropy = []' "$INTENT_FILE"
 for s in "${SUBJECT_TO_ENTROPY[@]}"; do
   export _S="$s"
-  yq -i '.subject_to_entropy += [strenv(_S)]' "$LOCK_FILE"
+  yq -i '.subject_to_entropy += [strenv(_S)]' "$INTENT_FILE"
 done
 
-yq -i '.not_subject_to_entropy = []' "$LOCK_FILE"
+yq -i '.not_subject_to_entropy = []' "$INTENT_FILE"
 for n in "${NOT_SUBJECT_TO_ENTROPY[@]}"; do
   export _N="$n"
-  yq -i '.not_subject_to_entropy += [strenv(_N)]' "$LOCK_FILE"
+  yq -i '.not_subject_to_entropy += [strenv(_N)]' "$INTENT_FILE"
 done
 
-log "action-lock.yaml written"
+log "intent.yaml updated (lock fields merged)"
 
 # ─────────────────────────────────────────────
 # SUMMARY
 # ─────────────────────────────────────────────
 
-echo -e "${GREEN}[stamp-decomposition]${RESET} Files written:" >&2
-echo -e "  ${DIM}intent.yaml${RESET}      — raw_input preserved, decomposition appended" >&2
-echo -e "  ${DIM}action-lock.yaml${RESET} — locked action + entropy boundaries" >&2
+echo -e "${GREEN}[stamp-decomposition]${RESET} Written:" >&2
+echo -e "  ${DIM}intent.yaml${RESET} — raw_input + decomposition + lock + entropy boundaries" >&2

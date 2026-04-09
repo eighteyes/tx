@@ -17,14 +17,14 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <game_path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | $SCRIPTS/write-state.sh <game_path> <artifact>
 
 # Session state
-$SCRIPTS/game-read.sh <game_path> session
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> session
+$SCRIPTS/read-state.sh <game_path> session
+echo '<json>' | $SCRIPTS/write-state.sh <game_path> session
 
 # Run --help on any script for full usage
 ```
@@ -66,7 +66,7 @@ ELSE (mode == "new-game" or missing):
 1. Set phase → `game_creation`
 2. Write session.yaml (ALL fields) via gateway:
    ```bash
-   echo '{"phase":"game_creation","turn":-1,"game_id":null,"campaign_id":null,"workspace":null,"game_path":null,"render_narrator":false,"validate_oracle":false,"compress_scribe":false,"status":"active"}' | $SCRIPTS/game-write.sh $GAME_PATH session
+   echo '{"phase":"game_creation","turn":-1,"game_id":null,"campaign_id":null,"workspace":null,"game_path":null,"render_narrator":false,"validate_oracle":false,"compress_scribe":false,"status":"active"}' | $SCRIPTS/write-state.sh $GAME_PATH session
    ```
 3. Send task to calibrator
 

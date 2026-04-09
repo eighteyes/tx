@@ -6,7 +6,7 @@
 import dotenv from 'dotenv';
 import { start, stop, restart } from './start.ts';
 import { status, printStatus } from './status.ts';
-import { trace } from './msg.ts';
+import { trace } from './trace.ts';
 import { logs } from './logs.ts';
 import { spy } from './spy.ts';
 import { tasks } from './tasks.ts';

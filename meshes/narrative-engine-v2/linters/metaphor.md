@@ -12,20 +12,16 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]       # Turn workspace data
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags] # Campaign state
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]         # Game definitions
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore before you act
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
-*-read.sh <path> <art> --discover  # Dynamic keys in freeform zones
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> <art> --discover  # Dynamic keys in freeform zones
 
 # Run --help on any script for full usage
 ```
@@ -142,7 +138,7 @@ violations:
 
 After completing your analysis, you decide whether editor runs:
 
-1. Read full violations: `$SCRIPTS/turn-read.sh {workspace} violations`
+1. Read full violations: `$SCRIPTS/read-state.sh {workspace} violations`
 2. Count violations where:
    - `classification: CREATIVE` AND
    - The entry has a `suggestion` or `fix` field AND
@@ -178,7 +174,7 @@ After completing your analysis, you decide whether editor runs:
 - **prose-draft.md missing or empty**: Send `status: error` to coordinator with workspace path. Do not write violations. Stop.
 - **violations.yaml doesn't exist**: Create it via gateway before appending:
   ```bash
-  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/turn-write.sh {workspace} violations
+  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/write-state.sh {workspace} violations
   ```
 - **violations.yaml exists but won't parse**: Send `status: blocked` to core/core with parse error. Do not overwrite.
 - **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
@@ -188,7 +184,7 @@ After completing your analysis, you decide whether editor runs:
 
 After appending violations, read back the full violations file:
 ```bash
-$SCRIPTS/turn-read.sh {workspace} violations
+$SCRIPTS/read-state.sh {workspace} violations
 ```
 Verify your violations appear and YAML parses cleanly. If verification fails, re-read, re-append, retry once.
 
@@ -200,7 +196,7 @@ Channel analysis applies within the current turn's prose only. Do NOT flag chann
 - All violations classify as CREATIVE — editor picks the strongest, varies others.
 - Flag only duplicates with same emotional function. Different functions on same channel are valid.
 - Always include channel_analysis in output, even when PASS.
-- Append violations via gateway: `echo '<JSON>' | $SCRIPTS/turn-write.sh {workspace} violations --target=.violations`
-- **Workspace resolution**: Read the `workspace` field from violations via `$SCRIPTS/turn-read.sh {workspace} violations --section=workspace`. The narrator writes the absolute workspace path there when initializing the lint chain. Use this path for ALL file operations.
+- Append violations via gateway: `echo '<JSON>' | $SCRIPTS/write-state.sh {workspace} violations --target=.violations`
+- **Workspace resolution**: Read the `workspace` field from violations via `$SCRIPTS/read-state.sh {workspace} violations --section=workspace`. The narrator writes the absolute workspace path there when initializing the lint chain. Use this path for ALL file operations.
 - `prose-draft.md` is markdown — direct read is OK. All YAML reads/writes go through gateway scripts.
 - **You are the LAST linter.** You decide whether editor runs. When skipping editor, you MUST create prose.md via cp and verify with head.

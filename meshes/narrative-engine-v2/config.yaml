@@ -107,8 +107,10 @@ agents:
     model: opus
     prompt: narrator/prompt.md
     continuation: true
-    # phase 2,3 - Prose rendering with staged build (1.5-2k words)
-    # Orchestrates system, cast, lint/edit cycle
+    # phase 2,3 - Per-beat parallel prose rendering via Tasks, then assembly
+    # Fires opus Tasks per beat, validates voice/tone, hands off to lint pipeline
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
 
   - name: calibrator
     model: opus
@@ -122,7 +124,9 @@ agents:
     model: opus
     prompt: editor/prompt.md
     continuation: true
-    # Adversarial prose review against author.yaml
+    # Lint pipeline (mechanical + 3 parallel creative Tasks) + adversarial prose review against author.yaml
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
 
   - name: visual
     model: sonnet
@@ -142,36 +146,27 @@ agents:
     # Only fires if oracle passes (or max iterations)
 
   # ==========================================
-  # LINT PIPELINE (refactored)
+  # LINT PIPELINE (parallel)
   # ==========================================
   # Mechanical lints run as script in narrator Phase 5 (mechanical-lint.sh)
-  # Creative linters: lint-patterns -> lint-temporal -> lint-metaphor
-  # lint-metaphor gates editor (creative violations -> editor, clean -> scribe)
+  # Creative lints: linter fires 3 parallel sonnet Tasks (patterns, temporal, metaphor)
+  # Linter collects violations, applies fixes, always routes to editor
   #
+  # RETIRED agents (collapsed into linter + refs):
+  # - lint-patterns, lint-temporal, lint-metaphor
   # RETIRED agents (now in mechanical-lint.sh):
   # - lint-forbidden-words, lint-ai-tells, lint-cadence, lint-dialogue
   # - lint-body-first, lint-litotes
   # RETIRED agents (oracle already covers):
   # - lint-factoids, lint-props
 
-  - name: lint-patterns
-    model: sonnet
-    prompt: linters/patterns.md
-    # Creative: Pattern detection requiring judgment
-    # "She realized", "Fear washed over", etc.
-
-  - name: lint-temporal
-    model: sonnet
-    prompt: linters/temporal.md
-    # Creative: Temporal consistency against timeline.md
-    # Checks prose time references match canonical chronology
-
-  - name: lint-metaphor
-    model: sonnet
-    prompt: linters/metaphor.md
-    # Creative: Repeated sensory channels
-    # One peak expression per channel per scene
-    # FINAL LINTER: routes to editor (violations) or scribe (clean)
+  # RETIRED: linter — lint pipeline merged into editor (linter was 21% of pipeline cost, 8 crashes)
+  # Editor now runs mechanical-lint.sh + 3 parallel creative lint Tasks before stitch + holistic review
+  # - name: linter
+  #   model: sonnet
+  #   prompt: linters/prompt.md
+  #   permissions:
+  #     allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
 
 entry_point: entry
 
@@ -197,7 +192,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → gravity → architect → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → [mechanical-lint.sh] → lint-patterns → lint-temporal → lint-metaphor → editor|scribe → visual (opt-in) → scribe → core
+  # Phase flow: entry → game-coord|init-turn → gravity → architect → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → editor (lint + stitch + review) → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -271,7 +266,7 @@ routing:
   narrator:
     message:
       oracle: "Knowledge query"
-      lint-patterns: "Lint prose — mechanical lints complete, start creative chain"
+      editor: "Prose draft complete — lint + stitch + review"
       scribe: "Prologue complete — finalize and deliver"
 
   oracle:
@@ -283,25 +278,10 @@ routing:
     message:
       core: "Turn complete — prose + rearmatter delivered"
 
-  # ==========================================
-  # LINT PIPELINE ROUTING (refactored)
-  # ==========================================
-  # Mechanical lints run as script in narrator Phase 5
-  # Creative linters: lint-patterns → lint-temporal → lint-metaphor
-  # lint-metaphor gates editor (creative violations → editor, clean → scribe)
-
-  lint-patterns:
-    message:
-      lint-temporal: "Next lint — temporal consistency check"
-
-  lint-temporal:
-    message:
-      lint-metaphor: "Next lint — creative metaphor analysis"
-
-  lint-metaphor:
-    message:
-      editor: "Creative violations found → fix and polish"
-      scribe: "Clean prose → skip editor, promote directly"
+  # RETIRED: linter routing — lint pipeline merged into editor
+  # linter:
+  #   message:
+  #     editor: "Prose linted and fixed → adversarial review"
 
   # ==========================================
   # EDITOR
@@ -363,10 +343,11 @@ guardrails:
         limit: 25
     narrator:
       max_messages:
-        limit: 15
+        limit: 40
+    # linter retired — lint pipeline merged into editor
     editor:
       max_messages:
-        limit: 10
+        limit: 20
     calibrator:
       max_messages:
         limit: 30
@@ -404,13 +385,7 @@ manifest:
     writes: [init-turn]
 
   - id: intent.yaml
-    description: Single source for player action — raw input, clarified intent, hopes, off-table outcomes
-    location: workspace
-    reads: [narrator, architect, sim-planner, gravity]
-    writes: [init-turn]
-
-  - id: action-lock.yaml
-    description: Locked player action — ground truth, not subject to entropy
+    description: Player action — raw input, clarified intent, locked action, physical state, entropy boundaries
     location: workspace
     reads: [narrator, architect, sim-planner, gravity]
     writes: [init-turn]
@@ -427,26 +402,14 @@ manifest:
     reads: [narrator, scribe, sim-planner]
     writes: [architect]
 
-  - id: fates.yaml
-    description: World possibility branching tree (no weights)
-    location: workspace
-    reads: [narrator, scribe, visual]
-    writes: [architect]
-
   - id: entropy-tables.yaml
     description: Weighted probability tables synthesized from fates + dramaturg
     location: workspace
     reads: [architect, sim-tables]
     writes: [architect]
 
-  - id: entropy-selection.yaml
-    description: Resolved entropy outcomes from primary + subtable rolls
-    location: workspace
-    reads: [narrator, scribe]
-    writes: [architect]
-
   - id: resolution.yaml
-    description: Mechanical outcome tables and trait resolution
+    description: Mechanical outcome tables, trait resolution, entropy_pool — includes all resolved entropy
     location: workspace
     reads: [narrator, scribe, sim-planner]
     writes: [architect]
@@ -469,12 +432,6 @@ manifest:
     reads: [sim-tables, sim-voices]
     writes: [sim-tables, sim-voices]
 
-  - id: pov-resolution.yaml
-    description: POV character resolution from Step 3a — intermediate entropy result
-    location: workspace
-    reads: [architect]
-    writes: [architect]
-
   - id: entropy_tables/
     description: "Per-domain entropy table fragments — written by parallel Tasks, merged by merge-entropy-tables.sh. Includes: char-*.yaml (outcome tables), char-*-directions.yaml (direction tables), world-*.yaml, texture.yaml, threads-*.yaml, collisions.yaml"
     location: workspace
@@ -490,20 +447,26 @@ manifest:
   - id: scene_script.yaml
     description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by sim-voices.
     location: workspace
-    reads: [narrator, oracle, visual, scribe, lint-temporal]
+    reads: [narrator, oracle, visual, scribe, editor]
     writes: [sim-voices]
 
-  - id: prose-draft.md
-    description: Working prose draft iterated through lint/edit cycle
+  - id: narrator-context.yaml
+    description: Pre-assembled narrator context — scene_script + briefs + author + state + collisions. Built by assemble-narrator.sh after oracle approves.
     location: workspace
-    reads: [narrator, editor, lint-patterns, lint-temporal, lint-metaphor]
+    reads: [narrator, editor]
+    writes: [oracle]
+
+  - id: prose-draft.md
+    description: Working prose draft — narrator writes, editor lints + fixes + reviews
+    location: workspace
+    reads: [narrator, editor]
     writes: [narrator, editor]
 
   - id: prose.md
     description: Final approved prose output for the turn
     location: workspace
     reads: [scribe, visual, narrator, editor]
-    writes: [editor, lint-metaphor]
+    writes: [editor]
 
   - id: visual.yaml
     description: Multi-beat emotional visualization briefs with style variants
@@ -511,35 +474,17 @@ manifest:
     reads: [scribe]
     writes: [visual]
 
-  - id: concordance.txt
-    description: Per-turn word frequency extract for overuse detection
-    location: workspace
-    reads: [narrator]
-    writes: [narrator]
-
-  - id: dialogue-pairs.txt
-    description: Extracted dialogue tag/line pairs for lint analysis
-    location: workspace
-    reads: [narrator]
-    writes: [narrator]
-
   - id: violations.yaml
-    description: Aggregated lint violations for editor review
+    description: Mechanical lint violations — written by mechanical-lint.sh in editor pre-pass, read by creative lint Tasks for deconfliction
     location: workspace
-    reads: [editor, lint-patterns, lint-temporal, lint-metaphor]
-    writes: [narrator, lint-patterns, lint-temporal, lint-metaphor]
+    reads: [editor]
+    writes: [narrator, editor]
 
   - id: story-concordance.txt
     description: Cumulative word frequency data for cross-turn overuse detection
     location: game
     persistent: true
     reads: [narrator]
-    writes: [scribe]
-
-  - id: summary.md
-    description: Compressed turn summary for context window management
-    location: workspace
-    reads: []
     writes: [scribe]
 
   # RETIRED: closing.yaml — replaced by state.yaml (campaign-level, single source of truth)
@@ -653,7 +598,7 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + old state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, architect, sim-planner, lint-temporal, gravity]
+    reads: [init-turn, architect, sim-planner, editor, gravity]
     writes: [scribe]
 
   - id: trajectories.yaml
@@ -667,7 +612,7 @@ manifest:
     description: Canonical time tracking in markdown — day headers, turn entries, beat-level time stretches
     location: campaign
     persistent: true
-    reads: [narrator, architect, lint-temporal]
+    reads: [narrator, architect, editor]
     writes: [scribe]
 
   - id: continuity.yaml

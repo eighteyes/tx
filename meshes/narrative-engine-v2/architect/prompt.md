@@ -24,35 +24,54 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
 
 # Run --help on any script for full usage
 ```
 
 ## Scope
-- Read ALL game state (context, action-lock, intent, entities, bonds, arc, scene, trajectories, continuity, author)
-- Run mechanical scripts (calc-trajectory-status.sh, calc-distribution.sh)
+- Read ALL game state (context, intent, entities, bonds, arc, scene, trajectories, continuity, author)
+- Run mechanical scripts (entropy-pipeline.sh trajectories, entropy-pipeline.sh distribution)
 - Fire 4 parallel blind haiku Tasks for world possibility generation
 - Shape outcomes inline (dramaturg function)
 - Build weighted entropy tables inline (possibility function)
 - Resolve via entropy-resolver.sh (system function)
-- Write 5 output files: fates.yaml, dramaturg-notes.yaml, entropy-tables.yaml, resolution.yaml, threads.yaml
+- Write 4 output files: dramaturg-notes.yaml, entropy-tables.yaml, resolution.yaml, threads.yaml
 - Route completion to simulator (replaces old system → cast → scene-crafter chain)
 
 ## Workflow
 
 <instructions>
-**Primary directive:** Write all 5 output files to workspace. Everything else supports this.
+**Primary directive:** Write all output files to workspace. Everything else supports this.
+
+### Resume Checkpoint
+
+Before any creative work, check what exists from a prior partial run. Architect crashes are expensive — skip completed phases.
+
+```bash
+ls {workspace}/resolution.yaml {workspace}/dramaturg-notes.yaml {workspace}/entropy-tables.yaml {workspace}/threads.yaml 2>/dev/null
+ls {workspace}/entropy_tables/*.yaml 2>/dev/null
+```
+
+**Resume logic (check in order, take the first match):**
+
+| Exists | Resume at | Why |
+|--------|-----------|-----|
+| `resolution.yaml` + `dramaturg-notes.yaml` + `entropy-tables.yaml` + `threads.yaml` | **Completion** | All output written. Send routing message only. |
+| `entropy-tables.yaml` + `dramaturg-notes.yaml` | **Step 6** (Resolution) | Tables merged, need dice rolls. Re-read state (Step 1) for context. |
+| `entropy_tables/char-*.yaml` files exist | **Step 4** (Table Assembly) | Character tables done, need merge + resolve. Re-read state (Step 1). |
+| `entropy_tables/world-*.yaml` or `texture.yaml` exist, no `char-*.yaml` | **Step 3** (Story Shaping) | World Tasks done, need character analysis. Re-read state (Steps 1-1.6). |
+| Nothing | **Step 1** | Normal flow. |
+
+**When resuming mid-pipeline:** Always re-run Step 1 (state reads) — reads are cheap (97% cache hit). The checkpoint skips expensive Task generation, not reads.
 
 ### Phase 0: Input Alignment Check
 
@@ -60,7 +79,7 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
 
 1. Read `intent.yaml` field `raw_input` — this is the player's **exact words**, stamped by script (tamper-proof).
 2. Read `intent.yaml` field `interpreted_action` — this is init-turn's interpretation.
-3. Read `action-lock.yaml` fields `locked_action.description`, `not_subject_to_entropy`.
+3. Read `intent.yaml` fields `locked_action.description`, `not_subject_to_entropy`.
 4. Read `context.yaml` field `player_action` — should match `raw_input` exactly.
 
 **Compare:** Does the interpreted_action faithfully represent raw_input? Do the locked elements include everything the player specified?
@@ -77,47 +96,47 @@ Before any creative work, verify that init-turn did not sanitize or drift from t
 1. Receive message from gravity with workspace path, game_path, campaign_id, turn number.
    - **workspace** = `{game_path}/turns/turn-{N}/` (where files are written)
    - **game_path** = the campaign directory (e.g., `.../campaigns/campaign-1/`)
-2. Read from **workspace** (turn directory) via `turn-read.sh`:
-   - `$SCRIPTS/turn-read.sh {workspace} collisions` — **READ FIRST.** Gravity's collision map — pre-identified pressure points between conditions, character data, seeds, bonds. Use these as the foundation for entropy table construction. Each collision has elements, pressure score, valence, and a note explaining the intersection.
-   - `$SCRIPTS/turn-read.sh {workspace} action-lock` — Player action is GROUND TRUTH. Locked, not subject to entropy.
-   - `$SCRIPTS/turn-read.sh {workspace} intent` — player's raw input, clarified intent, player hopes, off-table outcomes. **`raw_input` is authoritative** — if `interpreted_action` conflicts, use `raw_input`.
-   - `$SCRIPTS/turn-read.sh {workspace} context` — scene, present entities, turn number. **Ignore entropy_pool** — you generate fresh entropy via script.
-   - `$SCRIPTS/turn-read.sh {workspace} director-notes` — **if present**, player's creative direction for this turn (tone, dialogue emphasis, beat targets, word count, constraints). These shape dramaturg guidance — fold them into `dramaturg-notes.yaml` output. Director notes are authoritative creative intent from the player.
-3. Read from **game_path** (campaign directory) via `campaign-read.sh`:
-   - `$SCRIPTS/campaign-read.sh {game_path} character --list` then `$SCRIPTS/campaign-read.sh {game_path} character/{id}` for each — ALL character entity files (trait pressures, agendas, states, **life sections**)
+2. Read from **workspace** (turn directory) via `read-state.sh`:
+   - `$SCRIPTS/read-state.sh {workspace} collisions` — **READ FIRST.** Gravity's collision map — pre-identified pressure points between conditions, character data, seeds, bonds. Use these as the foundation for entropy table construction. Each collision has elements, pressure score, valence, and a note explaining the intersection.
+   - `$SCRIPTS/read-state.sh {workspace} intent` — Player action is GROUND TRUTH. Locked, not subject to entropy.
+   - `$SCRIPTS/read-state.sh {workspace} intent` — player's raw input, clarified intent, player hopes, off-table outcomes. **`raw_input` is authoritative** — if `interpreted_action` conflicts, use `raw_input`.
+   - `$SCRIPTS/read-state.sh {workspace} context` — scene, present entities, turn number. **Ignore entropy_pool** — you generate fresh entropy via script.
+   - `$SCRIPTS/read-state.sh {workspace} director-notes` — **if present**, player's creative direction for this turn (tone, dialogue emphasis, beat targets, word count, constraints). These shape dramaturg guidance — fold them into `dramaturg-notes.yaml` output. Director notes are authoritative creative intent from the player.
+3. Read from **game_path** (campaign directory) via `read-state.sh`:
+   - `$SCRIPTS/read-state.sh {game_path} character --list` then `$SCRIPTS/read-state.sh {game_path} character/{id}` for each — ALL character entity files (trait pressures, agendas, states, **life sections**)
      - Use `--section=life` for: active_concerns, expertise, social_web, opinions, voice_markers — these inform dramaturg guidance and character action tables
-   - `$SCRIPTS/campaign-read.sh {game_path} bond --list` then `$SCRIPTS/campaign-read.sh {game_path} bond/{id}` for each — ALL bond files (relationship intensities, dynamics)
+   - `$SCRIPTS/read-state.sh {game_path} bond --list` then `$SCRIPTS/read-state.sh {game_path} bond/{id}` for each — ALL bond files (relationship intensities, dynamics)
    - `$SCRIPTS/arc-read.sh {game_path} --agent=architect` — act-scoped arc context: dramatic questions, active seeds, current phase, trajectory. Future acts and activation conditions filtered.
-   - `$SCRIPTS/campaign-read.sh {game_path} state` — arc pressure, momentum, phase, location, present characters
-   - `$SCRIPTS/campaign-read.sh {game_path} trajectories` — committed futures (Chekhov's Guns) — **skip if missing**
-   - `$SCRIPTS/campaign-read.sh {game_path} continuity` — query continuity data:
+   - `$SCRIPTS/read-state.sh {game_path} state` — arc pressure, momentum, phase, location, present characters
+   - `$SCRIPTS/read-state.sh {game_path} trajectories` — committed futures (Chekhov's Guns) — **skip if missing**
+   - `$SCRIPTS/read-state.sh {game_path} continuity` — query continuity data:
      ```bash
      # World events from recent turns
-     $SCRIPTS/campaign-read.sh {game_path} continuity --section=world_events --since={turn-10}
+     $SCRIPTS/read-state.sh {game_path} continuity --section=world_events --since={turn-10}
      # Entity last-seen for presence continuity
-     $SCRIPTS/campaign-read.sh {game_path} continuity --section=last_seen
+     $SCRIPTS/read-state.sh {game_path} continuity --section=last_seen
      # Facts about specific entities
-     $SCRIPTS/campaign-read.sh {game_path} continuity --search="{entity_ids}"
+     $SCRIPTS/read-state.sh {game_path} continuity --search="{entity_ids}"
      ```
    - `timeline.md` — canonical time reference — **skip if missing** (direct read OK — markdown)
-4. Read from **game root** (parent of game_path, e.g., `.../{game-id}/`) via `game-read.sh`:
-   - `$SCRIPTS/game-read.sh {game_root} setting` — world rules, geography, tone — **skip if missing**
-   - `$SCRIPTS/game-read.sh {game_root} author` — author voice profile, stylistic constraints — **skip if missing**
-     - **Extract `chaos_register`:** `$SCRIPTS/game-read.sh {game_root} author --section=chaos_register` — controls chaos event tone. If missing, default to `naturalistic`.
+4. Read from **game root** (parent of game_path, e.g., `.../{game-id}/`) via `read-state.sh`:
+   - `$SCRIPTS/read-state.sh {game_root} setting` — world rules, geography, tone — **skip if missing**
+   - `$SCRIPTS/read-state.sh {game_root} author` — author voice profile, stylistic constraints — **skip if missing**
+     - **Extract `chaos_register`:** `$SCRIPTS/read-state.sh {game_root} author --section=chaos_register` — controls chaos event tone. If missing, default to `naturalistic`.
      - Valid registers: `mundane | grounded | naturalistic | gothic | surreal | comic | farcical | hostile`
 5. Read from **prior turns** (N-1 through N-3) — ONLY these files:
    - `summary.md` — compressed turn summary (thematic focus, beat types, trait activity)
    - `resolution.yaml` — mechanical outcomes, trait changes, what actually happened
    - `state.yaml` — closing positions, location, time (campaign-level state.yaml is canonical; per-turn is backup)
    - **These are the ONLY prior-turn files you read.** Do not read prior entropy-tables.yaml, dramaturg-notes.yaml, fates.yaml, threads.yaml, or any other prior-turn artifacts. You generate fresh versions of those files each turn.
-6. **Run calc-trajectory-status.sh:**
+6. **Run entropy-pipeline.sh trajectories:**
    ```bash
-   $TX_ROOT/meshes/narrative-engine-v2/scripts/calc-trajectory-status.sh {current_turn} {trajectories_yaml}
+   $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-pipeline.sh trajectories {current_turn} {trajectories_yaml}
    ```
    Read stdout — trajectory statuses pre-computed into `firing`, `approaching`, `still_active` buckets.
-7. **Run calc-distribution.sh:**
+7. **Run entropy-pipeline.sh distribution:**
    ```bash
-   $TX_ROOT/meshes/narrative-engine-v2/scripts/calc-distribution.sh {arc_pressure} {protagonist_traits_file}
+   $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-pipeline.sh distribution {arc_pressure} {protagonist_traits_file}
    ```
    Read stdout — base percentages and trait modifiers for character outcome tables.
 8. Parse both script outputs. Store for use in Steps 3-4.
@@ -144,7 +163,7 @@ Read `action_weight` from `intent.yaml` (0.0 = pure organic, 1.0 = pure action).
 Before firing world Tasks, assess how much the world should intrude on this scene. Read:
 - `context.yaml` → location, present characters (count)
 - `intent.yaml` → `off_table` items, `player_hopes`
-- `action-lock.yaml` → action type, tempo
+- `intent.yaml` → action type, tempo
 
 **Determine `world_intervention_level`:**
 
@@ -168,9 +187,9 @@ Before firing world Tasks, assess how much the world should intrude on this scen
 
 ### Step 2: World Possibility Generation (Parallel Blind Tasks)
 
-Fire **3+ parallel haiku Tasks simultaneously** using the Task tool. Each generates branches for its domain AND writes its entropy table fragment to `{workspace}/entropy_tables/`. Tasks see ONLY their domain context — no story arc, no character decisions, no likely resolution.
+Fire **3+ parallel haiku Tasks simultaneously** using the Task tool. Each generates branches for its domain and returns its entropy table fragment as text. Tasks see ONLY their domain context — no story arc, no character decisions, no likely resolution.
 
-**CRITICAL: Each Task writes its output file directly.** The architect does NOT reassemble these — a merge script does.
+**CRITICAL: Tasks return text — they CANNOT write files.** Each Task prompt below specifies a target path. After Tasks complete, write each Task's returned YAML to the specified target file. The merge script then assembles fragments into entropy-tables.yaml.
 
 **Key constraint: World Tasks generate WORLD POSSIBILITIES only. Thread extraction Tasks generate per-character life threads. Character outcome tables are handled in Step 3.**
 
@@ -226,9 +245,9 @@ Weather/conditions: {from state.yaml if available}
 - Each THEMATIC event: 3-7 flat manifestations
 - Each CHAOS event: 7-10 root manifestations, each with 4 subtable entries (3 register-toned using DIFFERENT registers, 1 thematic)
 
-Write TWO files:
+Return TWO YAML sections, clearly labeled:
 
-1. Write branches to `{workspace}/entropy_tables/fates-env.yaml`:
+**Section 1: Branches** (target: `entropy_tables/fates-env.yaml`)
 ```yaml
 branches:
   - id: {snake_case}
@@ -240,7 +259,7 @@ branches:
         mechanical_impact: "{specific effect}"
 ```
 
-2. Write weighted entropy table to `{workspace}/entropy_tables/world-env.yaml`:
+**Section 2: Entropy Table** (target: `entropy_tables/world-env.yaml`)
 ```yaml
 # Environment world events
 {event_id}:
@@ -258,6 +277,8 @@ branches:
 ```
 ```
 
+**After Task 1 returns:** Write Section 1 to `{workspace}/entropy_tables/fates-env.yaml`, Section 2 to `{workspace}/entropy_tables/world-env.yaml`.
+
 #### Task 2: Consequences
 What past threads surface?
 
@@ -268,7 +289,7 @@ You generate world event entries for delayed consequences AND write a weighted e
 **Read `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` before generating.**
 
 ## Active Trajectories
-{from calc-trajectory-status.sh output — ALL trajectories with status}
+{from entropy-pipeline.sh trajectories output — ALL trajectories with status}
 Firing: {list with outcome_when_fires, suggested_weight}
 Approaching: {list with turns_remaining}
 Still active: {list}
@@ -278,7 +299,7 @@ Still active: {list}
 {from recent turn summaries — what happened in last 2-3 turns}
 
 ## Player Action
-{from action-lock.yaml — what player is doing this turn}
+{from intent.yaml — what player is doing this turn}
 
 ## Trajectory Interruption Check
 {for each trajectory: does the player action match any interruptible_by condition? Matching is semantic, not literal.}
@@ -298,9 +319,9 @@ Still active: {list}
   - **minimal**: Generate 0 branches UNLESS a trajectory has `turns_remaining ≤ 0` (literally firing this turn). Character anxieties about deadlines, obligations, social pressure, and institutional expectations are NOT consequences — they are character threads that surface through internal thought, not through the world acting. "Thesis pressure accumulates" = character thread. "Advisor knocks on door" = consequence (but only if trajectory is firing). At this level, the world is quiet. Only things that physically arrive uninvited qualify.
 - Each event gets manifestations table (same structure as environment events)
 
-Write TWO files:
+Return TWO YAML sections, clearly labeled:
 
-1. Write branches to `{workspace}/entropy_tables/fates-consequence.yaml`:
+**Section 1: Branches** (target: `entropy_tables/fates-consequence.yaml`)
 ```yaml
 branches:
   - id: {snake_case}
@@ -320,7 +341,7 @@ trajectory_updates:
   approaching: [{id, fires_at_turn, turns_remaining, foreshadow}]
 ```
 
-2. Write weighted entropy table to `{workspace}/entropy_tables/world-consequence.yaml`:
+**Section 2: Entropy Table** (target: `entropy_tables/world-consequence.yaml`)
 ```yaml
 # Consequence world events
 {event_id}:
@@ -332,6 +353,8 @@ trajectory_updates:
       mechanical_note: "{impact}"
 ```
 ```
+
+**After Task 2 returns:** Write Section 1 to `{workspace}/entropy_tables/fates-consequence.yaml`, Section 2 to `{workspace}/entropy_tables/world-consequence.yaml`.
 
 #### Task 3: Texture
 What atmospheric elements emerge?
@@ -400,7 +423,7 @@ Location unchanged means: same room, same building interior, same immediate outd
 - One entry should be "no texture" (world holds still)
 - Environment only — no protagonist internals
 
-Write to `{workspace}/entropy_tables/texture.yaml`:
+Return this YAML (target: `entropy_tables/texture.yaml`):
 ```yaml
 - range: 1-{X}
   result: {sensory_id}
@@ -410,6 +433,8 @@ Write to `{workspace}/entropy_tables/texture.yaml`:
   mechanical_note: "{sensory detail}"
 ```
 ```
+
+**After Task 3 returns:** Write returned YAML to `{workspace}/entropy_tables/texture.yaml`.
 
 #### Task 4+N: Thread Extraction (per character — haiku, one per character in scene)
 
@@ -450,7 +475,7 @@ Emotional state: {from dramaturg notes if available, or inferred from traits}
 - Assign a weight (0-30) based on how likely it is to surface given current emotional state
 - Mark threads as `available: false` if they're too high-stakes or too disconnected for this scene
 
-Write to `{workspace}/entropy_tables/threads-{character_id}.yaml`:
+Return this YAML (target: `entropy_tables/threads-{character_id}.yaml`):
 ```yaml
 character: {character_id}
 threads:
@@ -462,6 +487,8 @@ threads:
     tone_if_surfaces: "{how this would come out — casually, anxiously, deflectively}"
 ```
 ```
+
+**After each thread Task returns:** Write returned YAML to `{workspace}/entropy_tables/threads-{character_id}.yaml`.
 
 #### Task 4+N+1: Scene Thread Extraction (haiku, one Task)
 
@@ -488,7 +515,7 @@ You extract scene-level threads — narrative tensions and unresolved questions 
 - These are things ALREADY IN THE AIR — not new threads, but threads that could resurface
 - Weight by recency and dramatic pressure
 
-Write to `{workspace}/entropy_tables/threads-scene.yaml`:
+Return this YAML (target: `entropy_tables/threads-scene.yaml`):
 ```yaml
 threads:
   - id: {snake_case_thread_id}
@@ -499,7 +526,9 @@ threads:
 ```
 ```
 
-**After all Phase 1 Tasks complete:** Verify files exist in `{workspace}/entropy_tables/`. If a Task failed, generate that domain's files inline (fallback). Combine fates files for fates.yaml (Step 4). Character analysis happens in Step 3.
+**After scene thread Task returns:** Write returned YAML to `{workspace}/entropy_tables/threads-scene.yaml`.
+
+**After all Phase 1 Tasks complete:** Write each Task's returned YAML to its target file in `{workspace}/entropy_tables/`. Verify all files exist. If a Task failed or returned empty, generate that domain's content inline and write it (fallback). Character analysis happens in Step 3.
 
 ### Step 2.5: Read Gravity's Collision Map
 
@@ -524,22 +553,23 @@ Every character in a scene is an agent with motivations. The dramaturg's job is 
 
 #### Step 3a: POV Character (Initiator — Blind)
 
-Fire ONE haiku Task for the POV character. This Task sees character state, scene context, action-lock, and distribution shape. It generates the POV analysis and entropy table. **This is the only character that rolls blind — they don't know how NPCs will respond.**
+Fire ONE haiku Task for the POV character. This Task sees character state, scene context, intent, and distribution shape. It generates the POV analysis and entropy table. **This is the only character that rolls blind — they don't know how NPCs will respond.**
 
-The Task writes its files to `{workspace}/entropy_tables/` as before.
+The Task returns its YAML sections as text (same template as other character Tasks).
 
 **After POV Task returns:**
-1. Write `{workspace}/entropy_tables/header.yaml` (turn, arc_pressure, distribution_shape)
-2. Merge POV table into a temporary `entropy-tables.yaml`:
+1. Write Task's returned YAML sections to `{workspace}/entropy_tables/dramaturg-{pov_id}.yaml` and `{workspace}/entropy_tables/char-{pov_id}.yaml`
+2. Write `{workspace}/entropy_tables/header.yaml` (turn, arc_pressure, distribution_shape)
+3. Merge POV table into a temporary `entropy-tables.yaml`:
    ```bash
-   $TX_ROOT/meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
+   $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-pipeline.sh merge-tables {workspace} > {workspace}/entropy-tables.yaml
    ```
-3. Resolve POV outcome:
+4. Resolve POV outcome:
    ```bash
    $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" primary
    ```
-4. Read `{workspace}/entropy-selection.yaml` — record POV outcome_type, shape, subtable_result, mechanical_note
-5. Store this as `pov_resolution` for NPC Task context
+5. Read `{workspace}/entropy-selection.yaml` — record POV outcome_type, shape, subtable_result, mechanical_note
+6. Store this as `pov_resolution` for NPC Task context
 
 #### Step 3b: NPC Characters (Receivers — See POV Resolution)
 
@@ -592,11 +622,11 @@ These shape HOW this character acts — their concerns intrude, their expertise 
 {scene context — location, who's present, recent events}
 
 ## Action Lock
-Player action: {from action-lock.yaml}
+Player action: {from intent.yaml}
 This HAPPENS. You are analyzing how {character_name} experiences and responds to it.
 
 ## Distribution Shape
-{from calc-distribution.sh output — base percentages per outcome type}
+{from entropy-pipeline.sh distribution output — base percentages per outcome type}
 Arc pressure: {N}, Shape: {shape_name}
 Base distribution: catastrophic {N}%, failure {N}%, mixed {N}%, success {N}%, breakthrough {N}%
 
@@ -608,9 +638,9 @@ Base distribution: catastrophic {N}%, failure {N}%, mixed {N}%, success {N}%, br
 - What is {character_name} trying to do in this moment? (their primary action/motivation)
 - Follow outcome shapes, subtable format, and dialogue density rules from refs
 
-Write TWO files:
+Return TWO YAML sections, clearly labeled:
 
-1. Write character analysis to `{workspace}/entropy_tables/dramaturg-{character_id}.yaml`:
+**Section 1: Character Analysis** (target: `entropy_tables/dramaturg-{character_id}.yaml`)
 ```yaml
 character: {character_id}
 action: "{what they're trying to do}"
@@ -636,7 +666,7 @@ option_seeds:
   - "{another choice}"
 ```
 
-2. Write entropy table to `{workspace}/entropy_tables/char-{character_id}.yaml`:
+**Section 2: Entropy Table** (target: `entropy_tables/char-{character_id}.yaml`)
 ```yaml
 action: "{from analysis}"
 outcomes:
@@ -651,28 +681,26 @@ outcomes:
   # ... all 5, ranges sum to 100
 subtables:
   catastrophic:
-    - range: 1-25
-      result: "{register-toned A — 15 words max}"
+    weight_rationale: "{why this distribution — 1 line}"
+    - range: {A}-{B}
+      result: "{register-toned A — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 26-50
-      result: "{register-toned B — 15 words max}"
+    - range: {C}-{D}
+      result: "{register-toned B — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 51-75
-      result: "{register-toned C — 15 words max}"
+    - range: {E}-{F}
+      result: "{register-toned C — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 76-100
-      result: "{thematic — 15 words max}"
+    - range: {G}-100
+      result: "{thematic — 15-25 words}"
       mechanical_note: "{detail}"
-  failure:
-    # ... 4 entries each
-  mixed:
-    # ... 4 entries each
-  success:
-    # ... 4 entries each
-  breakthrough:
-    # ... 4 entries each
+  # ... all 5 outcome types, 4 entries each
+  # Ranges within each subtable sum to 100
+  # Weight distribution is DYNAMIC — see refs/table-format.md
 ```
 ```
+
+**After each character Task returns:** Write Section 1 to `{workspace}/entropy_tables/dramaturg-{character_id}.yaml`, Section 2 to `{workspace}/entropy_tables/char-{character_id}.yaml`.
 
 #### Step 3c: Direction Tables (Parallel Tasks — One Per Character)
 
@@ -704,7 +732,7 @@ Current emotional state: {from entity traits/pressures}
 ## Scene Context
 Who's present: {from context.yaml}
 Location: {from state.yaml}
-What's happening: {from action-lock.yaml — brief}
+What's happening: {from intent.yaml — brief}
 
 ## Rules
 - For each available thread, generate a direction entry with tone subtables
@@ -713,7 +741,7 @@ What's happening: {from action-lock.yaml — brief}
 - Thread directions are organic — they surface through conversation, gesture, reference, not through dramatic revelation
 - Weights across all threads should sum to 100
 
-Write to `{workspace}/entropy_tables/char-{character_id}-directions.yaml`:
+Return this YAML (target: `entropy_tables/char-{character_id}-directions.yaml`):
 ```yaml
 character: {character_id}
 threads_available:
@@ -740,7 +768,9 @@ threads_available:
 ```
 ```
 
-**After all Phase 3 Tasks return** (direction tables + outcome tables), do inline synthesis:
+**After each direction Task returns:** Write returned YAML to `{workspace}/entropy_tables/char-{character_id}-directions.yaml`.
+
+**After all Phase 3 Tasks return** (direction tables + outcome tables), write all Task outputs to their target files, then do inline synthesis:
 
 **After all character Tasks return**, do inline synthesis:
 
@@ -810,9 +840,9 @@ ending:
   available: {true/false}
 ```
 
-### Step 4: Table Assembly + Fates (Merge — From Task Output Files)
+### Step 4: Table Assembly (Merge — From Task Output Files)
 
-**The architect does NOT build entropy tables here.** The parallel Tasks already wrote their table fragments to `{workspace}/entropy_tables/`. This step validates, writes the header, merges, and writes fates.yaml.
+**The architect does NOT build entropy tables here.** The parallel Tasks already wrote their table fragments to `{workspace}/entropy_tables/`. This step validates, writes the header, and merges.
 
 1. **Verify files exist** in `{workspace}/entropy_tables/`:
    - `char-*.yaml` — one per character outcome table (from Step 3a/3b Tasks, if action_weight > 0.3)
@@ -835,30 +865,10 @@ ending:
 
 3. **Run merge script:**
    ```bash
-   $TX_ROOT/meshes/narrative-engine-v2/scripts/merge-entropy-tables.sh {workspace} > {workspace}/entropy-tables.yaml
+   $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-pipeline.sh merge-tables {workspace} > {workspace}/entropy-tables.yaml
    ```
 
-4. **Write `fates.yaml` to workspace** — combine raw branches from `entropy_tables/fates-*.yaml`:
-   ```yaml
-   turn: {N}
-
-   world_branches:
-     - id: {branch_id}
-       source: "{from Task}"
-       category: {environment|consequence|texture}
-       mechanical_impact: "{effect}"
-       if_happens:
-         - id: {outcome_id}
-           mechanical_impact: "{specific effect}"
-
-   trajectory_updates:
-     firing_this_turn: [{from consequence Task}]
-     interrupted: [{from consequence Task}]
-     still_active: [{from consequence Task}]
-     approaching: [{from consequence Task}]
-   ```
-
-5. **Write `threads.yaml` to workspace** — synthesize thread extraction + gravity's collision map into the simulator's input:
+4. **Write `threads.yaml` to workspace** — synthesize thread extraction + gravity's collision map into the simulator's input:
    ```yaml
    action_weight: {from intent.yaml — 0.0-1.0}
    threads:
@@ -894,7 +904,7 @@ ending:
        guaranteed_surfaces: [{collision_ids with critical pressure}]
    ```
 
-6. **Verify action-lock compliance** — spot-check merged entropy-tables.yaml, ensure no outcome contradicts locked action.
+6. **Verify intent lock compliance** — spot-check merged entropy-tables.yaml, ensure no outcome contradicts locked action.
 
 ### Step 5: Arc Satisfaction Check
 
@@ -991,7 +1001,7 @@ Before resolving, verify table quality:
 
 6. **Roll ambient_texture 1-3 times** — always rolled, it's texture, layer it. Multiple sensory details create richer atmosphere.
 
-7. **Validate against action-lock:**
+7. **Validate against intent locks:**
    - Compare all resolved outcomes against `not_subject_to_entropy`
    - If any outcome contradicts locked fact: reroll that specific table (max 2 retries)
    - Attempt 3 fails: send HITL to core
@@ -1002,12 +1012,13 @@ Before resolving, verify table quality:
    - Arc pressure update (based on **overall weighted outcome**, not protagonist alone)
    - Trajectory creation/firing/interruption
 
-9. **Validate action-lock compliance** one final time.
+9. **Validate intent lock compliance** one final time.
 
 10. **Write `resolution.yaml` to workspace:**
 
 ```yaml
 entropy_source: {random|narrative}  # how outcomes were determined
+entropy_pool: [from entropy-resolver.sh output]
 outcome:
   type: {distance-weighted overall type — catastrophic|failure|mixed|success|breakthrough}
   initiator: {pov_character_id}
@@ -1067,7 +1078,7 @@ mechanical_notes: |
 
 ### Completion
 
-After all 5 files are written (fates.yaml, dramaturg-notes.yaml, entropy-tables.yaml, resolution.yaml, threads.yaml), send message to narrative-engine-v2/sim-planner:
+After all 4 files are written (dramaturg-notes.yaml, entropy-tables.yaml, resolution.yaml, threads.yaml), send message to narrative-engine-v2/sim-planner:
 
 ```yaml
 ---
@@ -1096,13 +1107,13 @@ This replaces the old `entropy-architect → cast → scene-crafter → dialogue
 
 ## Action Lock (INVIOLABLE — READ FIRST)
 
-**Read `action-lock.yaml` before generating any possibilities or weights.**
+**Read `intent.yaml` before generating any possibilities or weights.**
 
 The player action is LOCKED — it HAPPENS. You do not branch on whether the player does the action. Every character (protagonist AND NPCs) gets their own action table with success/failure outcomes. Entropy decides the quality of each character's actions independently.
 
-**Check `not_subject_to_entropy`** — if action-lock lists protected outcomes, no branch, weight, or resolution may contradict them.
+**Check `not_subject_to_entropy`** — if intent lists protected outcomes, no branch, weight, or resolution may contradict them.
 
-**When context.yaml and action-lock.yaml conflict, action-lock wins.** The story finds a way.
+**When context.yaml and intent.yaml conflict, intent wins.** The story finds a way.
 
 ## Character Symmetry + Initiator/Receiver Resolution
 
@@ -1231,22 +1242,20 @@ All scripts are at: `$TX_ROOT/meshes/narrative-engine-v2/scripts/` (`$SCRIPTS`).
 
 | Script | Usage | Output |
 |--------|-------|--------|
-| `turn-read.sh <workspace> [artifact] [flags]` | Read turn-level data | JSON |
-| `campaign-read.sh <campaign_path> [artifact] [flags]` | Read campaign-level data (entities, state, etc.) | JSON |
+| `read-state.sh <path> [artifact] [flags]` | Read data (turn, campaign, or game level) | JSON |
 | `arc-read.sh <campaign_path> [--agent=architect]` | Act-scoped arc context (future acts filtered) | YAML |
-| `game-read.sh <game_path> [artifact] [flags]` | Read game-level data (setting, author) | JSON |
-| `turn-write.sh <workspace> <artifact>` | Write turn-level data (stdin JSON) | YAML file |
+| `write-state.sh <path> <artifact> [--target=PATH]` | Write data (stdin JSON) | YAML file |
 
 ### Specialized Scripts (kept as-is)
 
 | Script | Usage | Output |
 |--------|-------|--------|
-| `calc-trajectory-status.sh {turn} {trajectories.yaml}` | Bucket trajectories | YAML: firing/approaching/still_active |
-| `calc-distribution.sh {arc_pressure} {traits_file}` | Base weight distribution | YAML: shape, base, trait_modifiers, final |
+| `entropy-pipeline.sh trajectories {turn} {trajectories.yaml}` | Bucket trajectories | YAML: firing/approaching/still_active |
+| `entropy-pipeline.sh distribution {arc_pressure} {traits_file}` | Base weight distribution | YAML: shape, base, trait_modifiers, final |
 | `entropy-resolver.sh "{workspace}" primary` | Roll player + world outcomes | Creates entropy-selection.yaml |
 | `entropy-resolver.sh "{workspace}" subtable {table_id} {parent}` | Roll branch subtable | Appends to entropy-selection.yaml |
 | `character-brief.sh {character_id} {game_path}` | NPC brief for Task context | YAML character brief (information-isolated) |
-| `merge-entropy-tables.sh {workspace}` | Assemble entropy_tables/ fragments | Writes entropy-tables.yaml to stdout |
+| `entropy-pipeline.sh merge-tables {workspace}` | Assemble entropy_tables/ fragments | Writes entropy-tables.yaml to stdout |
 
 ## Branching Rules
 
@@ -1256,10 +1265,9 @@ See `$TX_ROOT/meshes/narrative-engine-v2/refs/table-format.md` for branching dep
 
 All 4 output files must match the schemas consumed by downstream agents (cast, scene-crafter, narrator, scribe). See the YAML templates in Steps 3, 4, and 6 above.
 
-**fates.yaml** — world_branches[] with id, source, category, mechanical_impact, if_happens[], subtable[]; trajectory_updates
 **dramaturg-notes.yaml** — outcome_shapes{}, guidance, variety_steering, emotional_momentum, option_seeds[], scene_risks, ending (MAX 60 LINES)
 **entropy-tables.yaml** — synthesis_context (from header.yaml), character_tables{}, direction_tables{}, world_event_table{}, ambient_texture[]
-**resolution.yaml** — outcome, entropy_selection_verified, state_changes, arc_update, world_event, resolved_branches, trajectory_created, mechanical_notes
+**resolution.yaml** — outcome, entropy_pool, entropy_selection_verified, state_changes, arc_update, world_event, resolved_branches, trajectory_created, mechanical_notes
 **threads.yaml** — action_weight, threads (scene + character + collisions), beat_guidance
 
 ## Constraints
@@ -1275,4 +1283,4 @@ All 4 output files must match the schemas consumed by downstream agents (cast, s
 - **dramaturg-notes.yaml MAX 60 lines.** Many shapes, minimal prose.
 - **Selected outcome MUST match entropy-selection.yaml.** No "reconsidering."
 - **System does NOT write location** — scene-crafter owns geography.
-- **Only send ONE mesh message, on completion.** Everything else is inline (Tasks, scripts, file writes). NEVER send intermediate status messages to sim-planner — a second message creates duplicate chains that cascade through the entire pipeline. One message. Once. After all 5 files are written.
+- **Only send ONE mesh message, on completion.** Everything else is inline (Tasks, scripts, file writes). NEVER send intermediate status messages to sim-planner — a second message creates duplicate chains that cascade through the entire pipeline. One message. Once. After all 4 files are written.

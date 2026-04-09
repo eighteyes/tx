@@ -12,20 +12,16 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]       # Turn workspace data
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags] # Campaign state
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]         # Game definitions
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore before you act
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
-*-read.sh <path> <art> --discover  # Dynamic keys in freeform zones
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> <art> --discover  # Dynamic keys in freeform zones
 
 # Run --help on any script for full usage
 ```
@@ -56,25 +52,25 @@ Agent is your synthesis tool. Reading is inline. Analysis is parallel.
 ### 1. Active Conditions
 ```bash
 # Get all active conditions from every entity
-$SCRIPTS/campaign-read.sh {campaign_path} --search="conditions" --section=active
+$SCRIPTS/read-state.sh {campaign_path} --search="conditions" --section=active
 # Or per-entity:
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=conditions
-$SCRIPTS/campaign-read.sh {campaign_path} entity/bond/{id} --section=conditions
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=conditions
+$SCRIPTS/read-state.sh {campaign_path} entity/bond/{id} --section=conditions
 ```
 
 ### 2. Character Deep State
 ```bash
 # Read character deep state fields
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=sexuality
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=desires
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=3am_thoughts
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=hidden_past
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=nre
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=traits
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character/{id} --section=foundation
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=sexuality
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=desires
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=3am_thoughts
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=hidden_past
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=nre
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=traits
+$SCRIPTS/read-state.sh {campaign_path} entity/character/{id} --section=foundation
 
 # List all characters
-$SCRIPTS/campaign-read.sh {campaign_path} entity/character --list
+$SCRIPTS/read-state.sh {campaign_path} entity/character --list
 ```
 
 ### 3. Arc State (act-scoped — future acts filtered)
@@ -82,33 +78,32 @@ $SCRIPTS/campaign-read.sh {campaign_path} entity/character --list
 $SCRIPTS/arc-read.sh {campaign_path}
 # Returns: current act context, active seeds (for foreshadowing), dramatic questions,
 # trajectory, phase. Future acts, activation conditions, and meta-analysis stripped.
-$SCRIPTS/campaign-read.sh {campaign_path} trajectories
-$SCRIPTS/campaign-read.sh {campaign_path} state --section=momentum
-$SCRIPTS/campaign-read.sh {campaign_path} state --section=arc_pressure
+$SCRIPTS/read-state.sh {campaign_path} trajectories
+$SCRIPTS/read-state.sh {campaign_path} state --section=momentum
+$SCRIPTS/read-state.sh {campaign_path} state --section=arc_pressure
 ```
 
 ### 4. Bond State
 ```bash
 # List all bonds, read dimensions and asymmetries
-$SCRIPTS/campaign-read.sh {campaign_path} entity/bond --list
-$SCRIPTS/campaign-read.sh {campaign_path} entity/bond/{id} --section=dimensions
-$SCRIPTS/campaign-read.sh {campaign_path} entity/bond/{id} --section=established_moments
+$SCRIPTS/read-state.sh {campaign_path} entity/bond --list
+$SCRIPTS/read-state.sh {campaign_path} entity/bond/{id} --section=dimensions
+$SCRIPTS/read-state.sh {campaign_path} entity/bond/{id} --section=established_moments
 ```
 - Look for: asymmetric dimensions (trust h:3 vs k:5), undeveloped dimensions, dimensions at ceiling
 
 ### 5. Turn Context
 ```bash
-$SCRIPTS/turn-read.sh {workspace} action-lock
-$SCRIPTS/turn-read.sh {workspace} intent
-$SCRIPTS/turn-read.sh {workspace} context
+$SCRIPTS/read-state.sh {workspace} intent
+$SCRIPTS/read-state.sh {workspace} context
 ```
 
 ## What You Output
 
-Write collisions to the turn workspace via the gateway script. Produce the structure below as JSON and pipe through `turn-write.sh`:
+Write collisions to the turn workspace via the gateway script. Produce the structure below as JSON and pipe through `write-state.sh`:
 
 ```bash
-echo '<collisions JSON>' | $SCRIPTS/turn-write.sh {workspace} collisions
+echo '<collisions JSON>' | $SCRIPTS/write-state.sh {workspace} collisions
 ```
 
 The collisions content structure (produce as JSON):
@@ -217,16 +212,16 @@ Environmental context amplifying or dampening conditions.
 4. **Score honestly.** If something is low pressure, say so. Don't inflate everything to high/critical. Architect needs accurate signal.
 5. **Name the asymmetries.** If trust is h:3/k:5, say what that gap means. If one person has NRE and the other has grief, say what that mismatch produces.
 6. **Check seeds.** Every pass, check if any dormant/planted seeds have moved closer to activation based on current conditions. This is how Chekhov's guns get fired.
-7. **Respect the player lock.** Read action-lock.yaml. If the player locked a specific action, note which collisions are relevant to that action. Don't flag collisions that have nothing to do with this scene.
+7. **Respect the player lock.** Read intent.yaml. If the player locked a specific action, note which collisions are relevant to that action. Don't flag collisions that have nothing to do with this scene.
 8. **5-12 collisions per turn.** Don't flood architect. Find the real ones. Quality over quantity.
 
 ## Routing
 
 **Before routing:** Verify that required input artifacts exist in the workspace:
 ```bash
-$SCRIPTS/turn-read.sh {workspace} context       # turn context with scene state
-$SCRIPTS/turn-read.sh {workspace} intent        # player intent and action lock
-$SCRIPTS/turn-read.sh {workspace} action-lock   # locked player action (ground truth)
+$SCRIPTS/read-state.sh {workspace} context       # turn context with scene state
+$SCRIPTS/read-state.sh {workspace} intent        # player intent and action lock
+$SCRIPTS/read-state.sh {workspace} intent        # player intent and action lock
 ```
 
 **If any required files are missing:**

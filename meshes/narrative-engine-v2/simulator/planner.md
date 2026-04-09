@@ -18,17 +18,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
 
 # Run --help on any script for full usage
 ```
@@ -73,33 +71,33 @@ If the script fails or author.yaml is missing, use defaults:
 
 ### Step 2: Read Input Files
 
-From **workspace** (turn directory) via `turn-read.sh`:
-- `$SCRIPTS/turn-read.sh {workspace} threads` — life thread data from architect. Contains:
+From **workspace** (turn directory) via `read-state.sh`:
+- `$SCRIPTS/read-state.sh {workspace} threads` — life thread data from architect. Contains:
   - `action_weight` (0.0–1.0) — how action-directed vs organic this turn is
   - `threads.scene[]` — active narrative tensions
   - `threads.characters.{id}[]` — per-character life threads with availability + weight
   - `collisions[]` — thread intersections that could drive beats
   - `beat_guidance` — suggested beat count, guaranteed surfaces, opening thread
-- `$SCRIPTS/turn-read.sh {workspace} resolution` — mechanical outcomes from architect. Note the initiator/receiver format:
+- `$SCRIPTS/read-state.sh {workspace} resolution` — mechanical outcomes from architect. Note the initiator/receiver format:
   - `outcome.type` is the distance-weighted overall outcome (60% initiator, 40% receiver)
   - `outcome.initiator` identifies who drove the action
   - `character_outcomes.{id}` has each character's individual resolution
-- `$SCRIPTS/turn-read.sh {workspace} context` — turn context (scene, present entities, pov)
-- `$SCRIPTS/turn-read.sh {workspace} action-lock` — locked player action (ground truth)
-- `$SCRIPTS/turn-read.sh {workspace} intent` — player's raw input and clarified intent
-- `$SCRIPTS/turn-read.sh {workspace} dramaturg-notes` — story analysis, emotional momentum, guidance
-- `$SCRIPTS/turn-read.sh {workspace} entropy-tables` — scene-level tables (extract `synthesis_context`, `ambient_texture`, `trajectory_updates`)
-- `$SCRIPTS/turn-read.sh {workspace} director-notes` (if present) — player's creative direction for this turn
+- `$SCRIPTS/read-state.sh {workspace} context` — turn context (scene, present entities, pov)
+- `$SCRIPTS/read-state.sh {workspace} intent` — locked player action (ground truth)
+- `$SCRIPTS/read-state.sh {workspace} intent` — player's raw input and clarified intent
+- `$SCRIPTS/read-state.sh {workspace} dramaturg-notes` — story analysis, emotional momentum, guidance
+- `$SCRIPTS/read-state.sh {workspace} entropy-tables` — scene-level tables (extract `synthesis_context`, `ambient_texture`, `trajectory_updates`)
+- `$SCRIPTS/read-state.sh {workspace} director-notes` (if present) — player's creative direction for this turn
 
-From **campaign** (campaign directory) via `campaign-read.sh`:
-- `$SCRIPTS/campaign-read.sh {campaign} state` — arc pressure, momentum, phase, location
+From **campaign** (campaign directory) via `read-state.sh`:
+- `$SCRIPTS/read-state.sh {campaign} state` — arc pressure, momentum, phase, location
 - `$SCRIPTS/arc-read.sh {campaign}` — act-scoped arc context: dramatic questions, active seeds, current phase, trajectory. Future acts and activation conditions filtered.
-- `$SCRIPTS/campaign-read.sh {campaign} trajectories` — committed futures (Chekhov's Guns) — skip if missing
+- `$SCRIPTS/read-state.sh {campaign} trajectories` — committed futures (Chekhov's Guns) — skip if missing
 
-From **game root** via `game-read.sh`:
-- `$SCRIPTS/game-read.sh {game} character --list` then `$SCRIPTS/game-read.sh {game} character/{id}` for each — ALL character entity files (traits, wounds, voice_layers, life sections)
-- `$SCRIPTS/game-read.sh {game} bond --list` then `$SCRIPTS/game-read.sh {game} bond/{id}` for each — ALL bond files (relationship intensities, dimensions, established baselines)
-- `$SCRIPTS/game-read.sh {game} setting` — world rules, geography, tone — skip if missing
+From **game root** via `read-state.sh`:
+- `$SCRIPTS/read-state.sh {game} character --list` then `$SCRIPTS/read-state.sh {game} character/{id}` for each — ALL character entity files (traits, wounds, voice_layers, life sections)
+- `$SCRIPTS/read-state.sh {game} bond --list` then `$SCRIPTS/read-state.sh {game} bond/{id}` for each — ALL bond files (relationship intensities, dimensions, established baselines)
+- `$SCRIPTS/read-state.sh {game} setting` — world rules, geography, tone — skip if missing
 
 ### Step 3: Extract Scene Themes
 
@@ -151,6 +149,42 @@ character_psychology:
     backpressure: "{what's building that hasn't surfaced yet — from dramaturg emotional_momentum}"
     life_context: "{active concerns, expertise, or memories relevant to this beat — what's running underneath}"
 ```
+
+#### Off-Screen NPC Context
+
+When beats reference characters who are NOT present in the scene but whose actions matter (e.g., a meeting that happened off-screen, a debrief about someone), build an NPC digest from:
+1. **continuity.yaml** — canonical facts about this NPC
+2. **bond notes** — relationship to present characters (conspiracy target? ally? advisor? rival?)
+3. **context.yaml → suspended** — what just happened with this NPC
+4. **character notes** — any operation/scheme/history involving this NPC
+
+Write an `npc_context` block into ANY beat whose function references an off-screen character:
+
+```yaml
+npc_context:
+  {npc_id}:
+    role: "{who they are TO THIS STORY — conspiracy target, rival, advisor, ally, etc.}"
+    relationship: "{specific history — operations, confrontations, schemes, key events with turn refs}"
+    last_interaction: "{what just happened — from context.yaml suspended state or recent episodes}"
+    what_characters_know: "{what present characters know/believe about this NPC right now}"
+    canon_dialogue: |
+      {actual rendered dialogue involving this NPC — from previous turn dialogue-pairs.txt or prose}
+```
+
+**Sourcing canon events**: When a beat involves debriefing, referencing, or reacting to events from previous turns:
+1. Read continuity for the NPC/event: `$SCRIPTS/read-state.sh {campaign} continuity --entity={npc_id}` — gives facts with turn numbers
+2. Read `context.yaml → suspended` for the most recent event summary
+3. For each relevant turn reference, read that turn's `summary.md` (direct read OK for .md files):
+   `{turns_dir}/turn-{N}/summary.md` — compact per-turn summary with dialogue quoted, physical events, emotional shifts, NPC actions, state changes
+4. Only if summary.md is missing or insufficient, fall back to:
+   - `$SCRIPTS/read-state.sh {turns_dir}/turn-{N} dialogue-pairs` — extracted dialogue
+   - `{turns_dir}/turn-{N}/prose.md` — full prose (last resort, large)
+
+`summary.md` is the primary source. It contains everything — quoted dialogue, physical events, trait changes, NPC beats, objects, thematic focus. A debrief about a meeting from T100 should draw from T100's summary, not invention.
+
+The `canon_dialogue` field gives voice generators actual words that were spoken — not a summary to extrapolate from. Characters debriefing a meeting should quote or paraphrase lines that were *rendered*, not invent plausible alternatives.
+
+This prevents downstream voice generators from hallucinating NPC relationships or fabricating off-screen events. Without this context, voice agents will fill dialogue gaps with plausible-sounding content that contradicts established canon.
 
 #### Protagonist Internal Trait Voices
 
@@ -226,8 +260,45 @@ For each planned beat, determine:
 - Which collision triggers (if collision beat)
 - Interpretive frame assignment (see Step 7)
 - Active characters in this beat
+- **Notes** — expanded beat content grounding the entropy direction in canon specifics
 
 Beats are sequenced by dramatic rhythm, not by taxonomy. The scene discovers what it is as it unfolds — the plan provides structure without prescribing shape.
+
+#### Beat Tone Assignment
+
+Each beat gets a `tone` field — a prose register directive that narrator's per-beat renderer uses. Tone prevents register bleed across beats (e.g., academic tone in beat 1 locking all subsequent beats into the same register).
+
+Derive tone from the beat's function, the intent, and scene_temperature:
+
+| Beat function | Typical tone |
+|--------------|-------------|
+| Command, power assertion, dominance | `command/power` |
+| Observation, watching, patience | `sensory/absorption` |
+| Writing, thinking, intellectual work | `intellectual/absorbed` |
+| Physical tension building, want accumulating | `tension/charged` |
+| Breaking point, architecture collapsing | `rupture/release` |
+| Two actions intertwined as one gesture | `dual-register` |
+| Philosophical irony, meta-awareness | `philosophical/irony` |
+| Domestic routine, quiet coexistence | `domestic/quiet` |
+| Confrontation, argument, rupture | `confrontation` |
+| Thread surfacing through conversation | `conversational` |
+
+These are examples, not a fixed taxonomy. Write the tone that matches the beat. The tone tells narrator's per-beat renderer what register to write in — preventing one beat's register from contaminating the next.
+
+#### Expanding Entropy into Beat Notes
+
+Entropy tables give *direction* (success/failure/mixed, emotional shape). The `notes` field is where you ground that direction in **what actually happens**, sourced from canon.
+
+For beats that reference past events, debriefs, or NPC interactions:
+1. Read the relevant turn summaries (see "Sourcing canon events" above)
+2. Extract the specific facts, dialogue, and actions from those summaries
+3. Write them into the beat `notes` — not as verbatim quotes to render, but as **the substance** the voice Task works from
+
+Example — entropy says "success: character delivers intel confidently":
+- BAD notes: "Character delivers the intel. Other character interrogates."
+- GOOD notes: "Character reports specific outcomes from the operation — sourced from previous turn summaries. Include actual quotes and events from canon. The debrief covers what happened, not adjacent topics."
+
+The voice Task sees the notes and has *real material* to voice. Without specifics, it will invent plot. Trivia (room details, small gestures, environmental color) is fine to invent. Plot (what NPCs said, what operations achieved, what intelligence was gathered) must come from canon.
 
 #### Guaranteed Thread Surfaces
 
@@ -248,19 +319,65 @@ When `threads.yaml` lists collisions with weight >20, plan beats where both char
 
 If `interpretive_frames` exists in author params:
 
+#### Scene-Level Frame Reweighting
+
+Before selecting per-beat frames, assess the scene's dominant energy from intent and character psychology. Adjust frame weights for THIS scene:
+
+- **High physical/sexual tension** (exhibition, intimacy, want, bodies in proximity) → boost `sensory` and `intimate`, suppress `philosophical`
+- **High intellectual tension** (debate, revelation, argument) → boost `philosophical`, suppress `sensory`
+- **High danger/conflict** → boost `clinical`, suppress `comic`
+- **High absurdity** → boost `comic`
+
+Write the scene-adjusted weights into sim-plan.yaml as `adjusted_frame_weights` with a one-line rationale. Author weights are defaults — the scene context modifies them.
+
+#### Per-Beat Selection
+
 For each planned beat:
-1. **Weighted random selection** — use frame weights as probability distribution
+1. **Weighted random selection** — use the ADJUSTED frame weights as probability distribution
 2. **Consecutive frame penalty** — if the same frame was used in the previous beat, halve its weight
 3. **Record the selected frame** in the beat plan
 
 If no frames defined, set all frame assignments to null.
 
+### Step 7b: Intent Coverage Check
+
+Before writing, verify the beat sequence delivers the player's intent.
+
+1. Re-read `intent.yaml → raw_input` and `intent.yaml → locked_action`
+2. Extract every distinct element the player asked for (characters, events, actions, scope)
+3. For each element, confirm at least one beat covers it:
+
+```
+Element from intent              → Covered by beat?
+"character returns from meeting" → beat N references debrief/return?
+"specific task, quantified"      → beat N has task execution?
+"command issued by character A"  → beat N renders the command?
+"entropy decides the turning point" → beat N is the inflection?
+```
+
+4. If ANY element has zero beat coverage → add or modify a beat to cover it
+5. If off-screen events are referenced (meetings, operations, NPCs) → verify `npc_context` exists on the relevant beat with `canon_dialogue` sourced from previous turn summaries
+
+Write the coverage check result into sim-plan.yaml as `intent_coverage`:
+
+```yaml
+intent_coverage:
+  - element: "{from raw_input}"
+    beat: {N}
+    status: covered
+  - element: "{from raw_input}"  
+    beat: null
+    status: MISSING — added beat {N}
+```
+
+This is a hard gate. Do not write sim-plan.yaml with uncovered intent elements.
+
 ### Step 8: Write sim-plan.yaml
 
-Write the complete planning checkpoint via gateway script. Pipe JSON to `turn-write.sh`:
+Write the complete planning checkpoint via gateway script. Pipe JSON to `write-state.sh`:
 
 ```bash
-echo '<sim-plan JSON>' | $SCRIPTS/turn-write.sh {workspace} sim-plan
+echo '<sim-plan JSON>' | $SCRIPTS/write-state.sh {workspace} sim-plan
 ```
 
 The JSON should contain:
@@ -289,6 +406,10 @@ tempo:
   beat_count: {N}
   beat_scope: "{description}"
 
+scene_temperature: "{what this scene is ABOUT emotionally — 1-2 lines. Passed to voice Tasks. Derive from intent + character psychology + bond state. What charge does every gesture carry?}"
+
+adjusted_frame_weights: {scene-adjusted weights with rationale}
+
 character_psychology: [...]  # full psychology blocks for all characters
 
 protagonist_voices: {...}  # internal trait voices for POV character
@@ -305,7 +426,9 @@ beat_plan:
       thread: null
       collision: null
       frame: null
+      tone: "{prose register for this beat — e.g. command/power, sensory/absorption, tension/charged, dual-register, philosophical/irony, domestic/quiet, confrontation}"
       active_characters: ["{char_a}", "{char_b}"]
+      notes: "{expanded content — canon-grounded specifics that voice Tasks work from}"
     - beat: 2
       function: "{dramatic purpose}"
       mode: thread
@@ -313,7 +436,16 @@ beat_plan:
       thread_tone: null  # sim-tables will roll this
       collision: null
       frame: sensory
+      tone: "{prose register for this beat — derived from function + intent + scene_temperature}"
       active_characters: ["{char_a}", "{char_b}"]
+      notes: "{what actually happens — entropy direction + canon facts}"
+      npc_context:  # ONLY when beat references off-screen characters
+        {npc_id}:
+          role: "{relationship to story}"
+          relationship: "{key history}"
+          last_interaction: "{what just happened}"
+          what_characters_know: "{current intel}"
+          canon_dialogue: "{actual rendered quotes from previous turn summaries}"
     # ... one entry per planned beat
 
   guaranteed_surfaces:

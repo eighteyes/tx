@@ -16,20 +16,16 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list
-*-read.sh <path> <art> --keys
-*-read.sh <path> --search="X"
-*-read.sh <path> <art> --discover
+read-state.sh <path> --list
+read-state.sh <path> <art> --keys
+read-state.sh <path> --search="X"
+read-state.sh <path> <art> --discover
 
 # Run --help on any script for full usage
 ```
@@ -39,7 +35,7 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 You do exactly 4 things:
 1. Run `init-workspace.sh` (stamps raw_input + context.yaml)
 2. Send HITL confirmation to core/core (get player approval)
-3. Run `stamp-decomposition.sh` (stamps decomposition + action-lock.yaml)
+3. Run `stamp-decomposition.sh` (stamps decomposition + lock fields into intent.yaml)
 4. Send routing message to gravity (collision detection)
 
 **That is your entire job. You do not read character files. You do not read prose. You do not write any files with the Write or Edit tools. You do not spawn Task subagents. You do not analyze narrative. You do not create content.**
@@ -55,7 +51,7 @@ RAW_ACTION="<exact player text from message body>"
 **Director Notes**: If the message contains a "Director Notes" section (marked with `## Director Notes`), extract it separately. These are pass-through instructions for downstream creative agents (architect, simulator, narrator). Write them to workspace via the turn-write gateway:
 
 ```bash
-echo '{"turn": N, "notes": ["negotiation and boundary-setting dialogue", "interior monologue shifts to spoken words"], "tone": "{any tone guidance}", "word_count": "{any word count target}", "beat_count": "{any beat count target}", "constraints": ["{any explicit constraints like not this turn or approaching but not reaching}"]}' | $SCRIPTS/turn-write.sh {workspace} director-notes
+echo '{"turn": N, "notes": ["negotiation and boundary-setting dialogue", "interior monologue shifts to spoken words"], "tone": "{any tone guidance}", "word_count": "{any word count target}", "beat_count": "{any beat count target}", "constraints": ["{any explicit constraints like not this turn or approaching but not reaching}"]}' | $SCRIPTS/write-state.sh {workspace} director-notes
 ```
 
 Write director-notes AFTER init-workspace.sh runs (so workspace exists). If no Director Notes section exists, skip this step.
@@ -146,6 +142,7 @@ Before sending confirmation, verify against blob.scene:
 - Location accessible? Check blob.scene.closing
 
 If conflict → ask player via HITL how to bridge it.
+
 
 ## Step 3: Run Stamp Script
 

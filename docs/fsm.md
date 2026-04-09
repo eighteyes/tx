@@ -323,13 +323,13 @@ For recovery from stuck states:
 
 ```bash
 # View current state
-tx fsm-state get my-mesh
+tx mesh fsm-chain my-mesh
 
 # Set state directly
-tx fsm-state set my-mesh complete --reason "Manual recovery"
+tx mesh fsm-goto my-mesh complete
 
 # Reset to initial state
-tx fsm-state reset my-mesh --reason "Restart workflow"
+tx mesh fsm-reset my-mesh
 ```
 
 **Behavior:**
@@ -427,7 +427,7 @@ This triggers the FSM transition to the next state.
 ### View FSM State
 
 ```bash
-tx fsm-state get my-mesh
+tx mesh fsm-chain my-mesh
 # Output:
 # {
 #   "state": "working",
@@ -439,13 +439,13 @@ tx fsm-state get my-mesh
 ### Set FSM State (Manual Override)
 
 ```bash
-tx fsm-state set my-mesh complete --reason "Manual recovery after error"
+tx mesh fsm-goto my-mesh complete
 ```
 
 ### Reset to Initial State
 
 ```bash
-tx fsm-state reset my-mesh --reason "Restart workflow"
+tx mesh fsm-reset my-mesh
 ```
 
 ## Events
@@ -730,7 +730,7 @@ agents: [...]
 ### Check FSM State
 
 ```bash
-tx fsm-state get my-mesh
+tx mesh fsm-chain my-mesh
 ```
 
 ### View Logs
@@ -761,13 +761,13 @@ If FSM gets stuck:
 
 ```bash
 # Override to next expected state
-tx fsm-state set my-mesh next-state --reason "Recovered from error"
+tx mesh fsm-goto my-mesh next-state
 
 # View what happened
-tx fsm-state get my-mesh
+tx mesh fsm-chain my-mesh
 
 # Restart from beginning
-tx fsm-state reset my-mesh --reason "Full restart"
+tx mesh fsm-reset my-mesh
 ```
 
 ## API Reference

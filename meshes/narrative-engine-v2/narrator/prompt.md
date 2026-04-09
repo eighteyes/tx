@@ -17,19 +17,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list
-*-read.sh <path> <art> --keys
-*-read.sh <path> --search="X"
+read-state.sh <path> --list
+read-state.sh <path> <art> --keys
+read-state.sh <path> --search="X"
 
 # Run --help on any script for full usage
 ```
@@ -63,34 +59,37 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 **IDEMPOTENCY RULE:** You may receive duplicate messages from oracle (due to upstream retries). ALWAYS check for prose-draft.md/prose.md BEFORE doing any work. If prose-draft.md already exists, you already rendered — do not render again. If prose.md exists, the lint pipeline already ran — do nothing. Send exactly ONE message to lint-patterns per turn. Never two.
 
 ### Phase 1: Gather Context (fresh render only)
-1. Read workspace files (pre-built by upstream agents):
+1. **Pre-assembled context (if available):**
+   If `{workspace}/narrator-context.yaml` exists, use it as your primary data source.
+   It contains: scene_script, intent, context, director_notes, dramaturg_notes,
+   resolution, threads, collisions, character_briefs, author, campaign_state,
+   recent_timeline, continuity_last_seen, story_concordance.
+   Fall back to individual reads only if narrator-context.yaml is missing.
+
+   Individual reads (fallback):
    ```bash
-   $SCRIPTS/turn-read.sh {workspace} intent
-   $SCRIPTS/turn-read.sh {workspace} action-lock
-   $SCRIPTS/turn-read.sh {workspace} context
-   $SCRIPTS/turn-read.sh {workspace} dramaturg-notes
-   $SCRIPTS/turn-read.sh {workspace} director-notes      # if present
-   $SCRIPTS/turn-read.sh {workspace} resolution
-   $SCRIPTS/turn-read.sh {workspace} fates
-   $SCRIPTS/turn-read.sh {workspace} scene_script
-   $SCRIPTS/turn-read.sh {workspace} threads
+   $SCRIPTS/read-state.sh {workspace} intent
+   $SCRIPTS/read-state.sh {workspace} context
+   $SCRIPTS/read-state.sh {workspace} dramaturg-notes
+   $SCRIPTS/read-state.sh {workspace} director-notes      # if present
+   $SCRIPTS/read-state.sh {workspace} resolution
+   $SCRIPTS/read-state.sh {workspace} scene_script
+   $SCRIPTS/read-state.sh {workspace} threads
    ```
-   - `intent` — player's raw input (`raw_input`) and structured intent
-   - `action-lock` — **locked action AND locked dialogue (if provided)**
+   - `intent` — player's raw input (`raw_input`), structured intent, and locked action/dialogue
    - `context` — scene setup, player action
    - `dramaturg-notes` — story-aware guidance
    - `director-notes` — **if present**, player's creative direction (tone, dialogue emphasis, word count targets, beat targets, constraints). These are authoritative — override default assumptions about pacing, dialogue density, and scene structure.
    - `resolution` — mechanical outcomes (includes `world_event` if world acted)
-   - `fates` — full world possibility table (branches not taken = atmospheric subtext)
    - `scene_script` — **beat-by-beat scene script with character voices, time, props, pacing** (PRIMARY INPUT)
    - `threads` — **life thread data** (action_weight, character threads, collisions, beat guidance) — for thread-aware rendering
 2. Read game-level author config — extract `interpretive_frames` (if present) for frame-aware rendering:
    ```bash
-   $SCRIPTS/game-read.sh {game_path} author
+   $SCRIPTS/read-state.sh {game_path} author
    ```
 3. Read campaign's timeline for time references:
    ```bash
-   $SCRIPTS/campaign-read.sh {campaign_path} timeline
+   $SCRIPTS/read-state.sh {campaign_path} timeline
    ```
    - Use for "X days ago" or "since the arrest" references
    - Check last entry for current day, period
@@ -98,7 +97,7 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 **Character Life Context:**
 4. Read each character entity via gateway — specifically the `life` section:
    ```bash
-   $SCRIPTS/game-read.sh {game_path} character/{character_id}
+   $SCRIPTS/read-state.sh {game_path} character/{character_id}
    ```
    - `active_concerns` — what's on their mind besides the relationship
    - `expertise` — what they actually know about, what they're good at
@@ -133,13 +132,13 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
 ### Phase 2: Knowledge Queries (OPTIONAL)
 Query oracle only if the scene involves world-building context you need to honor.
 
-**Optional campaign-read.sh queries** for deduplication and entity context:
+**Optional read-state.sh queries** for deduplication and entity context:
 ```bash
 # Search campaign for recent factoid usage (avoid repeating)
-$SCRIPTS/campaign-read.sh {campaign_path} --search="factoids"
+$SCRIPTS/read-state.sh {campaign_path} --search="factoids"
 
 # Get recent facts for entities in scene
-$SCRIPTS/campaign-read.sh {campaign_path} --search="{entity_id}"
+$SCRIPTS/read-state.sh {campaign_path} --search="{entity_id}"
 ```
 
 ### Phase 3: Vocabulary Preparation
@@ -148,50 +147,169 @@ Generate vocabulary lists matching author.yaml diction:
 - 15 transition phrases matching cadence rules
 - 10 metaphors from the game's metaphor systems
 
-### Phase 4: Staged Render
-1. Read author config (already loaded from Phase 1) — voice constraints AND `prose_structure` (if present)
-2. Use scene_script (already loaded from Phase 1) for beat structure and character voices
-3. Apply dramaturg guidance — tone, pacing, pivot points
-4. **Establishing shot** — if `author.yaml → prose_structure.establishing_shot` exists:
-   - Render an opening passage BEFORE Beat 1 that grounds the reader
-   - Self-contained: a reader starting HERE should know where they are, who's present, what time/place
-   - Draw from `context.yaml → closing_state`, `scene_script.yaml → opening`, and dramaturg notes
-   - This is narrative voice, not just visual — can set tone, context, atmosphere
-5. For each beat: render from voice data, write prose, write transition
-6. **Closer** — if `author.yaml → prose_structure.closer` exists:
-   - Render a closing passage AFTER the final beat that lands the scene
-   - The scene should ARRIVE somewhere before releasing the reader
-   - Not necessarily resolution — can be question, suspension, or pivot
-7. Assemble into continuous prose — no separators, no headers
-8. Verify word count against **tempo** (from `context.yaml → tempo`, cross-ref `author.yaml → pacing.tempo.options`):
-   - close-up: 2500-3500 words (full rendering)
-   - scene: 2000-3000 words (dialogue-forward)
-   - sequence: 1500-2500 words (time skips, selective rendering)
-   - montage: 1200-2000 words (compressed, turning points only)
-   - If tempo is absent, fall back to author.yaml pacing.turn_length
+### Phase 4: Per-Beat Parallel Rendering
+
+**Architecture:** Instead of rendering all prose monolithically (which causes register/tone lock), fire parallel opus Tasks — one per beat — each in isolation. Then stitch results.
+
+**Why:** When narrator renders all beats in one pass, the register established in beat 1 contaminates every subsequent beat. A command/power beat locks the prose into academic mode. Per-beat isolation prevents tone bleed — each beat renders in its own register.
+
+#### 4a. Prepare Shared Context
+
+Before firing Tasks, assemble the shared context that every beat Task needs:
+
+```
+shared_context:
+  author_voice:     {author.yaml voice constraints, prose_structure, diction}
+  vocabulary:       {the vocabulary lists from Phase 3}
+  tempo:            {resolved tempo + rendering rules — see Tempo table below}
+  pov_character:    {from context.yaml}
+  character_briefs: {per-character: voice_markers, active traits with pressure, visual. Trim to essentials — no backstory, no episode history, no social web.}
+  closing_state:    {from context.yaml → closing_state — physical continuity}
+  dramaturg:        {tone, pacing, pivot points from dramaturg-notes}
+  intent_locked:    {from intent.yaml — extract raw_input, interpreted_action, and all locked elements from decomposition + clarification}
+```
+
+**Intent extraction:** Read intent.yaml once. Extract:
+- `raw_input` — the player's exact words
+- `interpreted_action` — the clarified intent
+- `decomposition` — locked elements (actor, action, method, scope, goal)
+- `clarification` — any additional locked constraints
+
+For each beat Task, map the relevant locked elements to that beat's function. A beat whose function is "arrival and command" gets the locked elements about commands. A beat whose function is "absorption/observation" gets the locked elements about watching/patience. A beat with no matching locked element gets "No locked elements — render from voice data."
+
+**This is the critical path for intent fidelity.** If a locked element doesn't appear in ANY beat's intent injection, add an extra beat to cover it.
+
+#### 4b. Resolve Tempo
+
+Read `context.yaml → tempo` (default: `scene`). Cross-reference `author.yaml → pacing.tempo.options`:
+
+| Tempo | Beat Scope | Target per Beat | Dialogue Ratio |
+|-------|-----------|----------------|----------------|
+| `close-up` | One gesture, one line | 350-500 words | 50-65% |
+| `scene` | 2-4 lines exchange | 300-450 words | 60-75% |
+| `sequence` | Distinct phase | 250-400 words | 50-65% |
+| `montage` | Distinct day/event | 200-350 words | 30-50% |
+
+If tempo is absent, default to `scene`.
+
+#### 4c. Establishing Shot (inline, not a Task)
+
+If `author.yaml → prose_structure.establishing_shot` exists, render the opening passage yourself (not as a Task) BEFORE firing beat Tasks:
+- Self-contained: a reader starting HERE should know where they are, who's present, what time/place
+- Draw from `context.yaml → closing_state`, `scene_script.yaml → opening`, and dramaturg notes
+- Match the tone of beat 1 — this is the bridge into the scene
+
+#### 4d. Fire Per-Beat Opus Tasks (PARALLEL)
+
+For EACH beat in `scene_script.yaml → script[]`, fire an opus Task via the **Agent tool**.
+
+**All beat Tasks fire in parallel.** 3, 5, or 7 beats — same wall-clock time. Each beat is tone-isolated.
+
+**Extra beats:** You may render additional beats beyond what scene_script contains. Use when:
+- A transition between two tonally different beats needs bridging prose
+- A beat is too dense and should split into two rendered passages
+- The establishing shot or closer needs its own full rendered beat
+- The story needs a moment that the mechanical pipeline didn't plan
+
+**Rules for extra beats:** Every scene_script beat MUST be rendered. Extra beats are additive only — you cannot remove or reorder scene_script beats. Fire extra beat Tasks with the same template, assigning an appropriate tone. Mark extra beats in the assembly with a comment (e.g., `<!-- extra: transition -->`) so editor knows which are generated vs planned.
+
+**Beat Task Prompt Template:**
+
+```
+You are a prose renderer for ONE BEAT of a scene. Render this single beat into continuous prose. You see ONLY this beat's data.
+
+## Tone Directive
+{beat.tone from scene_script — e.g. "command/power", "sensory/absorption", "confrontation", "intimate/vulnerable"}
+
+Write in this register. The tone is your primary voice constraint for this beat. Match the register to the directive — a "command/power" beat is flat, architectural, unhurried; a "sensory/absorption" beat foregrounds body, texture, physical detail; a "confrontation" beat is clipped, charged, direct; an "intimate/vulnerable" beat slows down, softens syntax, lets silence work. Do NOT drift into academic/analytical register unless the tone explicitly calls for it.
+
+## Author Voice Constraints
+{from shared_context.author_voice — diction, cadence, heat level, content rules}
+
+## Player Intent (this beat's responsibility)
+{Extract from intent.yaml: which locked elements THIS beat must deliver. Not the full intent — only the elements relevant to this beat's function. Match each beat's dramatic function to the locked elements from decomposition and clarification. If no locked element maps to this beat, say "No locked elements — render from voice data."}
+
+## Beat Data
+{the single beat from scene_script.yaml — function, voices[], other, ambient, direction, frame}
+
+## Character Context
+{voice_markers + active traits + visual for characters in this beat. NOT full entity dumps. The Task needs to know how they talk and what's pressured — not their backstory, social web, or episode history.}
+
+## POV Character
+{pov_character_id} — only this character gets internal voice (italics, no quotes)
+
+## Tempo
+{tempo rendering rules — target word count per beat, dialogue ratio}
+
+## Voice Field Treatment
+| Field | Treatment |
+|-------|-----------|
+| `dialogue` | **VERBATIM** — never rewrite |
+| `delivery` | 250-char seed → elaborate into physical description of HOW they speak |
+| `body_language` | 250-char seed → elaborate into observed physical action |
+| `internal` | Brief interiority (POV only) — 1-2 sentences max, fragmented mid-thought, not thesis |
+| `notices` | Build the perception layer — what characters observe |
+| `other` | Weave world events into texture |
+| `ambient` | Sensory layer — atmosphere, environment |
+
+Do NOT invent new dialogue. The dialogue field is the character's exact words.
+
+## Frame
+{beat.frame — if non-null, adjust rendering lens: clinical/sensory/mythic/comic}
+
+Frame shapes texture, not content. Word choice, sensory emphasis, metaphor register.
+
+## Thread Context
+{if beat_mode is thread or collision — include thread_tone and thread guidance}
+
+When beat_mode is thread: let the thread breathe, match thread_tone (deflective/honest/vulnerable).
+When beat_mode is collision: the intersection IS the moment, don't over-signal.
+When beat_mode is action: render from voice data, threads as texture only.
+
+## Rendering Rules
+- Body before interpretation
+- Short punchy sentences for impact
+- Subtext in dialogue
+- Traits are substructure, not vocabulary — never name psychological states
+- Never narrate what the action already showed
+- No thesis statements about character motivations
+- Arc knowledge stays backstage — narrator watches the present
+- Kill: "suddenly", "seemed", "somehow", "She realized that", "It was as if"
+- Kill: "heart pounded", "eyes [verbed]", dialogue tags with adverbs
+- Litotes budget: 0-1 per beat
+
+Output: Continuous prose for this beat only. No headers, no separators, no meta-commentary.
+```
+
+**Collecting results:** Use TaskOutput to collect prose from each Task. Tasks return raw prose text.
+
+#### 4e. Closer (inline, not a Task)
+
+If `author.yaml → prose_structure.closer` exists, render the closing passage yourself:
+- The scene should ARRIVE somewhere before releasing the reader
+- Match the tone of the final beat — this is where the scene lands
+- Not necessarily resolution — can be question, suspension, or pivot
+
+#### 4f. Assemble and Validate
+
+After all beat Tasks return:
+
+1. **Assemble** in beat order: establishing shot → beat 1 prose → ... → extra beats → closer. Separate beats with `---` markers. Editor handles stitch and smoothing downstream.
+2. **Verify voice differentiation** — check that characters sound distinct across the full assembled prose. The SWAP TEST: if you can swap a line between characters and it still works, rewrite it.
+3. **Verify word count** against tempo targets:
+   - close-up: 2500-3500 total
+   - scene: 2000-3000 total
+   - sequence: 1500-2500 total
+   - montage: 1200-2000 total
+4. **Check dialogue ratio** against author.yaml balance
+
+**Do NOT smooth transitions or remove beat markers.** Editor handles stitching. Your job is generation and validation, not editorial polish.
 
 **Self-containment principle:** Each turn's prose should work as a standalone scene. The establishing shot orients a cold reader; the closer gives them a place to land. The beats between are the scene itself.
 
-### Tempo-Aware Rendering
+### Phase 4b: Voice Field Reference
 
-Read `context.yaml → tempo` to adjust prose density. Cross-reference `author.yaml → pacing.tempo.options` for rendering guidelines.
-
-| Tempo | Rendering Style |
-|-------|----------------|
-| `close-up` | Full somatic detail, selective interiority at turning points only. Body and action drive the scene. 50-65% dialogue. |
-| `scene` | **Dialogue-forward.** Elaborate key physical moments, selective interiority at collision points only. 60-75% dialogue. Characters are TALKING — let them talk. |
-| `sequence` | Time skip bridges between beats ("An hour later..."). Only render pivotal moments in full prose. Summarize transitions. 50-65% dialogue. |
-| `montage` | Time markers between beats ("Tuesday." "Three days later."). Summary prose for context, full rendering ONLY for breakthrough moments. 30-50% dialogue — key lines only. |
-
-**If tempo is absent, default to `scene`.**
-
-**The tempo contract:** At `scene` tempo and above, the narrator's job shifts from elaborating every seed to selecting which seeds MATTER. Not every `body_language` field needs a paragraph. Not every `internal` field needs three sentences. Pick the moments that move the story and render THOSE fully. Let the rest breathe.
-
-### Phase 4b: Render from Scene Script Voice Data
-
-**scene-sim has already generated all character voices.** Read `scene_script.yaml` and render from voice fields.
-
-For each beat in `scene_script.yaml → script[]`:
+For each beat in `scene_script.yaml → script[]`, the beat Tasks render from these fields:
 
 | Voice Field | Treatment |
 |-------------|-----------|
@@ -202,14 +320,16 @@ For each beat in `scene_script.yaml → script[]`:
 | `notices` | Build the perception layer — what characters observe about each other |
 | `other` | Weave world events into scene texture, use `narrative_weight` for emphasis |
 | `ambient` | Sensory layer — atmosphere, environment, physical world around the action |
-| `frame` | Adjust rendering lens for this beat (see Frame-Aware Rendering below) |
+| `frame` | Adjust rendering lens for this beat (see below) |
+| `tone` | **PRIMARY register directive** — the prose register this beat renders in. Prevents tone bleed. |
 
-**Do NOT invent new dialogue.** The `dialogue` field contains character-specific lines generated by isolated voice agents matching each character's traits. Narrator's job is weaving, not inventing.
+**Do NOT invent new dialogue.** The `dialogue` field contains character-specific lines generated by isolated voice agents matching each character's traits. Each beat Task's job is weaving, not inventing.
 
 **Example rendering from scene_script.yaml:**
 ```yaml
 # From scene_script.yaml
 - beat: 5
+  tone: "intimate/vulnerable"
   voices:
     - character: npc
       dialogue: "You're drunk."
@@ -222,11 +342,11 @@ For each beat in `scene_script.yaml → script[]`:
 **Prose output:**
 > "You're drunk." The voice carried no inflection, observation without invitation, the words falling flat between them like a door closing. She stood with her arms crossed, weight shifted back — not recoiling exactly, but creating distance with her entire body. The slight sway registered first. Then the mascara, smudged dark beneath one eye. The vodka, underneath everything else.
 
-The dialogue is verbatim. The delivery and body_language seeds are elaborated into full prose. The notices build the perception layer.
+The dialogue is verbatim. The delivery and body_language seeds are elaborated into full prose. The notices build the perception layer. The tone shapes the register and sensory emphasis of the rendering.
 
 ### Frame-Aware Rendering
 
-If `scene_script.yaml` beats include `frame:` fields (non-null), read the frame descriptions from `author.yaml → interpretive_frames`.
+If `scene_script.yaml` beats include `frame:` fields (non-null), include the frame description in the beat Task prompt from `author.yaml → interpretive_frames`.
 
 **Frame shapes texture, not content.** The same beat rendered through different frames:
 
@@ -238,34 +358,33 @@ If `scene_script.yaml` beats include `frame:` fields (non-null), read the frame 
 | `comic` | Absurd truth, finding the ridiculous in the devastating, tonal contrast |
 
 **Rules:**
-- Frame adjusts the narrator's LENS — word choice, sensory emphasis, metaphor register
+- Frame adjusts the beat Task's LENS — word choice, sensory emphasis, metaphor register
 - Frame does NOT change what happens — the voices, actions, and dialogue stay the same
 - Frame does NOT override author.yaml voice constraints — it layers on top
-- If `frame: null` (no frames defined), render normally with no frame adjustment
-- Transitions between frames should be seamless — no meta-commentary about perspective shifts
+- If `frame: null`, render normally with no frame adjustment
+- Tone and frame work together: tone sets the register, frame adjusts the lens within that register
 
 ### Thread-Aware Rendering
 
-Read `threads.yaml` and `scene_script.yaml` beat fields (`beat_mode`, `thread`, `thread_tone`, `collision`) to adjust rendering for thread-driven beats.
+Include thread context in beat Task prompts when `beat_mode` is `thread` or `collision`.
 
 **When `beat_mode: thread`** — a life thread is surfacing:
 - **Let the thread breathe.** Don't dramatize it toward a resolution. A character mentioning a thesis deadline isn't a plot point — it's a person with a life beyond this moment.
-- **Tone shapes delivery.** The `thread_tone` (deflective/honest/vulnerable) tells you HOW the thread surfaces:
-  - `deflective` — mentioned and immediately redirected. The prose barely lingers. "She mentioned the paper — something about a counterargument she couldn't shake — and then she was talking about coffee again."
-  - `honest` — engaged with directly. Give it a paragraph. Let the character actually say what they mean.
-  - `vulnerable` — connects to something deeper. This is where interiority earns its space. The character surprises themselves.
-- **No mechanical labels.** The reader doesn't know "a life thread surfaced." They experience a character who has concerns, expertise, memories, opinions — a person who exists beyond this scene.
+- **Tone shapes delivery.** The `thread_tone` (deflective/honest/vulnerable) tells the beat Task HOW the thread surfaces:
+  - `deflective` — mentioned and immediately redirected. The prose barely lingers.
+  - `honest` — engaged with directly. Give it a paragraph.
+  - `vulnerable` — connects to something deeper. Interiority earns its space.
+- **No mechanical labels.** The reader doesn't know "a life thread surfaced."
 
 **When `beat_mode: collision`** — two characters' threads are meeting:
-- **The intersection is the moment.** Two people discovering they share a concern, or that their expertise overlaps, or that one person's memory echoes another's present — these are organic connection points.
-- **Don't over-signal it.** The characters may not even notice the resonance. The reader will. Let subtext do the work.
+- **The intersection is the moment.** Don't over-signal it. Let subtext work.
 
 **When `beat_mode: action`** — standard rendering:
-- Render normally from outcome tables and voice data. Threads may still be running underneath — check if `thread` is non-null even on action beats (drift threads surface as texture, not focus).
+- Render from voice data. Threads as texture only if `thread` is non-null.
 
 **Low action_weight scenes (0.0–0.3):**
-- Most beats will be thread-driven. The prose should feel like two people living — talking about things, sharing space, letting topics wander. There may be no climax, no resolution, no arc within this turn. That's correct. Not every scene is a story. Some scenes are just... life.
-- If action emerges mid-scene (marked by a beat switching from `thread` to `action` mode), let the prose transition naturally. Don't announce the shift. One moment they're talking, the next someone is reaching for someone's hand.
+- Most beats will be thread-driven. The prose should feel like two people living. There may be no arc within this turn. That's correct.
+- If action emerges mid-scene (beat switching from `thread` to `action` mode), the stitch pass ensures the transition feels natural.
 
 ### Phase 5: Hand Off to Lint Pipeline
 1. Write `prose-draft.md` to workspace
@@ -470,7 +589,7 @@ Characters are not relationship-processing machines. They have:
 - **Concerns** that intrude — a deadline, a parent's text, money, a secret
 - **Opinions** that color perception — about food, theory, weather, this college, other people
 - **Memories** that surface unbidden — a grandmother's garden, a kitchen, a drive
-- **Social connections** that get referenced — "Marcus would say...", "my advisor thinks..."
+- **Social connections** that get referenced — "so-and-so would say...", "my advisor thinks..."
 - **Voice patterns** that distinguish them — code-switching, verbal habits, things they'd never say
 
 **When two characters are together, they should sometimes talk about things other than each other.** Real intimacy includes sharing the world — pointing at something, disagreeing about something trivial, referencing a shared context that isn't their feelings.
@@ -511,7 +630,7 @@ Characters are not relationship-processing machines. They have:
 
 ## Locked Dialogue
 
-If `action-lock.yaml` contains `locked_dialogue.provided: true`, the player wrote specific words they want their character to say.
+If `intent.yaml` contains `locked_dialogue.provided: true`, the player wrote specific words they want their character to say.
 
 **Your job:**
 - **Build TO it** — create context that makes the line land with full weight
@@ -521,13 +640,11 @@ If `action-lock.yaml` contains `locked_dialogue.provided: true`, the player wrot
 
 The locked dialogue appears in your prose. You can add context before, reactions after, internal voice around — but those words (or their essential equivalent) come out of the character's mouth.
 
-## World Events (from fates.yaml)
+## World Events
 
 When `resolution.yaml` contains `world_event`, the world acted this turn. The scene_script.yaml will have `other` blocks with `source: complication` — render them as the world arriving uninvited.
 
 **The world doesn't announce itself.** A storm doesn't say "I am a complication." It just rains. An NPC arriving offscreen doesn't narrate their journey — they're suddenly there. Write world events as things that *happen to* the scene, not things that are *presented to* the reader.
-
-**Branches not taken** (from `fates.yaml`): The possibilities that entropy didn't select are atmospheric subtext. The storm that *almost* broke can be distant thunder. The messenger that *almost* arrived can be hoofbeats that fade. These create texture — the sense that the world is larger than this moment.
 
 **Multiple world events:** If two fired, stagger them. Let one land, let the character react, then let the second arrive. The world piling on feels different from the world acting once.
 
@@ -594,10 +711,10 @@ When message contains `type: prologue`:
 
 1. Read game artifacts via gateway:
    ```bash
-   $SCRIPTS/game-read.sh {game_path} author
-   $SCRIPTS/game-read.sh {game_path} setting
-   $SCRIPTS/game-read.sh {game_path} arc
-   $SCRIPTS/game-read.sh {game_path} character/protagonist
+   $SCRIPTS/read-state.sh {game_path} author
+   $SCRIPTS/read-state.sh {game_path} setting
+   $SCRIPTS/read-state.sh {game_path} arc
+   $SCRIPTS/read-state.sh {game_path} character/protagonist
    ```
    - `author` — voice constraints
    - `setting` — world truths, atmosphere
@@ -629,9 +746,9 @@ The reader must always know WHO is speaking. Ambiguous attribution is a failure.
 
 **Rules:**
 1. **Every speaker change requires attribution.** Name, action beat, or physical grounding that identifies the speaker. Two consecutive quoted lines from different characters without attribution between them = rewrite.
-2. **Action beats over dialogue tags.** "Heather set down her coffee" before a line beats "Heather said." The action IS the tag.
+2. **Action beats over dialogue tags.** "She set down her coffee" before a line beats "she said." The action IS the tag.
 3. **Maximum two exchanges before re-grounding.** After two back-and-forth lines, anchor the reader with a name, a physical action, or an internal thought from the POV character. Longer volleys lose the reader.
-4. **Texts and messages require explicit sender.** Texts strip away physical cues — the reader cannot infer speaker from body language. Every text message must be attributed by name, device reference ("her phone," "Kaitlin's screen"), or framing action ("she typed," "the reply came back"). Italicized texts without sender identification = rewrite.
+4. **Texts and messages require explicit sender.** Texts strip away physical cues — the reader cannot infer speaker from body language. Every text message must be attributed by name, device reference ("her phone," "the screen"), or framing action ("she typed," "the reply came back"). Italicized texts without sender identification = rewrite.
 5. **Internal voice is not dialogue.** Internal thought (italics, no quotes) belongs to the POV character only. If non-POV character thoughts appear, the reader will misattribute them as POV internal voice.
 6. **When three or more characters are present:** attribute every single line. No exceptions. Group scenes are where attribution fails hardest.
 

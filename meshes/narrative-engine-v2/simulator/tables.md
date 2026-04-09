@@ -20,17 +20,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
 
 # Run --help on any script for full usage
 ```
@@ -57,7 +55,7 @@ The runtime injects resolved paths via `# Task Workspace` and `# File Contract` 
 
 ### Step 1: Read sim-plan.yaml
 
-Read via gateway script: `$SCRIPTS/turn-read.sh {workspace} sim-plan`
+Read via gateway script: `$SCRIPTS/read-state.sh {workspace} sim-plan`
 
 Extract:
 - `beat_plan` — the sequence of beats with dramatic functions, modes, thread assignments
@@ -68,6 +66,44 @@ Extract:
 - `tempo` — beat count and scope
 - `resolution_summary` — what entropy decided at the macro level
 - `metadata` — workspace, game_root, campaign paths
+
+### Step 1b: Initialize Somatic Ledger
+
+Read closing physical state from campaign and turn context:
+
+```bash
+$SCRIPTS/read-state.sh {campaign} state --keys closing
+$SCRIPTS/read-state.sh {workspace} context
+```
+
+Parse the prose positions (closing.positions, physical_positions, objects_in_play) into a structured somatic ledger. This is inline reasoning — do NOT fire a Task.
+
+**Ledger schema:**
+
+```yaml
+somatic_state:
+  {character_id}:
+    hands: [free | holding({object}) | held_by({character})]
+    posture: seated | standing | prone | kneeling | leaning
+    gaze: {target}
+    facing: toward_{target}
+    occluded: [{things behind/outside FOV}]
+    reach: [{surfaces and objects within arm's reach}]
+    mobility: free | limited({reason})
+    proximity:
+      {other_character}: contact | adjacent | across_room | different_room
+    props:
+      {prop_id}: { location: {where}, reachable: true|false }
+```
+
+**Parse rules:**
+- Prose says "in X's arms" → `proximity: contact`, `hands: held_by(X)` or contextual
+- Prose says "seated at table" → `posture: seated`, `reach: [table_surface]`
+- Prose says "holding coffee mug" → `hands: [free, holding(coffee_mug)]`, `props.coffee_mug: { location: right_hand, reachable: true }`
+- Objects listed in `objects_in_play` or `closing.objects` → add to nearest character's props with location
+- If physical state is ambiguous, default to: `hands: free`, `posture: standing`, nearest character `adjacent`. Err permissive.
+
+**Hold this ledger in working memory. You will update it after each beat and inject it into Task prompts.**
 
 ### Step 2: Create beat_tables directory
 
@@ -104,13 +140,31 @@ One roll per table. Primary character roll via entropy-resolver script. All othe
 
 Write the complete beat data to `beat_tables/beat_{NN}.yaml`.
 
+#### 3c-ii. Update Somatic Ledger
+
+After saving beat data, update the somatic ledger based on resolved outcomes. This is inline reasoning — do NOT fire a Task.
+
+For each resolved character outcome in this beat:
+- If the outcome implies hand use → update `hands` (e.g., "takes her hand" → both characters' hands update)
+- If the outcome implies movement → update `posture`, `proximity`, `reach`, `facing`, `occluded`
+- If the outcome involves a prop → update prop location and reachability
+- If a character enters/exits → add/remove from ledger
+
+**Examples:**
+- `branch_result: takes_hands` → initiator.hands: holding(target), target.hands: held_by(initiator), proximity: contact
+- `branch_result: crosses_to_window` → posture: standing, proximity.{other}: across_room, reach: [window_sill], facing: toward_window, occluded: [{things behind}]
+- `branch_result: sets_down_glass` → hands: free (that slot), props.glass.location: table_surface, props.glass.reachable: true (if still at table)
+- `branch_result: phone_buzzes_in_pocket` → props.phone.state: buzzing (no hand/reach change)
+
+The updated ledger feeds into the next beat's Task prompts.
+
 #### 3d. Check for Player Choice / HITL
 
 If the beat creates a player choice point, pause. See HITL section below.
 
 #### 3e. Checkpoint
 
-Write `sim-progress.yaml` every ~4 beats via `echo '<json>' | $SCRIPTS/turn-write.sh {workspace} sim-progress`.
+Write `sim-progress.yaml` every ~4 beats via `echo '<json>' | $SCRIPTS/write-state.sh {workspace} sim-progress`.
 
 ### Thread-Driven Beats
 
@@ -213,6 +267,20 @@ reasoning: "{1-2 sentences: why these weights}"
 ```
 
 Rules: snake_case branch_results, NO dialogue, NO quoted speech, last outcome is surprise (10-15%). **At least 60% of range = verbal outcomes when other characters present.**
+
+## Physical Constraints (this beat)
+{somatic_constraints_block — generated by sim-tables from the somatic ledger}
+
+Example:
+  Hands: right hand holding wine glass — one hand free
+  Phone: in jacket pocket, jacket on coat rack by door — NOT reachable from seat
+  Proximity to {other}: contact (seated side by side)
+  Facing: toward {other} — door and hallway are occluded
+  Posture: seated — cannot walk, run, or reach distant objects without standing first
+
+Generate outcomes ONLY for actions physically possible given these constraints.
+Actions requiring unavailable body parts, unreachable objects, or impossible positions MUST NOT appear in the table.
+If an action requires changing physical state first (standing up, releasing a hand, crossing the room), that state change IS the outcome — not the action it enables.
 
 ## Beat Context:
 {paste the beat context here — include character-specific traits, bond, and position}
@@ -452,11 +520,11 @@ The dice say your character is moving toward {X}. You can:
 {1-2 sentences — what this choice affects}
 ```
 
-**Then STOP.** Save `sim-progress.yaml` with `phase: awaiting_player_choice` via `echo '{"phase":"awaiting_player_choice",...}' | $SCRIPTS/turn-write.sh {workspace} sim-progress`.
+**Then STOP.** Save `sim-progress.yaml` with `phase: awaiting_player_choice` via `echo '{"phase":"awaiting_player_choice",...}' | $SCRIPTS/write-state.sh {workspace} sim-progress`.
 
 ### Resuming After Player Choice
 
-1. Read `sim-progress.yaml` via `$SCRIPTS/turn-read.sh {workspace} sim-progress` — phase should be `awaiting_player_choice`
+1. Read `sim-progress.yaml` via `$SCRIPTS/read-state.sh {workspace} sim-progress` — phase should be `awaiting_player_choice`
 2. Read the player's choice from the incoming message
 3. Override or adjust the character result based on the player's choice
 4. Record the HITL in the beat data
@@ -464,7 +532,7 @@ The dice say your character is moving toward {X}. You can:
 
 ## State File: sim-progress.yaml
 
-Write via `echo '<json>' | $SCRIPTS/turn-write.sh {workspace} sim-progress` after every player choice pause and every ~4 beats:
+Write via `echo '<json>' | $SCRIPTS/write-state.sh {workspace} sim-progress` after every player choice pause and every ~4 beats:
 
 ```yaml
 phase: "{running|awaiting_player_choice|complete}"

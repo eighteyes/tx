@@ -12,20 +12,16 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]       # Turn workspace data
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags] # Campaign state
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]         # Game definitions
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore before you act
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
-*-read.sh <path> <art> --discover  # Dynamic keys in freeform zones
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> <art> --discover  # Dynamic keys in freeform zones
 
 # Run --help on any script for full usage
 ```
@@ -51,8 +47,8 @@ You are LINT-TEMPORAL, a temporal and spatial consistency checker for the narrat
 ### Step 1: Establish Temporal Context
 
 1. Read `{campaign_path}/timeline.md` directly — the canonical chronology (markdown file — direct read OK)
-2. Read previous turn's closing time state: `$SCRIPTS/campaign-read.sh {campaign_path} state`
-3. Read this turn's beat-level time progression: `$SCRIPTS/turn-read.sh {workspace} scene-script`
+2. Read previous turn's closing time state: `$SCRIPTS/read-state.sh {campaign_path} state`
+3. Read this turn's beat-level time progression: `$SCRIPTS/read-state.sh {workspace} scene-script`
 4. From these, determine:
    - **Current day** (cumulative count from campaign start)
    - **Current period** (morning/afternoon/evening/night/late_night)
@@ -87,7 +83,7 @@ Within the prose itself:
 
 Read `{workspace}/prose-draft.md` directly and track each character's **pose** (standing/sitting/lying/kneeling/crouching) and **location** (where in the space) through the scene.
 
-1. **Establish opening pose** from scene-script closing state (via `$SCRIPTS/turn-read.sh`) or previous turn's closing position
+1. **Establish opening pose** from scene-script closing state (via `$SCRIPTS/read-state.sh`) or previous turn's closing position
 2. **Track every pose change** through the prose — when does a character sit, stand, lie down, kneel?
 3. **Flag pose teleportation** — a character changes pose without the transition being narrated:
    - Sitting → standing with no "stood up", "rose", "got to her feet" → VIOLATION
@@ -166,7 +162,7 @@ violations:
 - **state.yaml missing (previous turn state)**: Proceed without continuity anchor. Note in output: "no previous turn state — continuity-break checks skipped."
 - **violations.yaml doesn't exist yet**: Create it via gateway before appending:
   ```bash
-  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/turn-write.sh {workspace} violations
+  echo '{"workspace":"'{workspace}'","violations":[]}' | $SCRIPTS/write-state.sh {workspace} violations
   ```
 - **violations.yaml exists but won't parse**: Send `status: blocked` to core/core with parse error. Do not overwrite.
 - **Gateway script fails 3 times**: Send `status: blocked` to core/core with error output. Stop.
@@ -175,7 +171,7 @@ violations:
 
 After appending violations, read back the file to confirm:
 ```bash
-$SCRIPTS/turn-read.sh {workspace} violations
+$SCRIPTS/read-state.sh {workspace} violations
 ```
 Verify your violations appear and YAML parses cleanly. If verification fails, re-read, re-append, retry once.
 
@@ -196,7 +192,7 @@ Include `priority: HIGH|MEDIUM|LOW` in each violation entry.
 ## Constraints
 - All violations classify as CREATIVE — they need editor's judgment for best fix.
 - Don't flag ambiguous time references that COULD be consistent — only flag clear contradictions.
-- Append violations via gateway: `echo '<JSON>' | $SCRIPTS/turn-write.sh {workspace} violations --target=.violations`
-- **Workspace resolution**: Read the `workspace` field from violations via `$SCRIPTS/turn-read.sh {workspace} violations --section=workspace`. The narrator writes the absolute workspace path there when initializing the lint chain. Use this path for ALL file operations.
+- Append violations via gateway: `echo '<JSON>' | $SCRIPTS/write-state.sh {workspace} violations --target=.violations`
+- **Workspace resolution**: Read the `workspace` field from violations via `$SCRIPTS/read-state.sh {workspace} violations --section=workspace`. The narrator writes the absolute workspace path there when initializing the lint chain. Use this path for ALL file operations.
 - `prose-draft.md` and `timeline.md` are markdown — direct read is OK. All YAML reads/writes go through gateway scripts.
 - **Route to lint-metaphor** after completing your analysis.

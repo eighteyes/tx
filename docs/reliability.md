@@ -569,7 +569,7 @@ The `reliability-test` mesh is configured with tight thresholds for quick testin
 
 ```bash
 # Run the test mesh
-tx msg "Write a hello world function" --to reliability-test/planner
+tx run reliability-test planner "Write a hello world function"
 
 # Monitor reliability during execution
 tx mesh health reliability-test

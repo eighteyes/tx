@@ -58,12 +58,18 @@ Route to init-turn when:
 
 **Before routing:**
 1. Verify session.yaml shows phase: complete
-2. **Run increment script** to advance turn number and workspace path:
+2. Record current turn number from session.yaml (e.g., `103`)
+3. **Run increment script** to advance turn number and workspace path:
    ```bash
    $TX_ROOT/meshes/narrative-engine-v2/scripts/increment-turn.sh
    ```
-   This updates session.yaml with the new turn number and workspace path BEFORE init-turn spawns, so the manifest resolves to the correct paths.
-3. Write message file to init-turn with player action in body
+4. **Validate the increment succeeded:**
+   - Re-read session.yaml
+   - Confirm turn number incremented (e.g., `103` → `104`)
+   - Confirm workspace path points to the new turn directory (e.g., `turns/turn-104`)
+   - Confirm the new workspace directory exists on disk: `ls {new_workspace}`
+   - If ANY of these checks fail: write `status: error` message to core/core with details. Do NOT route to init-turn with stale paths.
+5. Write message file to init-turn with player action in body
 
 Message body:
 ```
@@ -94,23 +100,24 @@ Say "redo" to restart the turn, or wait for it to complete.
 
 **Init-turn then:**
 1. Runs init-workspace.sh (validates state, loads context)
-2. Writes intent.yaml, action-lock.yaml, context.yaml
-3. Routes to fates
+2. Writes intent.yaml (includes lock fields), context.yaml
+3. Routes to gravity
 
 ## Redo Turn
 
 If the incoming task contains "redo", "retry", "again", "repeat", "replay", "restart", "rewind", "undo", or "do over":
 
-1. Run the redo script:
+1. Read session.yaml — check current turn and phase
+2. Run the redo script:
    ```bash
    $TX_ROOT/meshes/narrative-engine-v2/scripts/redo-turn.sh
    ```
-
-2. Script handles: archive turn, restore campaign snapshot, reset session, clear messages
-
-3. Write message file to `core/core` confirming: `Turn {N} archived. State reset to turn {N-1} complete. Ready for player action.`
-
-4. **Do NOT auto-route to init-turn** — wait for player to send their action
+3. Script handles: archive turn, restore campaign snapshot, reset session, clear messages
+4. **Fix known redo-turn.sh bugs:**
+   - If `campaign_path` is missing from session.yaml after redo, restore it from `game_path` + `/campaigns/` + `campaign_id`
+   - If `render_narrator` is `false` after redo, set it to `true`
+5. **If the message also contains a player action** (not just "redo"): run `increment-turn.sh`, then route to init-turn with the action in body. One message, redo + new turn.
+6. **If the message is redo-only**: Write message file to `core/core` confirming: `Turn {N} archived. State reset to turn {N-1} complete. Ready for player action.` Do NOT auto-route to init-turn.
 
 ## Error Handling
 

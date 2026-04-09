@@ -19,23 +19,33 @@ For EACH outcome, generate a subtable with EXACTLY 4 entries:
 - 3 register-toned (matching chaos_register, each a DIFFERENT register — no duplicates within a tier)
 - 1 thematic (coincidental story resonance — the world accidentally mirrors the story's themes)
 
-**Subtable `result` fields: 15 words max.** Seed the direction, not the choreography. Downstream agents generate scene detail.
+**Subtable `result` fields: 15-25 words.** Seed the direction with enough texture for sim-planner to expand. Include the emotional shape and one specific detail — not choreography, not dialogue.
+
+**Subtable range weighting is dynamic.** Ranges must sum to 100 within each subtable, but distribution across the 4 entries is scene-dependent. Weight based on what the scene needs:
+
+- High thematic pressure (scene mirrors story themes, self-referential beats, philosophical register active) → thematic entry gets 30-40%
+- High chaos register (comic, farcical, gothic) → register-toned entries matching that register get more weight
+- Grounded/naturalistic scene → distribute evenly or favor the register closest to the scene's emotional center
+- Low thematic pressure (pure action, physical beats) → thematic gets 10-15%
+
+Justify your weighting in a brief `weight_rationale` per subtable.
 
 Format:
 ```yaml
 subtables:
   {outcome_type}:
-    - range: 1-25
-      result: "{register-toned A — 15 words max}"
+    weight_rationale: "{why this distribution — 1 line}"
+    - range: 1-30
+      result: "{register-toned A — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 26-50
-      result: "{register-toned B — 15 words max}"
+    - range: 31-55
+      result: "{register-toned B — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 51-75
-      result: "{register-toned C — 15 words max}"
+    - range: 56-70
+      result: "{register-toned C — 15-25 words}"
       mechanical_note: "{detail}"
-    - range: 76-100
-      result: "{thematic — 15 words max}"
+    - range: 71-100
+      result: "{thematic — 15-25 words}"
       mechanical_note: "{detail}"
 ```
 

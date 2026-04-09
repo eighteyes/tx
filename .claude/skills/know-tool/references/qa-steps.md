@@ -8,7 +8,7 @@ QA_STEPS.md files verify a feature works from the **user's perspective**. They a
 |-------------------|-------------------------------|
 | `tx start` | `npm run build` |
 | `tx spy` | `node --test ...` |
-| `tx msg dev/worker "..."` | `grep -E "export"` |
+| `tx run dev worker "..."` | `grep -E "export"` |
 | "Watch the evaluators run" | "19 tests pass" |
 | Observable behavior | Code internals |
 
@@ -38,7 +38,7 @@ tx spy
 
 ### 2. Send a task
 ```bash
-tx msg dev/worker "implement fibonacci function"
+tx run dev worker "implement fibonacci function"
 ```
 ```
 
@@ -59,7 +59,7 @@ How to trigger and observe failure paths:
 ### 3. Trigger a FAIL iteration
 Send a deliberately incomplete task:
 ```bash
-tx msg dev/worker "implement something"
+tx run dev worker "implement something"
 ```
 
 **Expected:**
@@ -121,7 +121,7 @@ tx spy
 
 ### 3. Send a task
 ```bash
-tx msg dev/worker "build a login form"
+tx run dev worker "build a login form"
 ```
 
 ### 4. Observe

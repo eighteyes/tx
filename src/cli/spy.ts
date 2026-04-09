@@ -56,6 +56,55 @@ const AGENT_COLORS: Array<(s: string) => string> = [
 // Cache agent ID → color function for consistency within session
 const agentColorCache = new Map<string, (s: string) => string>();
 
+// Track first-seen timestamps for elapsed time display
+const meshStartTimes = new Map<string, number>();
+const agentStartTimes = new Map<string, number>();
+
+/**
+ * Extract mesh name from agentId (e.g., "narrative-engine-v2/editor" → "narrative-engine-v2")
+ */
+function getMeshName(agentId: string): string {
+  const slash = agentId.indexOf('/');
+  return slash > 0 ? agentId.substring(0, slash) : agentId;
+}
+
+/**
+ * Record first-seen time for mesh and agent, return elapsed strings
+ */
+function trackAndFormatElapsed(agentId: string, entryTime: number): { meshElapsed: string; agentElapsed: string } {
+  const meshName = getMeshName(agentId);
+
+  if (!meshStartTimes.has(meshName)) {
+    meshStartTimes.set(meshName, entryTime);
+  }
+  if (!agentStartTimes.has(agentId)) {
+    agentStartTimes.set(agentId, entryTime);
+  }
+
+  const meshMs = entryTime - meshStartTimes.get(meshName)!;
+  const agentMs = entryTime - agentStartTimes.get(agentId)!;
+
+  return {
+    meshElapsed: formatElapsedCompact(meshMs),
+    agentElapsed: formatElapsedCompact(agentMs),
+  };
+}
+
+/**
+ * Format elapsed ms as compact MM:SS or HH:MM:SS
+ */
+function formatElapsedCompact(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 /**
  * Hash a string to a number using djb2 algorithm
  */
@@ -344,7 +393,9 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
     return;
   }
 
-  const time = formatTimeAgo(new Date(entry.timestamp).getTime());
+  const entryTime = new Date(entry.timestamp).getTime();
+  const { meshElapsed, agentElapsed } = trackAndFormatElapsed(entry.agentId, entryTime);
+  const time = `M+${meshElapsed} A+${agentElapsed}`;
   const agentColorFn = getAgentColor(entry.agentId);
   const agent = agentColorFn(entry.agentId);
 

@@ -14,7 +14,7 @@ Final quality pass on the mesh before deployment:
 ## Workflow
 
 1. **Validate config.yaml**:
-   - Run: `tx validate-mesh <mesh-name>` to check schema
+   - Run: `tx mesh validate <mesh-name>` to check schema
    - Fix any errors reported by the validator
    - Review warnings (schema correctness issues)
 2. **Review config.yaml**:

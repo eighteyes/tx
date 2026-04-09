@@ -16,19 +16,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | $SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list
-*-read.sh <path> <art> --keys
-*-read.sh <path> --search="X"
+read-state.sh <path> --list
+read-state.sh <path> <art> --keys
+read-state.sh <path> --search="X"
 
 # Run --help on any script for full usage
 ```
@@ -61,7 +57,7 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 ### On Task Receipt
 1. Read calibration-state via gateway:
    ```bash
-   $SCRIPTS/turn-read.sh {workspace} calibration-state
+   $SCRIPTS/read-state.sh {workspace} calibration-state
    ```
    (create if missing)
 2. Check `mode` field in incoming message:
@@ -75,16 +71,16 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 3. Write artifacts via gateway as extracted
 4. Update calibration-state after each phase:
    ```bash
-   echo '{"phase": N, ...}' | $SCRIPTS/turn-write.sh {workspace} calibration-state
+   echo '{"phase": N, ...}' | $SCRIPTS/write-state.sh {workspace} calibration-state
    ```
 5. On Phase 9 confirmation: hand off to narrator for prologue rendering
 
 ### Worldbuilder Flow
 1. Read existing artifacts from game_path via gateway:
    ```bash
-   $SCRIPTS/game-read.sh {game_path} --list
-   $SCRIPTS/game-read.sh {game_path} author
-   $SCRIPTS/game-read.sh {game_path} setting
+   $SCRIPTS/read-state.sh {game_path} --list
+   $SCRIPTS/read-state.sh {game_path} author
+   $SCRIPTS/read-state.sh {game_path} setting
    # etc.
    ```
 2. Start at artifact_selection (or resume from saved wb_phase)
@@ -137,7 +133,7 @@ Establish truths that make this world distinct.
 - "What's true here that isn't true in our world?"
 - "What's the lie everyone believes?"
 
-**Extract to:** setting → truths, era, constraints (write via `$SCRIPTS/game-write.sh {game_path} setting`)
+**Extract to:** setting → truths, era, constraints (write via `$SCRIPTS/write-state.sh {game_path} setting`)
 
 ### Phase 3: The Dramatic Engine
 What makes stories happen here.
@@ -146,7 +142,7 @@ What makes stories happen here.
 - "What questions does this world force characters to answer?"
 - "What's the central tension or longing?"
 
-**Extract to:** arc → phases, dramatic_question (write via `$SCRIPTS/game-write.sh {game_path} arc`)
+**Extract to:** arc → phases, dramatic_question (write via `$SCRIPTS/write-state.sh {game_path} arc`)
 
 ### Phase 4: Peak Moments
 Climactic scenes living in the player's head.
@@ -229,7 +225,7 @@ traits:
 
 **TRAIT ENTROPY DESIGN PRINCIPLE:**
 
-Traits shape entropy distributions via `calc-distribution.sh`. Every trait gets a 5-value modifier applied per pressure level: `[catastrophic, failure, mixed, success, breakthrough]`.
+Traits shape entropy distributions via `entropy-pipeline.sh distribution`. Every trait gets a 5-value modifier applied per pressure level: `[catastrophic, failure, mixed, success, breakthrough]`.
 
 **The cardinal rule: traits AMPLIFY the distribution shape, never fight it.**
 
@@ -292,7 +288,7 @@ For each significant relationship:
 - "Who has power? Does it shift?"
 - "What's the recurring pattern?"
 
-**Extract to:** bond entity via `$SCRIPTS/game-write.sh {game_path} bond/{a_b}` (alphabetical naming)
+**Extract to:** bond entity via `$SCRIPTS/write-state.sh {game_path} bond/{a_b}` (alphabetical naming)
 ```yaml
 id: "{char_a}_{char_b}"
 entity_type: bond
@@ -387,9 +383,9 @@ hidden_past:
 
 **Write via gateway:**
 ```bash
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} character/{protagonist-id}
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} character/{npc-id}
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} bond/{a_b}
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} character/{protagonist-id}
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} character/{npc-id}
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} bond/{a_b}
 ```
 
 ### Phase 6c: Authorship
@@ -524,7 +520,7 @@ interpretive_frames:
 8. Re-render and confirm
 9. **Iterate until player says "yes, that's it"**
 
-**Extract to:** author → pov, pacing, balance, cadence, diction, chaos_register (write via `$SCRIPTS/game-write.sh {game_path} author`)
+**Extract to:** author → pov, pacing, balance, cadence, diction, chaos_register (write via `$SCRIPTS/write-state.sh {game_path} author`)
 
 ### Phase 7: Seeds and Mysteries
 **Key questions:**
@@ -603,13 +599,13 @@ During new-game extraction, user may request to edit an already-defined artifact
 All game-level writes go through the gateway:
 ```bash
 # Core artifacts
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} author
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} setting
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} arc
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} author
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} setting
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} arc
 
 # Entity artifacts
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} character/{id}
-echo '<json>' | $SCRIPTS/game-write.sh {game_path} bond/{a_b}
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} character/{id}
+echo '<json>' | $SCRIPTS/write-state.sh {game_path} bond/{a_b}
 ```
 
 ### Directory Structure (reference)
@@ -795,7 +791,7 @@ Restore session.yaml phase to previous value.
 
 Write calibration-state after EVERY phase completion:
 ```bash
-echo '{"phase": N, "artifacts_written": [...]}' | $SCRIPTS/turn-write.sh {workspace} calibration-state
+echo '{"phase": N, "artifacts_written": [...]}' | $SCRIPTS/write-state.sh {workspace} calibration-state
 ```
 Write session.yaml before sending task to narrator.
 

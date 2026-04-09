@@ -32,17 +32,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
+echo '<json>' | $SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list        # What artifacts exist
-*-read.sh <path> <art> --keys  # What sections exist
-*-read.sh <path> --search="X"  # Find across artifacts
+read-state.sh <path> --list        # What artifacts exist
+read-state.sh <path> <art> --keys  # What sections exist
+read-state.sh <path> --search="X"  # Find across artifacts
 
 # Run --help on any script for full usage
 ```
@@ -71,7 +69,7 @@ The runtime injects resolved paths via `# Task Workspace` and `# File Contract` 
 
 ### Step 1: Read Inputs
 
-Read sim-plan via gateway: `$SCRIPTS/turn-read.sh {workspace} sim-plan`
+Read sim-plan via gateway: `$SCRIPTS/read-state.sh {workspace} sim-plan`
 
 Extract:
 - `character_psychology` — pre-derived psychology blocks
@@ -83,7 +81,7 @@ Extract:
 - `resolution_summary` — macro outcome context
 - `metadata` — paths
 
-Read sim-progress via gateway: `$SCRIPTS/turn-read.sh {workspace} sim-progress`
+Read sim-progress via gateway: `$SCRIPTS/read-state.sh {workspace} sim-progress`
 
 Extract:
 - Completed beats and their results
@@ -94,6 +92,23 @@ Read beat tables (intermediate files — direct read OK): `{workspace}/beat_tabl
 - Resolved environment textures
 - Resolved complication results
 - Thread and collision data
+
+### Step 1b: Intent Check
+
+Before generating any voices, verify the scene-script will deliver what the player asked for.
+
+1. Read `$SCRIPTS/read-state.sh {workspace} intent` — get `raw_input` and `interpreted_action`
+2. Read `$SCRIPTS/read-state.sh {workspace} intent` — get `locked_action`
+3. Read `$SCRIPTS/read-state.sh {workspace} context` — get `suspended` state (what just happened before this turn)
+
+For each beat that references off-screen events, debriefs, or NPC actions, verify:
+- Does the beat's `npc_context` align with `context.yaml → suspended` state?
+- Does dialogue ABOUT off-screen events use canon from npc_context, not invention?
+- Are character relationships as described in beat notes consistent with bond/continuity data?
+
+If a beat's function involves reporting on an off-screen event but has NO `npc_context`, flag it — read continuity.yaml and bond data yourself to fill the gap before generating voices. Write the missing context into a local note for voice task prompts.
+
+This is a soft gate — it catches drift, not blocks generation. Log discrepancies in `sim-progress.yaml` under `intent_check_flags` so downstream agents can see what was caught.
 
 ### Step 2: Generate Voices — Beat by Beat
 
@@ -188,12 +203,30 @@ If voice_markers say this character is "unhurried, pauses before key words" — 
 {from sim-plan.yaml bond_context — dimension values + baseline guidance}
 Pass dimension values + baseline (characters FEEL these). Do NOT pass established act history.
 
+## Off-Screen NPC Context
+{ONLY when this beat references characters not present in the scene — from sim-plan npc_context}
+{npc_id}: {role} — {relationship} — last interaction: {what just happened}
+What you know: {what_characters_know}
+
+Canon dialogue from the rendered scene:
+{actual dialogue-pairs or prose excerpts involving this NPC}
+
+This is CANON. When generating dialogue that references off-screen events, use the canon dialogue above — quote it, paraphrase it, react to it. Do NOT invent what an NPC said or did. If canon dialogue is absent and the beat requires specific off-screen details, stay at the abstraction level of what `what_characters_know` provides. Vague is better than fabricated.
+
 ## What Just Happened
 {observable physical state — what this character can see, hear, feel RIGHT NOW}
+
+## Scene Temperature
+{from sim-plan — what this scene is ABOUT emotionally: wanting, danger, tenderness, power, intellectual sparring, etc.}
+This is the heat level. If the scene is about delayed gratification, every gesture carries charge. If it's about intellectual debate, the charge is in the words. Let this shape what the character NOTICES and how their body responds.
 
 ## Beat Direction
 {the entropy roll result — e.g., "confession_rush_opens", "armor_deflection_attempted"}
 This tells you the EMOTIONAL DIRECTION of this beat, not the exact words. You choose the words, timing, delivery.
+
+## Beat Notes
+{from sim-plan — expanded content grounding the entropy direction in canon specifics}
+These notes contain the SUBSTANCE of what happens in this beat — sourced from actual story events. Use these as your raw material. Invent trivia (room details, gestures, coffee cup color). Do NOT invent plot (what an NPC said, what an operation achieved, what intelligence was gathered).
 
 **CRITICAL: The beat direction is a tendency, not a script. Your dialogue MUST respond to what was actually said in Scene So Far. If the other character said something specific, react to THOSE WORDS — not to an abstract emotional direction. The conversation must make sense as a conversation.**
 
@@ -320,7 +353,7 @@ The `author_params.dialogue_ratio` defines dialogue targets. Typical: 60/40 dial
 After all beats have voices, write scene_script via gateway script:
 
 ```bash
-echo '<scene_script JSON>' | $SCRIPTS/turn-write.sh {workspace} scene_script
+echo '<scene_script JSON>' | $SCRIPTS/write-state.sh {workspace} scene_script
 ```
 
 The JSON should produce:
@@ -339,6 +372,7 @@ script:
     thread_tone: null
     collision: null
     frame: null
+    tone: "{prose register for this beat — from sim-plan. Narrator renders each beat in this register independently to prevent tone bleed}"
     direction: "{1-line summary of what happens}"
     ambient: "{resolved environment texture}"
     voices:

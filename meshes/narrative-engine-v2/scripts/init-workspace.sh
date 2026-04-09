@@ -87,6 +87,7 @@ current_turn=$(yq -r '.turn // 0' "$SESSION")
 game_path=$(yq -r '.game_path // "null"' "$SESSION")
 pov_character=$(yq -r '.pov_character // "null"' "$SESSION")
 workspace=$(yq -r '.workspace // "null"' "$SESSION")
+workspace="${workspace%/}"
 
 if [[ "$game_id" == "null" || "$game_path" == "null" ]]; then
   err "session.yaml missing game_id or game_path"

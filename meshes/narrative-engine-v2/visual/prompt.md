@@ -17,19 +17,15 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list
-*-read.sh <path> <art> --keys
-*-read.sh <path> --search="X"
+read-state.sh <path> --list
+read-state.sh <path> <art> --keys
+read-state.sh <path> --search="X"
 
 # Run --help on any script for full usage
 ```
@@ -37,7 +33,7 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 ## Scope
 - Read prose.md for emotional beats worth visualizing (direct — markdown)
 - Read scene_script for beat structure, pacing, and emotional arc
-- Read fates for world events that landed
+- Read resolution for world events that landed
 - Read author config for visual tone constraints
 - Read character entities for physical appearance descriptions
 - Select 3-5 visual beats from the prose
@@ -55,27 +51,27 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
    ```
 3. Read scene_script — beat structure, pacing (`closing.pacing`), emotional arc:
    ```bash
-   $SCRIPTS/turn-read.sh {workspace} scene_script
+   $SCRIPTS/read-state.sh {workspace} scene_script
    ```
-4. Read fates — did the world act? World events are visually dramatic:
+4. Read resolution — did the world act? World events are visually dramatic:
    ```bash
-   $SCRIPTS/turn-read.sh {workspace} fates
+   $SCRIPTS/read-state.sh {workspace} resolution
    ```
 5. Read author config — visual tone, atmosphere preferences:
    ```bash
-   $SCRIPTS/game-read.sh {game_path} author
+   $SCRIPTS/read-state.sh {game_path} author
    ```
 6. **Read character entities** — get `appearance.visual_tags` for each character in scene:
    ```bash
    # For each character mentioned in prose:
-   $SCRIPTS/game-read.sh {game_path} character/{character_id}
+   $SCRIPTS/read-state.sh {game_path} character/{character_id}
    # Extract: appearance.visual_tags, name.first, name.surname
    ```
 7. **Beat Selection:** Identify 3-5 moments that carry the most emotional weight
 8. **Style Generation:** For each beat, generate 2-3 style variants using character appearances
 9. Write visual to workspace via gateway:
    ```bash
-   echo '<json>' | $SCRIPTS/turn-write.sh {workspace} visual
+   echo '<json>' | $SCRIPTS/write-state.sh {workspace} visual
    ```
 10. Send message to RENDER-COORD
 </instructions>

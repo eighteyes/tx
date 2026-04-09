@@ -17,20 +17,16 @@ Read and write game data through gateway scripts only. **NEVER** read or write Y
 SCRIPTS="$TX_ROOT/meshes/narrative-engine-v2/scripts"
 
 # Read data
-$SCRIPTS/turn-read.sh <workspace> [artifact] [flags]
-$SCRIPTS/campaign-read.sh <campaign_path> [artifact] [flags]
-$SCRIPTS/game-read.sh <game_path> [artifact] [flags]
+\$SCRIPTS/read-state.sh <path> [artifact] [flags]
 
 # Write data
-echo '<json>' | $SCRIPTS/turn-write.sh <workspace> <artifact> [--target=PATH]
-echo '<json>' | $SCRIPTS/campaign-write.sh <campaign_path> <artifact>
-echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
+echo '<json>' | \$SCRIPTS/write-state.sh <path> <artifact> [--target=PATH]
 
 # Explore
-*-read.sh <path> --list
-*-read.sh <path> <art> --keys
-*-read.sh <path> --search="X"
-*-read.sh <path> <art> --discover
+read-state.sh <path> --list
+read-state.sh <path> <art> --keys
+read-state.sh <path> --search="X"
+read-state.sh <path> <art> --discover
 
 # Run --help on any script for full usage
 ```
@@ -41,7 +37,17 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 - Catch contradictions: dead characters, impossible physics, unjustified knowledge
 - Answer knowledge queries from narrator (knowledge mode)
 - Synthesize entity data across multiple sources
-- Route based on verdict: approved → narrator, violations → sim-voices
+- Route based on verdict: approved → assemble narrator context → narrator, violations → sim-voices
+
+### Assembly Trigger (before routing to narrator)
+
+When verdict is `approved`, run the narrator context assembly script before sending the routing message:
+
+```bash
+$TX_ROOT/meshes/narrative-engine-v2/scripts/assemble-narrator.sh "{workspace}" "{game_path}" "{campaign_path}"
+```
+
+This pre-assembles all narrator inputs into a single `narrator-context.yaml` file, reducing the number of gateway reads narrator needs to perform.
 
 ## Campaign Data Queries
 
@@ -50,23 +56,23 @@ echo '<json>' | $SCRIPTS/game-write.sh <game_path> <artifact>
 ### Key Queries for Validation
 ```bash
 # Knowledge barriers — what characters DON'T know (catches unjustified knowledge)
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --search="barrier"
+$SCRIPTS/read-state.sh {campaign_path} continuity --search="barrier"
 
 # Secrets — who knows what (catches premature reveals)
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=revealed_secrets
+$SCRIPTS/read-state.sh {campaign_path} continuity --section=revealed_secrets
 
 # Entity last-seen — when/where was character last on-screen
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=encounters --entity={entity_id}
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=encounters
+$SCRIPTS/read-state.sh {campaign_path} continuity --section=encounters --entity={entity_id}
+$SCRIPTS/read-state.sh {campaign_path} continuity --section=encounters
 
 # Facts about specific entities since a turn
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids --since={N}
+$SCRIPTS/read-state.sh {campaign_path} continuity --section=used_factoids --since={N}
 
 # World events for context
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --search="world" --since={N}
+$SCRIPTS/read-state.sh {campaign_path} continuity --search="world" --since={N}
 
 # Factoids already used (for deduplication)
-$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids --since={N}
+$SCRIPTS/read-state.sh {campaign_path} continuity --section=used_factoids --since={N}
 ```
 
 ## Workflow
@@ -76,33 +82,36 @@ $SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids --s
 ### For Validation (from sim-voices)
 1. Receive message with workspace path
 2. Read scene script from workspace:
-   `$SCRIPTS/turn-read.sh {workspace} scene-script`
+   `$SCRIPTS/read-state.sh {workspace} scene-script`
 3. **Query campaign data via gateway scripts:**
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --search="barrier"` — knowledge barriers for KNOWLEDGE_CHAIN checks
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=revealed_secrets` — revealed secrets for REVEALED_SECRETS checks
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=encounters` — entity appearances for presence continuity
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids --since={N-5}` — recent facts for present characters
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --search="barrier"` — knowledge barriers for KNOWLEDGE_CHAIN checks
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --section=revealed_secrets` — revealed secrets for REVEALED_SECRETS checks
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --section=encounters` — entity appearances for presence continuity
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --section=used_factoids --since={N-5}` — recent facts for present characters
 4. Read setting and entity data via gateway:
-   `$SCRIPTS/game-read.sh {game_path} setting`
-   `$SCRIPTS/campaign-read.sh {campaign_path} character --list`
+   `$SCRIPTS/read-state.sh {game_path} setting`
+   `$SCRIPTS/read-state.sh {campaign_path} character --list`
 5. **Read previous turn** (turn N-1): `prose.md` or `summary.md` — establish where/when we ended (direct read OK for .md files)
-6. Check against Continuity Ladder (applied to script beats and voices)
-7. **Verify temporal/spatial continuity** between previous turn end and current script start
-8. **Scene script-specific checks:**
+6. **Read intent and context** for fabrication and intent fidelity checks:
+   - `$SCRIPTS/read-state.sh {workspace} intent` — player's raw_input and interpreted_action
+   - `$SCRIPTS/read-state.sh {workspace} context` — suspended state (what happened before this turn)
+7. Check against Continuity Ladder (applied to script beats and voices) — includes FABRICATION and INTENT_FIDELITY
+8. **Verify temporal/spatial continuity** between previous turn end and current script start
+9. **Scene script-specific checks:**
    - Character names in `voices[]` match entities present in scene
    - Physical position continuity — characters don't teleport between beats
    - Prop visibility — referenced props exist and are in the right location
    - Dialogue attribution — characters speak in character (voice patterns match entity profiles)
-9. Return verdict: approved or violations
+10. Return verdict: approved or violations
 
 ### For Knowledge Query (from NARRATOR)
 1. Receive message with query details
 2. Parse query type and keywords
 3. **Query gateway scripts for relevant data:**
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=used_factoids --entity={ids}` for entity-specific facts
-   - `$SCRIPTS/campaign-read.sh {campaign_path} continuity --section=revealed_secrets` for secret knowledge
-   - `$SCRIPTS/campaign-read.sh {campaign_path} character/{id} --section=current_state` for recent entity state
-4. Search relevant entity data: `$SCRIPTS/campaign-read.sh {campaign_path} character --list`
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --section=used_factoids --entity={ids}` for entity-specific facts
+   - `$SCRIPTS/read-state.sh {campaign_path} continuity --section=revealed_secrets` for secret knowledge
+   - `$SCRIPTS/read-state.sh {campaign_path} character/{id} --section=current_state` for recent entity state
+4. Search relevant entity data: `$SCRIPTS/read-state.sh {campaign_path} character --list`
 5. Synthesize relevant information
 6. Return knowledge response
 </instructions>
@@ -117,13 +126,15 @@ Check in priority order (higher = harder constraint):
 4. **CHARACTER_FACTS** — "Alex lost her left hand"
 5. **ITEM_STATE** — destroyed/damaged items, holder tracking
 6. **SCENE_SPATIAL** — body positions, hand tracking, reach/touch consistency
-6b. **BOND_BASELINE** — characters don't hesitate over normalized bond acts (see Bond Dimensions below)
+6b. **BOND_BASELINE** �� characters don't hesitate over normalized bond acts (see Bond Dimensions below)
 7. **LOCATION_STATE** — destroyed/changed locations
 8. **TIMELINE** — event ordering
 9. **REVEALED_SECRETS** — secrets no longer secret to those who know
 10. **VOICE** — character speech patterns match profile
 11. **KNOWLEDGE_CHAIN** — character treats as known what wasn't revealed
-12. **IMPOSSIBLE** — claims presenting as realistic but physically wrong
+12. **FABRICATION** — reported off-screen events must exist in canon (see Fabrication Check below)
+13. **INTENT_FIDELITY** — rendered scene delivers what the player asked for (see Intent Fidelity below). Check BOTH scene_script AND prose-draft.md — a locked element present in script but absent from prose is still a violation.
+14. **IMPOSSIBLE** — claims presenting as realistic but physically wrong
 
 ## Adversarial Stance
 
@@ -134,6 +145,9 @@ Assume the draft contains errors. Ask:
 - "How would they actually know that?"
 - "Where are their hands right now? Both of them?"
 - "Can they physically do that from where they are?"
+- "Did this off-screen event actually happen, or did the pipeline invent it?"
+- "Does what they're reporting match the suspended state from last turn?"
+- "Is this NPC being treated as a [role] when canon says they're a [different role]?"
 
 ### Temporal/Spatial Continuity
 
@@ -174,6 +188,62 @@ Flag these as `LOCATION_STATE`, `TIMELINE`, or `VOICE` violations.
 - Different behavior in public vs private when public axis is low
 
 Bond dimensions create a FLOOR for comfort, not a ceiling for drama. Characters can still struggle — but they struggle with the FRONTIER, not with ground already covered.
+
+### Fabrication Check
+
+When prose contains **reported speech about off-screen events** (meetings, conversations, encounters that happened between turns), verify the content exists in canon.
+
+1. Read `$SCRIPTS/read-state.sh {workspace} context` — check `suspended` state for what actually happened off-screen
+2. Read `$SCRIPTS/read-state.sh {campaign_path} continuity` — search for named characters, events, details mentioned in the report
+3. Read relevant entity episodes and bond notes for corroboration
+
+**The check**: For each claim in reported off-screen dialogue, ask:
+- Does this event appear in `context.yaml → suspended`, continuity, or entity episodes?
+- Do named NPCs in the report have an established relationship that matches how they're described?
+- Are specific details (meeting outcomes, quotes, institutional actions) traceable to canon, or are they invented to fill a gap?
+
+**FABRICATION violations:**
+- Character reports details about an off-screen event that contradict `context.yaml → suspended` state
+- Character names NPCs or institutional actions with no canon basis (names, roles, or events that don't exist in continuity or entities)
+- The *nature* of a reported interaction contradicts established NPC relationships (e.g., a conspiracy target described as a supportive advisor)
+
+**What's NOT a violation:**
+- Plausible emotional coloring of a canonical event (character's subjective read)
+- Minor environmental details of a canonical scene (what the room looked like)
+- Reasonable inference from established facts
+
+When `context.yaml → suspended` says "meeting went well, target is hooked" but prose has the character reporting a completely different kind of meeting — that's fabrication. The scene-script may have committed to the fabrication already; oracle catches it anyway.
+
+### Intent Fidelity Check
+
+Read the player's intent and verify the rendered scene delivers it.
+
+1. Read `$SCRIPTS/read-state.sh {workspace} intent` — get `raw_input` (player's exact words) and `interpreted_action`
+2. Read `$SCRIPTS/read-state.sh {workspace} context` — get `suspended` state (what happened before this turn)
+**The check**: Compare the prose against the player's stated intent:
+- Are key elements from `raw_input` present in the rendered scene? (Not necessarily verbatim — thematically delivered)
+- Does the `suspended` state's characterization of recent events match how those events are portrayed in prose?
+- Are `intent → not_subject_to_entropy` items honored exactly?
+
+**INTENT_FIDELITY violations:**
+- A key element from the player's action is missing or replaced with something else
+- The `suspended` state describes one kind of event but the prose renders a different kind
+- A locked action element is contradicted or skipped
+- A locked element exists in scene_script but was softened, omitted, or abstracted away in prose-draft.md (prose-level drift)
+
+**Prose-Level Intent Gate:**
+
+After checking scene_script against intent, ALSO check `prose-draft.md` (direct read OK for .md files). This catches narrator drift — where the scene_script correctly includes a locked element but narrator softened, omitted, or abstracted it during rendering.
+
+For each locked element from intent.yaml:
+1. Verify it appears in scene_script (existing check)
+2. Verify it was actually RENDERED in prose-draft.md as an on-screen beat — not implied, not referred to in passing, not abstracted into grammar. The locked element must be a visible moment the reader experiences.
+
+Example: If intent locks "Character A commands Character B to do X" — the prose must render Character A issuing the command on-screen. A passage where Character B simply does X without the command being rendered = INTENT_FIDELITY violation (prose-level drift).
+
+Example: If intent locks a compound beat like "action-intertwined-with-emotion" — the prose must render both elements as interleaved, not sequential. A clean resolution of one element followed separately by the other = INTENT_FIDELITY violation.
+
+**Severity**: INTENT_FIDELITY violations are MEDIUM priority. They indicate the pipeline drifted from the player's request. Flag them — the player decides whether to accept or redo.
 
 ## Response Format (Validation)
 
@@ -233,14 +303,14 @@ After validation, scan the prose for **condition changes**. Conditions are time-
 ### Query Current Conditions
 ```bash
 # Check what conditions exist on present entities
-$SCRIPTS/campaign-read.sh {campaign_path} character --list
+$SCRIPTS/read-state.sh {campaign_path} character --list
 # Then for each character:
-$SCRIPTS/campaign-read.sh {campaign_path} character/{id} --section=current_state
+$SCRIPTS/read-state.sh {campaign_path} character/{id} --section=current_state
 
 # Check bond conditions
-$SCRIPTS/campaign-read.sh {campaign_path} bond --list
+$SCRIPTS/read-state.sh {campaign_path} bond --list
 # Then for each bond:
-$SCRIPTS/campaign-read.sh {campaign_path} bond/{id} --section=current_state
+$SCRIPTS/read-state.sh {campaign_path} bond/{id} --section=current_state
 ```
 
 ### What to Flag
