@@ -5761,17 +5761,26 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         }
 
         // Schedule nudge check BEFORE removing worker (needs messagesSent)
+        // Skip for continuation/persistence agents — they complete individual sessions
+        // without routing and resume on the next message. Nudging mid-continuation
+        // produces false positives (agent was working, not stalled).
         if (this.nudgeDetector && activeWorker && meshConfig?.routing) {
-          const agentNames = (meshConfig.agents || []).map((a: AgentConfig) => a.name);
-          this.nudgeDetector.scheduleCheck({
-            agentId,
-            meshName,
-            messagesSent: [...activeWorker.messagesSent],
-            output: data.output || '',
-            taskBody: workerHookContext.taskBody || '',
-            routing: meshConfig.routing as Record<string, unknown>,
-            agentNames,
-          });
+          const agentShortName = agentId.split('/')[1];
+          const isContinuation = this.shouldContinueAgent(agentShortName, meshConfig?.continuation)
+            || this.shouldPersistAgent(agentShortName, meshConfig?.persistence);
+
+          if (!isContinuation) {
+            const agentNames = (meshConfig.agents || []).map((a: AgentConfig) => a.name);
+            this.nudgeDetector.scheduleCheck({
+              agentId,
+              meshName,
+              messagesSent: [...activeWorker.messagesSent],
+              output: data.output || '',
+              taskBody: workerHookContext.taskBody || '',
+              routing: meshConfig.routing as Record<string, unknown>,
+              agentNames,
+            });
+          }
         }
 
         // Budget exhaustion detection: notify core when agent hit max_turns ceiling
