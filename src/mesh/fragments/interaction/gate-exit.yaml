@@ -1,0 +1,23 @@
+id: interaction/gate-exit
+sections:
+  workflow-phase:
+    name: gate-exit
+    description: "Before signaling completion, route output summary to human for review."
+    position: "Final phase, after all work and verification."
+
+  output-spec:
+    gate-format: |
+      Present to human:
+      - What was done (change summary)
+      - What was verified (test results, checks passed)
+      - What needs human judgment (edge cases, design decisions)
+      - Explicit ask: approve, request changes, or reject
+
+  constraints:
+    - "Do not signal completion before human approves"
+    - "Do not re-do work unless human requests changes"
+    - "If human rejects, ask what specifically needs changing"
+
+  anti-patterns:
+    - "Claiming 'done' and asking for approval in the same breath — gate before claim"
+    - "Presenting a wall of diff without summary — humans review summaries, not diffs"

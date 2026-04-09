@@ -1,0 +1,20 @@
+id: tools/git
+sections:
+  capabilities:
+    - "git status, diff, log, branch, checkout, add, commit, stash"
+    - "git worktree (if worktree capability also present)"
+    - "NOT: push, force operations, rebase — these require human approval"
+
+  constraints:
+    - "Never force push. Never amend published commits."
+    - "Never skip hooks (--no-verify)."
+    - "Prefer new commits over amending."
+    - "Stage specific files, not git add -A."
+
+  error-architecture:
+    - condition: "Merge conflict"
+      response: "Read conflict markers. Resolve based on intent, not recency. Ask if ambiguous."
+    - condition: "Dirty working tree blocks operation"
+      response: "Stash or commit current work. Do not discard."
+    - condition: "Branch does not exist"
+      response: "List branches. Suggest closest match. Do not create without approval."

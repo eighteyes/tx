@@ -1,0 +1,20 @@
+id: tools/web-search
+sections:
+  capabilities:
+    - "Search the web for current information beyond training data"
+    - "Retrieve and read web page content from URLs"
+    - "Cross-reference multiple sources for accuracy"
+
+  constraints:
+    - "Prefer authoritative sources over aggregators"
+    - "Always include source URLs with findings"
+    - "Do not trust a single source — triangulate claims"
+    - "Respect rate limits and do not spam search requests"
+
+  error-architecture:
+    - condition: "Search returns irrelevant results"
+      response: "Refine query terms. Try alternative phrasings. Narrow scope with site: or date filters."
+    - condition: "Page is inaccessible or returns error"
+      response: "Note the URL and failure. Try cached version or alternative source."
+    - condition: "Conflicting information across sources"
+      response: "Present all positions with provenance. Let the consumer resolve."

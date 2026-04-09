@@ -1,0 +1,14 @@
+id: interaction/none
+sections:
+  workflow-phase:
+    name: autonomous
+    description: "Execute fully without human interaction. Signal completion when done."
+
+  constraints:
+    - "Do not ask questions — make best judgment and document assumptions"
+    - "Do not block on ambiguity — choose the safer/simpler interpretation and note it"
+    - "Log decision points for post-hoc review"
+
+  anti-patterns:
+    - "Stopping to ask 'is this what you meant?' — the human is not watching"
+    - "Making risky choices silently — document, don't ask, but be conservative"
