@@ -13,45 +13,42 @@ Generate exactly 5 outcome shapes across the spectrum:
 
 Build weighted ranges from the distribution shape (ranges sum to 100).
 
-## Subtable Structure
+## Character Outcome Tables: Structural Only
 
-For EACH outcome, generate a subtable with EXACTLY 4 entries:
-- 3 register-toned (matching chaos_register, each a DIFFERENT register — no duplicates within a tier)
-- 1 thematic (coincidental story resonance — the world accidentally mirrors the story's themes)
+Character tables are **structural labels, not creative descriptions**. Downstream agents (sim-tables) generate the creative per-beat outcomes. Character tables provide the probability space and outcome shapes.
 
-**Subtable `result` fields: 15-25 words.** Seed the direction with enough texture for sim-planner to expand. Include the emotional shape and one specific detail — not choreography, not dialogue.
+Each tier: `type`, `shape` (2-3 word label), `mechanical_note` (1-line structural effect).
 
-**Subtable range weighting is dynamic.** Ranges must sum to 100 within each subtable, but distribution across the 4 entries is scene-dependent. Weight based on what the scene needs:
-
-- High thematic pressure (scene mirrors story themes, self-referential beats, philosophical register active) → thematic entry gets 30-40%
-- High chaos register (comic, farcical, gothic) → register-toned entries matching that register get more weight
-- Grounded/naturalistic scene → distribute evenly or favor the register closest to the scene's emotional center
-- Low thematic pressure (pure action, physical beats) → thematic gets 10-15%
-
-Justify your weighting in a brief `weight_rationale` per subtable.
+**No subtables for character tables.** The specific manifestation is determined by sim-tables' per-beat dice, not by architect-level subtable rolls.
 
 Format:
 ```yaml
-subtables:
-  {outcome_type}:
-    weight_rationale: "{why this distribution — 1 line}"
-    - range: 1-30
-      result: "{register-toned A — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: 31-55
-      result: "{register-toned B — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: 56-70
-      result: "{register-toned C — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: 71-100
-      result: "{thematic — 15-25 words}"
-      mechanical_note: "{detail}"
+outcomes:
+  - range: 1-{X}
+    type: catastrophic
+    shape: {2-3 word label}
+    mechanical_note: "{1-line structural effect — trait/bond impacts}"
+  - range: {X}-{Y}
+    type: failure
+    shape: {label}
+    mechanical_note: "{effect}"
+  - range: {Y}-{Z}
+    type: mixed
+    shape: {label}
+    mechanical_note: "{effect}"
+  - range: {Z}-{W}
+    type: success
+    shape: {label}
+    mechanical_note: "{effect}"
+  - range: {W}-100
+    type: breakthrough
+    shape: {label}
+    mechanical_note: "{effect}"
 ```
 
-## Chaos Event Tables
+## Chaos Event Tables (World Events Keep Subtables)
 
-Each chaos event: 7-10 root manifestations, each with exactly 4 subtable entries (3 register-toned using DIFFERENT registers, 1 thematic). Same structure as character subtables.
+Each chaos event: 7-10 root manifestations, each with exactly 4 subtable entries (3 register-toned using DIFFERENT registers, 1 thematic). World events keep subtables because they feed scenes more directly and are not regenerated downstream.
 
 Each thematic event: 3-7 flat manifestations (no subtables).
 

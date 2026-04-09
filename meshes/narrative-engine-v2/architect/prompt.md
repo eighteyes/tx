@@ -568,7 +568,7 @@ The Task returns its YAML sections as text (same template as other character Tas
    ```bash
    $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" primary
    ```
-5. Read `{workspace}/entropy-selection.yaml` — record POV outcome_type, shape, subtable_result, mechanical_note
+5. Read `{workspace}/entropy-selection.yaml` — record POV outcome_type, shape, mechanical_note
 6. Store this as `pov_resolution` for NPC Task context
 
 #### Step 3b: NPC Characters (Receivers — See POV Resolution)
@@ -579,7 +579,6 @@ Fire parallel Tasks — one per NPC in scene. Each NPC Task receives the standar
 ```
 ## Initiator Resolution (What Just Happened)
 The POV character ({pov_name}) resolved as: {outcome_type} — {shape_label}
-Specific result: "{subtable_result}"
 Mechanical: {mechanical_note}
 
 This HAPPENED to {character_name}. They are RECEIVING/RESPONDING to this action.
@@ -602,7 +601,7 @@ You analyze one character's motivations, outcomes, AND build their weighted entr
 **Read these files before generating:**
 - `$TX_ROOT/meshes/narrative-engine-v2/refs/task-boundary.md` — constraints and thread integration
 - `$TX_ROOT/meshes/narrative-engine-v2/refs/world-rules.md` — distribution shapes, chaos register, trait pressures
-- `$TX_ROOT/meshes/narrative-engine-v2/refs/table-format.md` — subtable format, dialogue density, output rules
+- `$TX_ROOT/meshes/narrative-engine-v2/refs/table-format.md` — outcome tier format, dialogue density, output rules
 
 ## Character
 {character-brief.sh output OR entity file extract — traits, pressures, bonds, state}
@@ -636,7 +635,8 @@ Base distribution: catastrophic {N}%, failure {N}%, mixed {N}%, success {N}%, br
 ## Rules
 - Think ONLY from {character_name}'s perspective
 - What is {character_name} trying to do in this moment? (their primary action/motivation)
-- Follow outcome shapes, subtable format, and dialogue density rules from refs
+- Follow outcome shapes and dialogue density rules from refs
+- Character tables are structural only — 5 outcome tiers with type, shape label, mechanical_note. NO subtables.
 
 Return TWO YAML sections, clearly labeled:
 
@@ -672,31 +672,26 @@ action: "{from analysis}"
 outcomes:
   - range: 1-{X}
     type: catastrophic
-    shape: {label}
-    mechanical_note: "{effects}"
+    shape: {2-3 word label}
+    mechanical_note: "{1-line structural effect}"
   - range: {X}-{Y}
     type: failure
     shape: {label}
-    mechanical_note: "{effects}"
-  # ... all 5, ranges sum to 100
-subtables:
-  catastrophic:
-    weight_rationale: "{why this distribution — 1 line}"
-    - range: {A}-{B}
-      result: "{register-toned A — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: {C}-{D}
-      result: "{register-toned B — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: {E}-{F}
-      result: "{register-toned C — 15-25 words}"
-      mechanical_note: "{detail}"
-    - range: {G}-100
-      result: "{thematic — 15-25 words}"
-      mechanical_note: "{detail}"
-  # ... all 5 outcome types, 4 entries each
-  # Ranges within each subtable sum to 100
-  # Weight distribution is DYNAMIC — see refs/table-format.md
+    mechanical_note: "{effect}"
+  - range: {Y}-{Z}
+    type: mixed
+    shape: {label}
+    mechanical_note: "{effect}"
+  - range: {Z}-{W}
+    type: success
+    shape: {label}
+    mechanical_note: "{effect}"
+  - range: {W}-100
+    type: breakthrough
+    shape: {label}
+    mechanical_note: "{effect}"
+  # All 5 tiers, ranges sum to 100
+  # NO subtables — structural labels only
 ```
 ```
 
@@ -735,9 +730,9 @@ Location: {from state.yaml}
 What's happening: {from intent.yaml — brief}
 
 ## Rules
-- For each available thread, generate a direction entry with tone subtables
+- For each available thread, generate a structural direction entry
 - Weight reflects likelihood of surfacing given emotional state + scene context
-- Tone subtables determine HOW the thread surfaces (deflective, honest, vulnerable, etc.)
+- Direction is a 1-line structural description of what surfaces — no tone subtables
 - Thread directions are organic — they surface through conversation, gesture, reference, not through dramatic revelation
 - Weights across all threads should sum to 100
 
@@ -748,23 +743,10 @@ threads_available:
   - id: {thread_id}
     source: "{life.section[index]}"
     weight: {N}  # probability of surfacing (weights sum to 100 across all threads + a "none surfaces" entry)
-    direction: "{what this thread looks like when it surfaces — 1 sentence}"
-    if_surfaces:
-      - range: 1-40
-        tone: deflective
-        result: "{mentions it and redirects}"
-        mechanical_note: "{effect on scene}"
-      - range: 41-75
-        tone: honest
-        result: "{actually engages with it}"
-        mechanical_note: "{effect}"
-      - range: 76-100
-        tone: vulnerable
-        result: "{connects it to something deeper}"
-        mechanical_note: "{effect}"
+    direction: "{1-line structural description of what surfaces}"
   - id: no_thread_surfaces
     weight: {N}  # some beats, nothing new surfaces — that's fine
-    direction: "Character stays in the current conversational flow"
+    direction: "stays in current flow"
 ```
 ```
 
@@ -917,9 +899,8 @@ Before resolving, verify table quality:
    - **full**: 3-7 world events. At least half must be chaos events.
    - **reduced**: 1-3 world events. Chaos optional.
    - **minimal**: 0-1 world events. Ambient only. Zero is valid — the world can be completely quiet.
-5. **CHARACTER SUBTABLE ENFORCEMENT** — Every character subtable must have exactly 4 entries: 3 register-toned (matching chaos_register, each a DIFFERENT register — no duplicates within a tier), 1 thematic (coincidental story resonance). No straight/uncolored entries. HARD GATE.
-6. **CHAOS EVENT ENFORCEMENT** — Each chaos event must have 7-10 root manifestations, each with exactly 4 subtable entries: 3 register-toned (each a DIFFERENT register — no duplicates within a root), 1 thematic (coincidental story resonance). Same structure as character subtables. ONE chaos world event must be thematically connected to the story. HARD GATE.
-7. **THEMATIC EVENT ENFORCEMENT** — Each thematic event must have 3-7 manifestations. HARD GATE.
+5. **CHAOS EVENT ENFORCEMENT** — Each chaos event must have 7-10 root manifestations, each with exactly 4 subtable entries: 3 register-toned (each a DIFFERENT register — no duplicates within a root), 1 thematic (coincidental story resonance). ONE chaos world event must be thematically connected to the story. HARD GATE.
+6. **THEMATIC EVENT ENFORCEMENT** — Each thematic event must have 3-7 manifestations. HARD GATE.
 
 **If unsatisfied** → regenerate SPECIFIC domain Tasks (not all) that produced weak results, then reshape. Max 1 retry iteration.
 
@@ -952,67 +933,36 @@ Before resolving, verify table quality:
    ```
    Write this minimal resolution.yaml and skip to completion.
 
-2. **POV already resolved in Step 3a.** Read the POV outcome from `entropy-selection.yaml` (written during Step 3a). Do not re-roll.
-
-3. **Roll NPC action tables:**
-   For each NPC in the scene (from `entropy_tables/char-{npc_id}.yaml` files):
+2. **Run resolve-turn.sh** — handles NPC rolling, distance-weighted synthesis, ambient texture, and arc pressure delta:
    ```bash
-   $TX_ROOT/meshes/narrative-engine-v2/scripts/entropy-resolver.sh "{workspace}" subtable char-{npc_id} ""
-   ```
-   - Map roll to the NPC's 5-outcome table → get outcome type
-   - Then roll that outcome's subtable → get specific manifestation
-   - NPC tables were already generated in response to POV resolution (Step 3b), so outcomes are contextually appropriate
-
-4. **Synthesize overall outcome (Initiator/Receiver Distance Weighting):**
-
-   Score each character's outcome by distance from mixed:
-
-   | Type | Weight |
-   |---|---|
-   | catastrophic | -2 |
-   | failure | -1 |
-   | mixed | 0 |
-   | success | +1 |
-   | breakthrough | +2 |
-
-   Initiator (POV) weighted at **0.6**, receivers (NPCs) weighted at **0.4** (split evenly if multiple NPCs):
-
-   ```
-   overall_score = (pov_weight × 0.6) + (avg_npc_weight × 0.4)
+   $TX_ROOT/meshes/narrative-engine-v2/scripts/resolve-turn.sh "{workspace}" "{pov_character_id}"
    ```
 
-   Map score to outcome type:
-   | Score Range | Overall Type |
-   |---|---|
-   | -2.0 to -1.5 | catastrophic |
-   | -1.5 to -0.5 | failure |
-   | -0.5 to +0.5 | mixed |
-   | +0.5 to +1.5 | success |
-   | +1.5 to +2.0 | breakthrough |
+3. **Read the generated resolution.yaml.** Fill in the TODO fields:
+   - `outcome.description`: narrative summary of what happened
+   - `state_changes`: trait pressure deltas, bond changes, momentum
+   - `trajectory_created`: any deferred consequences
+   - Validate intent lock compliance (semantic check against `not_subject_to_entropy`)
 
-   **This replaces using the protagonist's outcome type as the overall type.**
+   If any resolved outcome contradicts a locked element, note it and reroll that specific table (max 2 retries via resolve-turn.sh).
 
-   Example: POV breakthrough (+2 × 0.6 = 1.2) + NPC failure (-1 × 0.4 = -0.4) = **+0.8 → success** (the kiss happened but landed awkwardly — still a success, not averaged to mixed).
-
-5. **Roll world_event_table:**
+4. **Roll world_event_table:**
    - Roll to select which world event fires
    - If thematic: roll manifestations list → get specific result
    - If chaos: roll manifestations list → get root result → roll that root's subtable → get specific variation
 
-6. **Roll ambient_texture 1-3 times** — always rolled, it's texture, layer it. Multiple sensory details create richer atmosphere.
-
-7. **Validate against intent locks:**
+5. **Validate against intent locks:**
    - Compare all resolved outcomes against `not_subject_to_entropy`
    - If any outcome contradicts locked fact: reroll that specific table (max 2 retries)
    - Attempt 3 fails: send HITL to core
 
-8. **Apply state changes** (aggregate across all character resolutions):
+6. **Apply state changes** (aggregate across all character resolutions):
    - Trait pressure deltas
    - Bond intensity/dimension changes (see Bond Dimensions in simulator prompt)
    - Arc pressure update (based on **overall weighted outcome**, not protagonist alone)
    - Trajectory creation/firing/interruption
 
-9. **Validate intent lock compliance** one final time.
+7. **Validate intent lock compliance** one final time.
 
 10. **Write `resolution.yaml` to workspace:**
 
@@ -1029,7 +979,6 @@ character_outcomes:
   {character_id}:
     outcome_type: {type}
     shape: {from their action table}
-    subtable_result: {specific manifestation}
     mechanical_note: "{effects}"
   # repeat for each character
 
@@ -1037,7 +986,7 @@ world_event:
   event_id: {which event fired}
   chaos: {true|false}
   result: "{what happened — from manifestations list}"
-  subtable_result: "{if chaos event, the specific variation from subtable}"
+  subtable_result: "{if chaos event — world events keep subtables}"
   mechanical_note: "{impact on characters}"
 
 ambient_texture:  # 1-3 resolved textures, layered
@@ -1059,10 +1008,6 @@ arc_update:
   phase: "{phase}"
 
 resolved_subtables:
-  - character: {id}
-    table: {outcome_type}
-    roll: {N}
-    result: {manifestation}
   - table: world_event
     roll: {N}
     result: {manifestation}
@@ -1119,8 +1064,7 @@ The player action is LOCKED — it HAPPENS. You do not branch on whether the pla
 
 Every character in a scene is an agent with motivations. There is no "protagonist table" vs "world event table" split. Each character gets the same treatment:
 - What are they trying to do (or how are they responding)?
-- 5 outcome types (catastrophic → breakthrough)
-- Subtables for each outcome
+- 5 outcome tiers (catastrophic → breakthrough) with structural labels
 
 **But resolution is sequential, not parallel.** The initiator (usually the POV character who submitted the action) resolves first. NPC tables are then generated knowing what the initiator did — so NPCs respond to reality, not a hypothetical.
 
@@ -1172,9 +1116,9 @@ The single most common failure mode is generating world events that are entirely
 
 **Architect-specific chaos rules (not in ref):**
 
-**Chaos register blend enforcement:** Before finalizing, tally register-toned entries by register across ALL tables (world AND character). If any register is >10 points off target percentage, rewrite entries to rebalance. Thematic entries (1 per root/tier) are NOT register-toned — they echo the story's themes through coincidence.
+**Chaos register blend enforcement:** Before finalizing, tally register-toned entries by register across world event tables. If any register is >10 points off target percentage, rewrite entries to rebalance. Thematic entries (1 per root/tier) are NOT register-toned — they echo the story's themes through coincidence. Character tables are structural only and do not contain register-toned entries.
 
-**Application rules:**
+**Application rules (world event subtables only):**
 - Single register: 3 of 4 subtable entries match register tone, 1 thematic
 - Weighted blend: percentages guide distribution across ALL register-toned slots
 - Root manifestations should also match register tone distribution
@@ -1254,6 +1198,7 @@ All scripts are at: `$TX_ROOT/meshes/narrative-engine-v2/scripts/` (`$SCRIPTS`).
 | `entropy-pipeline.sh distribution {arc_pressure} {traits_file}` | Base weight distribution | YAML: shape, base, trait_modifiers, final |
 | `entropy-resolver.sh "{workspace}" primary` | Roll player + world outcomes | Creates entropy-selection.yaml |
 | `entropy-resolver.sh "{workspace}" subtable {table_id} {parent}` | Roll branch subtable | Appends to entropy-selection.yaml |
+| `resolve-turn.sh "{workspace}" {pov_character_id}` | Cold resolution (NPC rolls, synthesis, ambient, arc delta) | Creates resolution.yaml with TODO fields |
 | `character-brief.sh {character_id} {game_path}` | NPC brief for Task context | YAML character brief (information-isolated) |
 | `entropy-pipeline.sh merge-tables {workspace}` | Assemble entropy_tables/ fragments | Writes entropy-tables.yaml to stdout |
 
