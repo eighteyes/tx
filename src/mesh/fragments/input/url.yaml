@@ -1,0 +1,34 @@
+# input/url — web URL to fetch, crawl, or analyze
+# Describes how to load, validate, and handle URL-based input.
+# Responsibilities: fetch verification, content parsing, failure recovery.
+
+id: input/url
+sections:
+  description: |
+    A web URL the agent must fetch, read, or analyze.
+    URLs may point to documentation, APIs, source code, or arbitrary web content.
+    The agent must verify accessibility before processing content.
+
+  loading:
+    - "Fetch the URL. Verify it returns a successful response before parsing."
+    - "Identify content type: HTML page, JSON API, raw text, or binary."
+    - "Extract the relevant content. Strip navigation, ads, and boilerplate from HTML."
+
+  validation:
+    - "URL returns HTTP 200 (or appropriate success status)."
+    - "Content is in a parseable format — not a binary blob or login wall."
+    - "Content matches what was expected (documentation page is actually docs, not a redirect)."
+
+  error-architecture:
+    - condition: "URL returns 404 or other error status"
+      response: "Report the status code. Suggest checking the URL for typos. Try a cached or archived version if available."
+    - condition: "URL times out or is unreachable"
+      response: "Report the timeout. Do not retry indefinitely. Ask if an alternative source exists."
+    - condition: "Content is behind authentication or paywall"
+      response: "Report the access barrier. Do not attempt to bypass. Ask for credentials or alternative source."
+
+  anti-patterns:
+    - "Assuming URL content without fetching — always verify"
+    - "Retrying failed fetches in a tight loop without backoff"
+    - "Parsing HTML as plain text without extracting meaningful content"
+    - "Proceeding with stale or partial content without noting the limitation"

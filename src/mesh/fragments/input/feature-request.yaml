@@ -1,0 +1,34 @@
+# input/feature-request — structured feature description
+# Describes how to consume, validate, and handle feature requests with goals, requirements, and constraints.
+# Responsibilities: section parsing, scope verification, acceptance criteria enforcement.
+
+id: input/feature-request
+sections:
+  description: |
+    A structured feature description containing goal, requirements, and constraints.
+    May arrive as a spec-graph entity, markdown document, or structured message.
+    The agent must parse sections and verify completeness before implementation.
+
+  loading:
+    - "Parse the feature into sections: goal, requirements, constraints, acceptance criteria."
+    - "Identify which requirements are hard (must-have) vs soft (nice-to-have)."
+    - "Map constraints to concrete implementation boundaries (files, modules, APIs)."
+
+  validation:
+    - "Every requirement is testable — it has a measurable pass/fail condition."
+    - "Scope is bounded: the feature has clear edges, not open-ended exploration."
+    - "Acceptance criteria exist and are specific enough to verify against."
+
+  error-architecture:
+    - condition: "Missing acceptance criteria"
+      response: "Flag before proceeding. Propose criteria based on stated requirements and confirm."
+    - condition: "Requirements contradict each other"
+      response: "Name the conflicting requirements. Do not resolve silently — escalate for decision."
+    - condition: "Scope is unbounded or vague"
+      response: "Identify the vague boundary. Propose a concrete scope cut and confirm before starting."
+
+  anti-patterns:
+    - "Implementing beyond stated requirements because 'it would be nice'"
+    - "Treating soft constraints as hard constraints or vice versa"
+    - "Starting implementation without verifying all requirements are testable"
+    - "Assuming acceptance criteria when none were provided"

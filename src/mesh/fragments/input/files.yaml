@@ -1,0 +1,34 @@
+# input/files — arbitrary file set
+# Describes how to consume, validate, and handle a set of files as input.
+# Responsibilities: file enumeration, type detection, readability verification.
+
+id: input/files
+sections:
+  description: |
+    An arbitrary set of files provided as input: source code, config, data, or mixed.
+    The agent must inventory what it received, identify file types, and determine
+    which files are relevant before processing. Not all files may be readable or useful.
+
+  loading:
+    - "List all files. Identify types by extension, content headers, or naming convention."
+    - "Prioritize files relevant to the task. Read those first."
+    - "For large file sets, survey structure (directory tree) before reading individual files."
+
+  validation:
+    - "All referenced files exist and are readable."
+    - "File types are recognized and parseable with available tools."
+    - "File set is complete — no obvious gaps (e.g., config referenced but not included)."
+
+  error-architecture:
+    - condition: "File is binary or unreadable"
+      response: "Skip with a note. Name the file and its detected type. Do not attempt to parse binary as text."
+    - condition: "File is missing or path is broken"
+      response: "Report the missing path. Search for the file with glob. Ask if the path is wrong."
+    - condition: "File set is too large to process fully"
+      response: "State the count and size. Process the subset relevant to the task. Name what was skipped."
+
+  anti-patterns:
+    - "Reading every file without triaging for relevance first"
+    - "Assuming file encoding — check for BOM or encoding indicators"
+    - "Treating all files as equally important regardless of the task"
+    - "Silently skipping files without reporting what was skipped and why"

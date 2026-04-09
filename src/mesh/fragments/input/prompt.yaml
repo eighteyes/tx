@@ -1,0 +1,34 @@
+# input/prompt — free-text user request
+# Describes how to consume, validate, and handle unstructured natural language prompts.
+# Responsibilities: intent extraction, ambiguity detection, conservative interpretation.
+
+id: input/prompt
+sections:
+  description: |
+    A free-text user request with no enforced structure.
+    The agent receives natural language and must extract actionable intent.
+    Prompts range from single-sentence commands to multi-paragraph descriptions.
+
+  loading:
+    - "Read the full prompt as-is. Do not truncate or summarize prematurely."
+    - "Extract the primary intent: what does the user want to happen?"
+    - "Identify constraints, preferences, or context embedded in the text."
+
+  validation:
+    - "Prompt contains at least one actionable verb or clear desired outcome."
+    - "Scope is bounded enough to begin work without unbounded exploration."
+    - "No contradictory instructions within the same prompt."
+
+  error-architecture:
+    - condition: "Prompt is vague or ambiguous"
+      response: "Ask for clarification. If not possible, make the most conservative interpretation and state the assumption explicitly."
+    - condition: "Prompt contains multiple unrelated requests"
+      response: "Identify each request. Process sequentially or flag for decomposition."
+    - condition: "Prompt references context not provided"
+      response: "Name the missing context. Ask for it or state what you are assuming."
+
+  anti-patterns:
+    - "Inferring intent beyond what the text states — stick to what was written"
+    - "Treating every prompt as a code request — prompts can ask for analysis, answers, or planning"
+    - "Ignoring qualifiers like 'maybe', 'if possible', 'roughly' — these signal flexibility"
+    - "Starting work before confirming you understood the request when ambiguity exists"

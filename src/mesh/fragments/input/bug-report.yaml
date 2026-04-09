@@ -1,0 +1,34 @@
+# input/bug-report — structured defect description
+# Describes how to consume, validate, and handle bug reports.
+# Responsibilities: reproduction step extraction, environment identification, reproduction verification.
+
+id: input/bug-report
+sections:
+  description: |
+    A structured bug report describing a defect: expected behavior, actual behavior,
+    and reproduction steps. The agent must reproduce the bug before attempting a fix.
+    Bug reports vary in quality — missing steps and vague descriptions are common.
+
+  loading:
+    - "Extract reproduction steps, expected behavior, and actual behavior as distinct items."
+    - "Identify the environment: OS, runtime version, configuration, relevant dependencies."
+    - "Locate the code path implicated by the report: entry point, module, function."
+
+  validation:
+    - "Reproduction steps are specific enough to follow mechanically."
+    - "Expected and actual behavior are clearly distinguished."
+    - "The bug is reproducible in the current environment using the stated steps."
+
+  error-architecture:
+    - condition: "Cannot reproduce the bug"
+      response: "Report what was tried, what environment was used, and what outcome occurred. Ask for additional context."
+    - condition: "Reproduction steps are incomplete or ambiguous"
+      response: "Identify the gap. State what is missing and ask for the specific detail needed."
+    - condition: "Bug is in a dependency or external system"
+      response: "Identify the external boundary. Report the finding. Do not patch around external bugs without flagging the workaround."
+
+  anti-patterns:
+    - "Attempting a fix before reproducing the bug"
+    - "Fixing symptoms instead of root cause"
+    - "Closing as 'cannot reproduce' after a single attempt without varying conditions"
+    - "Assuming the reporter's environment matches yours without checking"

@@ -1,0 +1,34 @@
+# input/spec — formal specification (spec-graph, requirements doc)
+# Describes how to consume, validate, and handle structured specifications.
+# Responsibilities: spec parsing, consistency checking, term resolution.
+
+id: input/spec
+sections:
+  description: |
+    A formal specification: spec-graph entity, requirements document, or structured contract.
+    Specs define what must be built, not how. The agent must treat the spec as authoritative
+    and flag deviations rather than silently diverging.
+
+  loading:
+    - "Read the spec file in full. Parse structured sections: entities, requirements, dependencies."
+    - "Resolve all referenced terms — every named concept must have a definition or prior context."
+    - "Identify dependency order: which requirements depend on others being met first."
+
+  validation:
+    - "Spec is internally consistent — no requirement contradicts another."
+    - "All terms and entities are defined or resolvable from context."
+    - "Requirements are implementable with available tools and codebase state."
+
+  error-architecture:
+    - condition: "Spec contains contradictions"
+      response: "Name the conflicting statements with locations. Do not implement until resolved."
+    - condition: "Undefined term or entity referenced"
+      response: "Flag the undefined reference. Propose a definition if inferable, otherwise escalate."
+    - condition: "Spec requires capabilities outside current environment"
+      response: "List the gaps between spec requirements and available tools. Propose alternatives."
+
+  anti-patterns:
+    - "Treating the spec as a suggestion rather than a contract"
+    - "Implementing beyond spec scope because the code 'needs it'"
+    - "Silently resolving ambiguities instead of flagging them"
+    - "Skipping dependency order and implementing requirements out of sequence"

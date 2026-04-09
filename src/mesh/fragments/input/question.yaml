@@ -1,0 +1,34 @@
+# input/question — specific question to answer
+# Describes how to parse, validate, and handle a direct question.
+# Responsibilities: question decomposition, answerability check, gap reporting.
+
+id: input/question
+sections:
+  description: |
+    A specific question the agent must answer using available tools and context.
+    Questions may target code behavior, architecture, configuration, or factual lookup.
+    The agent must distinguish the actual question from surrounding context.
+
+  loading:
+    - "Parse the question: separate what is being asked from context provided alongside it."
+    - "Identify the question type: factual lookup, code behavior, architectural reasoning, or opinion."
+    - "Determine what information sources are needed to answer (files, search, tools)."
+
+  validation:
+    - "The question is answerable given available tools and accessible information."
+    - "The question is specific enough to have a concrete answer, not open-ended speculation."
+    - "Required context is present or obtainable within the current environment."
+
+  error-architecture:
+    - condition: "Question requires information not available"
+      response: "Name the specific gap. State what you can answer and what remains unknown."
+    - condition: "Question is ambiguous or has multiple valid interpretations"
+      response: "State the interpretations. Answer the most likely one and flag the alternatives."
+    - condition: "Answer requires external access the agent lacks"
+      response: "Report the limitation. Provide what partial answer is possible from available data."
+
+  anti-patterns:
+    - "Answering a different question than what was asked because the real one is hard"
+    - "Providing speculative answers without flagging uncertainty"
+    - "Burying the answer in excessive preamble — lead with the answer, then explain"
+    - "Refusing to answer when a partial or qualified answer is useful"

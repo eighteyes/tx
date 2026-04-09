@@ -1,0 +1,34 @@
+# input/codebase — existing code to read or modify
+# Describes how to survey, validate, and handle an existing codebase as input.
+# Responsibilities: structure discovery, convention extraction, baseline verification.
+
+id: input/codebase
+sections:
+  description: |
+    An existing codebase the agent must read, understand, or modify.
+    The agent does not own the code — it must learn the project's conventions
+    before proposing changes. Assumes the codebase may be large and partially unfamiliar.
+
+  loading:
+    - "Survey project structure: list top-level directories, read config files (package.json, tsconfig, etc.)."
+    - "Read key files relevant to the task: entry points, modules under change, existing tests."
+    - "Identify conventions: naming, patterns, test style, import structure."
+
+  validation:
+    - "Build passes in current state before making changes."
+    - "Existing tests pass before making changes — establish a clean baseline."
+    - "Target files exist at expected paths. Confirm with glob before reading."
+
+  error-architecture:
+    - condition: "Expected file or directory not found"
+      response: "Verify paths with glob. Search for similar names. Do not guess paths."
+    - condition: "Build or tests fail before changes"
+      response: "Report the pre-existing failure. Do not fix unrelated breakage unless instructed."
+    - condition: "Project conventions are unclear"
+      response: "Read 2-3 existing files of the same type. Match what you find. Do not impose external style."
+
+  anti-patterns:
+    - "Modifying code without reading the surrounding module first"
+    - "Assuming file paths from memory instead of verifying with search"
+    - "Introducing patterns inconsistent with the existing codebase style"
+    - "Skipping baseline verification — changes must not cause regressions"
