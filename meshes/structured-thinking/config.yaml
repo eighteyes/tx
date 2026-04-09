@@ -1,7 +1,6 @@
 mesh: structured-thinking
 description: "Applies systematic reasoning frameworks to break down complex problems, analyze options, and provide structured recommendations"
 type: ephemeral
-
 intents:
   patterns:
     - "should I"
@@ -12,25 +11,32 @@ intents:
     - "which option"
     - compare
     - tradeoffs
-
 agents:
   - name: thinker
     model: opus
     prompt: thinker/prompt.md
-
 entry_point: thinker
 completion_agent: thinker
-
 routing:
   thinker:
     complete:
       core: "Analysis complete with recommendation"
     needs-clarification:
       core: "Problem requires more context or constraints"
-
 rearmatter:
   enabled: true
   fields:
     - confidence
     - assumptions
     - gaps
+capability:
+  domain:
+    - reasoning
+  input:
+    - question
+  output:
+    - analysis
+    - decision
+  tools: []
+  interaction:
+    - none

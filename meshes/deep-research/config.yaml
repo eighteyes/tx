@@ -2,7 +2,6 @@ mesh: deep-research
 description: "Multi-agent deep research with iterative confidence loop: interviewer gathers requirements, sourcer finds sources, analyst analyzes, researcher synthesizes theories, disprover critiques until 95% confidence, writer creates final report"
 type: ephemeral
 idle_timeout_minutes: false
-
 agents:
   - name: interviewer
     model: sonnet
@@ -22,15 +21,12 @@ agents:
   - name: writer
     model: opus
     prompt: writer/prompt.md
-
 intents:
   patterns:
     - hypothesis
     - theory
-
 entry_point: interviewer
 completion_agent: writer
-
 routing:
   interviewer:
     complete:
@@ -70,14 +66,11 @@ routing:
       analyst: "Need more context or clearer analysis"
     blocked:
       core: "Cannot write - insufficient material or unclear direction"
-
 workspace:
   path: ".ai/research/{topic}/"
-
 config:
   confidence_threshold: 0.95
   max_iterations: 3
-
 rearmatter:
   enabled: true
   fields:
@@ -86,3 +79,15 @@ rearmatter:
     - status
     - iteration
     - gaps
+capability:
+  domain:
+    - research
+  input:
+    - question
+  output:
+    - report
+    - analysis
+  tools:
+    - web-search
+  interaction:
+    - none

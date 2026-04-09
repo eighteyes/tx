@@ -154,6 +154,7 @@ const MESH_FIELD_SPECS: Record<string, FieldSpec> = {
   workspace: { type: 'object' },  // Workspace config as object (path, create_on_init, etc.)
   brain: { type: 'boolean' },
   capabilities: { type: 'array' },
+  capability: { type: 'object' },  // Bidirectional capability declaration for router matching
   frontmatter: { type: 'object' },
   'clear-before': { type: 'boolean' },
   // Intent-based routing

@@ -1,7 +1,6 @@
 mesh: dev
 description: "Deep development mesh with testing, review cycles, and quality gates for complex work"
 brain: true
-
 intents:
   patterns:
     - build
@@ -10,32 +9,25 @@ intents:
     - develop
     - refactor
   # commands: /know:build owned by dev-review mesh
-
 agents:
   - name: implementer
     model: opus
     prompt: implementer/prompt.md
-
   - name: tester
     model: sonnet
     prompt: tester/prompt.md
-
   - name: reviewer
     model: opus
     prompt: reviewer/prompt.md
-
 entry_point: implementer
-
 workspace:
   path: ".ai/output/{task-id}/"
-
 routing:
   implementer:
     complete:
       tester: "Implementation ready for testing"
     blocked:
       core: "Need clarification on requirements"
-
   tester:
     complete:
       reviewer: "Tests passing, ready for review"
@@ -43,7 +35,6 @@ routing:
       implementer: "Tests failing, need fixes"
     ask-response:
       implementer: "Response to implementer's question"
-
   reviewer:
     complete:
       core: "Approved - ready to merge"
@@ -51,11 +42,9 @@ routing:
       implementer: "Changes requested from review"
     ask-response:
       implementer: "Response to implementer's question"
-
 lifecycle:
   post:
     - commit:auto
-
 playbook_notes: |
   Deep development mesh for complex features, significant refactors, and work requiring high confidence.
 
@@ -68,3 +57,16 @@ playbook_notes: |
   6. If approved → commit and complete
 
   Uses Opus for implement + review (complex judgment), Sonnet for testing (mechanical).
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - codebase
+  output:
+    - code-changes
+  tools:
+    - spec-graph
+    - git
+  interaction:
+    - none

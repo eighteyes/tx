@@ -1,28 +1,22 @@
 mesh: rewriter
 description: Style extraction and rewriting engine
-
 agents:
   - name: writer
     model: sonnet
     prompt: writer/prompt.md
-
   - name: editor
     model: sonnet
     prompt: editor/prompt.md
-
 entry_point: writer
-
 routing:
   writer:
     complete:
       editor: "Style work ready for refinement"
-
   editor:
     complete:
       core: "Style task complete"
     blocked:
       core: "Need clarification on target style"
-
 playbook_notes: |
   Extracted from narrative-engine to provide reusable style analysis and rewriting.
 
@@ -32,3 +26,14 @@ playbook_notes: |
   Supports two workflows:
   1. Style extraction: Analyze writing sample → generate style profile
   2. Style rewriting: Rewrite input text in specified target style
+capability:
+  domain:
+    - narrative
+  input:
+    - prompt
+    - files
+  output:
+    - creative-content
+  tools: []
+  interaction:
+    - none

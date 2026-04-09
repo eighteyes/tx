@@ -1,7 +1,6 @@
 mesh: dev-lite
 description: "Lightweight developer mesh for simple features, quick fixes, and straightforward work"
 brain: true
-
 intents:
   patterns:
     - build
@@ -10,20 +9,28 @@ intents:
     - fix
     - develop
   # commands: /know:build owned by dev-review mesh
-
 agents:
   - name: worker
     model: sonnet
     prompt: prompt.md
-
 entry_point: worker
-
 workspace:
   path: ".ai/output/{task-id}/"
-
 routing:
   worker:
     complete:
       core: "Implementation complete"
     blocked:
       core: "Need clarification or human input"
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - codebase
+  output:
+    - code-changes
+  tools:
+    - spec-graph
+  interaction:
+    - none

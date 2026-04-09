@@ -5,7 +5,6 @@
 mesh: dev-know-build
 description: "Two-phase development: haiku prepares feature context, opus builds"
 brain: true
-
 intents:
   patterns:
     - build
@@ -13,20 +12,16 @@ intents:
     - develop
   commands:
     build: "/know:build"
-
 agents:
   - name: prebuild
     model: haiku
     command: "/know:prebuild {feature}"
     prompt: prebuild.md
-
   - name: builder
     model: opus
     command: "/know:build {feature}"
-
 entry_point: prebuild
 completion_agents: [builder]
-
 routing:
   prebuild:
     complete:
@@ -38,3 +33,15 @@ routing:
       core: "Feature built and reviewed"
     blocked:
       core: "Need clarification during implementation"
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - spec
+  output:
+    - code-changes
+  tools:
+    - spec-graph
+  interaction:
+    - none

@@ -1,33 +1,26 @@
 mesh: dev-tdd
 description: "Red-green-refactor TDD mesh. Red writes failing tests from spec, green writes minimal code to pass, refactor cleans up. Reviewer gates each phase."
 brain: true
-
 agents:
   - name: red
     model: sonnet
     prompt: red/prompt.md
     thinking: true
-
   - name: green
     model: sonnet
     prompt: green/prompt.md
     thinking: true
-
   - name: refactor
     model: opus
     prompt: refactor/prompt.md
     thinking: true
-
   - name: reviewer
     model: opus
     prompt: reviewer/prompt.md
     thinking: true
-
 entry_point: red
 completion_agents: [reviewer]
-
 continuation: true
-
 routing_mode: dispatcher
 routing:
   red: reviewer
@@ -41,11 +34,9 @@ routing:
     tests_wrong: red
     code_wrong: green
     refactor_wrong: refactor
-
 lifecycle:
   post:
     - quality:checklist
-
 playbook_notes: |
   Classic Kent Beck TDD cycle enforced by mesh topology:
 
@@ -66,3 +57,16 @@ playbook_notes: |
 
   The reviewer can reject back to any phase. This creates the tight feedback
   loop that makes TDD work — you can't skip ahead.
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - codebase
+  output:
+    - code-changes
+    - test-suite
+  tools:
+    - spec-graph
+  interaction:
+    - none

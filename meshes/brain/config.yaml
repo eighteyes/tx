@@ -1,6 +1,5 @@
 mesh: brain
 description: "Knowledge gateway agent - mediates all spec-graph access"
-
 intents:
   patterns:
     # Feature creation
@@ -36,7 +35,6 @@ intents:
     - trace
     - why does
     - what's the
-
   commands:
     # Features
     "add feature": "/know:add"
@@ -52,13 +50,24 @@ intents:
     architect: "/know:plan"
     "spec out": "/know:plan"
     # Implementation: /know:build owned by dev-review mesh
-
 agents:
   - name: brain
     model: opus
     prompt: prompt.md
-
 entry_point: brain
-
 workspace:
   path: ".ai/tx/output/brain/"
+capability:
+  domain:
+    - knowledge
+  input:
+    - question
+    - feature-request
+    - bug-report
+  output:
+    - knowledge-update
+    - plan
+  tools:
+    - spec-graph
+  interaction:
+    - none

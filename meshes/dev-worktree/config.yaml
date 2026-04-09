@@ -1,21 +1,17 @@
 mesh: dev-worktree
 description: "Developer mesh with git worktree isolation for feature development"
 brain: true
-
 intents:
   patterns:
     - "build feature"
     - "implement in isolation"
     - "isolated development"
   # commands: /know:build owned by dev-review mesh
-
 agents:
   - name: worker
     model: sonnet
     prompt: prompt.md
-
 entry_point: worker
-
 # Enable git worktree isolation with brain insights
 # Requires 'feature:' in task frontmatter
 lifecycle:
@@ -25,13 +21,25 @@ lifecycle:
     - commit:auto
     - brain-update
     - worktree:cleanup
-
 workspace:
   path: ".ai/output/{task-id}/"
-
 routing:
   worker:
     complete:
       core: "Feature implementation complete"
     blocked:
       core: "Need clarification or human input"
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - codebase
+  output:
+    - code-changes
+  tools:
+    - spec-graph
+    - git
+    - worktree
+  interaction:
+    - none

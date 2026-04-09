@@ -1,21 +1,16 @@
 mesh: ensemble-research
 description: "Multiple parallel research agents with result aggregation"
-
 agents:
   - name: literature-review
     model: sonnet
     prompt: prompts/literature-review.md
-
   - name: interviews
     model: sonnet
     prompt: prompts/interviews.md
-
   - name: statistics
     model: sonnet
     prompt: prompts/statistics.md
-
 entry_point: literature-review
-
 routing:
   literature-review:
     complete:
@@ -32,7 +27,6 @@ routing:
       literature-review: "Statistical analysis complete"
     blocked:
       literature-review: "Need guidance"
-
 ensemble:
   coordinator: literature-review
   agents: [literature-review, interviews, statistics]
@@ -40,3 +34,14 @@ ensemble:
   aggregation_strategy: deduplicate
   timeout_ms: 120000
   allow_partial_failure: false
+capability:
+  domain:
+    - research
+  input:
+    - question
+  output:
+    - report
+    - analysis
+  tools: []
+  interaction:
+    - none

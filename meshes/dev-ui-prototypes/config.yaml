@@ -1,6 +1,5 @@
 mesh: dev-ui-prototypes
 description: "5 parallel low-fidelity wireframe generators with different design lenses, synthesized into a final recommendation"
-
 agents:
   - name: coordinator
     model: haiku
@@ -8,46 +7,36 @@ agents:
     load:
       - "package.json"
     checkpoint: true
-
   - name: bare-minimum
     model: sonnet
     prompt: bare-minimum/prompt.md
     fork_from: coordinator
-
   - name: heuristic
     model: sonnet
     prompt: heuristic/prompt.md
     fork_from: coordinator
-
   - name: info-arch
     model: sonnet
     prompt: info-arch/prompt.md
     fork_from: coordinator
-
   - name: user-flows
     model: sonnet
     prompt: user-flows/prompt.md
     fork_from: coordinator
-
   - name: kitchen-sink
     model: sonnet
     prompt: kitchen-sink/prompt.md
     fork_from: coordinator
-
   - name: synthesizer
     model: opus
     prompt: synthesizer/prompt.md
-
 entry_point: coordinator
 completion_agents: [synthesizer]
-
 continuation: false
-
 routing_mode: dispatcher
 routing:
-  coordinator: [bare-minimum, heuristic, info-arch, user-flows, kitchen-sink, { complete: synthesizer, fan_in: batch }]
+  coordinator: [bare-minimum, heuristic, info-arch, user-flows, kitchen-sink, {complete: synthesizer, fan_in: batch}]
   synthesizer: complete
-
 playbook_notes: |
   Five-lens parallel prototyping based on different design philosophies:
 
@@ -76,3 +65,15 @@ playbook_notes: |
   the best ideas from each lens.
 
   All wireframes are ASCII/markdown — no design tools needed.
+capability:
+  domain:
+    - design
+  input:
+    - feature-request
+    - prompt
+  output:
+    - artifact
+    - analysis
+  tools: []
+  interaction:
+    - none

@@ -6,14 +6,12 @@
 mesh: dev-full-ensemble
 description: "Big-feature dev with ensemble implementers, semi-formal verification, and certified evaluation"
 brain: true
-
 intents:
   patterns:
     - build
     - implement
     - develop
     - refactor
-
 agents:
   - name: prebuild
     model: sonnet
@@ -27,7 +25,6 @@ agents:
         - Grep
         - Bash
         - Skill
-
   - name: implementer-a
     model: sonnet
     prompt: implementer/prompt.md
@@ -40,7 +37,6 @@ agents:
         - Grep
         - Skill
         - Bash
-
   - name: implementer-b
     model: sonnet
     prompt: implementer/prompt.md
@@ -53,7 +49,6 @@ agents:
         - Grep
         - Skill
         - Bash
-
   - name: implementer-c
     model: sonnet
     prompt: implementer/prompt.md
@@ -66,7 +61,6 @@ agents:
         - Grep
         - Skill
         - Bash
-
   - name: verifier
     model: opus
     prompt: verifier/prompt.md
@@ -76,7 +70,6 @@ agents:
         - Glob
         - Grep
         - Bash
-
   - name: tester
     model: sonnet
     prompt: tester/prompt.md
@@ -88,11 +81,9 @@ agents:
         - Glob
         - Grep
         - Bash
-
   - name: reviewer
     model: opus
     prompt: reviewer/prompt.md
-
   - name: evaluator
     model: opus
     prompt: evaluator/prompt.md
@@ -102,11 +93,9 @@ agents:
         - Glob
         - Grep
         - Bash
-
   - name: ultrareview
     model: opus
     prompt: ultrareview/prompt.md
-
   - name: handoff
     model: sonnet
     prompt: handoff/prompt.md
@@ -117,18 +106,15 @@ agents:
         - Edit
         - Glob
         - Grep
-
 entry_point: prebuild
 completion_agents: [handoff]
 continuation: false
-
 parallelism:
   - agents: [implementer-a, implementer-b, implementer-c]
     entry: prebuild
     exit: verifier
     timeout: 300000
     on_partial: continue
-
 routing:
   prebuild:
     complete:
@@ -137,43 +123,36 @@ routing:
       implementer-c: "Context and criteria ready — attempt C"
     blocked:
       core: "Criteria need human validation"
-
   implementer-a:
     complete:
       verifier: "Implementation attempt A complete"
     blocked:
       core: "Need clarification from human"
-
   implementer-b:
     complete:
       verifier: "Implementation attempt B complete"
     blocked:
       core: "Need clarification from human"
-
   implementer-c:
     complete:
       verifier: "Implementation attempt C complete"
     blocked:
       core: "Need clarification from human"
-
   verifier:
     complete:
       tester: "Verified implementation selected"
     blocked:
       core: "No viable implementation — human decision needed"
-
   tester:
     complete:
       reviewer: "Tests passing, ready for review"
     blocked:
       verifier: "Tests failing — re-verify or select alternate"
-
   reviewer:
     complete:
       evaluator: "Code quality approved"
     blocked:
       verifier: "Code quality issues — re-verify with constraints"
-
   evaluator:
     complete:
       ultrareview: "All criteria certified — ready for final review"
@@ -181,7 +160,6 @@ routing:
       implementer-a: "Criteria gaps — re-attempt with feedback"
       implementer-b: "Criteria gaps — re-attempt with feedback"
       implementer-c: "Criteria gaps — re-attempt with feedback"
-
   ultrareview:
     complete:
       handoff: "Final review passed — generate human review steps"
@@ -189,68 +167,57 @@ routing:
       implementer-a: "Holistic issues found — revision needed"
       implementer-b: "Holistic issues found — revision needed"
       implementer-c: "Holistic issues found — revision needed"
-
   handoff:
     complete:
       core: "Feature complete with human review steps"
-
 workspace:
   path: ".ai/output/dev-full-ensemble/{feature}/"
-
 manifest:
   - id: context
     location: "{workspace}/context.md"
     description: "Codebase context: relevant files, patterns, constraints, integration points"
     writes: [prebuild]
     reads: [implementer-a, implementer-b, implementer-c, verifier, ultrareview, handoff]
-
   - id: criteria
     location: "{workspace}/criteria.md"
     description: "HITL-validated success criteria — the sole evaluation rubric"
     writes: [prebuild]
     reads: [implementer-a, implementer-b, implementer-c, verifier, tester, reviewer, evaluator, ultrareview, handoff]
-
   - id: working-notes
     location: "{workspace}/working-notes.md"
     description: "Implementation insights, gotchas, patterns discovered"
     writes: [implementer-a, implementer-b, implementer-c]
     reads: [verifier, reviewer, ultrareview, handoff]
     persistent: true
-
   - id: decisions
     location: "{workspace}/decisions.md"
     description: "Key decisions with rationale and trade-offs"
     writes: [implementer-a, implementer-b, implementer-c]
     reads: [verifier, reviewer, ultrareview, handoff]
     persistent: true
-
   - id: verification-certificate
     location: "{workspace}/verification.md"
     description: "Semi-formal equivalence certificate from verifier"
     writes: [verifier]
     reads: [tester, evaluator, ultrareview, handoff]
     persistent: true
-
   - id: scorecard
     location: "{workspace}/scorecard.md"
     description: "Evaluator's certified criteria assessment with semi-formal evidence"
     writes: [evaluator]
     reads: [implementer-a, implementer-b, implementer-c, evaluator, ultrareview, handoff]
     persistent: true
-
   - id: ultrareview-report
     location: "{workspace}/ultrareview.md"
     description: "Final holistic review with semi-formal verification certificate"
     writes: [ultrareview]
     reads: [implementer-a, implementer-b, implementer-c, ultrareview, handoff]
     persistent: true
-
   - id: human-review
     location: "HUMAN_REVIEW.md"
     description: "Appended human review checklist for manual verification"
     writes: [handoff]
     reads: [handoff]
-
 lifecycle:
   pre:
     - worktree:create
@@ -258,7 +225,6 @@ lifecycle:
     - commit:auto
     - brain-update
     - worktree:cleanup
-
 rearmatter:
   required: true
   schema:
@@ -266,9 +232,7 @@ rearmatter:
     confidence: "1-5 scale"
     gotchas: "Issues discovered"
     learnings: "Insights for brain"
-
 guardrails: {}
-
 playbook_notes: |
   Fork of dev-full. Two semi-formal reasoning integration points from
   Ugare & Chandra 2026 ("Agentic Code Reasoning"):
@@ -306,3 +270,19 @@ playbook_notes: |
   Cost profile: 4 sonnet (prebuild + 3 impl) + 4 opus (verifier + reviewer +
   evaluator + ultra) + 1 sonnet (handoff) = high. Offset by fewer iteration
   loops from better first-pass selection and targeted feedback.
+capability:
+  domain:
+    - dev
+  input:
+    - feature-request
+    - codebase
+    - spec
+  output:
+    - code-changes
+    - test-suite
+  tools:
+    - spec-graph
+    - git
+    - worktree
+  interaction:
+    - gate-entry

@@ -1,6 +1,5 @@
 mesh: research
 description: "Web research mesh: interviewer gathers requirements, sourcer finds sources, analyst analyzes, writer creates final report"
-
 intents:
   patterns:
     - research
@@ -9,7 +8,6 @@ intents:
     - "what's the state of"
     - look into
     - explore
-
 agents:
   - name: interviewer
     model: sonnet
@@ -23,10 +21,8 @@ agents:
   - name: writer
     model: sonnet
     prompt: writer/prompt.md
-
 entry_point: interviewer
 completion_agent: writer
-
 routing:
   interviewer:
     complete:
@@ -52,10 +48,8 @@ routing:
       analyst: "Need more context or clearer analysis"
     blocked:
       core: "Cannot write - insufficient material or unclear direction"
-
 workspace:
   path: ".ai/research/{topic}/"
-
 rearmatter:
   enabled: true
   fields:
@@ -63,3 +57,15 @@ rearmatter:
     - confidence
     - status
     - gaps
+capability:
+  domain:
+    - research
+  input:
+    - question
+  output:
+    - report
+    - analysis
+  tools:
+    - web-search
+  interaction:
+    - none
