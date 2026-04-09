@@ -25,3 +25,10 @@ export {
   type CapabilityNeeded,
   isValidCapability,
 } from './schema.ts';
+
+export {
+  scoreMesh,
+  findBestMesh,
+  type CatalogEntry,
+  type MatchResult,
+} from './router.ts';
