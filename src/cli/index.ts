@@ -24,6 +24,7 @@ import { inbox } from './inbox.ts';
 import { forensics } from './forensics.ts';
 import { agentHelp } from './agent-help.ts';
 import { dynaprompt } from './dynaprompt.ts';
+import { factory } from './factory.ts';
 import { log } from '../shared/logger.ts';
 
 // Load environment variables from .env file (suppress dotenv promo spam)
@@ -121,6 +122,7 @@ Commands:
   tx tool           Search and web utilities
   tx forensics      Analyze mesh execution sessions
   tx dynaprompt     Dynamic prompt fragment management
+  tx factory        Generate mesh from capabilities YAML (catalog match or compile)
   tx agent-help      Agent-friendly reference (messages, routing, recovery, workflows, debugging)
   tx login          Authenticate with tx-server
   tx logout         Clear stored credentials
@@ -734,6 +736,11 @@ async function main() {
 
     case 'dynaprompt':
       await dynaprompt(args);
+      break;
+
+    case 'factory':
+      if (wantsHelp) { console.log('tx factory - Generate mesh from capabilities YAML\n\nUsage: tx factory <capabilities.yaml> [--output <dir>]\n\nReads a capabilities YAML file, matches against existing meshes,\nand generates a new mesh if no match is found.\n\nOptions:\n  --output <dir>   Output directory for generated mesh'); break; }
+      await factory(args);
       break;
 
     case 'forensics':
