@@ -550,7 +550,7 @@ Scan prose.md for:
 - **New desires emerging** — through action, dialogue, or physical choice → add to `life.desires`
   - Plot-driven desires are valid: "wanting continued physical closeness with {character_b}" is {character_a}'s desire
   - Frame as the individual's want, not a relationship label
-  - These feed back into thread extraction — architect uses `life.desires` to generate direction table entries
+  - These feed back into thread extraction — dramaturg uses `life.desires` to generate direction table entries
 - **New voice patterns emerging** — a new verbal habit, a phrase that recurs → add to `life.voice_markers.verbal_habits`
 
 ### Capture Format
@@ -867,7 +867,7 @@ Purpose: ORACLE queries these via `read-state.sh` before validating — ensures 
 
 Update arc.yaml via gateway scripts after each turn.
 
-**Information barrier**: Other agents (architect, gravity, narrator, sim-planner) read arc.yaml through `arc-read.sh`, which filters to the current act only. Scribe has full access. When writing arc content, keep agent-visible fields agent-safe:
+**Information barrier**: Other agents (dramaturg, gravity, narrator, sim-planner) read arc.yaml through `arc-read.sh`, which filters to the current act only. Scribe has full access. When writing arc content, keep agent-visible fields agent-safe:
 
 - **Seed notes**: Describe the tension, not the resolution. No act references, no future character names, no "activates when X." The note is what agents foreshadow. The `activation_condition` is what you (scribe) track.
 - **Trajectory note/volatility**: Describe what IS, not what's coming. `critical_threshold` is scribe-only (stripped from agents).

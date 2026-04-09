@@ -635,7 +635,7 @@ arc.yaml supports a full dramatic architecture: acts, escalation rungs, seeds, q
 
 ### Information Barrier
 
-Agents (narrator, architect, gravity, sim-planner) receive act-scoped context via `arc-read.sh`. They NEVER see:
+Agents (narrator, dramaturg, gravity, sim-planner) receive act-scoped context via `arc-read.sh`. They NEVER see:
 - Future act summaries, objectives, or endings
 - Escalation rungs belonging to future acts
 - `activation_condition` on any seed (when/how it fires)

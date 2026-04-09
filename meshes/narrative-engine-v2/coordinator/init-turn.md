@@ -48,7 +48,7 @@ The incoming message body contains the player's action. Extract it exactly — e
 RAW_ACTION="<exact player text from message body>"
 ```
 
-**Director Notes**: If the message contains a "Director Notes" section (marked with `## Director Notes`), extract it separately. These are pass-through instructions for downstream creative agents (architect, simulator, narrator). Write them to workspace via the turn-write gateway:
+**Director Notes**: If the message contains a "Director Notes" section (marked with `## Director Notes`), extract it separately. These are pass-through instructions for downstream creative agents (dramaturg, simulator, narrator). Write them to workspace via the turn-write gateway:
 
 ```bash
 echo '{"turn": N, "notes": ["negotiation and boundary-setting dialogue", "interior monologue shifts to spoken words"], "tone": "{any tone guidance}", "word_count": "{any word count target}", "beat_count": "{any beat count target}", "constraints": ["{any explicit constraints like not this turn or approaching but not reaching}"]}' | $SCRIPTS/write-state.sh {workspace} director-notes
