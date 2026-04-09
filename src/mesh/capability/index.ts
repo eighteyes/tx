@@ -5,7 +5,7 @@
  *
  * Responsibilities:
  * - Re-export schema types, enums, and validation
- * - Serve as entry point for router, factory, and validator (future)
+ * - Serve as entry point for router, factory, and validator
  */
 
 export {
@@ -32,3 +32,10 @@ export {
   type CatalogEntry,
   type MatchResult,
 } from './router.ts';
+
+export {
+  validateGeneratedMesh,
+  type ValidationResult,
+} from './validator.ts';
+
+export { FragmentLoader, type PromptFragment } from './fragment-loader.ts';
