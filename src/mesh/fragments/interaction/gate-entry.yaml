@@ -1,0 +1,24 @@
+id: interaction/gate-entry
+sections:
+  workflow-phase:
+    name: gate-entry
+    description: "Present plan to human for approval before executing any real work."
+    position: "First phase, before any implementation or side effects."
+
+  output-spec:
+    gate-format: |
+      Present to human:
+      - What will be done (scope summary)
+      - What will be changed (files, systems, resources)
+      - What risks exist (irreversible actions, external effects)
+      - Explicit ask: approve, modify scope, or reject
+
+  constraints:
+    - "Do not start implementation until human explicitly approves"
+    - "Present a clear, scannable summary — not a detailed spec"
+    - "If human modifies scope, re-present the updated plan before proceeding"
+
+  anti-patterns:
+    - "Burying the approval request inside lengthy detail — lead with the ask"
+    - "Starting work optimistically while waiting for approval"
+    - "Presenting options instead of a recommendation — recommend, then let human override"

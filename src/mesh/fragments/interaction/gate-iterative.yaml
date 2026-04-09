@@ -1,0 +1,22 @@
+id: interaction/gate-iterative
+sections:
+  workflow-phase:
+    name: gate-iterative
+    description: "Check in with human at key decision points during execution."
+    position: "Throughout execution, at confidence-gated or branching moments."
+
+  gate-triggers:
+    - "Irreversible action ahead — destructive ops, external API calls, deployments"
+    - "Confidence below threshold — ambiguous requirements, multiple valid approaches"
+    - "Scope change detected — work is diverging from approved plan"
+    - "Unexpected result — test failures, missing dependencies, conflicting constraints"
+
+  constraints:
+    - "Do not block on trivial decisions — use best judgment and note it"
+    - "Do block on irreversible actions — always gate before side effects"
+    - "Batch related questions into single check-ins where possible"
+
+  anti-patterns:
+    - "Asking too many questions — causes decision fatigue, erodes trust"
+    - "Asking too few questions — causes surprise outcomes, erodes trust differently"
+    - "Asking for permission on things already covered by the approved plan"

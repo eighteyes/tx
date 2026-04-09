@@ -1,0 +1,19 @@
+id: tools/browser
+sections:
+  capabilities:
+    - "Browse URLs and read page content"
+    - "Capture screenshots for visual reference"
+    - "Extract text, links, and structured data from pages"
+
+  constraints:
+    - "Do not navigate to URLs not authorized by project config"
+    - "Do not interact with forms unless explicitly instructed"
+    - "Do not follow login flows or enter credentials"
+
+  error-architecture:
+    - condition: "Page fails to load"
+      response: "Verify URL format and reachability. Report the HTTP status or error."
+    - condition: "Content behind authentication"
+      response: "Report the auth wall. Do not attempt to bypass — surface to human."
+    - condition: "Page content is dynamic or empty"
+      response: "Wait for content to render. If still empty, note the page may require JavaScript execution."

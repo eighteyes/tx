@@ -1,0 +1,22 @@
+id: tools/mcp-playwright
+sections:
+  capabilities:
+    - "Navigate to URLs and interact with web pages via Playwright MCP"
+    - "Click elements, fill forms, and trigger UI interactions"
+    - "Take screenshots for visual verification"
+    - "Read DOM structure and evaluate JavaScript in page context"
+    - "Wait for elements, network idle, and page transitions"
+
+  constraints:
+    - "Do not navigate to URLs outside project configuration scope"
+    - "Do not submit forms on production environments"
+    - "Screenshots are ephemeral — reference by description, not path"
+    - "Do not store credentials or sensitive data captured from pages"
+
+  error-architecture:
+    - condition: "Element not found"
+      response: "Take screenshot to verify current page state. Re-check selector against live DOM."
+    - condition: "Navigation timeout"
+      response: "Verify URL is reachable. Check for redirects or auth walls. Report with context."
+    - condition: "MCP server disconnected"
+      response: "Report failure. Do not retry silently — the connection requires human intervention."

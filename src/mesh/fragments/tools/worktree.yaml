@@ -1,0 +1,19 @@
+id: tools/worktree
+sections:
+  capabilities:
+    - "Create isolated git worktrees for parallel work"
+    - "Work on branches without affecting the main working tree"
+    - "Clean up worktrees and associated branches after use"
+
+  constraints:
+    - "Always clean up worktrees when work is complete — no orphans"
+    - "Do not leave orphaned branches from removed worktrees"
+    - "One worktree per task — do not nest or share worktrees across tasks"
+
+  error-architecture:
+    - condition: "Worktree already exists at target path"
+      response: "Check existing worktree status with git worktree list before creating. Reuse or clean up."
+    - condition: "Dirty worktree at cleanup time"
+      response: "Stash or commit changes before removing. Do not discard uncommitted work."
+    - condition: "Branch locked by another worktree"
+      response: "List worktrees to find the conflict. Remove the stale worktree first."

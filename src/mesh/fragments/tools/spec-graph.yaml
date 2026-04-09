@@ -1,0 +1,22 @@
+id: tools/spec-graph
+sections:
+  capabilities:
+    - "Query entities, references, and metadata via know CLI"
+    - "Add features, components, operations, and other graph entities"
+    - "Check reference types and validate graph integrity"
+    - "Traverse dependency topology between entities"
+    - "Generate rules and descriptions for entity types"
+
+  constraints:
+    - "Read current graph state before any mutation — know list, know check"
+    - "Do not create duplicate entities — search existing first"
+    - "Do not mutate graph without understanding dependency implications"
+    - "Respect entity type hierarchy — features depend on objectives, components depend on features"
+
+  error-architecture:
+    - condition: "Entity not found"
+      response: "Check spelling. Run know list to enumerate existing entities. Suggest closest match."
+    - condition: "Circular dependency detected"
+      response: "Report the cycle path. Do not attempt to resolve — surface to human."
+    - condition: "Reference type mismatch"
+      response: "Run know check ref-types for valid types. Correct and retry."
