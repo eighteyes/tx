@@ -4209,7 +4209,12 @@ Please advise the agent or check mesh configuration.`;
         }
 
         if (!promptPath) {
-          this.emit('error', { agentId, error: `Prompt not found: ${agent.prompt}` });
+          const reason = `Prompt not found: ${agent.prompt}`;
+          log.error('dispatcher', reason, { agentId, prompt: agent.prompt });
+          this.emit('error', { agentId, error: reason });
+          if (nextMsg?.id != null) {
+            this.queue.markMessageFailed(nextMsg.id as number, reason);
+          }
           return;
         }
         agentPromptText = fs.readFileSync(promptPath, 'utf-8');
@@ -6447,6 +6452,32 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
     // Initialize FSMs for meshes that have fsm config - MUST await
     await this.initializeFSMs();
+
+    // Reconcile orphaned messages after config reload
+    this.reconcileQueueAfterReload();
+  }
+
+  /**
+   * Detect and fail messages queued for agents that no longer exist in any loaded mesh.
+   * Called after loadMeshConfigs to clean up stale queue entries from renamed/removed agents.
+   */
+  private reconcileQueueAfterReload(): void {
+    const validAgentIds = new Set<string>();
+    for (const [meshName, config] of this.meshConfigs) {
+      for (const agent of config.agents) {
+        validAgentIds.add(`${meshName}/${agent.name}`);
+      }
+    }
+    validAgentIds.add('core/core');
+
+    const orphans = this.queue.findOrphanedMessages(validAgentIds);
+    for (const msg of orphans) {
+      this.queue.markMessageFailed(msg.id!, `Agent no longer exists: ${msg.to_agent}`);
+      log.warn('dispatcher', `Failed orphaned message ${msg.id} to ${msg.to_agent}`);
+    }
+    if (orphans.length > 0) {
+      log.info('dispatcher', `Reconciled ${orphans.length} orphaned messages after config reload`);
+    }
   }
 
   /**

@@ -413,6 +413,14 @@ export class MeshConfigLoader extends EventEmitter {
         return;
       }
 
+      // Check prompt file existence (warnings only)
+      const promptWarnings = MeshValidator.validatePromptFiles(rawConfig, basePath);
+      if (promptWarnings.length > 0) {
+        for (const w of promptWarnings) {
+          log.warn('config-loader', w);
+        }
+      }
+
       // Validation passed (warnings are silent unless there are errors)
       const config = validation.config as MeshConfig;
 

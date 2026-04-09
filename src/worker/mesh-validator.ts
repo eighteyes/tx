@@ -17,6 +17,8 @@
  * ```
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import type { SemanticModel, EnsembleConfig, TaskDistributionConfig, AggregationStrategy, FanOutOptions } from '../shared/types.ts';
 import { log } from '../shared/logger.ts';
 
@@ -1931,5 +1933,33 @@ export class MeshValidator {
         );
       }
     }
+  }
+
+  /**
+   * Check whether each agent's prompt file exists on disk.
+   * Returns warnings (not errors) since prompts may resolve at different paths at runtime.
+   */
+  static validatePromptFiles(config: unknown, basePath: string): string[] {
+    const warnings: string[] = [];
+    if (!config || typeof config !== 'object') return warnings;
+
+    const cfg = config as Record<string, unknown>;
+    if (!Array.isArray(cfg.agents)) return warnings;
+
+    for (const agent of cfg.agents) {
+      if (!agent || typeof agent !== 'object') continue;
+      const agentObj = agent as Record<string, unknown>;
+      const promptRef = agentObj.prompt;
+      if (!promptRef || typeof promptRef !== 'string') continue;
+
+      const candidate = path.join(basePath, promptRef);
+      if (!fs.existsSync(candidate)) {
+        warnings.push(
+          `Agent '${agentObj.name}': prompt file not found at ${candidate}`
+        );
+      }
+    }
+
+    return warnings;
   }
 }

@@ -1416,6 +1416,44 @@ export class MessageQueue {
   }
 
   /**
+   * Find messages queued for agents that no longer exist in any loaded mesh.
+   * Returns pending messages whose to_agent is not in the provided valid set.
+   */
+  findOrphanedMessages(validAgentIds: Set<string>): Message[] {
+    const rows = this.db.prepare(`
+      SELECT id, from_agent, to_agent, status, payload, created_at, delivered_at
+      FROM messages
+      WHERE status = 'pending'
+      ORDER BY created_at ASC
+    `).all() as MessageRow[];
+
+    return rows
+      .filter(row => !validAgentIds.has(row.to_agent))
+      .map(row => ({
+        id: row.id,
+        from_agent: row.from_agent,
+        to_agent: row.to_agent,
+        status: row.status as 'pending',
+        payload: safeParsePayload(row.payload, row.id),
+        created_at: row.created_at,
+        delivered_at: row.delivered_at ?? undefined,
+      }));
+  }
+
+  /**
+   * Mark a message as failed with a reason. Moves it out of the pending→retry loop.
+   */
+  markMessageFailed(messageId: number, reason: string): void {
+    this.db.prepare(`
+      UPDATE messages
+      SET status = 'failed',
+          delivered_at = ?,
+          payload = json_set(payload, '$.fail_reason', ?)
+      WHERE id = ?
+    `).run(Date.now(), reason, messageId);
+  }
+
+  /**
    * Clean up expired instant-exit failure records (older than 30 minutes)
    * Called periodically or on startup
    * @returns Number of records cleaned up
