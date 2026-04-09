@@ -22,12 +22,23 @@ shift
 # ═════════════════════════════════════════════
 
 do_distribution() {
-  local ARC_PRESSURE="${1:?Usage: entropy-pipeline.sh distribution <arc_pressure> [traits_yaml]}"
+  local ARC_PRESSURE="${1:?Usage: entropy-pipeline.sh distribution <arc_pressure> [traits_yaml_or_entity]}"
   local TRAITS_FILE="${2:-}"
 
   if ! [[ "$ARC_PRESSURE" =~ ^[0-9]+$ ]]; then
     echo "Error: arc_pressure must be a non-negative integer, got '$ARC_PRESSURE'" >&2
     exit 1
+  fi
+
+  # If traits file is a character entity (has .traits.evolved), flatten to temp file
+  if [[ -n "$TRAITS_FILE" && -f "$TRAITS_FILE" ]]; then
+    if yq -e '.traits.evolved' "$TRAITS_FILE" &>/dev/null; then
+      local FLAT_TRAITS
+      FLAT_TRAITS=$(mktemp)
+      yq -r '.traits.evolved | to_entries[] | .key + ": " + (.value.pressure | tostring)' "$TRAITS_FILE" > "$FLAT_TRAITS" 2>/dev/null || true
+      TRAITS_FILE="$FLAT_TRAITS"
+      trap "rm -f '$FLAT_TRAITS'" RETURN
+    fi
   fi
 
   # Shape selection (6 bands)

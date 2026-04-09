@@ -300,6 +300,21 @@ Example — entropy says "success: character delivers intel confidently":
 
 The voice Task sees the notes and has *real material* to voice. Without specifics, it will invent plot. Trivia (room details, small gestures, environmental color) is fine to invent. Plot (what NPCs said, what operations achieved, what intelligence was gathered) must come from canon.
 
+#### Choreography Integration (when director-notes has choreography)
+
+If `director-notes.yaml` contains a `choreography` array:
+
+1. Map each choreography entry to a beat by index — choreography[0] → beat 1, choreography[1] → beat 2, etc.
+2. For each beat with a matching choreography entry, integrate the `bodies` field as the **physical staging anchor** in the beat's `notes` field:
+   - Prepend the bodies description to the notes: "Physical staging: {bodies}. ..."
+   - The beat's dramatic function may differ from the choreography's function label — use the sim-plan function, but ground it in the confirmed physical frame
+3. Set `choreography_locked: true` on beats that have confirmed staging
+4. Entropy outcomes (success/failure/mixed/texture) operate WITHIN this physical frame — they determine quality, emotional texture, and character response, not the choreography itself. The bodies are locked; the register is not.
+5. If there are more beats than choreography phases, later beats have no locked staging — entropy shapes those freely.
+6. The `director-notes.yaml → focus` and `tone` fields inform scene-level author params for the whole plan.
+
+The player confirmed this staging in HITL. Treat it as locked creative direction, not suggestion.
+
 #### Guaranteed Thread Surfaces
 
 Check `threads.yaml → beat_guidance.guaranteed_surfaces[]`. These threads MUST appear by beat 3. Assign them to specific beats in the plan.

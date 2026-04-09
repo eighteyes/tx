@@ -39,7 +39,7 @@ read-state.sh <path> --search="X"  # Find across artifacts
 - Roll entropy via script (character) and bash (environment, complication)
 - Detect player choice points (HITL) and pause for input
 - Handle emergent action — beats that crystallize mid-scene beyond the original plan
-- Output: `beat_tables/` directory (one file per beat), updated `sim-progress.yaml`
+- Output: `beat_tables/` directory (full tables, debug artifact), `beat_resolutions/` directory (rolled results only, hot path), updated `sim-progress.yaml`
 
 ## Workflow
 
@@ -105,10 +105,10 @@ somatic_state:
 
 **Hold this ledger in working memory. You will update it after each beat and inject it into Task prompts.**
 
-### Step 2: Create beat_tables directory
+### Step 2: Create beat_tables and beat_resolutions directories
 
 ```bash
-mkdir -p {workspace}/beat_tables
+mkdir -p {workspace}/beat_tables {workspace}/beat_resolutions
 ```
 
 ### Step 3: Run Beats — Tables and Rolls
@@ -466,6 +466,45 @@ resolved:
 ```
 
 **File naming**: `beat_tables/beat_01.yaml`, `beat_tables/beat_02.yaml`, etc. Zero-padded.
+
+#### 3c-iii. Write Beat Resolution (hot path handoff to sim-voices)
+
+After writing the full beat file, write a slim resolution-only file to `beat_resolutions/beat_{NN}.yaml`.
+
+This is the **only file sim-voices reads** — it contains just the rolled results, not the probability tables.
+
+```yaml
+beat: {N}
+function: "{from sim-plan — what this beat accomplishes}"
+rolled_outcomes:
+  - character: {character_id}
+    roll: {value}
+    result_id: {branch_result}
+    mechanical_note: "{note from resolved outcome}"
+  # one entry per active character
+environment:
+  roll: {value}
+  result_id: {branch_result}
+  sensory_note: "{note from resolved environment outcome}"
+complication:
+  roll: {value}
+  result_id: {branch_result}
+  mechanical_note: "{note from resolved complication outcome}"
+thread: {thread_id or null}
+thread_tone: {tone or null}
+collision: {collision_id or null}
+frame: {frame_id or null}
+```
+
+Write directly as YAML (this is an intermediate file, not gateway-managed):
+
+```bash
+cat > {workspace}/beat_resolutions/beat_{NN}.yaml << 'EOF'
+{yaml content}
+EOF
+```
+
+**File naming**: `beat_resolutions/beat_01.yaml`, `beat_resolutions/beat_02.yaml`, etc. Zero-padded to match `beat_tables/`.
 
 ## Player Choice — HITL Loop
 

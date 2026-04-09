@@ -250,11 +250,11 @@ Gravity requires these files to run collision detection. The workspace may not h
 
 **On success (all files present):**
 
-After writing `collisions.yaml`, send completion message to architect:
+After writing `collisions.yaml`, send completion message to dramaturg:
 
 ```yaml
 ---
-to: narrative-engine-v2/architect
+to: narrative-engine-v2/dramaturg
 from: narrative-engine-v2/gravity
 headline: Collision map ready — Turn {N}
 ---

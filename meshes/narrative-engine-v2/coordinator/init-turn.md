@@ -103,6 +103,21 @@ Parse the player's action into decomposition fields:
 - Player says "move the story forward" / "push it" / "advance the plot" / "narrative entropy": `narrative` — LLM picks outcomes that are dramatically interesting. The world conspires.
 - If unclear, default to `random`. Only set `narrative` when the player explicitly requests it.
 
+**Choreography Decomposition (action_weight > 0.5 only)**
+
+If action_weight > 0.5, OR the raw input contains explicit physical descriptions (bodies, positions, movement, contact), derive per-phase staging before sending HITL:
+
+1. Map the player's action to sequential physical phases — 2–5 phases, one per anticipated beat
+2. For each phase, derive:
+   - A brief beat function label (what this phase accomplishes)
+   - `bodies`: The concrete physical actions — what bodies do, where they are, how they move. Not psychology. Not dialogue. Not emotion. Just physical staging.
+3. Derive scene-level params:
+   - `focus`: What the camera watches (whose body, what gesture, what space)
+   - `tone`: Physical register (intimate/close, charged/tense, explicit/direct, urgent, tender, etc.)
+   - `physical_rules`: Physical facts the player stated that constrain staging
+
+If action_weight < 0.3 AND no explicit physical descriptions in raw input → skip choreography entirely. Conversation turns and organic turns don't need staging.
+
 Send to core/core:
 
 ```
@@ -128,12 +143,35 @@ You said: "{raw player text}"
 • ENTROPY_MODE: {random|narrative}
 
 **LOCKED:** {physical facts from player}
-**ENTROPY DECIDES:** {everything else}
+
+[Include STAGING only when action_weight > 0.5 or explicit physical descriptions present]
+**STAGING:**
+• Focus: {what the camera watches — whose body, what gesture, what space}
+• Tone: {physical register — intimate/close, charged/tense, explicit/direct, urgent, tender, etc.}
+• Phase 1 — {beat function}: {bodies: concrete physical actions and positions}
+• Phase 2 — {beat function}: {bodies: concrete physical actions and positions}
+• Phase 3 — {beat function}: {bodies: concrete physical actions and positions}
+[add/remove phases to match anticipated beat count]
+• Physical rules: {locked physical constraints from player}
+
+**ENTROPY DECIDES:** {quality and texture within each staged phase — not the choreography itself}
 
 Options: Confirm / Refine / Let entropy decide
 ```
 
-Wait for response. On Confirm → Step 3. On Refine → apply corrections, go to Step 3 (do NOT re-confirm). On Entropy → mark inferred fields ambiguous, go to Step 3.
+Wait for response. On Confirm → write director-notes (if staging derived), then Step 3. On Refine → apply corrections to staging if needed, write director-notes, go to Step 3 (do NOT re-confirm). On Entropy → mark inferred fields ambiguous, skip director-notes write, go to Step 3.
+
+**On confirmation, write director-notes.yaml if choreography was derived:**
+
+If action_weight > 0.5 and staging was shown in HITL (or player refined it), write the confirmed staging:
+
+```bash
+echo '{"turn": N, "focus": "{focus}", "tone": "{tone}", "choreography": [{"beat": 1, "function": "{beat function}", "bodies": "{concrete physical actions}"}, {"beat": 2, "function": "{beat function}", "bodies": "{concrete physical actions}"}], "physical_rules": ["{rule1}", "{rule2}"], "constraints": []}' | $SCRIPTS/write-state.sh {workspace} director-notes
+```
+
+If Step 0 already wrote director-notes from an explicit `## Director Notes` section, merge both: write a combined object that includes the pass-through fields (`notes`, `word_count`, `beat_count`) AND the choreography fields (`focus`, `tone`, `choreography`, `physical_rules`). Overwrite mode — single write covers everything.
+
+If action_weight < 0.3 and no explicit physical descriptions → skip. Do not write director-notes unless Step 0 produced one.
 
 ### Coherence Check (quick)
 

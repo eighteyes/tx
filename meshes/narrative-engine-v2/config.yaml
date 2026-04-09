@@ -350,6 +350,11 @@ manifest:
     location: workspace
     reads: [narrator, scribe, dramaturg, entropy-gen, sim-planner, gravity]
     writes: [init-turn]
+  - id: director-notes.yaml
+    description: Player-confirmed staging — tone, focus, per-phase choreography (bodies), physical rules. Written by init-turn when action_weight > 0.5 or explicit physical direction present. Optional — many turns (conversation, organic) will not have this file.
+    location: workspace
+    reads: [narrator, sim-planner, editor]
+    writes: [init-turn]
   - id: intent.yaml
     description: Player action — raw input, clarified intent, locked action, physical state, entropy boundaries
     location: workspace
@@ -396,10 +401,15 @@ manifest:
     reads: [entropy-gen]
     writes: [dramaturg, entropy-gen]
   - id: beat_tables/
-    description: Per-beat YAML files — tables, rolls, and voice data. Audit trail.
+    description: Per-beat YAML files — full probability tables and entropy rolls. Debug audit trail only.
+    location: workspace
+    reads: []
+    writes: [sim-tables]
+  - id: beat_resolutions/
+    description: Per-beat resolution-only handoff — rolled result per character and environment (~200B per beat). Hot path from sim-tables to sim-voices.
     location: workspace
     reads: [sim-voices]
-    writes: [sim-tables, sim-voices]
+    writes: [sim-tables]
   - id: scene_script.yaml
     description: Beat-by-beat scene script with voices, time progression, prop tracking, pacing. Produced by sim-voices.
     location: workspace

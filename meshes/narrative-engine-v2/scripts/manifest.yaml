@@ -30,10 +30,10 @@ turn:
   director-notes:
     write_mode: overwrite
     writer: [init-turn]
-    readers: [architect, narrator]
+    readers: [architect, narrator, sim-planner, editor]
     required: {}
-    keys: {tone: string, dialogue_emphasis: string, beat_targets: array, word_count: number, constraints: array, focus: string}
-    freeform: []
+    keys: {turn: number, tone: string, notes: array, dialogue_emphasis: string, beat_targets: array, word_count: number, beat_count: string, constraints: array, focus: string, choreography: array, physical_rules: array}
+    freeform: [choreography]
 
   dramaturg-notes:
     write_mode: overwrite
