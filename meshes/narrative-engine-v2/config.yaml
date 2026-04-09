@@ -27,7 +27,7 @@ agents:
     model: sonnet
     prompt: coordinator/init-turn.md
     continuation: false
-    # Mechanical coordinator — stamps files via scripts, confirms intent, routes to architect
+    # Mechanical coordinator — stamps files via scripts, confirms intent, routes to gravity
     # Sonnet: reliable prompt-following, won't hallucinate destinations or skip HITL
     permissions:
       allowedTools: [Read, Write, Bash, Glob, Grep]
@@ -38,7 +38,7 @@ agents:
     prompt: gravity/prompt.md
     continuation: false
     # Collision detector — reads all state, finds pressure points, writes collisions.yaml
-    # Sits between init-turn and architect. Analytical, not creative.
+    # Sits between init-turn and dramaturg. Analytical, not creative.
     postconditions:
       tool_calls:
         - tool: TaskOutput
@@ -68,12 +68,22 @@ agents:
   # ENTROPY + SIMULATION (collapsed from entropy-architect + scene-sim)
   # ==========================================
 
-  - name: architect
+  - name: dramaturg
     model: sonnet
-    prompt: architect/prompt.md
-    read_gate: strict
-    # Collapsed entropy pipeline — fates + dramaturg + possibility + system in one session
-    # Parallel blind Tasks for world possibilities, inline story shaping and resolution
+    prompt: architect/dramaturg.md
+    continuation: true
+    # Story-shaping judgment — action weight, intervention level, collision analysis,
+    # dramaturg notes, arc satisfaction, option seeds, ending detection
+    # Does NOT fire Tasks — sends guidance to entropy-gen
+    permissions:
+      allowedTools: [Read, Write, Edit, Bash, Glob, Grep]
+
+  - name: entropy-gen
+    model: haiku
+    prompt: architect/entropy-gen.md
+    continuation: true
+    # Mechanical entropy orchestration — fires Tasks, collects results, merges tables,
+    # runs resolve-turn.sh. Pure procedural, no creative reasoning.
     permissions:
       allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
 
@@ -192,7 +202,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → gravity → architect → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → editor (lint + stitch + review) → visual (opt-in) → scribe → core
+  # Phase flow: entry → game-coord|init-turn → gravity → dramaturg → entropy-gen → dramaturg → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → editor (lint + stitch + review) → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -223,16 +233,21 @@ routing:
 
   gravity:
     message:
-      architect: "Collision map ready — proceed with entropy generation"
+      dramaturg: "Collision map ready — proceed with story shaping"
 
   # ==========================================
-  # ENTROPY + SIMULATION ROUTING (collapsed)
+  # ENTROPY + SIMULATION ROUTING (dramaturg/entropy-gen split)
   # ==========================================
 
-  architect:
+  dramaturg:
     message:
+      entropy-gen: "Guidance ready — generate entropy tables"
       sim-planner: "Mechanical resolution complete → plan scene beats"
       core: "HITL — action-lock conflict after 3 entropy attempts"
+
+  entropy-gen:
+    message:
+      dramaturg: "Tables generated and resolved — validate + compose notes"
 
   sim-planner:
     message:
@@ -329,9 +344,12 @@ guardrails:
         kill_threshold: 3
       max_messages:
         limit: 5
-    architect:
+    dramaturg:
       max_messages:
         limit: 15
+    entropy-gen:
+      max_messages:
+        limit: 20
     sim-planner:
       max_messages:
         limit: 15
@@ -381,44 +399,44 @@ manifest:
   - id: context.yaml
     description: Turn context seeded by coordinator, consumed by creative agents
     location: workspace
-    reads: [narrator, scribe, architect, sim-planner, gravity]
+    reads: [narrator, scribe, dramaturg, entropy-gen, sim-planner, gravity]
     writes: [init-turn]
 
   - id: intent.yaml
     description: Player action — raw input, clarified intent, locked action, physical state, entropy boundaries
     location: workspace
-    reads: [narrator, architect, sim-planner, gravity]
+    reads: [narrator, dramaturg, entropy-gen, sim-planner, gravity]
     writes: [init-turn]
 
   - id: collisions.yaml
     description: Collision map — pressure points between conditions, character data, seeds, bonds
     location: workspace
-    reads: [architect, narrator, scribe]
+    reads: [dramaturg, entropy-gen, narrator, scribe]
     writes: [gravity]
 
   - id: dramaturg-notes.yaml
     description: Story analysis and outcome shapes (no weights)
     location: workspace
     reads: [narrator, scribe, sim-planner]
-    writes: [architect]
+    writes: [dramaturg, entropy-gen]
 
   - id: entropy-tables.yaml
     description: Weighted probability tables synthesized from fates + dramaturg
     location: workspace
-    reads: [architect, sim-tables]
-    writes: [architect]
+    reads: [entropy-gen, sim-tables]
+    writes: [dramaturg, entropy-gen]
 
   - id: resolution.yaml
     description: Mechanical outcome tables, trait resolution, entropy_pool — includes all resolved entropy
     location: workspace
     reads: [narrator, scribe, sim-planner]
-    writes: [architect]
+    writes: [dramaturg, entropy-gen]
 
   - id: threads.yaml
-    description: Life thread extraction, collisions, and beat guidance — written by architect, consumed by sim-planner/narrator/scribe
+    description: Life thread extraction, collisions, and beat guidance — written by dramaturg, consumed by sim-planner/narrator/scribe
     location: workspace
     reads: [sim-planner, narrator, scribe]
-    writes: [architect]
+    writes: [dramaturg, entropy-gen]
 
   - id: sim-plan.yaml
     description: Beat plan checkpoint — psychology, frames, beat sequence, author params
@@ -435,8 +453,8 @@ manifest:
   - id: entropy_tables/
     description: "Per-domain entropy table fragments — written by parallel Tasks, merged by merge-entropy-tables.sh. Includes: char-*.yaml (outcome tables), char-*-directions.yaml (direction tables), world-*.yaml, texture.yaml, threads-*.yaml, collisions.yaml"
     location: workspace
-    reads: [architect]
-    writes: [architect]
+    reads: [entropy-gen]
+    writes: [dramaturg, entropy-gen]
 
   - id: beat_tables/
     description: Per-beat YAML files — tables, rolls, and voice data. Audit trail.
@@ -505,14 +523,14 @@ manifest:
     description: Author voice profile and stylistic constraints
     location: game
     persistent: true
-    reads: [narrator, editor, visual, calibrator, architect, sim-planner]
+    reads: [narrator, editor, visual, calibrator, dramaturg, entropy-gen, sim-planner]
     writes: [calibrator]
 
   - id: setting.yaml
     description: World setting, geography, tone, and genre parameters
     location: game
     persistent: true
-    reads: [narrator, oracle, calibrator, architect]
+    reads: [narrator, oracle, calibrator, dramaturg, entropy-gen]
     writes: [calibrator]
 
   - id: entities.yaml
@@ -547,14 +565,14 @@ manifest:
     description: Campaign-level character entities (enriched — NRE, sexuality, desires, conditions, episodes)
     location: campaign
     persistent: true
-    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, sim-planner, sim-tables, sim-voices, gravity]
+    reads: [init-turn, narrator, oracle, scribe, calibrator, visual, dramaturg, entropy-gen, sim-planner, sim-tables, sim-voices, gravity]
     writes: [scribe, calibrator]
 
   - id: entities/bonds/
     description: Campaign-level bond entities (enriched — conditions, episodes, dimensions)
     location: campaign
     persistent: true
-    reads: [narrator, oracle, scribe, architect, sim-planner, sim-tables, sim-voices, gravity]
+    reads: [narrator, oracle, scribe, dramaturg, entropy-gen, sim-planner, sim-tables, sim-voices, gravity]
     writes: [scribe, calibrator]
 
   - id: story-corpus.txt
@@ -598,21 +616,21 @@ manifest:
     description: Canonical scene state — location, closing positions, arc pressure, time. Replaces closing.yaml + old state.yaml.
     location: campaign
     persistent: true
-    reads: [init-turn, architect, sim-planner, editor, gravity]
+    reads: [init-turn, dramaturg, sim-planner, editor, gravity]
     writes: [scribe]
 
   - id: trajectories.yaml
     description: "Committed futures with timers (Chekhov's Guns). Scribe writes via campaign.sh trajectory commands."
     location: campaign
     persistent: true
-    reads: [architect, gravity]
+    reads: [dramaturg, entropy-gen, gravity]
     writes: [scribe]  # Scribe writes via campaign.sh
 
   - id: timeline.md
     description: Canonical time tracking in markdown — day headers, turn entries, beat-level time stretches
     location: campaign
     persistent: true
-    reads: [narrator, architect, editor]
+    reads: [narrator, dramaturg, editor]
     writes: [scribe]
 
   - id: continuity.yaml
@@ -620,7 +638,7 @@ manifest:
     location: campaign
     persistent: true
     autoInject: false  # 1600+ lines at 46 turns — too large for preload. Agents query via campaign.sh for surgical access.
-    reads: [oracle, scribe, architect]  # Agents query via campaign.sh facts
+    reads: [oracle, scribe, dramaturg]  # Agents query via campaign.sh facts
     writes: [scribe]  # Scribe writes via campaign.sh
 
   # RETIRED: these files were never implemented by scribe
