@@ -20,9 +20,11 @@ import { log } from '../shared/logger.ts';
 import { isValidCapability, type CapabilityNeeded } from '../mesh/capability/schema.ts';
 import { findBestMesh, type CatalogEntry } from '../mesh/capability/router.ts';
 import { MeshFactory } from '../mesh/capability/factory.ts';
+import { isPlanDirectory, deriveCapabilitiesFromPlan, getCachedCapabilities } from '../mesh/capability/plan-deriver.ts';
 
 export interface FactoryOptions {
-  inputFile: string;
+  inputFile?: string;
+  planDir?: string;
   outputDir: string;
   fragmentsDir: string;
   catalogDir?: string;
@@ -88,13 +90,9 @@ function extractCapability(parsed: unknown): unknown {
 }
 
 /**
- * Core factory pipeline — testable without CLI concerns.
+ * Parse a capabilities YAML file into a CapabilityNeeded object.
  */
-export async function runFactory(options: FactoryOptions): Promise<FactoryResult> {
-  const { inputFile, outputDir, fragmentsDir, catalogDir } = options;
-  const errors: string[] = [];
-
-  // 1. Read and parse input YAML
+function parseCapabilityFile(inputFile: string): { success: boolean; needed?: CapabilityNeeded; errors: string[] } {
   let rawYaml: string;
   try {
     rawYaml = fs.readFileSync(inputFile, 'utf-8');
@@ -113,31 +111,55 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
     return { success: false, errors: [msg] };
   }
 
-  // 2. Extract capability block
   const capBlock = extractCapability(parsed);
   if (!capBlock) {
-    const msg = 'No capability block found in input file (expected key: capability, capabilities_needed, or root-level fields)';
-    log.error('factory', msg);
-    return { success: false, errors: [msg] };
+    return { success: false, errors: ['No capability block found in input file'] };
   }
 
-  // 3. Validate
   if (!isValidCapability(capBlock)) {
-    const msg = 'Capability block failed validation — check domain/input/output/tools/interaction values';
-    log.error('factory', msg);
-    return { success: false, errors: [msg] };
+    return { success: false, errors: ['Capability block failed validation — check enum values'] };
   }
 
-  // 4. Build CapabilityNeeded with defaults
   const capObj = capBlock as Record<string, unknown>;
-  const needed: CapabilityNeeded = {
-    domain: capObj.domain as CapabilityNeeded['domain'],
-    input: capObj.input as CapabilityNeeded['input'],
-    output: capObj.output as CapabilityNeeded['output'],
-    tools: (capObj.tools as CapabilityNeeded['tools']) ?? [],
-    interaction: capObj.interaction as CapabilityNeeded['interaction'],
-    topology: (capObj.topology as CapabilityNeeded['topology']) ?? 'static',
+  return {
+    success: true,
+    needed: {
+      domain: capObj.domain as CapabilityNeeded['domain'],
+      input: capObj.input as CapabilityNeeded['input'],
+      output: capObj.output as CapabilityNeeded['output'],
+      tools: (capObj.tools as CapabilityNeeded['tools']) ?? [],
+      interaction: capObj.interaction as CapabilityNeeded['interaction'],
+      topology: (capObj.topology as CapabilityNeeded['topology']) ?? 'static',
+    },
+    errors: [],
   };
+}
+
+/**
+ * Core factory pipeline — testable without CLI concerns.
+ * Accepts either a capabilities YAML file or a plan directory.
+ */
+export async function runFactory(options: FactoryOptions): Promise<FactoryResult> {
+  const { inputFile, planDir, outputDir, fragmentsDir, catalogDir } = options;
+
+  let needed: CapabilityNeeded;
+
+  // Two input modes: capabilities file or plan directory
+  if (planDir) {
+    // Plan directory mode — derive capabilities from plan artifacts
+    const derived = await deriveCapabilitiesFromPlan(planDir);
+    if (!derived) {
+      return { success: false, errors: ['Failed to derive capabilities from plan — check plan.md/tasks.md exist and LLM is available'] };
+    }
+    needed = derived;
+  } else if (inputFile) {
+    // Capabilities file mode — parse directly
+    const result = parseCapabilityFile(inputFile);
+    if (!result.success) return { success: false, errors: result.errors };
+    needed = result.needed!;
+  } else {
+    return { success: false, errors: ['Either inputFile or planDir is required'] };
+  }
 
   // 5. Catalog match attempt
   if (catalogDir) {
@@ -170,12 +192,13 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
  * CLI entry point for `tx factory`.
  */
 export async function factory(args: string[]): Promise<void> {
-  const inputFile = args.find(a => !a.startsWith('-'));
-  if (!inputFile) {
-    console.log('Usage: tx factory <capabilities.yaml> [--output <dir>]');
+  const input = args.find(a => !a.startsWith('-'));
+  if (!input) {
+    console.log('Usage: tx factory <capabilities.yaml|plan-dir> [--output <dir>]');
     console.log('');
-    console.log('Reads a capabilities YAML file, matches against existing meshes,');
-    console.log('and generates a new mesh if no match is found.');
+    console.log('Input modes:');
+    console.log('  capabilities.yaml   Direct capability declaration');
+    console.log('  plan-dir/           Plan directory (derives capabilities from plan.md + tasks.md)');
     console.log('');
     console.log('Options:');
     console.log('  --output <dir>   Output directory for generated mesh');
@@ -195,9 +218,14 @@ export async function factory(args: string[]): Promise<void> {
 
   const fragmentsDir = path.resolve('src/mesh/fragments');
   const catalogDir = path.resolve('meshes');
+  const resolvedInput = path.resolve(input);
+
+  // Detect input mode: plan directory or capabilities file
+  const planMode = isPlanDirectory(resolvedInput);
 
   const result = await runFactory({
-    inputFile: path.resolve(inputFile),
+    inputFile: planMode ? undefined : resolvedInput,
+    planDir: planMode ? resolvedInput : undefined,
     outputDir,
     fragmentsDir,
     catalogDir,

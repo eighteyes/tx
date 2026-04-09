@@ -41,3 +41,9 @@ export {
 export { FragmentLoader, type PromptFragment } from './fragment-loader.ts';
 
 export { MeshFactory, type CompileResult } from './factory.ts';
+
+export {
+  isPlanDirectory,
+  getCachedCapabilities,
+  deriveCapabilitiesFromPlan,
+} from './plan-deriver.ts';
