@@ -60,8 +60,15 @@ const MCP_TOOLS: Record<string, { command: string; args: string[] }> = {
 };
 
 const BASE_PERMISSIONS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'];
+const READ_ONLY_PERMISSIONS = ['Read', 'Glob', 'Grep'];
 const DEFAULT_MAX_TURNS = 20;
 const MESSAGES_PER_AGENT = 15;
+
+/** Domains that are read-only by nature (no file modifications). */
+const READ_ONLY_DOMAINS = new Set(['review', 'reasoning']);
+
+/** Output types that warrant a workspace directory. */
+const WORKSPACE_OUTPUTS = new Set(['report', 'analysis', 'test-suite', 'plan', 'creative-content']);
 
 export class MeshFactory {
   private loader: FragmentLoader;
@@ -146,10 +153,12 @@ export class MeshFactory {
   }
 
   /**
-   * Derive permissions array from assigned tools.
+   * Derive permissions array from assigned tools and domain.
    */
-  private resolvePermissions(tools: string[]): string[] {
-    const perms = [...BASE_PERMISSIONS];
+  private resolvePermissions(domain: string, tools: string[]): string[] {
+    const perms = READ_ONLY_DOMAINS.has(domain)
+      ? [...READ_ONLY_PERMISSIONS]
+      : [...BASE_PERMISSIONS];
     const hasBash = tools.some(t => BASH_TOOLS.has(t));
     const hasWeb = tools.some(t => WEB_TOOLS.has(t));
 
@@ -160,7 +169,15 @@ export class MeshFactory {
   }
 
   /**
+   * Determine if the mesh needs a workspace based on output types.
+   */
+  private needsWorkspace(outputs: readonly string[]): boolean {
+    return outputs.some(o => WORKSPACE_OUTPUTS.has(o));
+  }
+
+  /**
    * Assemble a prompt markdown file from fragments.
+   * Collects all sections across fragments, then renders each section once (deduplicated).
    */
   private assemblePrompt(
     agentName: string,
@@ -169,13 +186,48 @@ export class MeshFactory {
     toolFragments: PromptFragment[],
     interactionFragments: PromptFragment[],
   ): string {
+    const allFragments = [domainFragment, ...toolFragments, ...interactionFragments].filter(
+      (f): f is PromptFragment => f !== null,
+    );
+
+    // Collect across all fragments
+    const allErrors: Array<Record<string, string>> = [];
+    const allConstraints: string[] = [];
+    const allAntiPatterns: string[] = [];
+    const allCapabilities: string[] = [];
+
+    for (const frag of allFragments) {
+      const errors = frag.sections['error-architecture'];
+      if (Array.isArray(errors)) {
+        for (const e of errors) {
+          if (typeof e === 'object' && e !== null) allErrors.push(e as Record<string, string>);
+        }
+      }
+      const constraints = frag.sections['constraints'];
+      if (Array.isArray(constraints)) {
+        for (const c of constraints) {
+          if (typeof c === 'string') allConstraints.push(c);
+        }
+      }
+      const antiPatterns = frag.sections['anti-patterns'];
+      if (Array.isArray(antiPatterns)) {
+        for (const ap of antiPatterns) {
+          if (typeof ap === 'string') allAntiPatterns.push(ap);
+        }
+      }
+      const caps = frag.sections['capabilities'];
+      if (Array.isArray(caps)) {
+        for (const c of caps) {
+          if (typeof c === 'string') allCapabilities.push(c);
+        }
+      }
+    }
+
     const lines: string[] = [];
 
-    // Title
+    // Title + comment header
     lines.push(`# ${agentName}`);
     lines.push('');
-
-    // Comment header
     lines.push('<!--');
     lines.push(`name: ${agentName}`);
     lines.push(`description: ${domain} domain agent`);
@@ -183,8 +235,8 @@ export class MeshFactory {
     lines.push('-->');
     lines.push('');
 
+    // Identity (domain fragment)
     if (domainFragment) {
-      // Identity
       const identity = domainFragment.sections['identity'];
       if (typeof identity === 'string') {
         lines.push('## Identity');
@@ -219,115 +271,69 @@ export class MeshFactory {
           }
         }
       }
-
-      // Error handling
-      const errorArch = domainFragment.sections['error-architecture'];
-      if (Array.isArray(errorArch)) {
-        lines.push('## Error Handling');
-        lines.push('');
-        lines.push('| Condition | Response |');
-        lines.push('|-----------|----------|');
-        for (const entry of errorArch) {
-          if (typeof entry === 'object' && entry !== null) {
-            const e = entry as Record<string, string>;
-            lines.push(`| ${e.condition ?? ''} | ${e.response ?? ''} |`);
-          }
-        }
-        lines.push('');
-      }
-
-      // Anti-patterns
-      const antiPatterns = domainFragment.sections['anti-patterns'];
-      if (Array.isArray(antiPatterns)) {
-        lines.push('## Anti-Patterns');
-        lines.push('');
-        for (const ap of antiPatterns) {
-          if (typeof ap === 'string') lines.push(`- ${ap}`);
-        }
-        lines.push('');
-      }
     }
 
-    // Tool capabilities
-    if (toolFragments.length > 0) {
+    // Capabilities (consolidated from all tool fragments)
+    if (allCapabilities.length > 0) {
       lines.push('## Capabilities');
       lines.push('');
-      for (const frag of toolFragments) {
-        const caps = frag.sections['capabilities'];
-        if (Array.isArray(caps)) {
-          for (const c of caps) {
-            if (typeof c === 'string') lines.push(`- ${c}`);
-          }
-        }
-
-        // Tool constraints
-        const constraints = frag.sections['constraints'];
-        if (Array.isArray(constraints)) {
-          lines.push('');
-          lines.push('**Constraints:**');
-          for (const c of constraints) {
-            if (typeof c === 'string') lines.push(`- ${c}`);
-          }
-        }
-
-        // Tool error architecture
-        const toolErrors = frag.sections['error-architecture'];
-        if (Array.isArray(toolErrors)) {
-          lines.push('');
-          lines.push('| Condition | Response |');
-          lines.push('|-----------|----------|');
-          for (const entry of toolErrors) {
-            if (typeof entry === 'object' && entry !== null) {
-              const e = entry as Record<string, string>;
-              lines.push(`| ${e.condition ?? ''} | ${e.response ?? ''} |`);
-            }
-          }
-        }
-        lines.push('');
-      }
+      for (const c of allCapabilities) lines.push(`- ${c}`);
+      lines.push('');
     }
 
-    // Interaction fragments
-    if (interactionFragments.length > 0) {
-      for (const frag of interactionFragments) {
-        const wp = frag.sections['workflow-phase'];
-        if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
-          const phase = wp as Record<string, string>;
-          lines.push(`## ${phase.name ?? 'Interaction'}`);
-          lines.push('');
-          if (phase.description) lines.push(phase.description);
-          if (phase.position) lines.push(`*${phase.position}*`);
-          lines.push('');
-        }
+    // Error Handling (single consolidated table from all fragments)
+    if (allErrors.length > 0) {
+      lines.push('## Error Handling');
+      lines.push('');
+      lines.push('| Condition | Response |');
+      lines.push('|-----------|----------|');
+      for (const e of allErrors) {
+        lines.push(`| ${e.condition ?? ''} | ${e.response ?? ''} |`);
+      }
+      lines.push('');
+    }
 
-        const outputSpec = frag.sections['output-spec'];
-        if (outputSpec && typeof outputSpec === 'object' && !Array.isArray(outputSpec)) {
-          const spec = outputSpec as Record<string, string>;
-          for (const [key, val] of Object.entries(spec)) {
-            if (typeof val === 'string') {
-              lines.push(`**${key}:**`);
-              lines.push(val.trim());
-              lines.push('');
-            }
-          }
-        }
+    // Constraints (single consolidated list)
+    if (allConstraints.length > 0) {
+      lines.push('## Constraints');
+      lines.push('');
+      for (const c of allConstraints) lines.push(`- ${c}`);
+      lines.push('');
+    }
 
-        const constraints = frag.sections['constraints'];
-        if (Array.isArray(constraints)) {
-          lines.push('**Constraints:**');
-          for (const c of constraints) {
-            if (typeof c === 'string') lines.push(`- ${c}`);
-          }
-          lines.push('');
-        }
+    // Anti-Patterns (single consolidated list)
+    if (allAntiPatterns.length > 0) {
+      lines.push('## Anti-Patterns');
+      lines.push('');
+      for (const ap of allAntiPatterns) lines.push(`- ${ap}`);
+      lines.push('');
+    }
 
-        const antiPatterns = frag.sections['anti-patterns'];
-        if (Array.isArray(antiPatterns)) {
-          lines.push('**Anti-patterns:**');
-          for (const ap of antiPatterns) {
-            if (typeof ap === 'string') lines.push(`- ${ap}`);
+    // Interaction sections (gate-exit, gate-entry, etc.)
+    for (const frag of interactionFragments) {
+      const wp = frag.sections['workflow-phase'];
+      if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
+        const phase = wp as Record<string, string>;
+        lines.push(`## ${phase.name ?? 'Interaction'}`);
+        lines.push('');
+        if (phase.description) lines.push(phase.description);
+        if (phase.position) lines.push(`*${phase.position}*`);
+        lines.push('');
+      }
+
+      const outputSpec = frag.sections['output-spec'];
+      if (typeof outputSpec === 'string') {
+        lines.push('**Output format:**');
+        lines.push(outputSpec.trim());
+        lines.push('');
+      } else if (outputSpec && typeof outputSpec === 'object' && !Array.isArray(outputSpec)) {
+        const spec = outputSpec as Record<string, string>;
+        for (const [key, val] of Object.entries(spec)) {
+          if (typeof val === 'string') {
+            lines.push(`**${key}:**`);
+            lines.push(val.trim());
+            lines.push('');
           }
-          lines.push('');
         }
       }
     }
@@ -349,7 +355,7 @@ export class MeshFactory {
         model: 'sonnet',
         prompt: `${a.name}/prompt.md`,
         permissions: {
-          allowedTools: this.resolvePermissions(a.tools),
+          allowedTools: this.resolvePermissions(a.domain, a.tools),
         },
       };
 
@@ -376,7 +382,7 @@ export class MeshFactory {
       };
     }
 
-    return {
+    const config: Record<string, unknown> = {
       mesh: meshName,
       description: `Generated mesh for ${needed.domain.join(' + ')} workflow.`,
       type: 'ephemeral',
@@ -385,17 +391,25 @@ export class MeshFactory {
       agents,
       routing_mode: 'static',
       routing: agentNames,
-      guardrails: {
-        max_mesh_messages: { limit: agentDefs.length * MESSAGES_PER_AGENT, strict: true, warning: true },
-        agents: guardrailAgents,
-      },
-      capability: {
-        domain: [...needed.domain],
-        input: [...needed.input],
-        output: [...needed.output],
-        tools: [...needed.tools],
-        interaction: [...needed.interaction],
-      },
     };
+
+    // Add workspace for output types that need file isolation
+    if (this.needsWorkspace(needed.output)) {
+      config.workspace = { path: `.ai/output/${meshName}/` };
+    }
+
+    config.guardrails = {
+      max_mesh_messages: { limit: agentDefs.length * MESSAGES_PER_AGENT, strict: true, warning: true },
+      agents: guardrailAgents,
+    };
+    config.capability = {
+      domain: [...needed.domain],
+      input: [...needed.input],
+      output: [...needed.output],
+      tools: [...needed.tools],
+      interaction: [...needed.interaction],
+    };
+
+    return config;
   }
 }
