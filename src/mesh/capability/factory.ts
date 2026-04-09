@@ -51,6 +51,14 @@ const BASH_TOOLS = new Set(['git', 'spec-graph', 'worktree']);
 /** Tools that grant web permissions. */
 const WEB_TOOLS = new Set(['web-search']);
 
+/** Tools that require MCP server config. */
+const MCP_TOOLS: Record<string, { command: string; args: string[] }> = {
+  'mcp-playwright': {
+    command: 'npx',
+    args: ['@anthropic-ai/mcp-playwright'],
+  },
+};
+
 const BASE_PERMISSIONS = ['Read', 'Write', 'Edit', 'Glob', 'Grep'];
 const DEFAULT_MAX_TURNS = 20;
 const MESSAGES_PER_AGENT = 15;
@@ -335,24 +343,42 @@ export class MeshFactory {
     agentDefs: Array<{ name: string; domain: string; tools: string[] }>,
     needed: CapabilityNeeded,
   ): Record<string, unknown> {
-    const agents = agentDefs.map(a => ({
-      name: a.name,
-      model: 'sonnet',
-      prompt: `${a.name}/prompt.md`,
-      permissions: {
-        allowedTools: this.resolvePermissions(a.tools),
-      },
-    }));
+    const agents = agentDefs.map(a => {
+      const agentConfig: Record<string, unknown> = {
+        name: a.name,
+        model: 'sonnet',
+        prompt: `${a.name}/prompt.md`,
+        permissions: {
+          allowedTools: this.resolvePermissions(a.tools),
+        },
+      };
+
+      // Add MCP server config for tools that need it
+      const mcpServers: Record<string, unknown> = {};
+      for (const tool of a.tools) {
+        if (MCP_TOOLS[tool]) {
+          mcpServers[tool.replace('mcp-', '')] = MCP_TOOLS[tool];
+        }
+      }
+      if (Object.keys(mcpServers).length > 0) {
+        agentConfig.mcpServers = mcpServers;
+      }
+
+      return agentConfig;
+    });
 
     const agentNames = agentDefs.map(a => a.name);
 
-    const guardrailAgents: Record<string, { max_turns: number }> = {};
+    const guardrailAgents: Record<string, unknown> = {};
     for (const name of agentNames) {
-      guardrailAgents[name] = { max_turns: DEFAULT_MAX_TURNS };
+      guardrailAgents[name] = {
+        max_turns: { limit: DEFAULT_MAX_TURNS, strict: true, warning: true },
+      };
     }
 
     return {
       mesh: meshName,
+      description: `Generated mesh for ${needed.domain.join(' + ')} workflow.`,
       type: 'ephemeral',
       auto_despawn: true,
       dev_mode: true,
@@ -360,7 +386,7 @@ export class MeshFactory {
       routing_mode: 'static',
       routing: agentNames,
       guardrails: {
-        max_mesh_messages: agentDefs.length * MESSAGES_PER_AGENT,
+        max_mesh_messages: { limit: agentDefs.length * MESSAGES_PER_AGENT, strict: true, warning: true },
         agents: guardrailAgents,
       },
       capability: {
