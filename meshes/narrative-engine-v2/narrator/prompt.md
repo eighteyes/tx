@@ -316,11 +316,25 @@ If `author.yaml → prose_structure.closer` exists, render the closing passage y
 - Match the tone of the final beat — this is where the scene lands
 - Not necessarily resolution — can be question, suspension, or pivot
 
-#### 4f. Assemble and Validate
+#### 4f. Assemble, Stitch, and Validate
 
 After all beat Tasks return:
 
-1. **Assemble** in beat order: establishing shot → beat 1 prose → ... → extra beats → closer. Separate beats with `---` markers. Editor handles stitch and smoothing downstream.
+1. **Assemble and stitch** in beat order: establishing shot → beat 1 prose → ... → extra beats → closer.
+
+   **Stitch rules (apply inline during assembly):**
+   - **Remove all `---` separators** between prose sections. Replace with transitional sentences or paragraph breaks as the scene demands. The reader should never feel a structural boundary between beats.
+   - **Smooth tonal transitions** — when two beats have different registers (e.g., analytical → intimate, or confrontational → reflective), add a bridging sentence or let the shift happen through a character's physical action. Goal is continuity, not homogenization — preserve each beat's distinct register but make the shifts feel earned.
+   - **Cut redundant openings** — if beat 3 re-establishes the room/characters that beat 2 already described, cut the redundant detail.
+   - **Hunt and kill thesis statements** — sentences that explain WHY a character did what the preceding sentence just SHOWED:
+     - "Because she'd been seen" after shoulders dropping = cut
+     - "The architecture she'd built had broken" after body moving = cut
+     - "Not X but Y" explaining motivation hierarchy = cut
+     - Sentences starting with "Because" that editorialize physical action = cut
+     The physical action IS the meaning. The reader doesn't need a gloss.
+   - **Verify physical continuity** across beat boundaries — character positions, objects in hand, who's touching whom. If beat 3 has a character at the desk but beat 2 ended with them across the room, add the crossing.
+   - **Preserve tonal variety** — each beat has its own register. A command beat should sound different from a sensory beat, an operational beat different from a vulnerable one. Smooth the joints, keep the tones.
+
 2. **Verify voice differentiation** — check that characters sound distinct across the full assembled prose. The SWAP TEST: if you can swap a line between characters and it still works, rewrite it.
 3. **Verify word count** against tempo targets:
    - close-up: 2500-3500 total
@@ -328,8 +342,6 @@ After all beat Tasks return:
    - sequence: 1500-2500 total
    - montage: 1200-2000 total
 4. **Check dialogue ratio** against author.yaml balance
-
-**Do NOT smooth transitions or remove beat markers.** Editor handles stitching. Your job is generation and validation, not editorial polish.
 
 **Self-containment principle:** Each turn's prose should work as a standalone scene. The establishing shot orients a cold reader; the closer gives them a place to land. The beats between are the scene itself.
 
@@ -410,7 +422,7 @@ Include thread context in beat Task prompts when `beat_mode` is `thread` or `col
 
 **Low action_weight scenes (0.0–0.3):**
 - Most beats will be thread-driven. The prose should feel like two people living. There may be no arc within this turn. That's correct.
-- If action emerges mid-scene (beat switching from `thread` to `action` mode), the stitch pass ensures the transition feels natural.
+- If action emerges mid-scene (beat switching from `thread` to `action` mode), your assembly stitch ensures the transition feels natural.
 
 ### Phase 5: Hand Off to Lint Pipeline
 1. Write `prose-draft.md` to workspace
@@ -438,7 +450,7 @@ Include thread context in beat Task prompts when `beat_mode` is `thread` or `col
    bash ./meshes/narrative-engine-v2/scripts/lint-engine-bleed.sh {workspace} {game_path} {campaign_path}
    ```
    This script extracts labels from entity files (trait names, seed IDs, condition IDs, bond mechanics) and checks if they appear in prose. Engine concepts are instructions for the narrator, not words for the reader. Any match is a CREATIVE violation — rewrite to show the effect, not name the mechanism.
-7. Send message to **lint-patterns** — mechanical lints complete, creative chain begins. Editor handles the rest.
+7. Send message to **lint-check** — prose-draft ready, lint pipeline begins.
 </instructions>
 
 ## The Author's Voice
