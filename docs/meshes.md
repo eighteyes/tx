@@ -277,6 +277,20 @@ TX routes tasks to meshes based on pattern matching. Here's what triggers each:
 | "should I", "analyze", "compare", "tradeoffs" | structured-thinking |
 | "build feature", "isolated development" | dev-worktree |
 
+## Generating Meshes (Factory)
+
+When no existing mesh fits, generate a purpose-built one from capability requirements:
+
+```bash
+tx factory capabilities.yaml              # from capability YAML
+tx factory .ai/plan/my-plan/              # from plan directory (auto-derives capabilities)
+tx factory caps.yaml --run "task prompt"  # generate + dispatch immediately
+```
+
+Generated meshes live at `.ai/tx/generated-meshes/{capability-hash}/` and load on demand when messaged. Same capabilities reuse the existing mesh without recompiling.
+
+See `src/mesh/capability/schema.ts` for the capability enum vocabulary.
+
 ## Creating New Meshes
 
 See the [mesh-builder skill](../.claude/skills/mesh-builder/SKILL.md) for:

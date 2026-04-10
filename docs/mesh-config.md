@@ -549,16 +549,25 @@ task_distribution:
 - **Default**: `false`
 - **Behavior**: Enables brain-update lifecycle hook for documenting insights.
 
-### `capabilities`
-- **Type**: `string[]`
-- **Required**: No
-- **Behavior**: Tags for agent capability matching. Used for intent-based routing.
+### `capability`
+- **Type**: `object`
+- **Required**: No (recommended for catalog matching)
+- **Behavior**: Structured declaration of what this mesh provides. Used by `tx factory` for mechanical set-coverage matching: `mesh.provides ⊇ plan.needs`.
 
 ```yaml
-capabilities:
-  - code-review
-  - refactoring
+capability:
+  domain: [dev, review]             # problem space
+  input: [codebase, spec]           # what the mesh accepts
+  output: [code-changes, report]    # what the mesh produces
+  tools: [git, worktree]            # special tools needed
+  interaction: [gate-exit]          # human involvement pattern
 ```
+
+All fields are arrays of enum values. `domain`, `input`, `output`, `interaction` must be non-empty. `tools` can be empty. Valid values defined in `src/mesh/capability/schema.ts`.
+
+### `capabilities` (deprecated)
+- **Type**: `string[]`
+- **Behavior**: Legacy free-form tags. Replaced by structured `capability` block above.
 
 ### `config`
 - **Type**: `object`

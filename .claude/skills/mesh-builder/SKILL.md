@@ -1340,7 +1340,7 @@ guardrails:
 |-------|------|-------------|
 | `dev_mode` | boolean | Force all agents to haiku for cheap workflow testing. Remove before production. |
 | `brain` | boolean | Inject brain access prompt into all agents. Agents learn they can message `brain/brain` for project questions (architecture, dependencies, design rationale). Skipped for the brain mesh itself. |
-| `capabilities` | array | Agent capability tags |
+| `capability` | object | Structured capability declaration for catalog matching (`domain`, `input`, `output`, `tools`, `interaction` — enum arrays). See `src/mesh/capability/schema.ts` for valid values. |
 | `config` | object | Custom mesh-specific settings |
 | `idle_timeout_minutes` | number/false | Idle timeout (false=disabled) |
 | `clear-before` | boolean | Clear state before run |
