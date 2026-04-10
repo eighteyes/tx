@@ -163,13 +163,33 @@ Wait for response. On Confirm → write director-notes (if staging derived), the
 
 **On confirmation, write director-notes.yaml if choreography was derived:**
 
-If action_weight > 0.5 and staging was shown in HITL (or player refined it), write the confirmed staging:
+If action_weight > 0.5 and staging was shown in HITL (or player refined it), write the confirmed staging.
+
+**Register Guide Injection**: Before writing director-notes, determine the scene type and inject the matching register guide from author.yaml (if present):
 
 ```bash
-echo '{"turn": N, "focus": "{focus}", "tone": "{tone}", "choreography": [{"beat": 1, "function": "{beat function}", "bodies": "{concrete physical actions}"}, {"beat": 2, "function": "{beat function}", "bodies": "{concrete physical actions}"}], "physical_rules": ["{rule1}", "{rule2}"], "constraints": []}' | $SCRIPTS/write-state.sh {workspace} director-notes
+# Determine scene type from action_weight + intent content:
+# explicit      — action_weight > 0.5 AND physical/sexual intent (bodies, undressing, sex, arousal)
+# violent       — combat, injury, physical conflict
+# conspiratorial — deception, dual-register dialogue, hidden agenda
+# intimate      — close physical proximity, low action (holding, resting together, quiet closeness)
+# action        — chase, kinetic movement, physical urgency
+
+# Read register guide for the matched scene type:
+REGISTER_GUIDE=$(export TX_ROOT="/path/to/tx-core" && $SCRIPTS/read-state.sh {game_path} author --key="register_guides.{scene_type}" 2>/dev/null)
+
+# If no match or author has no register_guides, omit the field entirely.
 ```
 
-If Step 0 already wrote director-notes from an explicit `## Director Notes` section, merge both: write a combined object that includes the pass-through fields (`notes`, `word_count`, `beat_count`) AND the choreography fields (`focus`, `tone`, `choreography`, `physical_rules`). Overwrite mode — single write covers everything.
+Include `register_guide` in the director-notes JSON when a match is found:
+
+```bash
+echo '{"turn": N, "focus": "{focus}", "tone": "{tone}", "choreography": [{"beat": 1, "function": "{beat function}", "bodies": "{concrete physical actions}"}, {"beat": 2, "function": "{beat function}", "bodies": "{concrete physical actions}"}], "physical_rules": ["{rule1}", "{rule2}"], "constraints": [], "register_guide": {register_guide_object_or_omit_key}}' | $SCRIPTS/write-state.sh {workspace} director-notes
+```
+
+`register_guide` is the raw object from author.yaml (e.g. `{"pov": "...", "sound": "...", "reaction": "..."}`). Omit the key entirely when no match is found — do not write `null`.
+
+If Step 0 already wrote director-notes from an explicit `## Director Notes` section, merge both: write a combined object that includes the pass-through fields (`notes`, `word_count`, `beat_count`) AND the choreography fields (`focus`, `tone`, `choreography`, `physical_rules`) AND `register_guide` if matched. Overwrite mode — single write covers everything.
 
 If action_weight < 0.3 and no explicit physical descriptions → skip. Do not write director-notes unless Step 0 produced one.
 

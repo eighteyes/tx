@@ -79,7 +79,7 @@ ls {workspace}/prose.md {workspace}/prose-draft.md 2>/dev/null
    - `intent` — player's raw input (`raw_input`), structured intent, and locked action/dialogue
    - `context` — scene setup, player action
    - `dramaturg-notes` — story-aware guidance
-   - `director-notes` — **if present**, player's creative direction (tone, dialogue emphasis, word count targets, beat targets, constraints). These are authoritative — override default assumptions about pacing, dialogue density, and scene structure.
+   - `director-notes` — **if present**, player's creative direction (tone, dialogue emphasis, word count targets, beat targets, constraints). These are authoritative — override default assumptions about pacing, dialogue density, and scene structure. When `register_guide` is present in director-notes, treat it as craft direction for this scene type's prose register — it overrides default rendering instincts for POV, sound design, and reaction rendering.
    - `resolution` — mechanical outcomes (includes `world_event` if world acted)
    - `scene_script` — **beat-by-beat scene script with character voices, time, props, pacing** (PRIMARY INPUT)
    - `threads` — **life thread data** (action_weight, character threads, collisions, beat guidance) — for thread-aware rendering

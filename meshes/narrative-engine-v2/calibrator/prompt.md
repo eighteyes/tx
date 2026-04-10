@@ -516,6 +516,48 @@ interpretive_frames:
 
 **Extract to:** author → `interpretive_frames`
 
+**Step 8: Register Guides (Optional)**
+
+> Different scene types call for different craft. How should this story render its most charged moments?
+>
+> **Register guides** give the narrator craft direction — not permission to write a scene type, but HOW to write it when the story goes there.
+>
+> For each scene type you expect your story to include, you can define a short craft guide:
+>
+> - **Explicit** — sex and physical intimacy. What's the POV? Proprioceptive (inside the body) or observational? How does sound work? How do reactions land?
+> - **Violent** — combat, injury, physical conflict. First-person impact or aftermath? What does the body register?
+> - **Intimate** — quiet closeness. Shared breath, peripheral vision. How does the world contract?
+> - **Action** — chase, kinetic urgency. Where does attention land? How does time distort?
+> - **Conspiratorial** — scenes with hidden dual meaning. How does the surface conversation coexist with what's actually happening?
+>
+> You can define as many or as few as you like. Each guide has: `pov` (point-of-view technique), `sound` (how sound is rendered), `reaction` (how characters register events). Optional: `escalation`, `comedy`.
+>
+> **Defaults will be used for any scene type you skip** — the narrator has good instincts. These guides override those instincts when you have a specific vision.
+
+**If player provides guides, extract:**
+```yaml
+register_guides:
+  explicit:
+    pov: "{POV technique — e.g. proprioceptive, observational, fragmented}"
+    sound: "{how sound works in this register}"
+    reaction: "{how reactions land — involuntary, delayed, mirrored, etc.}"
+    escalation: "{optional — how intensity builds}"
+    comedy: "{optional — how humor coexists}"
+  violent:
+    pov: "..."
+    sound: "..."
+    reaction: "..."
+  intimate:
+    pov: "..."
+    sound: "..."
+    reaction: "..."
+  # add action, conspiratorial as needed
+```
+
+**If player declines:** Do not add `register_guides` to author.yaml. The narrator will use default prose instincts. (For existing games, `register_guides` can be added manually to author.yaml at any time — changes take effect immediately.)
+
+**Extract to:** author → `register_guides`
+
 8. Refine author.yaml based on all selections
 8. Re-render and confirm
 9. **Iterate until player says "yes, that's it"**
