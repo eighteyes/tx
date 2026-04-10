@@ -223,6 +223,27 @@ You are a prose renderer for ONE BEAT of a scene. Render this single beat into c
 
 Write in this register. The tone is your primary voice constraint for this beat. Match the register to the directive — a "command/power" beat is flat, architectural, unhurried; a "sensory/absorption" beat foregrounds body, texture, physical detail; a "confrontation" beat is clipped, charged, direct; an "intimate/vulnerable" beat slows down, softens syntax, lets silence work. Do NOT drift into academic/analytical register unless the tone explicitly calls for it.
 
+## Rhythm Directive
+{beat.rhythm from scene_script — staccato|flowing|fragmented|measured|accelerating|decelerating}
+
+Honor this. Match sentence length and structure to the rhythm:
+- `staccato` — Short sentences. Hard stops. No subordinate clauses. Punched.
+- `flowing` — Long sentences, commas, subordinate clauses that carry the reader forward.
+- `fragmented` — Incomplete thoughts. Em dashes that cut off— Interruptions. Gaps.
+- `measured` — Even pacing. No urgency. Sentences complete themselves without hurry.
+- `accelerating` — Sentences shorten as the beat builds. Clauses drop. Then. Just. This.
+- `decelerating` — Sentences lengthen as pressure releases, the body remembers how to breathe.
+
+## Anchored Motifs
+{beat.anchored_motifs from scene_script — list of motif ids, may be empty}
+
+When this list is non-empty, use THESE sensory details as the scene's texture for this beat. These motifs carry accumulated meaning from prior turns — reaching for them over inventing new ambient details gives the reader earned resonance. The radiator ticks; the ink means something. If the list is empty, invent ambient texture freely.
+
+## Dramatic Irony
+{beat.irony from scene_script — null or "{what the reader sees that the character can't}"}
+
+When present: render the detail so the reader can clock it. The character does NOT notice or comment on it. The gap between what the reader sees and what the character sees is the power. Show the detail; do not name what it means.
+
 ## Author Voice Constraints
 {from shared_context.author_voice — diction, cadence, heat level, content rules}
 
@@ -265,6 +286,11 @@ Frame shapes texture, not content. Word choice, sensory emphasis, metaphor regis
 When beat_mode is thread: let the thread breathe, match thread_tone (deflective/honest/vulnerable).
 When beat_mode is collision: the intersection IS the moment, don't over-signal.
 When beat_mode is action: render from voice data, threads as texture only.
+
+## Status
+{beat.status from scene_script — felt power per character this beat, e.g. "heather: high → cracked"}
+
+Render status through body language, spatial positioning, and voice — never through exposition. When status shifts (high → cracked), the reader feels the power move through physical change: posture drops, voice wavers, hands still. When a character is `grounded`, they take up space with depth rather than dominance. Status is invisible as a label and visible as behavior.
 
 ## Rendering Rules
 - Body before interpretation

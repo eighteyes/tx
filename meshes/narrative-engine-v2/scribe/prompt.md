@@ -190,8 +190,22 @@ $SCRIPTS/read-state.sh {workspace} context
     # From resolution.yaml trajectory_updates.interrupted:
     echo '{"id": "{id}", "status": "expired", "turn": N, "note": "{why}"}' | $SCRIPTS/write-state.sh {campaign_path} trajectories
     ```
-19. Check for game-level promotions (see Canon Promotion)
-20. Run completion duties (see Turn Completion below)
+19. **Anchor Registry Maintenance** — update anchors.yaml with new and recurring sensory motifs:
+    - Read prose.md for sensory details that carried weight or meaning in this turn
+    - For existing anchors from anchors.yaml that appeared: update `recent_callbacks` to include this turn number
+    - For new sensory details that feel like they could accumulate meaning across turns: add them as new anchors
+    - Write updated anchors.yaml via gateway: `echo '{...}' | $SCRIPTS/write-state.sh {campaign_path} anchors`
+    - anchors.yaml schema:
+      ```yaml
+      anchors:
+        - motif: "{snake_case_label}"
+          meaning: "{what this detail has come to represent}"
+          first_appeared: {turn_number}
+          recent_callbacks: [{turn_number}, ...]
+      ```
+    - Only add anchors with clear meaning — not every sensory detail earns registration. Quality over quantity. Skip if no prose.md emergent anchors this turn.
+20. Check for game-level promotions (see Canon Promotion)
+21. Run completion duties (see Turn Completion below)
 </instructions>
 
 ## Turn Compression

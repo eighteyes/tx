@@ -564,6 +564,12 @@ manifest:
     autoInject: false # 1600+ lines at 46 turns — too large for preload. Agents query via campaign.sh for surgical access.
     reads: [oracle, scribe, dramaturg] # Agents query via campaign.sh facts
     writes: [scribe] # Scribe writes via campaign.sh
+  - id: anchors.yaml
+    description: "Sensory anchor registry — motifs with accumulated meaning, first appearances, recent callbacks. Sim-planner assigns 1-2 anchors per beat. Narrator reaches for these instead of inventing ambient texture. Scribe maintains after each turn."
+    location: campaign
+    persistent: true
+    reads: [sim-planner, narrator, dramaturg]
+    writes: [scribe]
   # RETIRED: these files were never implemented by scribe
   # Uncomment and implement if needed in future
   # - id: history.md

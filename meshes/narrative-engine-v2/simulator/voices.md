@@ -375,6 +375,11 @@ script:
     collision: null
     frame: null
     tone: "{prose register for this beat — from sim-plan. Narrator renders each beat in this register independently to prevent tone bleed}"
+    rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating — from sim-plan}"
+    irony: null  # or "{what reader sees that character can't — from sim-plan, carry through verbatim}"
+    anchored_motifs: []  # motif ids from sim-plan — narrator reaches for these as sensory texture
+    status:  # felt power per character this beat — from sim-plan, carry through verbatim
+      "{char_a}": "{value}"
     direction: "{1-line summary of what happens}"
     ambient: "{resolved environment texture}"
     voices:
