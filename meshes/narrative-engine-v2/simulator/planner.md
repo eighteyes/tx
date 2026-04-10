@@ -365,6 +365,72 @@ When a beat is thread-driven, note which thread + direction table to roll agains
 
 When `threads.yaml` lists collisions with weight >20, plan beats where both characters' threads meet. Note the collision_id and both thread contexts.
 
+### Step 6b: Register Sequencing (Multi-Register Scenes)
+
+After drafting beats in Step 6, run a register sequencing pass. This step overrides the `tone` field on beats when the scene pulls from multiple content registers simultaneously.
+
+**This step is a FALLBACK.** If `director-notes.yaml` contains a `choreography` array, the player already confirmed a staging. Skip this step — choreography encodes the register sequence. Set `register_sequence.source: choreography` and continue to Step 7.
+
+#### Identify Active Registers
+
+Using data already read in Steps 2–4, check each register against the conditions below:
+
+| Register | Active when |
+|----------|-------------|
+| `explicit` | `action_weight > 0.5` AND (physical bond ≥ 3 OR sexual bond ≥ 3) AND intent contains a physical/sexual action |
+| `conspiratorial` | Conspiracy-tagged threads have weight > 15, OR collisions involve deception/operation/intelligence |
+| `intimate` | Emotional bond ≥ 4 AND scene has ≤ 2 characters AND no conflict/confrontation in intent |
+| `violent` | Conflict collisions present (weight > 10) OR intent contains confrontation/attack/physical harm |
+| `action` | `action_weight > 0.7` AND intent contains movement/chase/physical effort unrelated to sexual content |
+
+Register names match keys in `author.yaml → register_guides`. If `register_guides` is absent from author.yaml, skip this step entirely.
+
+#### Single vs. Multi-Register
+
+- **1 active register** → no sequencing pass. Tones from Step 6 stand. Record `register_sequence.source: single-register`.
+- **2+ active registers** → apply the sequencing logic below.
+
+#### Sequencing Logic
+
+1. **Rank registers by pressure.** For each active register, sum the collision scores or thread weights that activated it. Higher pressure = more beats.
+
+2. **Allocate beats by pressure ratio.** Higher-pressure register gets more beats in the sequence. Round to the nearest beat. The total must equal the planned beat count.
+   - Example: 7 beats, explicit score 23 vs conspiratorial score 18 → explicit gets 4 beats, conspiratorial gets 3.
+
+3. **Opening beat:** Use the LOWER-intensity register. The opening establishes context; higher-register material needs something to escalate from.
+
+4. **Alternation:** Strictly alternate registers between beats following the `interleave_not_braid` principle from `register_guides`. Registers alternate between beats — they do NOT merge within a single beat.
+
+5. **Closing beat:** The final beat uses the emotional aftermath register:
+   - After `explicit` → drop to `intimate`
+   - After `violent` → drop to `intimate` or `conspiratorial`
+   - After `conspiratorial` → stay `conspiratorial` or drop to `intimate`
+   - After `action` → drop to `intimate` or `conspiratorial`
+
+6. **Override the `tone` field** on each beat with the sequenced register name. All other beat fields (`function`, `mode`, `thread`, `collision`, `notes`, `rhythm`, etc.) are unchanged — only `tone` is replaced.
+
+#### Record Register Sequence
+
+Write the result into `sim-plan.yaml` under `register_sequence`:
+
+```yaml
+register_sequence:
+  source: auto            # auto | choreography | single-register
+  active_registers: [explicit, conspiratorial]
+  pressure_ranking:
+    - register: explicit
+      score: 23
+      beat_count: 4
+    - register: conspiratorial
+      score: 18
+      beat_count: 3
+  opening_register: conspiratorial
+  closing_register: intimate
+  pattern: interleave
+```
+
+If `source: single-register`, omit `pressure_ranking` and `pattern`.
+
 ### Step 7: Select Interpretive Frames
 
 If `interpretive_frames` exists in author params:
@@ -459,6 +525,14 @@ tempo:
 scene_temperature: "{what this scene is ABOUT emotionally — 1-2 lines. Passed to voice Tasks. Derive from intent + character psychology + bond state. What charge does every gesture carry?}"
 
 adjusted_frame_weights: {scene-adjusted weights with rationale}
+
+register_sequence:          # from Step 6b
+  source: "{auto|choreography|single-register}"
+  active_registers: [...]   # omit if single-register
+  pressure_ranking: [...]   # omit if single-register
+  opening_register: "{register}"
+  closing_register: "{register}"
+  pattern: interleave       # omit if single-register
 
 character_psychology: [...]  # full psychology blocks for all characters
 
