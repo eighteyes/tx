@@ -268,16 +268,15 @@ export async function factory(args: string[]): Promise<void> {
     return;
   }
 
-  // --run: write initial message to start the mesh
-  if (runPrompt && (result.matched || result.generated)) {
-    const meshName = result.meshName!;
-    const entryAgent = await resolveEntryPoint(meshName, result.matched, result.generated);
-    if (!entryAgent) {
-      console.error('Could not resolve entry point agent for mesh');
-      process.exitCode = 1;
-      return;
-    }
+  // Resolve entry point for routing info and --run dispatch
+  const meshName = result.meshName!;
+  const entryAgent = await resolveEntryPoint(meshName, result.matched, result.generated);
+  if (entryAgent) {
+    console.log(`Route to: ${meshName}/${entryAgent}`);
+  }
 
+  // --run: write initial message to start the mesh
+  if (runPrompt && entryAgent) {
     const msgsDir = path.resolve('.ai/tx/msgs');
     fs.mkdirSync(msgsDir, { recursive: true });
 

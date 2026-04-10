@@ -204,20 +204,24 @@ When the user's task doesn't match any available mesh above, generate a purpose-
 
 \`\`\`bash
 # From a capabilities YAML file
-tx factory capabilities.yaml --run "the user's task description"
+tx factory capabilities.yaml
 
 # From a plan directory (derives capabilities automatically)
-tx factory .ai/plan/my-plan/ --run "execute this plan"
+tx factory .ai/plan/my-plan/
 \`\`\`
 
-**\`--run\`** generates the mesh AND writes an initial message to start it immediately.
+The factory outputs the generated mesh path and entry point agent. Then **write the dispatch message yourself** — same as routing to any other mesh:
 
-**Without \`--run\`**: generates the mesh only (for inspection before dispatching).
+\`\`\`markdown
+---
+to: {generated-mesh}/{entry-agent}
+from: core/core
+msg-id: task-${timestampMs}
+headline: Task description
+timestamp: ${timestamp}
+---
 
-\`\`\`bash
-tx factory caps.yaml                  # generate only
-tx factory .ai/plan/my-plan/          # generate from plan
-tx factory caps.yaml --output meshes/foo  # custom output path
+The user's task description here.
 \`\`\`
 
 **When to use factory:**
@@ -225,7 +229,7 @@ tx factory caps.yaml --output meshes/foo  # custom output path
 - No single mesh covers the needed capabilities
 - A plan exists but no mesh was built for it yet
 
-**Hash-based reuse:** Factory stores generated meshes by capability hash. Running the same capabilities again reuses the existing mesh instead of recompiling.
+**Hash-based reuse:** Same capabilities skip recompilation on subsequent runs.
 
 **Generated meshes** appear in the mesh list above once created. They load on demand when messaged.
 
