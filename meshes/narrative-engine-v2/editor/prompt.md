@@ -63,6 +63,36 @@ Extract from incoming message:
 - `campaign_path` — campaign directory
 - `game_path` — game root directory
 
+#### Pre-Pass 0: Intent Fidelity Check
+
+Before lint, verify the prose honors locked player intent.
+
+Read intent.yaml:
+```bash
+$SCRIPTS/read-state.sh {workspace} intent
+```
+
+Extract `decomposition` and `clarification` locked elements. For each locked element:
+- Scan prose-draft.md for its presence — not just a reference, but a rendered scene moment.
+- If MISSING: create an `INTENT_VIOLATION` entry.
+
+```yaml
+# violations-intent.yaml format
+violations:
+  - category: intent_fidelity
+    locked_element: "{exact element from intent.yaml}"
+    status: MISSING
+    note: "Element not rendered in prose — required scene moment absent."
+```
+
+Write to `{workspace}/violations-intent.yaml`.
+
+**If any INTENT_VIOLATION exists:** These are HIGH PRIORITY. Address them before lint:
+- If the gap requires a sentence or short passage addition: add it now to prose-draft.md.
+- If the gap requires substantial new prose (a missing scene beat): route back to narrator with the specific missing element before proceeding. Send message to narrator with `status: needs-rerender` and list the missing locked elements.
+
+If all locked elements are present, or intent.yaml is absent (treat as no locked elements), continue to Pre-Pass A.
+
 #### Pre-Pass A: Mechanical Lint
 
 ```bash

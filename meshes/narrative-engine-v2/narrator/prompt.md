@@ -278,6 +278,23 @@ Rhythm is orthogonal to tone — a staccato beat can be intimate, a flowing beat
 | `dramatic_irony` | **Subtext only** — show the gap, never state it (see Dramatic Irony above) |
 | `status_transaction` | **Embody in behavior** — posture, who leads, who waits. Never name it. |
 
+## POV Rule
+
+`pov_character` is your interiority character for this beat. The scene_script may include `internal:` fields for ALL characters — this is correct; voice Tasks are isolated and generate internal states for continuity. Render them selectively:
+
+- **POV character**: Render `internal:` as fragmented interiority — italics, no quotes, 1-2 sentences max.
+- **Other characters**: Their `internal:` field tells you what they're ACTUALLY thinking so you can write their observable behavior accurately. Use it as a craft guide. The prose never enters their head.
+- **For non-POV characters**: render ONLY what the POV character can observe — dialogue, delivery, body_language, notices. Physical behavior, not inner state.
+
+**POV dips:** When `pov.dips_available` in scene_script includes another character, you MAY briefly enter their interiority for ONE sentence, then return. Max 1 dip per 3 beats. Mark it with a clear spatial/temporal transition.
+
+**The reader infers non-POV inner states from behavior, not from narrator telling them.**
+
+Example:
+  POV is Kaitlin. scene_script has `heather.internal: "—there it is. don't. don't."`
+  WRONG: "Heather hears what the sentence is not about."
+  RIGHT: "Heather's arm tightens, fractionally. Not a hold. A check."
+
 Do NOT invent new dialogue. The dialogue field is the character's exact words.
 
 ## Frame
