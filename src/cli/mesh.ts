@@ -23,6 +23,7 @@
  *   tx mesh health [mesh]         Reliability dashboard (SLI nines, circuit breakers, safe mode)
  *   tx mesh dlq [mesh]            Dead letter queue entries with recovery modes
  *   tx mesh dlq clear             Clear recovered DLQ entries
+ *   tx mesh tool-audit [mesh...]   Per-agent tool call breakdown (Reads/Bash/Tasks/Writes)
  */
 
 import { MessageQueue, FSMPersistence } from '../queue/index.ts';
@@ -3781,6 +3782,255 @@ async function meshRecover(meshName: string | undefined, flags: MeshFlags): Prom
   }
 }
 
+/**
+ * Tool Call Audit — per-agent tool usage breakdown for a mesh run
+ *
+ * Parses v4.jsonl "Tools" entries to count tool calls by agent and category.
+ * Uses "SDK metrics" entries for model info. Scopes to last run by default.
+ *
+ * Categories:
+ *   Reads  = Read, Grep, Glob
+ *   Bash   = Bash
+ *   Tasks  = TaskCreate, TaskUpdate, TaskList, TaskGet, TaskOutput, TaskStop
+ *   Writes = Write, Edit, NotebookEdit
+ *   Other  = everything else (Agent, WebSearch, WebFetch, etc.)
+ */
+
+interface ToolAuditAgent {
+  agent: string;
+  model: string;
+  reads: number;
+  bash: number;
+  tasks: number;
+  writes: number;
+  other: number;
+  total: number;
+}
+
+const TOOL_BUCKETS: Record<string, keyof Pick<ToolAuditAgent, 'reads' | 'bash' | 'tasks' | 'writes'>> = {
+  Read: 'reads', Grep: 'reads', Glob: 'reads',
+  Bash: 'bash',
+  TaskCreate: 'tasks', TaskUpdate: 'tasks', TaskList: 'tasks',
+  TaskGet: 'tasks', TaskOutput: 'tasks', TaskStop: 'tasks',
+  Write: 'writes', Edit: 'writes', NotebookEdit: 'writes',
+};
+
+async function toolAudit(meshNames: string[], flags: MeshFlags): Promise<void> {
+  const cwd = process.env.TX_CWD || process.cwd();
+  const logsDir = path.join(cwd, '.ai/tx/logs');
+
+  // Collect log files (same rotation pattern as meshCost/meshFlow)
+  const logFiles: string[] = [];
+  const currentLog = path.join(logsDir, 'v4.jsonl');
+  if (fs.existsSync(currentLog)) logFiles.push(currentLog);
+  for (let i = 1; i <= 4; i++) {
+    const logPath = path.join(logsDir, `v4.${i}.jsonl`);
+    if (fs.existsSync(logPath)) logFiles.push(logPath);
+  }
+
+  if (logFiles.length === 0) {
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No log files found', hint: 'Run a mesh first.' }));
+    } else {
+      console.log(chalk.yellow('No log files found.'));
+      console.log(chalk.dim('Run a mesh first.'));
+    }
+    return;
+  }
+
+  // Determine which meshes to audit
+  const meshFilter = meshNames.length > 0 ? meshNames : null;
+  const matchesMesh = (workerId: string): boolean => {
+    if (!meshFilter) return true;
+    return meshFilter.some(m => workerId.startsWith(`${m}/`));
+  };
+
+  // Collect all lines, find last run boundary per mesh
+  const allLines: string[] = [];
+  for (const logFile of logFiles) {
+    const content = fs.readFileSync(logFile, 'utf-8');
+    allLines.push(...content.split('\n').filter(Boolean));
+  }
+
+  // Find run boundaries for scoping
+  let timeWindowStart = 0;
+  let timeWindowEnd = Infinity;
+
+  if (!flags.all && meshFilter && meshFilter.length === 1) {
+    const boundaries = parseMeshRunBoundaries(allLines, meshFilter[0]);
+    if (boundaries.length > 0) {
+      const lastRun = boundaries[boundaries.length - 1];
+      timeWindowStart = lastRun.startMs;
+      timeWindowEnd = lastRun.endMs ?? Infinity;
+    }
+  } else if (!flags.all && !meshFilter) {
+    // No mesh specified, no --all: find the latest run across all meshes
+    // Use the latest "Mesh run started" timestamp as a heuristic
+    let latestStart = 0;
+    let latestEnd: number | null = null;
+    for (const line of allLines) {
+      let entry: Record<string, unknown>;
+      try { entry = JSON.parse(line); } catch { continue; }
+      if (entry.message !== 'Mesh run started' && entry.message !== 'Mesh run completed') continue;
+      const data = entry.data as Record<string, unknown> | undefined;
+      if (!data) continue;
+      const ts = Date.parse(entry.timestamp as string);
+      if (entry.message === 'Mesh run started' && ts > latestStart) {
+        latestStart = ts;
+        latestEnd = null;
+      }
+      if (entry.message === 'Mesh run completed' && ts > (latestEnd ?? 0)) {
+        latestEnd = ts;
+      }
+    }
+    if (latestStart > 0) {
+      timeWindowStart = latestStart;
+      timeWindowEnd = latestEnd ?? Infinity;
+    }
+  }
+
+  // Aggregate tool calls and model info
+  const agentMap = new Map<string, ToolAuditAgent>();
+
+  const ensureAgent = (workerId: string): ToolAuditAgent => {
+    let rec = agentMap.get(workerId);
+    if (!rec) {
+      rec = { agent: workerId, model: '', reads: 0, bash: 0, tasks: 0, writes: 0, other: 0, total: 0 };
+      agentMap.set(workerId, rec);
+    }
+    return rec;
+  };
+
+  for (const line of allLines) {
+    let entry: Record<string, unknown>;
+    try { entry = JSON.parse(line); } catch { continue; }
+
+    const ts = Date.parse(entry.timestamp as string);
+    if (ts < timeWindowStart || ts > timeWindowEnd) continue;
+
+    const data = entry.data as Record<string, unknown> | undefined;
+    if (!data?.workerId) continue;
+
+    const workerId = data.workerId as string;
+    if (!matchesMesh(workerId)) continue;
+
+    if (entry.message === 'Tools') {
+      const toolsStr = data.tools as string;
+      // Can be comma-separated for parallel tool calls
+      const toolNames = toolsStr.split(', ').map(t => t.trim()).filter(Boolean);
+      const rec = ensureAgent(workerId);
+      for (const toolName of toolNames) {
+        const bucket = TOOL_BUCKETS[toolName];
+        if (bucket) {
+          rec[bucket]++;
+        } else {
+          rec.other++;
+        }
+        rec.total++;
+      }
+    } else if (entry.message === 'Starting worker' || entry.message === 'SDK metrics' || entry.message === 'SDK metrics (resume)') {
+      const rec = ensureAgent(workerId);
+      const model = data.model as string | undefined;
+      if (model && !rec.model) rec.model = model;
+    }
+  }
+
+  if (agentMap.size === 0) {
+    const scope = meshFilter ? meshFilter.join(', ') : 'any mesh';
+    if (flags.json) {
+      console.log(JSON.stringify({ error: 'No tool data found', scope }));
+    } else {
+      console.log(chalk.yellow(`No tool data found for ${scope} in log files.`));
+      console.log(chalk.dim('Run a mesh first, or try --all for all runs.'));
+    }
+    return;
+  }
+
+  const agents = Array.from(agentMap.values()).sort((a, b) => b.total - a.total);
+
+  // JSON output
+  if (flags.json) {
+    console.log(JSON.stringify({ agents, scope: meshFilter ?? 'all' }, null, 2));
+    return;
+  }
+
+  // Human output — aligned columns
+  console.log();
+  console.log(chalk.bold('Tool Call Audit'));
+  if (!flags.all) console.log(chalk.dim('Last run' + (meshFilter ? `: ${meshFilter.join(', ')}` : '')));
+  else console.log(chalk.dim('All runs' + (meshFilter ? `: ${meshFilter.join(', ')}` : '')));
+  console.log();
+
+  // Calculate column widths
+  const shortName = (id: string): string => id.split('/').slice(1).join('/') || id;
+  const shortModel = (m: string): string => {
+    if (!m) return '?';
+    if (m.includes('opus')) return 'opus';
+    if (m.includes('sonnet')) return 'sonnet';
+    if (m.includes('haiku')) return 'haiku';
+    return m.split('-').slice(0, 2).join('-');
+  };
+
+  const nameW = Math.max(5, ...agents.map(a => shortName(a.agent).length));
+  const modelW = Math.max(5, ...agents.map(a => shortModel(a.model).length));
+  const numW = 6;
+
+  const pad = (s: string, w: number) => s.padEnd(w);
+  const rpad = (n: number, w: number) => String(n).padStart(w);
+
+  // Header
+  console.log(chalk.dim(
+    `${pad('Agent', nameW)}  ${pad('Model', modelW)}  ${'Reads'.padStart(numW)}  ${'Bash'.padStart(numW)}  ${'Tasks'.padStart(numW)}  ${'Writes'.padStart(numW)}  ${'Total'.padStart(numW)}`
+  ));
+  console.log(chalk.dim(
+    `${'─'.repeat(nameW)}  ${'─'.repeat(modelW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}`
+  ));
+
+  // Find worst offender
+  const maxTotal = Math.max(...agents.map(a => a.total));
+
+  for (const a of agents) {
+    const name = shortName(a.agent);
+    const model = shortModel(a.model);
+    const isWorst = a.total === maxTotal && agents.length > 1;
+
+    const line = `${pad(name, nameW)}  ${pad(model, modelW)}  ${rpad(a.reads, numW)}  ${rpad(a.bash, numW)}  ${rpad(a.tasks, numW)}  ${rpad(a.writes, numW)}  ${rpad(a.total, numW)}`;
+
+    if (isWorst) {
+      console.log(`${line}   ${chalk.yellow('← worst offender')}`);
+    } else {
+      console.log(line);
+    }
+  }
+
+  // Totals row
+  const totals = agents.reduce(
+    (acc, a) => ({
+      reads: acc.reads + a.reads,
+      bash: acc.bash + a.bash,
+      tasks: acc.tasks + a.tasks,
+      writes: acc.writes + a.writes,
+      other: acc.other + a.other,
+      total: acc.total + a.total,
+    }),
+    { reads: 0, bash: 0, tasks: 0, writes: 0, other: 0, total: 0 }
+  );
+
+  console.log(chalk.dim(
+    `${'─'.repeat(nameW)}  ${'─'.repeat(modelW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}  ${'─'.repeat(numW)}`
+  ));
+  console.log(chalk.bold(
+    `${pad('TOTAL', nameW)}  ${pad('', modelW)}  ${rpad(totals.reads, numW)}  ${rpad(totals.bash, numW)}  ${rpad(totals.tasks, numW)}  ${rpad(totals.writes, numW)}  ${rpad(totals.total, numW)}`
+  ));
+
+  // Other tools note
+  if (totals.other > 0) {
+    console.log(chalk.dim(`\n  ${totals.other} calls to uncategorized tools (Agent, WebSearch, etc.)`));
+  }
+
+  console.log();
+}
+
 function printUsage(): void {
   console.log(`
 ${chalk.bold('Usage:')} tx mesh <action> [mesh] [options]
@@ -3807,6 +4057,7 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('dlq clear')}               Clear recovered DLQ entries
   ${chalk.cyan('recover')} <mesh>           Trigger DLQ recovery (session resume or requeue)
   ${chalk.cyan('recover')} --all            Recover all pending DLQ entries
+  ${chalk.cyan('tool-audit')} [mesh...]     Per-agent tool call breakdown (Reads/Bash/Tasks/Writes)
 
 ${chalk.bold('Options:')}
   ${chalk.dim('--json')}                  Output as JSON
@@ -3833,6 +4084,9 @@ ${chalk.bold('Examples:')}
   tx mesh dump dev-tdd
   tx mesh dump dev-tdd --json
   tx mesh dump --all
+  tx mesh tool-audit narrative-engine
+  tx mesh tool-audit sim-v2 --json
+  tx mesh tool-audit --all
 `);
 }
 
@@ -4009,6 +4263,12 @@ export async function mesh(args: string[]): Promise<void> {
       case 'recover':
         await meshRecover(meshName, flags);
         break;
+
+      case 'tool-audit': {
+        const auditMeshNames = nonFlagArgs.slice(1).filter(a => !a.startsWith('-'));
+        await toolAudit(auditMeshNames, flags);
+        break;
+      }
 
       default:
         printUsage();

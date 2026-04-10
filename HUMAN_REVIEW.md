@@ -1632,3 +1632,91 @@ tx prompt <mesh> <branch-agent>
 tx prompt <mesh> <terminal-agent>
 ```
 - [ ] Confirm: "You are a terminal agent" text appears
+
+## Autonomous Pipeline (God Mode + Injection Retry)
+Date: 2026-04-09
+Session: autonomous-pipeline
+Commit: uncommitted
+
+### What Was Done
+1. **Injection retry** — `injectPrompt()` sends a second Enter after 1s unconditionally to prevent stalled dispatch loops
+2. **SDK sandbox for workers** — god mode workers get `sandbox.enabled + autoAllowBashIfSandboxed + filesystem.allowWrite:[workDir]`
+3. **Verified --god-mode flag chain** — already wired end-to-end, no change needed
+
+### Files Changed
+- `src/core/tmux.ts` — added retry Enter after 1s delay in `injectPrompt()`
+- `src/worker/sdk-runner.ts` — added `SandboxSettings` import + sandbox config in both `query()` calls
+- `CLAUDE.md` — added God Mode section documenting autonomous operation
+
+### Verification Steps
+
+#### 1. TypeScript compiles (pre-existing errors only)
+```bash
+npx tsc --noEmit 2>&1 | grep sandbox
+```
+- [ ] No sandbox-related errors
+
+#### 2. God mode flag chain intact
+```bash
+grep -n 'godMode' src/cli/start.ts src/worker/dispatcher.ts src/worker/permissions.ts src/worker/sdk-runner.ts
+```
+- [ ] Confirm: start.ts sets env var + passes to dispatcher, dispatcher passes to runner config, permissions resolves bypassPermissions, sdk-runner builds sandbox config
+
+#### 3. Injection retry works
+- [ ] Start tx with `tx start --god-mode`
+- [ ] Send a mesh task, watch tmux pane
+- [ ] Confirm: two Enter keystrokes visible (500ms gap + 1s gap)
+- [ ] Confirm: injection lands even if first Enter was flaky
+
+#### 4. Sandbox fences workers to project dir
+- [ ] Start with `tx start --god-mode`
+- [ ] Dispatch a mesh that writes files
+- [ ] Confirm: worker writes succeed within project dir
+- [ ] Confirm: worker cannot write outside project dir (check logs for sandbox violations)
+
+#### 5. Workers don't prompt for permissions
+- [ ] Start with `tx start --god-mode`
+- [ ] Dispatch a mesh, walk away for a few minutes
+- [ ] Confirm: worker completes without stalling on permission prompts
+- [ ] Confirm: completion message reaches core and core dispatches next task
+
+#### 6. Full autonomous loop
+- [ ] Start with `tx start --god-mode`
+- [ ] Give core a list of 3+ tasks
+- [ ] Walk away for 10+ minutes
+- [ ] Return, run `tx trace` to see completed work
+- [ ] Confirm: all tasks processed sequentially without stalls
+
+## tx mesh tool-audit
+Date: 2026-04-10
+Session: tool-audit-implementation
+
+### Verify command works
+
+```
+tx mesh tool-audit --all
+```
+- [ ] Table renders with aligned columns, model names resolve (not "?")
+- [ ] Worst offender label appears on highest-total agent
+
+```
+tx mesh tool-audit <your-mesh-name>
+```
+- [ ] Only agents from that mesh appear
+- [ ] Scopes to last run (fewer entries than --all)
+
+```
+tx mesh tool-audit <mesh> --json
+```
+- [ ] Valid JSON output with `agents` array and `scope` field
+
+```
+tx mesh tool-audit
+```
+- [ ] No mesh filter: shows last run across all meshes
+
+### Verify help text
+```
+tx mesh
+```
+- [ ] `tool-audit` appears in Actions list and Examples
