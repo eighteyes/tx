@@ -114,19 +114,11 @@ agents:
     # 9-phase extraction loop via HITL messages to core
     # Creates author.yaml, setting.yaml, arc.yaml, entities
     # Hands off to narrator for prologue when complete
-  - name: lint-check
-    model: haiku
-    prompt: editor/lint-check.md
-    continuation: false
-    # Haiku gate — runs mechanical-lint.sh + 3 parallel creative lint Tasks (sonnet)
-    # Counts total violations: > 0 → editor, == 0 → copy prose-draft to prose.md → scribe
-    permissions:
-      allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
   - name: editor
     model: opus
     prompt: editor/prompt.md
     continuation: true
-    # Fires only when lint-check found violations — applies fixes + adversarial prose review
+    # Lint pipeline (mechanical + 3 parallel creative Tasks) + adversarial prose review against author.yaml
     permissions:
       allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
   - name: visual
@@ -146,22 +138,25 @@ agents:
 # ==========================================
 # LINT PIPELINE (parallel)
 # ==========================================
-# lint-check (haiku) runs mechanical-lint.sh + engine-bleed lint + 3 parallel sonnet Tasks
-# Gate: violations > 0 → editor. Zero violations → prose-draft promoted to prose.md → scribe.
-# Editor (opus) fires only when violations found — applies fixes + adversarial review.
-# Stitch pass (beat boundary smoothing) moved to narrator Phase 4f.
+# Mechanical lints run as script in narrator Phase 5 (mechanical-lint.sh)
+# Creative lints: linter fires 3 parallel sonnet Tasks (patterns, temporal, metaphor)
+# Linter collects violations, applies fixes, always routes to editor
 #
-# RETIRED agents (collapsed into lint-check + refs):
+# RETIRED agents (collapsed into linter + refs):
 # - lint-patterns, lint-temporal, lint-metaphor
 # RETIRED agents (now in mechanical-lint.sh):
 # - lint-forbidden-words, lint-ai-tells, lint-cadence, lint-dialogue
 # - lint-body-first, lint-litotes
 # RETIRED agents (oracle already covers):
 # - lint-factoids, lint-props
-# RETIRED: linter — lint pipeline merged into editor, then split to lint-check + editor
+
+# RETIRED: linter — lint pipeline merged into editor (linter was 21% of pipeline cost, 8 crashes)
+# Editor now runs mechanical-lint.sh + 3 parallel creative lint Tasks before stitch + holistic review
 # - name: linter
 #   model: sonnet
 #   prompt: linters/prompt.md
+#   permissions:
+#     allowedTools: [Read, Write, Edit, Bash, Glob, Grep, Task, TaskOutput]
 
 entry_point: entry
 # Two completion agents for different workflows (first-wins):
@@ -183,8 +178,7 @@ routing:
   # Messages to core/core are implicitly HITL (session pauses).
   # The system infers routing from destination.
   #
-  # Phase flow: entry → game-coord|init-turn → gravity → dramaturg → entropy-gen → dramaturg → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → lint-check → editor (conditional, violations only) → visual (opt-in) → scribe → core
-  #                                                                                                                                                                                                                                              └─(clean)→ scribe → core
+  # Phase flow: entry → game-coord|init-turn → gravity → dramaturg → entropy-gen → dramaturg → sim-planner → sim-tables → sim-voices → oracle ⇄ sim-voices → narrator → editor (lint + stitch + review) → visual (opt-in) → scribe → core
   # (Old chain v1: init-turn → fates → dramaturg → possibility → system → cast → scene-crafter → oracle → dialogue → narrator)
   # (Old chain v2: entropy-architect → cast → scene-crafter → oracle → dialogue → narrator)
   # Prep chain: direct agent-to-agent routing, no coordinator. Recovery via state-discovery.sh --next
@@ -250,7 +244,7 @@ routing:
   narrator:
     message:
       oracle: "Knowledge query"
-      lint-check: "Prose draft complete — run lint pipeline"
+      editor: "Prose draft complete — lint + stitch + review"
       scribe: "Prologue complete — finalize and deliver"
   oracle:
     message:
@@ -265,12 +259,8 @@ routing:
   #     editor: "Prose linted and fixed → adversarial review"
 
   # ==========================================
-  # LINT-CHECK + EDITOR
+  # EDITOR
   # ==========================================
-  lint-check:
-    message:
-      editor: "Violations found — apply fixes + adversarial review"
-      scribe: "Zero violations — prose-draft promoted to prose.md, skip editor"
   editor:
     message:
       scribe: "Prose finalized → compress and complete"
@@ -326,13 +316,10 @@ guardrails:
     narrator:
       max_messages:
         limit: 40
-    lint-check:
-      max_messages:
-        limit: 10
-    # linter retired — lint pipeline merged into editor, then split to lint-check + editor
+    # linter retired — lint pipeline merged into editor
     editor:
       max_messages:
-        limit: 15
+        limit: 20
     calibrator:
       max_messages:
         limit: 30
@@ -434,25 +421,25 @@ manifest:
     reads: [narrator, editor]
     writes: [oracle]
   - id: prose-draft.md
-    description: Working prose draft — narrator writes, lint-check reads, editor fixes
+    description: Working prose draft — narrator writes, editor lints + fixes + reviews
     location: workspace
-    reads: [narrator, lint-check, editor]
+    reads: [narrator, editor]
     writes: [narrator, editor]
   - id: prose.md
     description: Final approved prose output for the turn
     location: workspace
-    reads: [scribe, visual, narrator, editor, lint-check]
-    writes: [editor, lint-check]
+    reads: [scribe, visual, narrator, editor]
+    writes: [editor]
   - id: visual.yaml
     description: Multi-beat emotional visualization briefs with style variants
     location: workspace
     reads: [scribe]
     writes: [visual]
   - id: violations.yaml
-    description: Mechanical lint violations — written by mechanical-lint.sh in lint-check, read by creative lint Tasks for deconfliction and by editor for fix application
+    description: Mechanical lint violations — written by mechanical-lint.sh in editor pre-pass, read by creative lint Tasks for deconfliction
     location: workspace
-    reads: [lint-check, editor]
-    writes: [narrator, lint-check]
+    reads: [editor]
+    writes: [narrator, editor]
   - id: story-concordance.txt
     description: Cumulative word frequency data for cross-turn overuse detection
     location: game
@@ -577,12 +564,6 @@ manifest:
     autoInject: false # 1600+ lines at 46 turns — too large for preload. Agents query via campaign.sh for surgical access.
     reads: [oracle, scribe, dramaturg] # Agents query via campaign.sh facts
     writes: [scribe] # Scribe writes via campaign.sh
-  - id: anchors.yaml
-    description: "Sensory anchor registry — motifs with accumulated meaning, first appearances, recent callbacks. Sim-planner assigns 1-2 anchors per beat. Narrator reaches for these instead of inventing ambient texture. Scribe maintains after each turn."
-    location: campaign
-    persistent: true
-    reads: [sim-planner, narrator, dramaturg]
-    writes: [scribe]
   # RETIRED: these files were never implemented by scribe
   # Uncomment and implement if needed in future
   # - id: history.md

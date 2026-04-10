@@ -119,9 +119,9 @@ For each beat in the plan, execute the full table→roll sequence:
 
 Fire ALL Tasks simultaneously using `Agent`. Scale to scene complexity:
 
-**Minimum (2-character scene):** 2 character + 1 environment + 1 complication = 4 Tasks
-**Typical (2-char, rich environment):** 2 character + 2 environment + 1 complication = 5 Tasks
-**Complex (3+ characters, threshold scene):** 3+ character + 2-3 environment + 1-2 complication = 8+ Tasks
+**Minimum (2-character scene):** 2 character + 2 tactic + 1 status + 1 environment + 1 complication = 7 Tasks
+**Typical (2-char, rich environment):** 2 character + 2 tactic + 1 status + 2 environment + 1 complication = 8 Tasks
+**Complex (3+ characters, threshold scene):** 3+ character + 3+ tactic + 1 status + 2-3 environment + 1-2 complication = 11+ Tasks
 
 **Fire a character table for EVERY active character in the beat.** If two characters are present, both get tables. If a third walks up, they get a table too.
 
@@ -331,6 +331,86 @@ Rules: snake_case results, sensory/physical only (NOT character emotion), last o
 - **Sensory-rich scene** (crowded bar, outdoor market): fire `environment_acoustic` + `environment_visual` + `environment_olfactory`
 - **Simple scene** (two people in a room): one environment table is enough
 
+### Tactic Table (haiku) — one per active character per beat
+
+**Task prompt template:**
+
+```
+You generate ONE tactic table for ONE character in ONE beat. A tactic is HOW this character pursues their objective in this moment — their METHOD, not their outcome.
+
+## Character
+{character_id}
+Objective in this beat: "{what this character is trying to get or do}"
+Trait pressures: {dominant trait and pressure level}
+
+## Tactic Options (use these as seed vocabulary, adapt to character)
+reward, withhold, redirect, mirror, escalate, retreat, provoke, comfort, expose, distract, defer, demand, seduce, confess, deflect
+
+Generate a table with **4-5 outcomes** covering range 1-100. Weight based on character traits — a character with high fear dimension defers or retreats; a character with high power dimension escalates or demands. Return ONLY this YAML:
+
+```yaml
+table_id: sim_beat_{N}_tactic_{character_id}
+outcomes:
+  - range: 1-{X}
+    branch_result: {snake_case_tactic}
+    tactic_note: "{1 sentence — what this looks like physically/verbally}"
+  - range: {X+1}-{Y}
+    branch_result: {snake_case_tactic}
+    tactic_note: "{what this looks like}"
+  # ... 4-5 outcomes total, ranges covering 1-100
+reasoning: "{why these weights for this character}"
+```
+
+Rules: snake_case branch_results, tactic is METHOD not outcome, last entry may be a character-specific unusual tactic (10-15%).
+```
+
+Roll tactic via bash after Task returns:
+```bash
+echo $((RANDOM % 100 + 1))
+```
+
+### Status Transaction Table (haiku) — one per beat
+
+**Task prompt template:**
+
+```
+You generate ONE status transaction table for ONE beat between two characters. Status is who holds social power in this moment — who's up, who's down, how it moves.
+
+## Characters
+Character A: {character_id_a} — structural power position: {bond.power.a}
+Character B: {character_id_b} — structural power position: {bond.power.b}
+
+## Status Options
+dominant_holds      — the higher-power character maintains dominance; the lower defers
+subtle_shift        — power moves one notch toward the lower-power character
+status_inversion    — momentary flip; lower-power character claims; higher yields
+mutual_level        — both drop performance; status equalizes briefly
+challenge_issued    — lower-power character directly contests the power structure
+submission_offered  — lower-power character explicitly cedes, deepening the asymmetry
+
+Generate a table with **4-6 outcomes** covering range 1-100. Weight based on current bond.power asymmetry — extreme asymmetry favors dominant_holds; near-equal power generates more inversion options. Return ONLY this YAML:
+
+```yaml
+table_id: sim_beat_{N}_status
+outcomes:
+  - range: 1-{X}
+    branch_result: {snake_case_status}
+    status_note: "{1 sentence — what this looks like between these specific characters}"
+  - range: {X+1}-{Y}
+    branch_result: {snake_case_status}
+    status_note: "{what this looks like}"
+  # ... 4-6 outcomes total, ranges covering 1-100
+reasoning: "{why these weights given the power asymmetry}"
+```
+
+Rules: snake_case branch_results, status is the DYNAMIC not the structural position, no disruption to continuous range.
+```
+
+Roll status via bash after Task returns:
+```bash
+echo $((RANDOM % 100 + 1))
+```
+
 ### Complication/World Event Table (haiku) — one or more per beat
 
 **Task prompt template:**
@@ -433,6 +513,21 @@ character_tables:
         branch_result: {id}
         mechanical_note: "{note}"
     reasoning: "{why}"
+    tactic_table:
+      table_id: sim_beat_{N}_tactic_{character_id}
+      outcomes:
+        - range: {range}
+          branch_result: {id}
+          tactic_note: "{note}"
+      reasoning: "{why}"
+
+status_table:
+  table_id: sim_beat_{N}_status
+  outcomes:
+    - range: {range}
+      branch_result: {id}
+      status_note: "{note}"
+  reasoning: "{why}"
 
 environment_tables:
   - table_id: sim_beat_{N}_environment
@@ -454,15 +549,19 @@ entropy_rolls:
   characters:
     - character: {character_id}
       roll: {value}
+      tactic_roll: {value}
   environment: [{value}]
   complication: {value}
+  status: {value}
 
 resolved:
   characters:
     - character: {character_id}
       result: {branch_result}
+      tactic: {branch_result}
   environment: [{branch_result}]
   complication: {branch_result}
+  status: {branch_result}
 ```
 
 **File naming**: `beat_tables/beat_01.yaml`, `beat_tables/beat_02.yaml`, etc. Zero-padded.
@@ -476,12 +575,21 @@ This is the **only file sim-voices reads** — it contains just the rolled resul
 ```yaml
 beat: {N}
 function: "{from sim-plan — what this beat accomplishes}"
+rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating — from sim-plan}"
+dramatic_irony: "{what the reader should notice that the character cannot — or null, from sim-plan}"
 rolled_outcomes:
   - character: {character_id}
     roll: {value}
     result_id: {branch_result}
     mechanical_note: "{note from resolved outcome}"
+    tactic_roll: {value}
+    tactic: {branch_result from tactic table}
+    tactic_note: "{what this tactic looks like}"
   # one entry per active character
+status_transaction:
+  roll: {value}
+  result: {branch_result from status table}
+  status_note: "{what this looks like between these characters}"
 environment:
   roll: {value}
   result_id: {branch_result}

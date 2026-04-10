@@ -93,7 +93,6 @@ From **campaign** (campaign directory) via `read-state.sh`:
 - `$SCRIPTS/read-state.sh {campaign} state` — arc pressure, momentum, phase, location
 - `$SCRIPTS/arc-read.sh {campaign}` — act-scoped arc context: dramatic questions, active seeds, current phase, trajectory. Future acts and activation conditions filtered.
 - `$SCRIPTS/read-state.sh {campaign} trajectories` — committed futures (Chekhov's Guns) — skip if missing
-- `$SCRIPTS/read-state.sh {campaign} anchors` — sensory anchor registry: motifs with accumulated meaning, first appearances, recent callbacks. Skip if missing (new campaigns won't have this yet).
 
 From **game root** via `read-state.sh`:
 - `$SCRIPTS/read-state.sh {game} character --list` then `$SCRIPTS/read-state.sh {game} character/{id}` for each — ALL character entity files (traits, wounds, voice_layers, life sections)
@@ -286,38 +285,40 @@ Derive tone from the beat's function, the intent, and scene_temperature:
 
 These are examples, not a fixed taxonomy. Write the tone that matches the beat. The tone tells narrator's per-beat renderer what register to write in — preventing one beat's register from contaminating the next.
 
-#### Rhythm Assignment
+#### Beat Rhythm Assignment
 
-Each beat gets a `rhythm` field — prose music directive that controls sentence length and structure in the rendered prose.
+Each beat gets a `rhythm` field — a sentence-structure directive for the narrator's prose renderer. Rhythm controls HOW the prose moves, not what it says.
 
-| Rhythm | When | Sentence shape |
-|--------|------|---------------|
-| `staccato` | Tension, fear, sex, violence | Short. Hard stops. Punched. |
-| `flowing` | Intimacy, memory, landscape | Long sentences, commas, subordinate clauses. |
-| `fragmented` | Dissociation, overload, shock | Incomplete thoughts. Em dashes— interruptions. |
-| `measured` | Control, strategy, deliberation | Even pacing, no urgency. |
-| `accelerating` | Building toward climax | Sentences shorten as beat intensifies. |
-| `decelerating` | Aftermath, coming down | Sentences lengthen, pressure releases. |
+Select rhythm from the beat's emotional shape and dramatic function:
 
-Assign based on beat function and emotional shape. Staccato for confrontation and violence. Flowing for intimacy and memory. Fragmented when a character is overloaded or dissociating.
+| Rhythm | Prose shape | Use when |
+|--------|-------------|----------|
+| `staccato` | Short. Clipped. Punched. Each sentence lands alone. | Tension, decision, impact, power assertion |
+| `flowing` | Long liquid sentences that unspool, clause following clause, carrying the reader forward without pause. | Intimacy, immersion, desire, sustained atmosphere |
+| `fragmented` | Mid-sentence breaks — body interrupting mind, thought caught | Overwhelm, dissociation, interior flood, shock |
+| `measured` | Deliberate pace. Weighted sentences. Space between beats. | Observation, dread, institutional authority, ceremony |
+| `accelerating` | Sentences compress as the beat builds — longer opening, shorter close, until the last line punches | Build toward rupture, escalating stakes, chase |
+| `decelerating` | Sentences expand as urgency drains — short opening, longer trailing | Aftermath, exhaustion, revelation settling, release |
 
-#### Dramatic Irony (Optional)
+Write the rhythm that matches the emotional arc of the beat, not just its surface tone. A tender beat can be staccato. A violent one can be flowing if it's inevitable.
 
-When information asymmetry exists in a beat — between characters, or between character and reader — add an `irony` field. Ask: "What should the reader notice that the character can't see?"
+#### Dramatic Irony Identification
 
-Include only when the gap is dramatically meaningful. Omit (or set null) when no asymmetry exists.
+After planning beats, scan for genuine dramatic irony opportunities — moments where the reader perceives something the character cannot.
 
-#### Status Transactions
+Sources of genuine irony:
+- **Thread collisions**: A character's stated concern maps onto what's happening to them, unnoticed
+- **Bond asymmetry**: What one character believes about the relationship contradicts what the bond data shows
+- **Entity state**: A character's wound or blind_spot makes them unable to see what's obvious to the reader
+- **Trajectory hooks**: A Chekhov's gun is live; the character handles it without awareness
 
-Each beat gets a `status` block — felt power per active character this beat. Status is not bond dimension — it's the live power dynamic in the moment.
+Only identify irony when it genuinely exists. Most beats: `dramatic_irony: null`. Forced irony is worse than none.
 
-Values: `high` (in command, holding space), `low` (compressed, diminished), `cracked` (high-status person breaking), `grounded` (low-status person with depth), `rising` (gaining power through the beat), `falling` (losing it).
+When irony exists, write it as a reader-facing observation — what the reader should catch, not an instruction to the narrator. The narrator renders it without stating it.
 
-Note shifts: `char_a: high → cracked`. The shift is the dramatic event.
-
-#### Anchored Motifs
-
-If anchors.yaml was read and contains motifs, assign 1-2 to each beat as `anchored_motifs`. These are the sensory details narrator reaches for instead of inventing new ambient texture. Skip if no anchors file exists.
+```yaml
+dramatic_irony: "Kaitlin's thesis argument ('the architecture of consent within') describes exactly what Heather is doing to her. She doesn't see it."
+```
 
 #### Expanding Entropy into Beat Notes
 
@@ -477,10 +478,7 @@ beat_plan:
       frame: null
       tone: "{prose register for this beat — e.g. command/power, sensory/absorption, tension/charged, dual-register, philosophical/irony, domestic/quiet, confrontation}"
       rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating}"
-      irony: null  # or "{what the reader sees that the character can't — only when gap is dramatically meaningful}"
-      anchored_motifs: []  # 1-2 motif ids from anchors.yaml — sensory callbacks with accumulated meaning
-      status:  # felt power per active character this beat; note shifts as "high → cracked"
-        "{char_a}": "{high|low|cracked|grounded|rising|falling}"
+      dramatic_irony: null
       active_characters: ["{char_a}", "{char_b}"]
       notes: "{expanded content — canon-grounded specifics that voice Tasks work from}"
     - beat: 2
@@ -492,11 +490,7 @@ beat_plan:
       frame: sensory
       tone: "{prose register for this beat — derived from function + intent + scene_temperature}"
       rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating}"
-      irony: null
-      anchored_motifs: []
-      status:
-        "{char_a}": "{value}"
-        "{char_b}": "{value}"
+      dramatic_irony: "{what the reader should notice that the character cannot — or null}"
       active_characters: ["{char_a}", "{char_b}"]
       notes: "{what actually happens — entropy direction + canon facts}"
       npc_context:  # ONLY when beat references off-screen characters

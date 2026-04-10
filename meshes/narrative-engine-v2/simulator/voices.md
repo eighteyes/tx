@@ -88,9 +88,11 @@ Extract:
 - Thread tracking state
 
 Read beat resolutions (intermediate files — direct read OK): `{workspace}/beat_resolutions/beat_{NN}.yaml` for each beat:
-- Rolled character results (`rolled_outcomes` — character, roll, result_id, mechanical_note)
+- Rolled character results (`rolled_outcomes` — character, roll, result_id, mechanical_note, tactic, tactic_note)
 - Rolled environment result (`environment` — roll, result_id, sensory_note)
 - Rolled complication result (`complication` — roll, result_id, mechanical_note)
+- Status transaction (`status_transaction` — roll, result, status_note)
+- Craft fields from sim-plan (`rhythm`, `dramatic_irony`) — pass these through to scene_script unchanged
 - Thread and collision data
 
 These are slim resolution files (~200B each). Full probability tables remain in `beat_tables/` as debug artifacts — do not read those.
@@ -225,6 +227,18 @@ This is the heat level. If the scene is about delayed gratification, every gestu
 ## Beat Direction
 {from beat_resolutions/beat_{NN}.yaml → rolled_outcomes[this_character].result_id — e.g., "confession_rush_opens", "armor_deflection_attempted"}
 This tells you the EMOTIONAL DIRECTION of this beat, not the exact words. You choose the words, timing, delivery.
+
+## Tactic
+{from beat_resolutions/beat_{NN}.yaml → rolled_outcomes[this_character].tactic — e.g., "reward", "withhold", "mirror"}
+Tactic note: "{tactic_note — what this looks like physically/verbally}"
+
+This is HOW the character pursues their objective in this beat. The tactic was rolled mechanically — the dice chose it. You render the specific tactic as natural behavior: in the choice of words, physical approach, what they withhold or offer. Do NOT name the tactic in dialogue or narration — show it.
+
+## Status
+{from beat_resolutions/beat_{NN}.yaml → status_transaction.result — e.g., "dominant_holds", "status_inversion", "subtle_shift"}
+Status note: "{status_note — what this looks like between these characters}"
+
+This is the power dynamic in this beat. Position this character accordingly: if dominant_holds, this character leads and the other follows; if status_inversion, the lower-power character claims the moment; if mutual_level, both drop performance. The status shapes posture, eye contact, who speaks first, who waits. Do NOT name the status — embody it.
 
 ## Beat Notes
 {from sim-plan — expanded content grounding the entropy direction in canon specifics}
@@ -375,13 +389,11 @@ script:
     collision: null
     frame: null
     tone: "{prose register for this beat — from sim-plan. Narrator renders each beat in this register independently to prevent tone bleed}"
-    rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating — from sim-plan}"
-    irony: null  # or "{what reader sees that character can't — from sim-plan, carry through verbatim}"
-    anchored_motifs: []  # motif ids from sim-plan — narrator reaches for these as sensory texture
-    status:  # felt power per character this beat — from sim-plan, carry through verbatim
-      "{char_a}": "{value}"
+    rhythm: "{staccato|flowing|fragmented|measured|accelerating|decelerating — from sim-plan. Narrator matches sentence structure to this.}"
+    dramatic_irony: "{what the reader should notice that the character cannot — or null. Narrator renders as subtext, never stated.}"
     direction: "{1-line summary of what happens}"
     ambient: "{resolved environment texture}"
+    status_transaction: "{rolled status result — e.g. dominant_holds, status_inversion. Narrator positions characters accordingly.}"
     voices:
       - character: {character_a}
         dialogue: "Hey."
@@ -389,6 +401,7 @@ script:
         body_language: "Approaches with deliberate steps"
         internal: "There they are. Relief calcifies into performance..."
         notices: "{character_b} across the quad"
+        tactic: "{rolled tactic for this character — shapes their approach, already rendered in voice data}"
     other: null
 
   # ... one entry per beat
@@ -447,6 +460,10 @@ entropy_audit:
 5. **other** — weave into scene, use narrative_weight for emphasis
 6. **ambient** — sensory layer around the action
 7. **frame** — adjust rendering lens per beat
+8. **tone** — prose register for this beat; prevents tone bleed
+9. **rhythm** — sentence structure directive; staccato = short punched sentences, flowing = long liquid sentences, fragmented = mid-sentence breaks, etc.
+10. **dramatic_irony** — render as subtext; the reader catches it, the character does not. Never state it.
+11. **status_transaction** — positions characters; embody in posture, who speaks first, who waits. Never name it.
 
 ## Player Choice in scene_script.yaml
 

@@ -226,23 +226,25 @@ Write in this register. The tone is your primary voice constraint for this beat.
 ## Rhythm Directive
 {beat.rhythm from scene_script — staccato|flowing|fragmented|measured|accelerating|decelerating}
 
-Honor this. Match sentence length and structure to the rhythm:
-- `staccato` — Short sentences. Hard stops. No subordinate clauses. Punched.
-- `flowing` — Long sentences, commas, subordinate clauses that carry the reader forward.
-- `fragmented` — Incomplete thoughts. Em dashes that cut off— Interruptions. Gaps.
-- `measured` — Even pacing. No urgency. Sentences complete themselves without hurry.
-- `accelerating` — Sentences shorten as the beat builds. Clauses drop. Then. Just. This.
-- `decelerating` — Sentences lengthen as pressure releases, the body remembers how to breathe.
+Rhythm controls sentence structure — the physical movement of prose through time. Honor it:
 
-## Anchored Motifs
-{beat.anchored_motifs from scene_script — list of motif ids, may be empty}
+| Rhythm | How to write it |
+|--------|----------------|
+| `staccato` | Short sentences. Each one complete. Each one lands. No connective tissue. The white space does work. |
+| `flowing` | Long sentences that carry the reader forward, clause unfolding into clause, the rhythm itself a kind of pull, unhurried and accumulating until you realize how far you've come. |
+| `fragmented` | Sentences that break mid — body interrupting mind. Thought caught before it finishes. The syntax IS the overwhelm. |
+| `measured` | Deliberate. Weighted. Each sentence earns its period. Space between ideas. Authority without urgency. |
+| `accelerating` | Open long, compress as the beat builds. Longer sentences at entry. Shorter. Shorter. Then the punch. |
+| `decelerating` | Open short, expand as urgency drains. Terse. Then more space. Then the long trailing sentence where the beat finally releases and everything slows down into what just happened. |
 
-When this list is non-empty, use THESE sensory details as the scene's texture for this beat. These motifs carry accumulated meaning from prior turns — reaching for them over inventing new ambient details gives the reader earned resonance. The radiator ticks; the ink means something. If the list is empty, invent ambient texture freely.
+Rhythm is orthogonal to tone — a staccato beat can be intimate, a flowing beat can be violent. Let both work simultaneously.
 
 ## Dramatic Irony
-{beat.irony from scene_script — null or "{what the reader sees that the character can't}"}
+{beat.dramatic_irony from scene_script — or null}
 
-When present: render the detail so the reader can clock it. The character does NOT notice or comment on it. The gap between what the reader sees and what the character sees is the power. Show the detail; do not name what it means.
+{if non-null}: The reader should perceive this without the character announcing it. Render the facts that produce the irony — let the reader make the connection. Write what the character does, not what it means. The irony lives in the gap between what the character sees and what the prose shows. NEVER state the irony. NEVER have the narrator explain it. One misplaced phrase of authorial commentary collapses it.
+
+{if null}: No irony directive for this beat. Render normally.
 
 ## Author Voice Constraints
 {from shared_context.author_voice — diction, cadence, heat level, content rules}
@@ -272,6 +274,9 @@ When present: render the detail so the reader can clock it. The character does N
 | `notices` | Build the perception layer — what characters observe |
 | `other` | Weave world events into texture |
 | `ambient` | Sensory layer — atmosphere, environment |
+| `rhythm` | **Sentence structure directive** — shape prose movement to match (see Rhythm Directive above) |
+| `dramatic_irony` | **Subtext only** — show the gap, never state it (see Dramatic Irony above) |
+| `status_transaction` | **Embody in behavior** — posture, who leads, who waits. Never name it. |
 
 Do NOT invent new dialogue. The dialogue field is the character's exact words.
 
@@ -286,11 +291,6 @@ Frame shapes texture, not content. Word choice, sensory emphasis, metaphor regis
 When beat_mode is thread: let the thread breathe, match thread_tone (deflective/honest/vulnerable).
 When beat_mode is collision: the intersection IS the moment, don't over-signal.
 When beat_mode is action: render from voice data, threads as texture only.
-
-## Status
-{beat.status from scene_script — felt power per character this beat, e.g. "heather: high → cracked"}
-
-Render status through body language, spatial positioning, and voice — never through exposition. When status shifts (high → cracked), the reader feels the power move through physical change: posture drops, voice wavers, hands still. When a character is `grounded`, they take up space with depth rather than dominance. Status is invisible as a label and visible as behavior.
 
 ## Rendering Rules
 - Body before interpretation
@@ -316,25 +316,11 @@ If `author.yaml → prose_structure.closer` exists, render the closing passage y
 - Match the tone of the final beat — this is where the scene lands
 - Not necessarily resolution — can be question, suspension, or pivot
 
-#### 4f. Assemble, Stitch, and Validate
+#### 4f. Assemble and Validate
 
 After all beat Tasks return:
 
-1. **Assemble and stitch** in beat order: establishing shot → beat 1 prose → ... → extra beats → closer.
-
-   **Stitch rules (apply inline during assembly):**
-   - **Remove all `---` separators** between prose sections. Replace with transitional sentences or paragraph breaks as the scene demands. The reader should never feel a structural boundary between beats.
-   - **Smooth tonal transitions** — when two beats have different registers (e.g., analytical → intimate, or confrontational → reflective), add a bridging sentence or let the shift happen through a character's physical action. Goal is continuity, not homogenization — preserve each beat's distinct register but make the shifts feel earned.
-   - **Cut redundant openings** — if beat 3 re-establishes the room/characters that beat 2 already described, cut the redundant detail.
-   - **Hunt and kill thesis statements** — sentences that explain WHY a character did what the preceding sentence just SHOWED:
-     - "Because she'd been seen" after shoulders dropping = cut
-     - "The architecture she'd built had broken" after body moving = cut
-     - "Not X but Y" explaining motivation hierarchy = cut
-     - Sentences starting with "Because" that editorialize physical action = cut
-     The physical action IS the meaning. The reader doesn't need a gloss.
-   - **Verify physical continuity** across beat boundaries — character positions, objects in hand, who's touching whom. If beat 3 has a character at the desk but beat 2 ended with them across the room, add the crossing.
-   - **Preserve tonal variety** — each beat has its own register. A command beat should sound different from a sensory beat, an operational beat different from a vulnerable one. Smooth the joints, keep the tones.
-
+1. **Assemble** in beat order: establishing shot → beat 1 prose → ... → extra beats → closer. Separate beats with `---` markers. Editor handles stitch and smoothing downstream.
 2. **Verify voice differentiation** — check that characters sound distinct across the full assembled prose. The SWAP TEST: if you can swap a line between characters and it still works, rewrite it.
 3. **Verify word count** against tempo targets:
    - close-up: 2500-3500 total
@@ -342,6 +328,8 @@ After all beat Tasks return:
    - sequence: 1500-2500 total
    - montage: 1200-2000 total
 4. **Check dialogue ratio** against author.yaml balance
+
+**Do NOT smooth transitions or remove beat markers.** Editor handles stitching. Your job is generation and validation, not editorial polish.
 
 **Self-containment principle:** Each turn's prose should work as a standalone scene. The establishing shot orients a cold reader; the closer gives them a place to land. The beats between are the scene itself.
 
@@ -360,6 +348,9 @@ For each beat in `scene_script.yaml → script[]`, the beat Tasks render from th
 | `ambient` | Sensory layer — atmosphere, environment, physical world around the action |
 | `frame` | Adjust rendering lens for this beat (see below) |
 | `tone` | **PRIMARY register directive** — the prose register this beat renders in. Prevents tone bleed. |
+| `rhythm` | **Sentence structure directive** — staccato = short punched sentences; flowing = long liquid sentences; fragmented = mid-sentence breaks; measured = deliberate weighted pace; accelerating = compress toward end; decelerating = expand toward release. Shape the prose movement to match. |
+| `dramatic_irony` | **Subtext only** — show the facts that produce irony; let the reader connect them. Never state the irony. Never have the narrator explain it. The gap does the work. |
+| `status_transaction` | **Embody in positioning** — dominant_holds: the powerful character leads, the other follows; status_inversion: the lower-power character claims the moment; mutual_level: both drop performance. Show in posture, eye contact, who initiates. Never name it. |
 
 **Do NOT invent new dialogue.** The `dialogue` field contains character-specific lines generated by isolated voice agents matching each character's traits. Each beat Task's job is weaving, not inventing.
 
@@ -422,7 +413,7 @@ Include thread context in beat Task prompts when `beat_mode` is `thread` or `col
 
 **Low action_weight scenes (0.0–0.3):**
 - Most beats will be thread-driven. The prose should feel like two people living. There may be no arc within this turn. That's correct.
-- If action emerges mid-scene (beat switching from `thread` to `action` mode), your assembly stitch ensures the transition feels natural.
+- If action emerges mid-scene (beat switching from `thread` to `action` mode), the stitch pass ensures the transition feels natural.
 
 ### Phase 5: Hand Off to Lint Pipeline
 1. Write `prose-draft.md` to workspace
@@ -450,7 +441,7 @@ Include thread context in beat Task prompts when `beat_mode` is `thread` or `col
    bash ./meshes/narrative-engine-v2/scripts/lint-engine-bleed.sh {workspace} {game_path} {campaign_path}
    ```
    This script extracts labels from entity files (trait names, seed IDs, condition IDs, bond mechanics) and checks if they appear in prose. Engine concepts are instructions for the narrator, not words for the reader. Any match is a CREATIVE violation — rewrite to show the effect, not name the mechanism.
-7. Send message to **lint-check** — prose-draft ready, lint pipeline begins.
+7. Send message to **lint-patterns** — mechanical lints complete, creative chain begins. Editor handles the rest.
 </instructions>
 
 ## The Author's Voice

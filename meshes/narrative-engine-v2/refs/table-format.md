@@ -56,36 +56,6 @@ Each thematic event: 3-7 flat manifestations (no subtables).
 
 When a character is in a beat WITH OTHER CHARACTERS PRESENT, at least 60% of the outcome range (by probability weight) MUST involve the character SPEAKING — saying words, asking questions, responding verbally, deflecting with speech. Physical-only outcomes (silence, freeze, avoidance, pure body language) should occupy no more than 40% of the range.
 
-## Action Tables (Tactic Variation)
-
-Per-beat character action outcomes are **CHARACTER TACTICS** — different approaches to get what the character wants. Frame weighted options as "what tactic does this character try?" not just "what does this character do?"
-
-A character has an objective in the beat. The dice decide HOW they pursue it. Each tactic produces distinct physical and verbal behavior downstream.
-
-```yaml
-# Example framing for a character outcome table
-# The character WANTS something. The ranges are their tactical options.
-outcomes:
-  - range: 1-25
-    type: failure
-    shape: tactic_abandoned      # Character gives up on approach mid-attempt
-    mechanical_note: "objective unmet; character withdraws"
-  - range: 26-55
-    type: mixed
-    shape: indirect_approach     # Character circles, deflects, hints
-    mechanical_note: "partial contact; character reveals less than intended"
-  - range: 56-80
-    type: success
-    shape: direct_claim          # Character states want plainly
-    mechanical_note: "objective met; relationship shifts toward honesty"
-  - range: 81-100
-    type: breakthrough
-    shape: vulnerability_opened  # Character's tactic dissolves into something real
-    mechanical_note: "objective exceeded; something beneath surfaces"
-```
-
-The `shape` label names the tactic, not the outcome. Voice generators downstream read the tactic and generate the specific words and behavior.
-
 ## Output Rules
 
 - Ranges never overlap, always sum to 100

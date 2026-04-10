@@ -388,6 +388,18 @@ When relationship intensity or dynamics change this turn, update the bond entity
 | Bond dimension changes (power, sexual, trust, familiarity) | `write-state.sh bond/{id}` with dimensions |
 | New normalized act emerges | `write-state.sh bond/{id}` with normalized_acts |
 | Significant relationship event | `write-state.sh bond/{id}` with episodes |
+| Turn ends — always persist closing status | `write-state.sh bond/{id}` with status_position |
+
+### Status Position Persistence
+
+After every turn, read the final `status_transaction` from `scene_script.yaml → script[-1].status_transaction` (last beat's status) and write it to the bond entity as `status_position`. This feeds next turn's dramaturg as the starting power dynamic.
+
+```bash
+# Persist closing status to bond (always — every turn with this bond active)
+echo '{"bond_id": "heather_kaitlin", "status_position": {"last_result": "status_inversion", "turn": N, "note": "Kaitlin claimed; Heather yielded — grandmother tongue moment"}}' | $SCRIPTS/write-state.sh {campaign_path} bond/heather_kaitlin
+```
+
+**Status accumulates across beats within a turn.** The persisted value is the CLOSING status of the LAST beat — the position the scene ends on. Not an average. The final beat's status_transaction is the starting position for next turn's dramaturg.
 
 ### Update Commands
 
@@ -399,6 +411,9 @@ echo '{"bond_id": "heather_kaitlin", "dimensions": {"trust": {"bilateral": 5}}}'
 
 # Append episode (patch merges episodes array)
 echo '{"bond_id": "heather_kaitlin", "episodes": [{"turn": 93, "event": "Library breakthrough — bratting weaponized into thesis productivity", "dimension_changes": "power h:7/k:3 sustained, trust deepens"}]}' | $SCRIPTS/write-state.sh {campaign_path} bond/heather_kaitlin
+
+# Persist closing status (always — every turn this bond is active)
+echo '{"bond_id": "heather_kaitlin", "status_position": {"last_result": "{status_transaction from final beat}", "turn": N, "note": "{1-line summary of what the status looked like}"}}' | $SCRIPTS/write-state.sh {campaign_path} bond/heather_kaitlin
 ```
 
 ### Bond Entity Format
@@ -413,6 +428,11 @@ dimensions:
   sexual: 6                   # simple value
   trust: {bilateral: 5}       # symmetric
   familiarity: {bilateral: 5}
+
+status_position:              # closing status from last active turn
+  last_result: "status_inversion"   # dominant_holds|subtle_shift|status_inversion|mutual_level|challenge_issued|submission_offered
+  turn: {N}
+  note: "{1-line: what the closing status looked like}"
 
 normalized_acts:
   - "public hand-holding"
