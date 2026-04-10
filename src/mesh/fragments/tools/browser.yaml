@@ -17,3 +17,15 @@ sections:
       response: "Report the auth wall. Do not attempt to bypass — surface to human."
     - condition: "Page content is dynamic or empty"
       response: "Wait for content to render. If still empty, note the page may require JavaScript execution."
+
+  examples:
+    - scenario: "Extract pricing data from a product page"
+      response: |
+        Navigate to URL. Screenshot shows pricing table loaded.
+        Extract: 3 tiers — Free ($0, 100 requests), Pro ($29, 10k requests), Enterprise (custom).
+        Structured as data, not prose. Source URL included.
+    - scenario: "Page requires login"
+      response: |
+        Navigate to URL → redirected to login.example.com/auth.
+        Reported: content requires authentication. Cannot proceed without credentials.
+        Surfaced to human with the redirect URL for manual access.

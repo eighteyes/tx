@@ -586,6 +586,13 @@ export class MeshConfigLoader extends EventEmitter {
       path.join(this.meshesDir, meshName, 'config.json')
     );
 
+    // Generated meshes (factory output)
+    const generatedDir = path.join(this.workDir, '.ai', 'tx', 'generated-meshes');
+    paths.push(
+      path.join(generatedDir, meshName, 'config.yaml'),
+      path.join(generatedDir, meshName, 'config.yml')
+    );
+
     // Global TX_ROOT paths
     if (process.env.TX_ROOT) {
       paths.push(

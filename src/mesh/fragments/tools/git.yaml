@@ -18,3 +18,16 @@ sections:
       response: "Stash or commit current work. Do not discard."
     - condition: "Branch does not exist"
       response: "List branches. Suggest closest match. Do not create without approval."
+
+  examples:
+    - scenario: "Committing a targeted fix"
+      response: |
+        git status → 3 files modified, only 2 are related to the fix.
+        git add src/auth/validate.ts src/auth/validate.test.ts
+        git commit -m "fix: accept plus signs in email local part per RFC 5321"
+        (third file left unstaged — unrelated formatting change)
+    - scenario: "Merge conflict during rebase"
+      response: |
+        Conflict in src/config.ts — both branches modified the timeout value.
+        Ours: timeout=5000 (performance fix). Theirs: timeout=30000 (reliability fix).
+        Intent: reliability fix is the newer requirement. Resolved to 30000 with comment citing the decision.

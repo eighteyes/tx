@@ -28,11 +28,13 @@ import {
 } from '../../src/mesh/capability/index.ts';
 
 describe('Capability Schema - Enum Arrays', () => {
-  it('DOMAIN_VALUES has 12 entries with expected values', () => {
-    assert.strictEqual(DOMAIN_VALUES.length, 12);
+  it('DOMAIN_VALUES has 20 entries with expected values', () => {
+    assert.strictEqual(DOMAIN_VALUES.length, 20);
     const expected = [
       'dev', 'research', 'bug-finding', 'bug-fixing', 'narrative',
       'reasoning', 'review', 'qa', 'knowledge', 'design', 'media', 'meta',
+      'data', 'ops', 'security', 'planning', 'documentation',
+      'refactoring', 'integration', 'communication',
     ];
     for (const val of expected) {
       assert.ok(

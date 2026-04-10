@@ -220,6 +220,16 @@ export class MessageConsumer extends EventEmitter {
     else if (fs.existsSync(ymlPath)) configPath = ymlPath;
     else if (fs.existsSync(jsonPath)) configPath = jsonPath;
 
+    // Check generated meshes directory (factory output)
+    if (!configPath) {
+      const generatedDir = path.join(path.dirname(this.meshesDir), '.ai', 'tx', 'generated-meshes', meshName);
+      const genYamlPath = path.join(generatedDir, 'config.yaml');
+      const genYmlPath = path.join(generatedDir, 'config.yml');
+
+      if (fs.existsSync(genYamlPath)) configPath = genYamlPath;
+      else if (fs.existsSync(genYmlPath)) configPath = genYmlPath;
+    }
+
     // Also check TX_ROOT/meshes if different from project meshes
     if (!configPath && process.env.TX_ROOT) {
       const globalMeshDir = path.join(process.env.TX_ROOT, 'meshes', meshName);

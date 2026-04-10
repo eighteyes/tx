@@ -31,18 +31,26 @@ export interface CompileResult {
 
 /** Tools naturally associated with each domain. */
 const DOMAIN_TOOL_AFFINITY: Record<string, string[]> = {
-  'dev':         ['git', 'worktree', 'spec-graph'],
-  'research':    ['web-search', 'browser'],
-  'bug-finding': ['git', 'mcp-playwright'],
-  'bug-fixing':  ['git', 'worktree'],
-  'review':      ['git'],
-  'qa':          ['git', 'mcp-playwright'],
-  'knowledge':   ['spec-graph'],
-  'design':      ['browser', 'mcp-playwright'],
-  'narrative':   [],
-  'reasoning':   [],
-  'media':       [],
-  'meta':        [],
+  'dev':            ['git', 'worktree', 'spec-graph'],
+  'research':       ['web-search', 'browser'],
+  'bug-finding':    ['git', 'mcp-playwright'],
+  'bug-fixing':     ['git', 'worktree'],
+  'review':         ['git'],
+  'qa':             ['git', 'mcp-playwright'],
+  'knowledge':      ['spec-graph'],
+  'design':         ['browser', 'mcp-playwright'],
+  'narrative':      [],
+  'reasoning':      [],
+  'media':          [],
+  'meta':           [],
+  'data':           ['git'],
+  'ops':            ['git'],
+  'security':       ['git', 'web-search'],
+  'planning':       ['spec-graph'],
+  'documentation':  ['git'],
+  'refactoring':    ['git', 'worktree'],
+  'integration':    ['git', 'web-search', 'browser'],
+  'communication':  [],
 };
 
 /** Tools that grant Bash permission. */
@@ -194,7 +202,9 @@ export class MeshFactory {
     const allErrors: Array<Record<string, string>> = [];
     const allConstraints: string[] = [];
     const allAntiPatterns: string[] = [];
+    const allPositiveConstraints: string[] = [];
     const allCapabilities: string[] = [];
+    const allExamples: Array<Record<string, string>> = [];
 
     for (const frag of allFragments) {
       const errors = frag.sections['error-architecture'];
@@ -215,10 +225,22 @@ export class MeshFactory {
           if (typeof ap === 'string') allAntiPatterns.push(ap);
         }
       }
+      const positiveConstraints = frag.sections['positive-constraints'];
+      if (Array.isArray(positiveConstraints)) {
+        for (const pc of positiveConstraints) {
+          if (typeof pc === 'string') allPositiveConstraints.push(pc);
+        }
+      }
       const caps = frag.sections['capabilities'];
       if (Array.isArray(caps)) {
         for (const c of caps) {
           if (typeof c === 'string') allCapabilities.push(c);
+        }
+      }
+      const examples = frag.sections['examples'];
+      if (Array.isArray(examples)) {
+        for (const ex of examples) {
+          if (typeof ex === 'object' && ex !== null) allExamples.push(ex as Record<string, string>);
         }
       }
     }
@@ -301,12 +323,37 @@ export class MeshFactory {
       lines.push('');
     }
 
+    // Positive Constraints (what to do — rendered before anti-patterns)
+    if (allPositiveConstraints.length > 0) {
+      lines.push('## Guidelines');
+      lines.push('');
+      for (const pc of allPositiveConstraints) lines.push(`- ${pc}`);
+      lines.push('');
+    }
+
     // Anti-Patterns (single consolidated list)
     if (allAntiPatterns.length > 0) {
       lines.push('## Anti-Patterns');
       lines.push('');
       for (const ap of allAntiPatterns) lines.push(`- ${ap}`);
       lines.push('');
+    }
+
+    // Examples (concrete input→output pairs)
+    if (allExamples.length > 0) {
+      lines.push('## Examples');
+      lines.push('');
+      for (const ex of allExamples) {
+        if (ex.input && ex.output) {
+          lines.push(`**Input:** ${ex.input}`);
+          lines.push(`**Output:** ${ex.output}`);
+          lines.push('');
+        } else if (ex.scenario && ex.response) {
+          lines.push(`**Scenario:** ${ex.scenario}`);
+          lines.push(`**Response:** ${ex.response}`);
+          lines.push('');
+        }
+      }
     }
 
     // Interaction sections (gate-exit, gate-entry, etc.)

@@ -106,10 +106,17 @@ Full reference: `docs/guardrails.md`
 Generate meshes from capability requirements or plan directories.
 
 ```bash
-tx factory capabilities.yaml              # from capability YAML
-tx factory .ai/plan/my-plan/              # from plan directory (haiku derives caps)
-tx factory caps.yaml --output meshes/foo  # custom output path
+tx factory capabilities.yaml                        # generate mesh from capability YAML
+tx factory .ai/plan/my-plan/                         # from plan directory (haiku derives caps)
+tx factory caps.yaml --run "build the auth module"   # generate + dispatch immediately
+tx factory caps.yaml --output meshes/foo             # custom output path
 ```
+
+**`--run <prompt>`**: generates mesh AND writes initial message to `.ai/tx/msgs/` to start it. Consumer picks up, dispatcher loads on demand, workers spawn.
+
+**Hash-based reuse**: output defaults to `.ai/tx/generated-meshes/{capability-hash}/`. Same capabilities → same hash → skips compilation on second run.
+
+**Search paths**: both `MeshConfigLoader` and consumer search `.ai/tx/generated-meshes/` alongside `meshes/`. Generated meshes load on demand when messaged.
 
 **Capability schema** — bidirectional contract (meshes declare, plans request):
 ```yaml
@@ -122,17 +129,18 @@ capability:
   topology: static                   # wiring pattern (plan-side only)
 ```
 
-**Pipeline:** router checks catalog for existing mesh match → no match → factory compiles fragments + topology into config.yaml + agent prompts → validates → outputs mesh directory.
+**Pipeline:** router checks catalog → match found → use existing mesh. No match → factory compiles fragments + topology → config.yaml + agent prompts → validates → outputs mesh directory.
 
 **Plan-input mode:** reads plan.md + tasks.md, calls haiku to extract capabilities, caches as `capabilities_needed.yaml` in plan dir. Second run skips LLM.
 
 **Key files:**
-- `src/mesh/capability/schema.ts` — enums, types, validation
+- `src/mesh/capability/schema.ts` — enums, types, validation, `hashCapability()`
 - `src/mesh/capability/router.ts` — mechanical set-coverage scoring
 - `src/mesh/capability/factory.ts` — fragment assembler + config generator
 - `src/mesh/capability/plan-deriver.ts` — plan→capabilities extraction
 - `src/mesh/fragments/` — 42 YAML prompt fragments (domain, input, output, tools, interaction, topology)
-- `src/cli/factory.ts` — CLI entry point
+- `src/cli/factory.ts` — CLI entry point, `--run` flag, `resolveEntryPoint()`
+- `src/prompt/core.ts` — core agent prompt builder (includes factory section)
 
 <!-- know:start -->
 <know-instructions>

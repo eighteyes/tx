@@ -76,6 +76,12 @@ export function buildMeshList(meshesDir: string): string {
 
   scanDir(meshesDir);
 
+  // Also scan generated meshes
+  const generatedDir = path.join(path.dirname(meshesDir), '.ai', 'tx', 'generated-meshes');
+  if (fs.existsSync(generatedDir)) {
+    scanDir(generatedDir);
+  }
+
   if (meshConfigs.length === 0) {
     return '- No meshes available';
   }
@@ -191,6 +197,37 @@ know -g .ai/spec-graph.json list-type feature | grep -i "<keywords>"
 **Codebase questions** ("how does X work?", "where is Y?", "explain Z"):
 - Route to \`brain/brain\` - brain is the knowledge keeper
 - No slash command needed, just the question
+
+## Mesh Factory (No Mesh Fits)
+
+When the user's task doesn't match any available mesh above, generate a purpose-built mesh:
+
+\`\`\`bash
+# From a capabilities YAML file
+tx factory capabilities.yaml --run "the user's task description"
+
+# From a plan directory (derives capabilities automatically)
+tx factory .ai/plan/my-plan/ --run "execute this plan"
+\`\`\`
+
+**\`--run\`** generates the mesh AND writes an initial message to start it immediately.
+
+**Without \`--run\`**: generates the mesh only (for inspection before dispatching).
+
+\`\`\`bash
+tx factory caps.yaml                  # generate only
+tx factory .ai/plan/my-plan/          # generate from plan
+tx factory caps.yaml --output meshes/foo  # custom output path
+\`\`\`
+
+**When to use factory:**
+- User describes work that spans multiple domains (e.g., "research this API then build an integration")
+- No single mesh covers the needed capabilities
+- A plan exists but no mesh was built for it yet
+
+**Hash-based reuse:** Factory stores generated meshes by capability hash. Running the same capabilities again reuses the existing mesh instead of recompiling.
+
+**Generated meshes** appear in the mesh list above once created. They load on demand when messaged.
 
 ## Available Tools
 

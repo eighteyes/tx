@@ -17,23 +17,29 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import { log } from '../shared/logger.ts';
-import { isValidCapability, type CapabilityNeeded } from '../mesh/capability/schema.ts';
+import { isValidCapability, hashCapability, type CapabilityNeeded } from '../mesh/capability/schema.ts';
 import { findBestMesh, type CatalogEntry } from '../mesh/capability/router.ts';
 import { MeshFactory } from '../mesh/capability/factory.ts';
 import { isPlanDirectory, deriveCapabilitiesFromPlan, getCachedCapabilities } from '../mesh/capability/plan-deriver.ts';
 
+/** Base directory for factory-generated meshes. */
+const GENERATED_MESHES_DIR = '.ai/tx/generated-meshes';
+
 export interface FactoryOptions {
   inputFile?: string;
   planDir?: string;
-  outputDir: string;
+  outputDir?: string;
   fragmentsDir: string;
   catalogDir?: string;
+  run?: string;
 }
 
 export interface FactoryResult {
   success: boolean;
   matched?: string;
   generated?: string;
+  reused?: boolean;
+  meshName?: string;
   errors: string[];
 }
 
@@ -140,20 +146,18 @@ function parseCapabilityFile(inputFile: string): { success: boolean; needed?: Ca
  * Accepts either a capabilities YAML file or a plan directory.
  */
 export async function runFactory(options: FactoryOptions): Promise<FactoryResult> {
-  const { inputFile, planDir, outputDir, fragmentsDir, catalogDir } = options;
+  const { inputFile, planDir, fragmentsDir, catalogDir } = options;
 
   let needed: CapabilityNeeded;
 
   // Two input modes: capabilities file or plan directory
   if (planDir) {
-    // Plan directory mode — derive capabilities from plan artifacts
     const derived = await deriveCapabilitiesFromPlan(planDir);
     if (!derived) {
       return { success: false, errors: ['Failed to derive capabilities from plan — check plan.md/tasks.md exist and LLM is available'] };
     }
     needed = derived;
   } else if (inputFile) {
-    // Capabilities file mode — parse directly
     const result = parseCapabilityFile(inputFile);
     if (!result.success) return { success: false, errors: result.errors };
     needed = result.needed!;
@@ -161,19 +165,30 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
     return { success: false, errors: ['Either inputFile or planDir is required'] };
   }
 
-  // 5. Catalog match attempt
+  // Catalog match attempt
   if (catalogDir) {
     const catalog = loadCatalog(catalogDir);
     if (catalog.length > 0) {
       const match = findBestMesh(catalog, needed);
       if (match) {
         log.info('factory', `Matched existing mesh: ${match.name}`);
-        return { success: true, matched: match.name, errors: [] };
+        return { success: true, matched: match.name, meshName: match.name, errors: [] };
       }
     }
   }
 
-  // 6. No match — compile via factory
+  // No match — resolve output directory (hash-based default enables reuse)
+  const capHash = hashCapability(needed);
+  const meshName = needed.domain.join('-') + '-mesh';
+  const outputDir = options.outputDir ?? path.resolve(GENERATED_MESHES_DIR, capHash);
+
+  // Check for hash-based reuse
+  if (fs.existsSync(path.join(outputDir, 'config.yaml'))) {
+    log.info('factory', `Reusing generated mesh: ${capHash}`, { meshName, outputDir });
+    return { success: true, generated: outputDir, reused: true, meshName, errors: [] };
+  }
+
+  // Compile via factory
   fs.mkdirSync(outputDir, { recursive: true });
   const meshFactory = new MeshFactory(fragmentsDir);
   const result = meshFactory.compile(needed, outputDir);
@@ -185,42 +200,49 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
   }
 
   log.info('factory', `Generated mesh at ${outputDir}`, { agents: result.agents });
-  return { success: true, generated: outputDir, errors: [] };
+  return { success: true, generated: outputDir, meshName, errors: [] };
 }
 
 /**
  * CLI entry point for `tx factory`.
  */
 export async function factory(args: string[]): Promise<void> {
-  const input = args.find(a => !a.startsWith('-'));
+  // Extract positional arg (skip flags and their values)
+  const flagValues = new Set<number>();
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--output' || args[i] === '--run') flagValues.add(i + 1);
+  }
+  const input = args.find((a, i) => !a.startsWith('-') && !flagValues.has(i));
   if (!input) {
-    console.log('Usage: tx factory <capabilities.yaml|plan-dir> [--output <dir>]');
+    console.log('Usage: tx factory <capabilities.yaml|plan-dir> [options]');
     console.log('');
     console.log('Input modes:');
     console.log('  capabilities.yaml   Direct capability declaration');
     console.log('  plan-dir/           Plan directory (derives capabilities from plan.md + tasks.md)');
     console.log('');
     console.log('Options:');
-    console.log('  --output <dir>   Output directory for generated mesh');
+    console.log('  --output <dir>   Output directory (default: hash-based under .ai/tx/generated-meshes/)');
+    console.log('  --run <prompt>   Generate mesh and write initial message to start it');
     process.exitCode = 1;
     return;
   }
 
-  // Parse --output flag
+  // Parse flags
   let outputDir: string | undefined;
   const outputIdx = args.indexOf('--output');
   if (outputIdx !== -1 && args[outputIdx + 1]) {
     outputDir = path.resolve(args[outputIdx + 1]);
   }
-  if (!outputDir) {
-    outputDir = path.resolve(`.ai/tx/generated-meshes/factory-${Date.now()}`);
+
+  let runPrompt: string | undefined;
+  const runIdx = args.indexOf('--run');
+  if (runIdx !== -1 && args[runIdx + 1]) {
+    runPrompt = args[runIdx + 1];
   }
 
   const fragmentsDir = path.resolve('src/mesh/fragments');
   const catalogDir = path.resolve('meshes');
   const resolvedInput = path.resolve(input);
-
-  // Detect input mode: plan directory or capabilities file
   const planMode = isPlanDirectory(resolvedInput);
 
   const result = await runFactory({
@@ -229,17 +251,91 @@ export async function factory(args: string[]): Promise<void> {
     outputDir,
     fragmentsDir,
     catalogDir,
+    run: runPrompt,
   });
 
   if (result.matched) {
     console.log(`Matched existing mesh: ${result.matched}`);
   } else if (result.generated) {
-    console.log(`Generated mesh: ${result.generated}`);
+    const tag = result.reused ? '(reused)' : '(compiled)';
+    console.log(`Generated mesh: ${result.generated} ${tag}`);
   } else {
     console.error(`Factory failed:`);
     for (const err of result.errors) {
       console.error(`  - ${err}`);
     }
     process.exitCode = 1;
+    return;
   }
+
+  // --run: write initial message to start the mesh
+  if (runPrompt && (result.matched || result.generated)) {
+    const meshName = result.meshName!;
+    const entryAgent = await resolveEntryPoint(meshName, result.matched, result.generated);
+    if (!entryAgent) {
+      console.error('Could not resolve entry point agent for mesh');
+      process.exitCode = 1;
+      return;
+    }
+
+    const msgsDir = path.resolve('.ai/tx/msgs');
+    fs.mkdirSync(msgsDir, { recursive: true });
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const msgId = `factory-${timestamp}`;
+    const fileName = `${timestamp}-core-core-${meshName.replace(/\//g, '-')}-${entryAgent.replace(/\//g, '-')}-task-${msgId}.md`;
+    const msgContent = [
+      '---',
+      `to: ${meshName}/${entryAgent}`,
+      'from: core/core',
+      `msg-id: ${msgId}`,
+      `headline: Factory-dispatched task`,
+      `timestamp: ${new Date().toISOString()}`,
+      '---',
+      '',
+      runPrompt,
+      '',
+    ].join('\n');
+
+    fs.writeFileSync(path.join(msgsDir, fileName), msgContent, 'utf-8');
+    console.log(`Dispatched to ${meshName}/${entryAgent}`);
+  }
+}
+
+/**
+ * Resolve the entry point agent for a mesh.
+ * Reads config.yaml to find entry_point or first agent.
+ */
+async function resolveEntryPoint(meshName: string, matchedMesh?: string, generatedDir?: string): Promise<string | null> {
+  const configPaths = [];
+
+  if (matchedMesh) {
+    configPaths.push(path.resolve('meshes', matchedMesh, 'config.yaml'));
+  }
+  if (generatedDir) {
+    configPaths.push(path.join(generatedDir, 'config.yaml'));
+  }
+
+  for (const configPath of configPaths) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      const config = YAML.parse(raw);
+
+      // entry_point field takes precedence
+      if (config.entry_point) return config.entry_point;
+
+      // Static routing: first agent in routing array
+      if (Array.isArray(config.routing)) return config.routing[0];
+
+      // Fall back to first agent name
+      if (Array.isArray(config.agents) && config.agents.length > 0) {
+        return config.agents[0].name;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }

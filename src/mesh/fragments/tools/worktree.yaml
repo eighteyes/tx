@@ -17,3 +17,16 @@ sections:
       response: "Stash or commit changes before removing. Do not discard uncommitted work."
     - condition: "Branch locked by another worktree"
       response: "List worktrees to find the conflict. Remove the stale worktree first."
+
+  examples:
+    - scenario: "Create isolated worktree for a feature branch"
+      response: |
+        git worktree list → only main at /project.
+        git worktree add ../project-feature-auth feature/auth
+        Work in ../project-feature-auth. Main tree unaffected.
+        After merge: git worktree remove ../project-feature-auth.
+    - scenario: "Branch locked by stale worktree"
+      response: |
+        git worktree add fails: "branch 'feature/auth' already checked out."
+        git worktree list → stale entry at /tmp/old-worktree (path doesn't exist).
+        git worktree prune → cleaned. Retry succeeds.

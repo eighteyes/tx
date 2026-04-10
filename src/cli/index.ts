@@ -122,7 +122,7 @@ Commands:
   tx tool           Search and web utilities
   tx forensics      Analyze mesh execution sessions
   tx dynaprompt     Dynamic prompt fragment management
-  tx factory        Generate mesh from capabilities YAML (catalog match or compile)
+  tx factory        Generate mesh from capabilities or plan (--run to dispatch)
   tx agent-help      Agent-friendly reference (messages, routing, recovery, workflows, debugging)
   tx login          Authenticate with tx-server
   tx logout         Clear stored credentials
@@ -739,7 +739,7 @@ async function main() {
       break;
 
     case 'factory':
-      if (wantsHelp) { console.log('tx factory - Generate mesh from capabilities YAML\n\nUsage: tx factory <capabilities.yaml> [--output <dir>]\n\nReads a capabilities YAML file, matches against existing meshes,\nand generates a new mesh if no match is found.\n\nOptions:\n  --output <dir>   Output directory for generated mesh'); break; }
+      if (wantsHelp) { console.log('tx factory - Generate mesh from capabilities or plan\n\nUsage: tx factory <capabilities.yaml|plan-dir> [options]\n\nMatches against existing meshes, generates a new one if no match.\nHash-based reuse: same capabilities skip recompilation.\n\nOptions:\n  --output <dir>     Output directory (default: hash-based under .ai/tx/generated-meshes/)\n  --run <prompt>     Generate mesh and dispatch initial message to start it'); break; }
       await factory(args);
       break;
 

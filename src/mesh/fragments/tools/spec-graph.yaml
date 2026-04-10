@@ -20,3 +20,16 @@ sections:
       response: "Report the cycle path. Do not attempt to resolve — surface to human."
     - condition: "Reference type mismatch"
       response: "Run know check ref-types for valid types. Correct and retry."
+
+  examples:
+    - scenario: "Add a new feature to the spec graph"
+      response: |
+        know list → check existing features, find parent objective.
+        know add feature:real-time-sync --parent objective:collaboration
+        know ref feature:real-time-sync component:websocket-server --type code-link
+        know check → validates no orphans, no circular deps.
+    - scenario: "Entity not found when adding reference"
+      response: |
+        Error: component:ws-server not found.
+        know list component → shows component:websocket-server.
+        Corrected: know ref feature:real-time-sync component:websocket-server --type code-link

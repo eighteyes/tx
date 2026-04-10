@@ -20,3 +20,17 @@ sections:
       response: "Verify URL is reachable. Check for redirects or auth walls. Report with context."
     - condition: "MCP server disconnected"
       response: "Report failure. Do not retry silently — the connection requires human intervention."
+
+  examples:
+    - scenario: "Verify a button click triggers the expected modal"
+      response: |
+        Navigate to /settings. Wait for page load.
+        Click button[data-testid="delete-account"]. Wait for selector ".modal".
+        Screenshot: modal visible with "Are you sure?" text and Cancel/Confirm buttons.
+        Verified: modal renders correctly with expected content.
+    - scenario: "Element not found after page update"
+      response: |
+        Click ".submit-btn" → element not found.
+        Screenshot: page shows loading spinner — form hasn't rendered yet.
+        Wait for ".submit-btn" with 5s timeout. Element appears after 2.3s.
+        Retried click — succeeded.

@@ -17,6 +17,8 @@
 export const DOMAIN_VALUES = [
   'dev', 'research', 'bug-finding', 'bug-fixing', 'narrative',
   'reasoning', 'review', 'qa', 'knowledge', 'design', 'media', 'meta',
+  'data', 'ops', 'security', 'planning', 'documentation',
+  'refactoring', 'integration', 'communication',
 ] as const;
 
 export const INPUT_VALUES = [
@@ -63,6 +65,30 @@ export interface CapabilityDeclaration {
 
 export interface CapabilityNeeded extends CapabilityDeclaration {
   topology: Topology;
+}
+
+// -- Hashing --
+
+import { createHash } from 'node:crypto';
+
+/**
+ * Compute a deterministic hash of a CapabilityNeeded object.
+ * Sorts all array fields to ensure stable output regardless of input order.
+ * Returns a short hex string suitable for directory names.
+ */
+export function hashCapability(cap: CapabilityNeeded): string {
+  const normalized = {
+    domain: [...cap.domain].sort(),
+    input: [...cap.input].sort(),
+    output: [...cap.output].sort(),
+    tools: [...cap.tools].sort(),
+    interaction: [...cap.interaction].sort(),
+    topology: cap.topology,
+  };
+  return createHash('sha256')
+    .update(JSON.stringify(normalized))
+    .digest('hex')
+    .slice(0, 12);
 }
 
 // -- Validation --
