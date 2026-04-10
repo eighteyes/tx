@@ -5,6 +5,112 @@ All notable changes to TX V4 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-10
+
+### Added
+
+#### Mesh Factory & Capability System
+- **Capability schema**: Bidirectional contract — meshes declare capabilities, plans request them (`domain`, `input`, `output`, `tools`, `interaction`, `topology`)
+- **Mechanical router**: Set-coverage scoring matches plan requirements to existing meshes
+- **Factory compiler**: Fragment assembler + topology → config.yaml + agent prompts
+- **42 prompt fragments**: Domain (10), input (8), output (11), tools (4), interaction (2), plus initial 7
+- **`tx factory` CLI**: Generate meshes from capability YAML or plan directories
+- **Plan-input mode**: Haiku extracts `capabilities_needed.yaml` from plan.md + tasks.md
+- **Hash-based reuse**: Same capabilities → same hash → skips recompilation
+- **Runtime integration**: `--run` flag generates mesh AND dispatches initial message
+- **Mesh validator**: Static analysis checks for config correctness
+- **Capability blocks**: Added to existing mesh configs for catalog matching
+
+#### Narrative Engine
+- **Narrative palette**: Rhythm, irony, anchoring, status, and tactic dimensions
+- **Dramaturg refactor**: Architect split into dramaturg (sonnet) + entropy-gen (haiku)
+- **Haiku lint-check gate**: Conditional opus editor invocation
+- **POV enforcement**: Intent fidelity gate in editor
+- **Register guide injection**: Author.yaml-driven register guidance
+- **Choreography HITL**: Artifact slimming for pipeline coordination
+- **Sim-planner**: Auto register sequencing from collision pressure
+
+#### Meshes
+- **LLM council**: Multi-perspective council mesh with framework-constraint lenses
+- **Tool-audit command**: `tx mesh tool-audit` for per-agent tool call breakdown
+
+### Changed
+
+- **Narrative pipeline overhaul**: Agent rewrites, script consolidation, lint absorption
+- **Architect → modular references**: Prompt split into reference files
+
+### Fixed
+
+- **Orphaned messages**: Dispatcher detects and fails orphaned messages after config reload
+- **Nudge detector**: Skip nudge for continuation/persistence agents
+- **Stale architect refs**: Updated to dramaturg across narrative engine
+- **Factory dispatch**: Core writes dispatch message natively, not via `--run`
+
+## [0.3.9] - 2026-04-06
+
+### Added
+
+#### Static Routing
+- **`static` routing mode**: Sequential chain resolution — agents fire in declared order
+- **Auto-derived endpoints**: `entry_point` and `completion_agents` inferred from chain array
+- **Fire-on-exit dispatch**: Dispatcher triggers next agent on worker completion
+- **Routing skip**: Static mode agents bypass routing injection and extraction
+
+#### Runtime
+- **Agent nudging**: OAOM messaging pattern with test infrastructure
+- **LLM council mesh**: Multi-perspective analysis with framework-constraint lenses
+
+### Fixed
+
+- **FSM idle crash**: Added idle→running restart path for worker respawn
+- **Completion detection**: HITL heartbeat leak and FSM idle crash
+- **Prompt builder test**: Updated for message delivery instructions
+
+## [0.3.8] - 2026-04-03
+
+### Added
+
+- **Free routing mode**: Agents self-organize from full roster without routing table
+
+### Changed
+
+#### Type-Free Routing (BREAKING)
+- **Removed `MessageType`**: Union type, event interfaces, and type field eliminated from shared types
+- **Removed type from queue**: No longer written to or read from SQLite message queue
+- **Routing-based dispatch**: All dispatch logic inferred from routing boundaries, not explicit type
+- **Prompts cleaned**: Type vocabulary removed from core agent prompt and task context
+- **Full stack migration**: SystemMessageWriter, message router, dispatcher, CLI event handlers all updated
+
+#### Dependencies
+- **Agent SDK upgrade**: 0.1.76 → 0.2.92 (bundles Claude Code 2.1.92)
+
+### Fixed
+
+- **FSM rejection feedback**: Write feedback on rejection instead of silent drop
+- **Injection poll timers**: Cleared on shutdown
+- **Queue type column**: Default `'message'` instead of NULL
+- **Ultrareview bugs**: Ship blockers, high, and medium severity fixes
+- **HTTP push spam**: Prevent stale www-session entries from triggering repeated pushes
+- **Inject-response**: Works for FSM meshes completing via gate files
+- **Permission-ask HITL**: Response unreachable behind OAOM gate — fixed routing
+
+## [0.3.7] - 2026-04-02
+
+### Added
+
+#### Guardrails
+- **`max_invocations`**: Per-agent spawn counter guardrail
+- **Guardrail state injection**: Dispatcher injects current guardrail state into agent prompts
+
+#### Dev Pipeline
+- **dev-full ultrareview**: Added ultrareview and handoff agents
+- **Enriched prompts**: Verification steps, ask/blocked routing, iteration caps
+
+### Changed
+
+- **Experimental meshes**: Untracked from main branch
+- **Docs synced**: Guardrails, meshes, and mesh-builder skill updated to match codebase
+
 ## [0.3.6] - 2026-03-31
 
 ### Added
@@ -360,6 +466,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspace manager for task-scoped outputs
 - Prompt injection system
 
+[0.4.0]: https://github.com/eighteyes/tx/compare/v0.3.9...v0.4.0
+[0.3.9]: https://github.com/eighteyes/tx/compare/v0.3.8...v0.3.9
+[0.3.8]: https://github.com/eighteyes/tx/compare/v0.3.7...v0.3.8
+[0.3.7]: https://github.com/eighteyes/tx/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/eighteyes/tx/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/eighteyes/tx/compare/v0.3.0...v0.3.5
 [0.3.0]: https://github.com/eighteyes/tx/compare/v0.2.2...v0.3.0
