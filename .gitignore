@@ -29,6 +29,7 @@ meshes/*
 !meshes/narrative-engine/
 !meshes/narrative-engine-v2/
 !meshes/llm-council/
+!meshes/test-steering-*
 .sandbox-deny.log
 coverage/
 sandbox-deny.log

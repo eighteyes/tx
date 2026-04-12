@@ -1,0 +1,33 @@
+mesh: test-steering-nudge
+description: "Steering test — exercises NudgeDetector recovery when a middle agent completes without forwarding to the next step"
+dev_mode: true
+routing_mode: dispatcher
+agents:
+  - name: forgetter
+    model: haiku
+    prompt: forgetter.md
+  - name: receiver
+    model: haiku
+    prompt: receiver.md
+entry_point: forgetter
+routing:
+  forgetter: receiver
+  # receiver: (absent) = terminal → routes to core/core on complete
+playbook_notes: |
+  Purpose: verify NudgeDetector auto-recovery when a non-terminal agent
+  finishes its turn without writing a routing message.
+
+  Expected flow:
+  1. User/core sends initial task to `forgetter`.
+  2. `forgetter` produces output but DOES NOT send any message.
+  3. SDK runner completes; NudgeDetector schedule fires after ~15s.
+  4. Detector finds no message to expected target (`receiver`).
+  5. Detector summarizes forgetter output via Haiku and writes a
+     recovery task to `receiver` from `system/nudge-detector`.
+  6. `receiver` processes the recovery task and completes to core/core.
+
+  What to look for in logs (.ai/tx/logs/v4.jsonl):
+  - `nudge-detector Scheduled nudge check`
+  - `nudge-detector Stalled route detected, sending nudge` OR
+    `nudge-detector Agent completed without sending messages, forwarding output to core`
+  - `nudge-detector Nudge sent`

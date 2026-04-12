@@ -1,0 +1,37 @@
+mesh: test-steering-escalate
+description: "Steering test — exercises dispatcher escalation shortcut (outcome: escalate) that routes directly to core/core regardless of routing table"
+dev_mode: true
+routing_mode: dispatcher
+agents:
+  - name: escalator
+    model: haiku
+    prompt: escalator.md
+  - name: would-be-next
+    model: haiku
+    prompt: would-be-next.md
+entry_point: escalator
+routing:
+  escalator: would-be-next
+  # would-be-next: (absent) = terminal; should NOT run when escalator escalates
+playbook_notes: |
+  Purpose: verify that `outcome: escalate` always short-circuits the
+  routing table and delivers the message to core/core, even when the
+  agent has a well-defined linear route.
+
+  Expected flow:
+  1. User/core sends task to `escalator`.
+  2. `escalator` writes one message with `outcome: escalate` to the
+     dispatch sentinel.
+  3. DispatchRouter.resolve() sees `outcome === 'escalate'` and returns
+     { target: 'core/core', source: 'escalate' } — ignoring the linear
+     route that would otherwise send to `would-be-next`.
+  4. Core receives the escalation and surfaces it to the human.
+  5. `would-be-next` is NEVER invoked.
+
+  What to look for in logs:
+  - No dispatcher warnings
+  - Message lands at `core/core` with `source: escalate`
+  - `would-be-next` has zero worker spawns
+
+  This mesh is the control case: unlike the nudge and wrong-route meshes,
+  this one should produce NO warnings or nudges. A clean escalate path.

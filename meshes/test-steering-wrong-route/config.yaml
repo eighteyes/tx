@@ -1,0 +1,43 @@
+mesh: test-steering-wrong-route
+description: "Steering test — exercises dispatcher rejection + NudgeDetector escalation when an agent uses an invalid route_to target"
+dev_mode: true
+routing_mode: dispatcher
+agents:
+  - name: misrouter
+    model: haiku
+    prompt: misrouter.md
+  - name: valid-target
+    model: haiku
+    prompt: valid-target.md
+entry_point: misrouter
+routing:
+  misrouter:
+    complete: valid-target
+    # Any branch outcome other than 'complete' has no target and no default,
+    # so emitting an unknown outcome also exercises "no route resolved".
+  # valid-target: (absent) = terminal → routes to core/core on complete
+playbook_notes: |
+  Purpose: verify that when an agent uses an invalid `route_to:` target or
+  emits an unknown branch outcome with no default, the system surfaces the
+  failure cleanly.
+
+  Two scenarios covered by this mesh (pick one via the task prompt):
+
+  1. Invalid route_to — ask misrouter to send with `route_to: ghost-agent`.
+     - DispatchRouter.resolve() logs "Invalid route_to target" and returns
+       null. The message is dropped.
+     - No message lands at the expected target.
+     - NudgeDetector fires and escalates to core/core with a routing-failure
+       system message from `system/nudge-detector`.
+
+  2. Unknown outcome — ask misrouter to send with `outcome: mystery-result`.
+     - Branch map has no match and no default → resolve() returns null.
+     - Same nudge/escalation path as above.
+
+  What to look for in logs:
+  - `dispatch-router Invalid route_to target`  OR
+  - `dispatch-router No route resolved for outcome`
+  - `nudge-detector No route resolved for any outcome, escalating to core`
+
+  The "happy path" (outcome: complete, no route_to override) should route
+  correctly to `valid-target` and then to core/core.
