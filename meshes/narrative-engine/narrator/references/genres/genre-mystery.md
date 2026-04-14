@@ -466,6 +466,134 @@ Seeds that work well in mystery:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Observation Habits:**
+- "What do they notice first when entering a room? People? Exits? Objects? Anomalies?"
+- "How do they read people—micro-expressions, body language, what's not said?"
+- "What details do they catalog automatically vs. what do they have to work to notice?"
+- "What do they miss because of what they focus on? What blind spots does their method create?"
+
+**Deduction Patterns:**
+- "How do they solve problems—intuitive leaps, methodical analysis, or both in sequence?"
+- "Do they think out loud or internally? Do they theorize early or wait for sufficient data?"
+- "What's their eureka mechanics—how does the solution arrive? Flash of insight? Slow assembly?"
+- "When they're wrong, what usually tripped them up? Assumption? Missing data? Emotional bias?"
+
+**Trust Architecture:**
+- "Who do they trust and why? What earns trust? What breaks it irrevocably?"
+- "How paranoid are they? Do they suspect everyone or take people at face value?"
+- "What's their default assumption about human nature—people are good, bad, self-interested, complex?"
+- "Have they been betrayed? By whom? How did it change their trust patterns?"
+
+**Information Hoarding:**
+- "What do they keep to themselves and why? Strategic advantage? Protecting someone? Trust issues?"
+- "When do they share information? What has to happen for them to reveal what they know?"
+- "Who do they tell everything to, if anyone? Who gets the edited version?"
+- "What piece of information are they sitting on right now that they shouldn't be?"
+
+**Obsession Markers:**
+- "What case defines them? The solved one? The unsolved one? The one that got personal?"
+- "What can't they let go of? What thread do they keep pulling even when told to stop?"
+- "What's the cost of their obsession? Relationships? Health? Boundaries? Sleep?"
+- "When do they know to stop? Or do they never stop until the answer comes or breaks them?"
+
+### Entity Schema Extensions
+
+```yaml
+observation_habits:
+  first_notice: "what draws their eye first in a room (people/exits/objects/wrongness)"
+  reading_people: "how they assess others (micro-expressions/body language/omissions)"
+  automatic_vs_effortful: "what they catalog instinctively vs. what requires work"
+  blind_spots: "what their focus makes them miss"
+
+deduction_patterns:
+  problem_solving_style: "intuitive leaps/methodical analysis/hybrid sequential"
+  thinking_mode: "out loud or internal, theorize early or wait for data"
+  eureka_mechanics: "how solutions arrive (flash/assembly/pattern recognition)"
+  usual_mistakes: "what trips them up—assumptions/missing data/emotional bias"
+  # Examples:
+  # problem_solving_style: "Intuitive first—gut tells them who, then finds evidence to prove it. Methodical if gut fails."
+  # eureka_mechanics: "Usually while doing something else. Brain works in background. Insight arrives mid-sentence."
+
+trust_architecture:
+  who_they_trust: [specific people and why]
+  trust_earned_by: "what actions or qualities earn trust"
+  trust_broken_by: "what shatters it irrevocably"
+  paranoia_level: "suspect everyone/cautious/takes people at face value"
+  human_nature_default: "people are good/bad/self-interested/complex—baseline assumption"
+  betrayal_history: "who betrayed them, how it changed them"
+
+information_hoarding:
+  what_they_hide: "what information they keep to themselves"
+  why_they_hide: "strategic/protective/trust issues—motivation for secrecy"
+  sharing_threshold: "what has to happen for them to reveal what they know"
+  confidant: "who gets full truth vs. who gets edited version"
+  current_secret: "what they're sitting on right now that they shouldn't be"
+
+obsession_markers:
+  defining_case: "the solved one/unsolved one/personal one—what case shaped them"
+  cant_let_go: "what thread they keep pulling despite warnings"
+  obsession_cost: "relationships/health/boundaries/sleep—what it's taken from them"
+  stopping_point: "when they know to stop, or if they ever stop"
+```
+
+### Examples
+
+**Observation Habits — Example:**
+```yaml
+observation_habits:
+  first_notice: "Exits. Always. Where are the ways out, who's blocking them, what's the fastest route."
+  reading_people: "Hands first. What people do with their hands tells more than faces. Watch for fidgeting, clenching, hiding."
+  automatic_vs_effortful: "Automatically: body language, spatial relationships. Effortful: financial records, technical jargon, normal social cues."
+  blind_spots: "Misses genuine emotion sometimes. So focused on deception that honesty looks suspicious."
+```
+
+**Deduction Patterns — Example:**
+```yaml
+deduction_patterns:
+  problem_solving_style: "Methodical to a fault. Won't theorize until evidence supports it. Frustrated by partners who leap ahead."
+  thinking_mode: "Internal. Needs silence to think. Talking disrupts the process. Will monologue solution once it's formed."
+  eureka_mechanics: "Slow assembly. Like puzzle pieces clicking. The last piece snaps in and suddenly the whole picture's visible."
+  usual_mistakes: "Overlooks the obvious because it's too simple. Looks for complexity and misses the straightforward answer."
+```
+
+**Trust Architecture — Example:**
+```yaml
+trust_architecture:
+  who_they_trust: ["Dr. Rosen—twenty years of not lying", "No one else fully"]
+  trust_earned_by: "Consistency over time. Doing the right thing when no one's watching. Admitting mistakes."
+  trust_broken_by: "Lying to them directly. Betraying a confidence. Hurting someone they protected."
+  paranoia_level: "Professionally paranoid. Everyone's a suspect until cleared. It's kept them alive."
+  human_nature_default: "People are self-interested. They'll do good if it's convenient, bad if pressed. Predictable that way."
+  betrayal_history: "Partner sold them out to close a case dirty. Took seven years to trust anyone again."
+```
+
+**Information Hoarding — Example:**
+```yaml
+information_hoarding:
+  what_they_hide: "Hunches until proven. Connections to ongoing cases. Personal information about anyone."
+  why_they_hide: "Strategic mostly. Information is currency. Share it too early and people adjust, hide, run."
+  sharing_threshold: "When withholding would endanger someone. When they need another perspective. When directly asked by someone they trust."
+  confidant: "Dr. Rosen gets everything. Everyone else gets what they need to know."
+  current_secret: "Knows who the witness is protecting. Haven't told the captain because the captain would have to act on it."
+```
+
+**Obsession Markers — Example:**
+```yaml
+obsession_markers:
+  defining_case: "The Bridgewater murders. Solved it. Killer's in prison. Still thinks they got the wrong person."
+  cant_let_go: "The one inconsistency. The timeline doesn't work. Everyone says they're wrong. Can't stop checking."
+  obsession_cost: "Marriage ended. Don't sleep well. Reputation as 'brilliant but difficult.' Worth it if they're right."
+  stopping_point: "They don't stop. That's the problem. Follow threads until they break or the truth comes out."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

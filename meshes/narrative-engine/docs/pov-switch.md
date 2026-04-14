@@ -21,8 +21,8 @@ raw_input: "Switch to {character_b}'s POV"
 ```yaml
 # In dramaturg-notes.yaml
 pov_switch_available:
-  to: character_b
-  reason: "Their inner experience of Turn 21 aftermath unrevealed"
+  to: {character_b}
+  reason: "Her inner experience of Turn 21 aftermath unrevealed"
   dramatic_value: "Player experiences exhaustion from inside"
 ```
 
@@ -33,11 +33,11 @@ pov_switch_available:
 ```yaml
 turn: 22
 context_type: action
-pov_character: character_b  # NEW — who we're inside
-player_action: "Character B sits against the door, listening"
+pov_character: {character_b}  # NEW — who we're inside
+player_action: "{character_b} sits against the door, listening"
 
 actor:
-  id: character_b
+  id: {character_b}
   traits: [EXHAUSTED, BOUNDARIED, MERCURIAL, PERCEPTIVE]
   trait_pressures:
     EXHAUSTED: 5
@@ -48,32 +48,32 @@ actor:
 
 scene:
   location: "Inside apartment, against closed door"
-  present: [character_b]
-  offscreen: [character_a]  # Original protagonist now offscreen
+  present: [{character_b}]
+  offscreen: [{character_a}]  # Original protagonist now offscreen
 ```
 
 ### Entity Flag
 
 ```yaml
-# {character_b}.yaml during their POV
+# {character_b}.yaml during her POV
 protagonist: true   # Temporarily true
 pov_since: 22       # Track when switch happened
 
-# {character_a}.yaml during Character B's POV
+# {character_a}.yaml during {character_b}'s POV
 protagonist: false  # Temporarily false
 pov_until: 21       # Was protagonist until turn 21
 ```
 
 ### Trait Testing
 
-Character B's traits get tested now:
+{character_b}'s traits get tested now:
 - EXHAUSTED at 5 = high pressure, likely to dominate
 - BOUNDARIED at 4 = walls activated
 - Actions against WARM (opening up) are hard
 
 ### Inner Voice
 
-Narrator uses Character B's `traits.voices`:
+Narrator uses {character_b}'s `traits.voices`:
 
 ```yaml
 # {character_b}.yaml voices become the narration
@@ -85,21 +85,21 @@ BOUNDARIED:
 
 **Prose output:**
 
-> *Twenty turns. Twenty turns of trying to reach them and they yelled ninety seconds after you showed them your hand shaking.* The door is solid against your back. Cool. The boundary held. *It stays closed.*
+> *Twenty turns. Twenty turns of trying to reach her and she yelled BITCH ninety seconds after you showed her your hand shaking.* The door is solid against your back. Cool. The boundary held. *It stays closed.*
 
 ### World Events (fates.yaml)
 
-Character A becomes NPC. Their trait-driven reactions:
+{character_a} becomes NPC. Her trait-driven reactions:
 
 ```yaml
 world_branches:
-  - character_a_pounds_on_door      # DESPERATE: 5 drives this
-  - character_a_leaves_silently     # PROTECTIVE: 1 flicker
-  - character_a_slides_note_under   # MERCILESS_CLARITY finding words
-  - neighbors_call_police           # External consequence
+  - {character_a}_pounds_on_door      # DESPERATE: 5 drives this
+  - {character_a}_leaves_silently     # PROTECTIVE: 1 flicker
+  - {character_a}_slides_note_under   # MERCILESS_CLARITY finding words
+  - neighbors_call_police             # External consequence
 ```
 
-Character A's DESPERATE: 5 makes aggressive options more likely. Their traits constrain THEM now.
+{character_a}'s DESPERATE: 5 makes aggressive options more likely. Her traits constrain HER now.
 
 ## What Persists Across POV
 
@@ -117,7 +117,7 @@ Character A's DESPERATE: 5 makes aggressive options more likely. Their traits co
 ```yaml
 # After N turns, or story trigger
 pov_return:
-  to: character_a
+  to: {character_a}
   trigger: "Scene resolution"
   turn: 24
 ```
@@ -131,7 +131,7 @@ action: "Switch back to {character_a}"
 ```yaml
 # campaign/pov-pattern.yaml
 pattern: alternating
-characters: [character_a, character_b]
+characters: [{character_a}, {character_b}]
 switch_on: scene_end
 ```
 
@@ -145,16 +145,16 @@ switch_on: scene_end
 | possibility | Weights based on current actor's trait pressures |
 | narrator | Uses current character's `voices` for inner monologue |
 
-## Example: Turn 22 from Character B's POV
+## Example: Turn 22 from {character_b}'s POV
 
-**Player input:** "Stay against the door. Listen for whether they leave."
+**Player input:** "Stay against the door. Listen for whether she leaves."
 
-**Character B's traits tested:**
+**{character_b}'s traits tested:**
 - EXHAUSTED: 5 — *"Just tired. So tired."*
 - BOUNDARIED: 4 — *"The door stays closed."*
-- WARM: 1 — flickers when they hear Character A crying (if that happens)
+- WARM: 1 — flickers when she hears {character_a} crying (if that happens)
 
-**World events (Character A as NPC):**
+**World events ({character_a} as NPC):**
 - DESPERATE: 5 drives pounding, pleading
 - MERCILESS_CLARITY: 6 might produce note slid under door
 - PROTECTIVE: 1 might flicker into leaving
@@ -166,11 +166,11 @@ switch_on: scene_end
 ```yaml
 # session.yaml
 pov_history:
-  - character: character_a
+  - character: {character_a}
     turns: [0, 21]
-  - character: character_b
+  - character: {character_b}
     turns: [22, ?]
-current_pov: character_b
+current_pov: {character_b}
 ```
 
 ## Constraints

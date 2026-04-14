@@ -15,19 +15,23 @@ fi
 
 # Read current values
 CURRENT_TURN=$(yq '.turn' "$SESSION_FILE")
-GAME_PATH=$(yq '.game_path' "$SESSION_FILE")
-CAMPAIGN_ID=$(yq '.campaign_id' "$SESSION_FILE")
+CAMPAIGN_PATH=$(yq '.campaign_path' "$SESSION_FILE")
 
 if [[ -z "$CURRENT_TURN" || "$CURRENT_TURN" == "null" ]]; then
   echo "ERROR: No turn number in session.yaml" >&2
   exit 1
 fi
 
+if [[ -z "$CAMPAIGN_PATH" || "$CAMPAIGN_PATH" == "null" ]]; then
+  echo "ERROR: No campaign_path in session.yaml" >&2
+  exit 1
+fi
+
 # Increment turn (bash arithmetic, not LLM)
 NEW_TURN=$((CURRENT_TURN + 1))
 
-# Build new workspace path
-NEW_WORKSPACE="${GAME_PATH}campaigns/${CAMPAIGN_ID}/turns/turn-${NEW_TURN}"
+# Build new workspace path from campaign_path (already has correct slashes)
+NEW_WORKSPACE="${CAMPAIGN_PATH}/turns/turn-${NEW_TURN}"
 
 # Create the workspace directory
 mkdir -p "$NEW_WORKSPACE"

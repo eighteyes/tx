@@ -27,7 +27,6 @@ meshes/*
 !meshes/rewriter
 !meshes/structured-thinking
 !meshes/narrative-engine/
-!meshes/narrative-engine-v2/
 !meshes/llm-council/
 .sandbox-deny.log
 coverage/

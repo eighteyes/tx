@@ -51,6 +51,7 @@ import { GuardrailConfig } from './guardrail-config.ts';
 import { GuardrailKillHandler } from './guardrail-kill-handler.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables, resolveManifestPath } from './manifest-validator.ts';
 import { resolveManifestEligibility, formatDeadlockMessage } from './manifest-resolver.ts';
+import { resolveContextEntry } from './context-resolver.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
 import { NudgeDetector } from './nudge-detector.ts';
 import { ReliabilityManager } from '../reliability/reliability-manager.ts';
@@ -649,7 +650,7 @@ export class WorkerDispatcher extends EventEmitter {
     // =========================================================================
     // Agent Completion Frontier: duplicate_target guardrail
     // Prevents agents from sending multiple messages to the same target in a single session.
-    // This prevents cascade multiplication bugs (e.g., 3× delivery observed in narrative-engine-v2).
+    // This prevents cascade multiplication bugs (e.g., 3× delivery observed in narrative-engine).
     // =========================================================================
 
     // Exemptions:
@@ -2210,7 +2211,7 @@ export class WorkerDispatcher extends EventEmitter {
 
       if (preValidation) {
         const cachedVars = meshName ? this.cachedManifestVars.get(meshName) : undefined;
-        const ctx = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+        const ctx = buildPathContext(this.config.workDir, meshConfig, cachedVars);
         const completedWriters = meshName ? Array.from(this.completedAgents.get(meshName) || []) : undefined;
         const result = validateAgentArtifacts(agent.name, meshConfig.manifest, 'reads', ctx, { completedWriters });
 
@@ -3447,7 +3448,7 @@ The system will resume your session when the human responds.`;
     const written = this.writtenFiles.get(meshName) || new Set();
 
     const cachedVars = this.cachedManifestVars.get(meshName);
-    const pathContext = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+    const pathContext = buildPathContext(this.config.workDir, meshConfig, cachedVars);
 
     const result = resolveManifestEligibility(manifest, agentNames, completed, written, pathContext);
 
@@ -3544,7 +3545,7 @@ The system will resume your session when the human responds.`;
   private handleManifestCompletion(meshName: string, agentName: string, meshConfig: MeshConfig): void {
     const manifest = meshConfig.manifest!;
     const cachedVars = this.cachedManifestVars.get(meshName);
-    const pathContext = buildPathContext(this.config.workDir, meshConfig as any, cachedVars);
+    const pathContext = buildPathContext(this.config.workDir, meshConfig, cachedVars);
 
     // Add confirmed write paths to writtenFiles (only if file actually exists on disk)
     if (!this.writtenFiles.has(meshName)) {
@@ -3758,7 +3759,7 @@ The system will resume your session when the human responds.`;
     wsLocations: Record<string, string>,
   ): Record<string, string> {
     const meshConfig = this.meshConfigs.get(meshName);
-    const variablesConfig = (meshConfig as any)?.workspace?.variables;
+    const variablesConfig = meshConfig?.workspace?.variables;
     return resolveManifestVariables(this.config.workDir, wsLocations, variablesConfig);
   }
 
@@ -4242,7 +4243,7 @@ Please advise the agent or check mesh configuration.`;
 
       // 2. Resolved workspace location from manifest variables (per-turn path)
       if (!resolvedWorkspaceDir && workspaceConfig) {
-        const wsLocations = (workspaceConfig as any)?.locations || {};
+        const wsLocations = workspaceConfig?.locations || {};
         if (Object.keys(wsLocations).length > 0) {
           const varMap = this.cachedManifestVars.get(meshName)
             || this.resolveManifestVariables(meshName, wsLocations);
@@ -4319,8 +4320,8 @@ Please advise the agent or check mesh configuration.`;
 
       // Collect manifest entries — content goes to preloadedFiles only (no dupe in contract)
       if (meshConfig?.manifest) {
-        const wsLocations = (meshConfig as any).workspace?.locations || {};
-        const wsBase = (meshConfig as any).workspace?.path || '';
+        const wsLocations = meshConfig.workspace?.locations || {};
+        const wsBase = meshConfig.workspace?.path || '';
         const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
         // Inject runtime values so manifest path templates resolve correctly
         // {feature} comes from message frontmatter, not the manifest system
@@ -4332,8 +4333,15 @@ Please advise the agent or check mesh configuration.`;
           varMap: Object.fromEntries(Object.entries(varMap)),
         });
         const meshAutoInject = meshConfig.autoInjectManifestFiles !== false;
+        // Tracks aggregate context-query bytes for the per-agent 200KB size guard (QA answer #14)
+        let contextAgentBytes = 0;
+        const CONTEXT_MAX_BYTES = 200 * 1024;
 
         for (const entry of meshConfig.manifest) {
+          // Prefix entries have their own collection loop below — skip here to avoid
+          // landing the same content in both prefixFiles and preloadedFiles.
+          if (entry.injection === 'prefix') continue;
+
           let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
           for (const [key, value] of Object.entries(varMap)) {
             locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
@@ -4344,33 +4352,67 @@ Please advise the agent or check mesh configuration.`;
             id: entry.id, path: resolvedPath, description: entry.description,
           };
 
-          if (entry.reads?.includes(agent.name)) {
-            const shouldAutoInject = entry.autoInject !== undefined ? entry.autoInject : meshAutoInject;
+          // An agent is a reader if listed in entry.reads OR has a context query entry.
+          // Spec: reads not required for injection when context is present (QA answer #1).
+          const contextQuery = entry.context?.[agent.name];
+          const agentIsReader = entry.reads?.includes(agent.name) || contextQuery !== undefined;
 
-            if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
-              try {
-                const content = fs.readFileSync(resolvedPath, 'utf-8');
-                if (shouldAutoInject) {
-                  // Content goes to preloadedFiles only — no inline dupe in file contract
-                  const relativePath = path.relative(this.config.workDir, resolvedPath);
-                  const alreadyPreloaded = preloadedFiles.some(f => f.path === relativePath);
-                  if (!alreadyPreloaded) {
-                    const stats = fs.statSync(resolvedPath);
-                    if (stats.size <= 200 * 1024) {
-                      preloadedFiles.push({ path: relativePath, content });
-                    } else {
-                      log.warn('dispatcher', `Skipping large file in manifest auto-inject: ${resolvedPath} (${stats.size} bytes)`);
-                    }
+          if (agentIsReader) {
+            if (contextQuery !== undefined) {
+              // --- Context query path ---
+              // Context takes full precedence; autoInject is never evaluated for this agent+entry.
+              if (!resolvedPath.includes('{')) {
+                const ctxResult = resolveContextEntry(
+                  entry.id,
+                  contextQuery,
+                  resolvedPath,
+                  { workDir: this.config.workDir, varMap },
+                );
+                if (ctxResult !== null) {
+                  if (contextAgentBytes + ctxResult.sizeBytes > CONTEXT_MAX_BYTES) {
+                    log.warn('dispatcher', `Context query exceeds 200KB aggregate limit for agent — skipping`, {
+                      agentId, entryId: entry.id, sizeBytes: ctxResult.sizeBytes, totalSoFar: contextAgentBytes,
+                    });
+                  } else {
+                    contextAgentBytes += ctxResult.sizeBytes;
+                    preloadedFiles.push({ path: entry.id, content: ctxResult.content });
+                    log.debug('dispatcher', `Context query resolved`, {
+                      agentId, entryId: entry.id, sizeBytes: ctxResult.sizeBytes,
+                    });
                   }
-                } else {
-                  // No auto-inject: inline content in manifest contract
-                  fileEntry.content = content;
                 }
-              } catch {
-                // Non-fatal — file listed but unreadable
               }
+              // agentReads still tracks this entry for the file contract display
+              agentReads.push(fileEntry);
+            } else {
+              // --- Standard autoInject path ---
+              const shouldAutoInject = entry.autoInject !== undefined ? entry.autoInject : meshAutoInject;
+
+              if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
+                try {
+                  const content = fs.readFileSync(resolvedPath, 'utf-8');
+                  if (shouldAutoInject) {
+                    // Content goes to preloadedFiles only — no inline dupe in file contract
+                    const relativePath = path.relative(this.config.workDir, resolvedPath);
+                    const alreadyPreloaded = preloadedFiles.some(f => f.path === relativePath);
+                    if (!alreadyPreloaded) {
+                      const stats = fs.statSync(resolvedPath);
+                      if (stats.size <= 200 * 1024) {
+                        preloadedFiles.push({ path: relativePath, content });
+                      } else {
+                        log.warn('dispatcher', `Skipping large file in manifest auto-inject: ${resolvedPath} (${stats.size} bytes)`);
+                      }
+                    }
+                  } else {
+                    // No auto-inject: inline content in manifest contract
+                    fileEntry.content = content;
+                  }
+                } catch {
+                  // Non-fatal — file listed but unreadable
+                }
+              }
+              agentReads.push(fileEntry);
             }
-            agentReads.push(fileEntry);
           }
           if (entry.writes?.includes(agent.name)) agentWrites.push(fileEntry);
         }
@@ -4391,6 +4433,42 @@ Please advise the agent or check mesh configuration.`;
           fromLoad: agent.load?.length || 0,
           fromManifest: preloadedFiles.length - (agent.load?.length || 0),
         });
+      }
+
+      // --- Collect prefix files (layer 3 — before cache break, identical for all agents) ---
+      // Manifest entries with injection: 'prefix' are shared across all agents in the turn.
+      // They are placed before agent identity so the shared prefix is as long as possible.
+      const prefixFiles: Array<{ path: string; content: string }> = [];
+      if (meshConfig?.manifest) {
+        const wsLocations = meshConfig.workspace?.locations || {};
+        const wsBase = meshConfig.workspace?.path || '';
+        const varMap = this.cachedManifestVars.get(meshName) || this.resolveManifestVariables(meshName, wsLocations);
+        if (featureName) varMap['feature'] = featureName;
+
+        for (const entry of meshConfig.manifest) {
+          if (entry.injection !== 'prefix') continue;
+          let locationTemplate = wsLocations[entry.location || 'workspace'] || wsBase;
+          for (const [key, value] of Object.entries(varMap)) {
+            locationTemplate = locationTemplate.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+          }
+          const resolvedPath = path.join(this.config.workDir, locationTemplate, entry.id);
+          if (!resolvedPath.includes('{') && fs.existsSync(resolvedPath)) {
+            try {
+              const stats = fs.statSync(resolvedPath);
+              if (stats.size > 200 * 1024) {
+                log.warn('dispatcher', `Skipping large prefix file: ${resolvedPath} (${stats.size} bytes)`, { agentId });
+                continue;
+              }
+              const content = fs.readFileSync(resolvedPath, 'utf-8');
+              prefixFiles.push({ path: path.relative(this.config.workDir, resolvedPath), content });
+            } catch {
+              log.warn('dispatcher', `Failed to read prefix file: ${resolvedPath}`, { agentId });
+            }
+          }
+        }
+        if (prefixFiles.length > 0) {
+          log.info('dispatcher', `Collected prefix files`, { agentId, count: prefixFiles.length });
+        }
       }
 
       // --- Build FSM section ---
@@ -4455,54 +4533,79 @@ Please advise the agent or check mesh configuration.`;
       };
       const workspaceSection = this.promptInjector.buildWorkspaceSection(workspaceInfo, taskId);
 
-      // --- Build all prompt sections in order ---
-      // Identity+situation → files+workspace → instructions → output constraints
+      // --- Build all prompt sections in cache-layer order ---
+      // Stable (shared) content first → volatile (agent-specific) content last.
+      // This ordering maximises Anthropic prompt cache hits across agents in the same turn.
+      //
+      //  Layer 1: TX shared preamble      — identical across all meshes and agents
+      //  Layer 2: CLAUDE.md               — identical across all agents in the project
+      //  Layer 3: Prefix files            — identical for all agents within a turn
+      //  ─── cache break ─────────────────────────────────────────────────────────
+      //  Layer 4: Agent identity          — per-agent (name, address, TX_ROOT)
+      //  Layer 5: FSM context             — per-agent / per-dispatch
+      //  Layer 6: Situational awareness   — per-agent / per-dispatch
+      //  Layer 7: Task workspace          — per-agent / per-turn
+      //  Layer 8: File contract           — per-agent / per-turn
+      //  Layer 9: Agent prompt            — per-agent (config)
+      //  Layer 10+: Rearmatter, parallel instance, messaging — appended below after gates
+
       const agentCount = meshConfig?.agents?.length ?? 1;
       const promptSections: string[] = [];
 
-      // 0. Project CLAUDE.md (loaded first so agent instructions can override)
+      // Layer 1: TX shared preamble (tool guidance, autonomous-operation conventions)
+      // Must contain no agent name, mesh name, or project references — shared by all.
+      promptSections.push(this.promptInjector.buildSharedPreamble({
+        agentCount,
+        allowedTools: agent.permissions?.allowedTools,
+      }));
+
+      // Layer 2: Project CLAUDE.md (project-level instructions, stable across agents)
       if (meshConfig?.load_claude_md !== false) {
         const claudeMdContent = this.loadProjectClaudeMd();
         if (claudeMdContent) promptSections.push(claudeMdContent);
       }
 
-      // -- Identity + situation --
-      // 1. Preamble (identity, tool guidance, address)
-      promptSections.push(this.promptInjector.buildPreambleSection({
-        agentCount,
-        meshName: meshName!,
+      // Layer 3: Prefix files (manifest entries with injection: 'prefix')
+      // These are turn-level files identical for every agent — still before the cache break.
+      if (prefixFiles.length > 0) {
+        const prefixBlock = this.promptInjector.buildPrefixBlock(prefixFiles);
+        if (prefixBlock) promptSections.push(prefixBlock);
+      }
+
+      // --- cache break (everything above is shared; everything below is agent-specific) ---
+
+      // Layer 4: Agent identity (address, TX_ROOT hint — varies per agent)
+      promptSections.push(this.promptInjector.buildAgentIdentity({
         agentName: agent.name,
+        meshName: meshName!,
         txRoot: this.config.txRoot || process.env.TX_ROOT,
-        allowedTools: agent.permissions?.allowedTools,
       }));
 
-      // 2. FSM context (what phase we're in)
+      // Layer 5: FSM context (what phase we're in)
       if (fsmSection) promptSections.push(fsmSection);
 
-      // 3. Situational awareness (pending asks, queued tasks)
+      // Layer 6: Situational awareness (pending asks, queued tasks)
       if (situationalSection) promptSections.push(situationalSection);
 
-      // 4. Parallel instance context — appended below after gates
+      // Layer 7 (parallel instance context — appended below after gates)
 
-      // -- Files + workspace --
-      // 5. Task workspace (where to write)
+      // Layer 8: Task workspace (where to write)
       promptSections.push(workspaceSection);
 
-      // 6. File contract + preloaded files (what files, their content)
+      // Layer 9: File contract + preloaded files (what files, their content)
       const fileSection = this.promptInjector.buildFileSection(agentReads, agentWrites, preloadedFiles);
       if (fileSection) promptSections.push(fileSection);
 
-      // -- Instructions --
-      // 7. Agent prompt (with template tokens already replaced)
+      // Layer 10: Agent prompt (with template tokens already replaced)
       promptSections.push(agentPromptText);
 
-      // 7b. Brain access (when mesh has brain: true)
+      // Layer 10b: Brain access (when mesh has brain: true)
       if (meshConfig?.brain === true && meshName !== 'brain') {
         promptSections.push(this.promptInjector.buildBrainSection(meshName!, agent.name));
         log.info('dispatcher', 'Appended brain access section', { agentId });
       }
 
-      // 8-10. Rearmatter, parallel instance, messaging+routing — appended below after gates
+      // Layers 11+: Rearmatter, parallel instance, messaging+routing — appended below after gates
 
       let systemPrompt = promptSections.filter(Boolean).join('\n\n');
 
@@ -4595,7 +4698,9 @@ Please advise the agent or check mesh configuration.`;
       const bashAllowed = agent.permissions?.allowedTools?.some(tool =>
         tool === 'Bash' || tool.startsWith('Bash(')
       ) || !agent.permissions;  // Default allows Bash
-      if (bashAllowed && !this.config.godMode) {
+      const bashGuardMode = this.guardrails.getMode('bash_guard', meshName!, agent.name);
+      const bashGuardEnabled = bashGuardMode.strict || bashGuardMode.warning;
+      if (bashAllowed && !this.config.godMode && bashGuardEnabled) {
         // Build allowed paths: meshes dir + TX_ROOT install dir + user-configured paths from config.yaml
         const bashAllowedPaths = [this.config.meshesDir];
         if (process.env.TX_ROOT) {
@@ -4610,12 +4715,12 @@ Please advise the agent or check mesh configuration.`;
           workDir: this.config.workDir,
           allowedPaths: bashAllowedPaths,
           killRunner,
-          mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
+          mode: bashGuardMode,
         });
         preToolUseHooks.push(bashGuard.createHook());
         log.debug('bash-guard', 'Bash guard enabled', {
           agentId,
-          mode: this.guardrails.getMode('bash_guard', meshName!, agent.name),
+          mode: bashGuardMode,
         });
       }
 
@@ -5543,10 +5648,10 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
 
           if (postValidation) {
             // Refresh variable cache from session.yaml (agent just completed, session should be current)
-            const wsLocs = (meshConfigForValidation as any)?.workspace?.locations || {};
+            const wsLocs = meshConfigForValidation?.workspace?.locations || {};
             const freshVars = this.resolveManifestVariables(meshName, wsLocs);
             this.cachedManifestVars.set(meshName, freshVars);
-            const ctx = buildPathContext(this.config.workDir, meshConfigForValidation as any, freshVars);
+            const ctx = buildPathContext(this.config.workDir, meshConfigForValidation, freshVars);
             const validation = validateAgentArtifacts(agent.name, meshConfigForValidation.manifest, 'writes', ctx);
 
             if (validation.missing.length > 0) {
@@ -6005,7 +6110,7 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           this.completedAgents.get(meshName)!.add(agent.name);
 
           // Refresh cached manifest variables from session.yaml (now up-to-date)
-          const wsLocations = (meshConfig as any)?.workspace?.locations || {};
+          const wsLocations = meshConfig?.workspace?.locations || {};
           this.cachedManifestVars.set(meshName, this.resolveManifestVariables(meshName, wsLocations));
 
           // Manifest routing: update writtenFiles and resolve next agents

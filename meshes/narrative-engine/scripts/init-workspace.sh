@@ -6,7 +6,7 @@
 #   - Detect and archive polluted workspaces
 #   - Bootstrap new campaigns (--new-campaign)
 #   - Load protagonist entity (campaign > game, with game-level fallback for starting traits/foundation)
-#   - Load scene.yaml and timeline.yaml
+#   - Load state.yaml and timeline.yaml
 #   - Run snapshot-campaign.sh
 #   - Output state blob YAML to stdout
 #
@@ -45,6 +45,7 @@ err()  { echo -e "${RED}[init-workspace]${RESET} $*" >&2; }
 
 NEW_CAMPAIGN=""
 VERBOSE=false
+STAMP_ACTION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,6 +54,15 @@ while [[ $# -gt 0 ]]; do
         NEW_CAMPAIGN="$2"; shift 2
       else
         NEW_CAMPAIGN="auto"; shift
+      fi
+      ;;
+    --stamp-action)
+      # Next arg is the raw player action text to stamp into intent.yaml
+      if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+        STAMP_ACTION="$2"; shift 2
+      else
+        # Read from stdin if no inline arg
+        STAMP_ACTION="$(cat)"; shift
       fi
       ;;
     --verbose) VERBOSE=true; shift ;;
@@ -77,6 +87,7 @@ current_turn=$(yq -r '.turn // 0' "$SESSION")
 game_path=$(yq -r '.game_path // "null"' "$SESSION")
 pov_character=$(yq -r '.pov_character // "null"' "$SESSION")
 workspace=$(yq -r '.workspace // "null"' "$SESSION")
+workspace="${workspace%/}"
 
 if [[ "$game_id" == "null" || "$game_path" == "null" ]]; then
   err "session.yaml missing game_id or game_path"
@@ -141,7 +152,7 @@ if [[ "$campaign_status" == "just_created" ]]; then
   mkdir -p "$campaign_dir/entities/bonds"
   mkdir -p "$campaign_dir/turns"
 
-  cat > "$campaign_dir/scene.yaml" << 'SCENE_EOF'
+  cat > "$campaign_dir/state.yaml" << 'SCENE_EOF'
 turn: 0
 arc:
   pressure: 0
@@ -199,7 +210,8 @@ if [[ -d "$workspace" ]]; then
       suffix=$(echo "$suffix" | tr 'a-y' 'b-z')
     done
 
-    mv "$workspace" "${workspace}${suffix}"
+    ARCHIVE_DIR="${workspace}${suffix}"
+    mv "$workspace" "$ARCHIVE_DIR"
     pollution_status="archived:turn-${new_turn}${suffix}"
     warn "Archived polluted workspace → turn-${new_turn}${suffix} ($pipeline_files artifacts)"
   fi
@@ -211,6 +223,30 @@ fi
 
 mkdir -p "$workspace"
 vlog "Workspace: $workspace"
+
+# Preserve player input files from archived workspace
+if [[ -n "${ARCHIVE_DIR:-}" && -f "${ARCHIVE_DIR}/director-notes.yaml" ]]; then
+  cp "${ARCHIVE_DIR}/director-notes.yaml" "${workspace}/director-notes.yaml"
+  vlog "Preserved director-notes.yaml from ${ARCHIVE_DIR}"
+fi
+
+# ─────────────────────────────────────────────
+# 6b. STAMP RAW PLAYER ACTION (tamper-proof)
+# ─────────────────────────────────────────────
+# When --stamp-action is provided, write the player's exact words into
+# intent.yaml BEFORE any LLM touches the file. This prevents models
+# from sanitizing, softening, or rewriting the player's input.
+# The LLM appends decomposition fields later via yq — raw_input is sacred.
+
+if [[ -n "$STAMP_ACTION" ]]; then
+  intent_file="$workspace/intent.yaml"
+  # Use yq with env() for safe escaping — handles quotes, em-dashes, special chars
+  export _STAMP_RAW="$STAMP_ACTION"
+  yq -n '.raw_input = strenv(_STAMP_RAW)' > "$intent_file"
+  unset _STAMP_RAW
+  vlog "Stamped raw_input to $intent_file (${#STAMP_ACTION} chars)"
+  log "${GREEN}Player action stamped (tamper-proof)${RESET}"
+fi
 
 # ─────────────────────────────────────────────
 # 7. LOAD PROTAGONIST ENTITY
@@ -253,10 +289,10 @@ vlog "Protagonist: $protagonist_file (source: $entity_source)"
 [[ -n "$game_entity" && -f "$game_entity" ]] && vlog "Game-level entity: $game_entity"
 
 # ─────────────────────────────────────────────
-# 8. LOAD SCENE.YAML
+# 8. LOAD STATE.YAML
 # ─────────────────────────────────────────────
 
-scene_file="$campaign_dir/scene.yaml"
+scene_file="$campaign_dir/state.yaml"
 
 # ─────────────────────────────────────────────
 # 9. LOAD TIMELINE (last entry)
@@ -290,6 +326,24 @@ else
 fi
 
 # ─────────────────────────────────────────────
+# 11b. SYNC V2 SESSION.YAML
+# ─────────────────────────────────────────────
+# The v2 mesh config reads variables from its own session.yaml
+# (workspace.variables.source). Keep it in sync so manifest
+# variable resolution produces correct per-turn workspace paths.
+
+V2_SESSION="$ROOT/.ai/tx/narrative-engine/session.yaml"
+if [[ -f "$V2_SESSION" ]]; then
+  yq -i ".turn = $new_turn" "$V2_SESSION"
+  yq -i ".workspace = \"$workspace\"" "$V2_SESSION"
+  yq -i ".game_id = \"$game_id\"" "$V2_SESSION"
+  yq -i ".campaign_id = \"$campaign_id\"" "$V2_SESSION"
+  yq -i ".game_path = \"$game_path\"" "$V2_SESSION"
+  yq -i ".campaign_path = \"$campaign_dir\"" "$V2_SESSION"
+  vlog "V2 session synced: turn=$new_turn workspace=$workspace"
+fi
+
+# ─────────────────────────────────────────────
 # 12. BUILD STATE BLOB (yq-assembled, stdout)
 # ─────────────────────────────────────────────
 
@@ -310,7 +364,14 @@ yq -n "
 # --- Protagonist block ---
 # Core fields from primary entity
 protag_id=$(yq -r '.id // "unknown"' "$protagonist_file")
-protag_name=$(yq -r '.name // "unknown"' "$protagonist_file")
+
+# Name can be string or object {first, surname}. Handle both.
+name_type=$(yq -r '.name | type' "$protagonist_file" 2>/dev/null || echo "string")
+if [[ "$name_type" == "!!map" ]]; then
+  protag_name=$(yq -r '.name.first // "unknown"' "$protagonist_file")
+else
+  protag_name=$(yq -r '.name // "unknown"' "$protagonist_file")
+fi
 
 yq -i "
   .protagonist.id = \"$protag_id\" |
@@ -443,6 +504,76 @@ else
     .timeline.last_day = 0 |
     .timeline.last_period = null
   ' "$BLOB"
+fi
+
+# ─────────────────────────────────────────────
+# 13. WRITE CONTEXT.YAML (script-generated, not LLM)
+# ─────────────────────────────────────────────
+# context.yaml is 100% derivable from the blob. Writing it here ensures
+# no LLM can sanitize the player_action field or alter scene state.
+# The raw_input from intent.yaml is used as player_action — verbatim.
+
+if [[ -n "$STAMP_ACTION" ]]; then
+  context_file="$workspace/context.yaml"
+
+  # Start with session fields
+  export _CTX_ACTION="$STAMP_ACTION"
+  export _CTX_POV="$pov_character"
+
+  yq -n '
+    .turn = '"$new_turn"' |
+    .context_type = "action" |
+    .player_action = strenv(_CTX_ACTION) |
+    .pov_character = strenv(_CTX_POV)
+  ' > "$context_file"
+
+  # Actor block from blob protagonist
+  protag_tmp=$(mktemp)
+  yq '.protagonist' "$BLOB" > "$protag_tmp"
+  yq -i '.actor = load("'"$protag_tmp"'")' "$context_file"
+  rm -f "$protag_tmp"
+
+  # Scene block from blob scene
+  scene_tmp=$(mktemp)
+  yq '{
+    "location": .scene.location,
+    "present": .scene.present,
+    "pov_is": .session.pov_character
+  }' "$BLOB" > "$scene_tmp"
+  yq -i '.scene = load("'"$scene_tmp"'")' "$context_file"
+  rm -f "$scene_tmp"
+
+  # Closing state from blob scene
+  closing_tmp=$(mktemp)
+  yq '{
+    "door": .scene.closing.door,
+    "characters": .scene.closing.positions,
+    "objects": .scene.closing.objects,
+    "time": .scene.closing.time
+  }' "$BLOB" > "$closing_tmp"
+  yq -i '.closing_state = load("'"$closing_tmp"'")' "$context_file"
+  rm -f "$closing_tmp"
+
+  # Prose anchor
+  anchor_tmp=$(mktemp)
+  yq '{"v": .scene.prose_anchor}' "$BLOB" > "$anchor_tmp"
+  yq -i '.closing_state.prose_anchor = load("'"$anchor_tmp"'").v' "$context_file"
+  rm -f "$anchor_tmp"
+
+  # Arc block from blob scene
+  arc_tmp=$(mktemp)
+  yq '.scene.arc // {}' "$BLOB" > "$arc_tmp"
+  yq -i '.arc = load("'"$arc_tmp"'")' "$context_file"
+  rm -f "$arc_tmp"
+
+  # Suspended block
+  suspended_tmp=$(mktemp)
+  yq '{"v": .scene.suspended}' "$BLOB" > "$suspended_tmp"
+  yq -i '.suspended = load("'"$suspended_tmp"'").v' "$context_file"
+  rm -f "$suspended_tmp"
+
+  vlog "context.yaml written to $context_file"
+  log "${GREEN}context.yaml generated (script, not LLM)${RESET}"
 fi
 
 # Output clean YAML

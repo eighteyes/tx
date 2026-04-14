@@ -67,7 +67,7 @@ Tracks relationships via 12 independent dimensions, each scored 0-5.
 
 ### Asymmetry
 
-When experiences differ between participants, use initial-keyed notation: `{h: 3, k: 4}`. Symmetric values use a single number.
+When experiences differ between participants, use initial-keyed notation: `{a: 3, b: 4}`. Symmetric values use a single number.
 
 ### Bond Sections
 

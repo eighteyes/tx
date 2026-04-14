@@ -427,6 +427,8 @@ Available checkpoints (use --rewind-to=<state>):
 
 **When checkpoints are cleared**: On mesh completion (`clearMeshState`). Old checkpoints are garbage collected (keeps last 50 per mesh).
 
+**Cache interaction**: Session resume preserves the system prompt prefix, so recovered workers benefit from [prompt cache layering](./prompt-cache-layering.md) — the shared Layers 1–3 remain cached across recovery forks.
+
 ### SLI Tracker
 
 **What it does**: Measures success rate, failure categories, MTTR, and nines level.

@@ -366,28 +366,144 @@ What creates warmth, comfort, belonging—the architecture of coziness:
 
 ---
 
-## Voice Modifiers for Entities
+## Character Depth Extensions
 
-When extracting character voice (Phase 6b), add these dimensions:
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Daily Rituals:**
+- "What's their morning routine? Evening wind-down? The habits that are the person?"
+- "What ritual would they maintain even if circumstances changed drastically?"
+- "When routine breaks, how do they handle it? What does disruption reveal?"
+- "Which rituals are choice and which are comfort? Which are prison?"
+
+**Small Pleasures:**
+- "What makes Tuesday worth having? The coffee? The window? The specific bench?"
+- "What ordinary thing brings them joy that they'd be embarrassed to admit matters so much?"
+- "What would they miss most if they had to leave this place, this life?"
+- "What pleasure is so small others wouldn't notice, but its absence would devastate them?"
+
+**Relationship to Routine:**
+- "Do they love the ordinary or resent it? Find safety or suffocation?"
+- "What disrupts the routine? How often? Do they welcome or resist disruption?"
+- "What did they miss about routine when it was gone? What did they NOT miss?"
+- "Is the routine who they are, or what they do while being someone else?"
+
+**Mundane Sacred:**
+- "What ordinary moment holds extraordinary weight for them?"
+- "When does the everyday become transcendent? What elevates it?"
+- "What do they pay attention to that others overlook?"
+- "Where do they find meaning in the small, the daily, the unremarkable?"
+
+**Change Resistance:**
+- "How do they handle small disruptions? The coffee shop closed? The route blocked?"
+- "What change terrifies them? What change do they secretly crave?"
+- "What would they fight to preserve? What would they let go more easily than expected?"
+- "When change comes, do they adapt or fracture? How much flexibility do they have?"
+
+### Entity Schema Extensions
 
 ```yaml
-voice:
-  # Standard fields plus:
+daily_rituals:
+  morning_routine: "the specific sequence that starts their day"
+  evening_routine: "how they wind down, mark the day's end"
+  immutable_rituals: [rituals they'd maintain even if everything else changed]
+  disruption_response: "how they handle broken routine, what it reveals"
 
-  rootedness_markers:
-    local_vocabulary: [words/phrases specific to this place]
-    shorthand_references: [shared history invoked without explanation]
-    geographic_knowledge: [the back way, the shortcut, where to go when]
+small_pleasures:
+  tuesday_worth: "what makes ordinary days worthwhile—specific, concrete"
+  embarrassing_joy: "ordinary thing that brings joy they wouldn't admit to"
+  departure_loss: "what they'd miss most if they left"
+  devastating_absence: "small pleasure so minor others wouldn't notice, but they'd be wrecked without it"
+  # Examples:
+  # tuesday_worth: "The way light hits the cafe at 3pm. The barista knowing their order. The table by the window."
+  # embarrassing_joy: "Arranging books by color. It's silly. It makes them happy. They'd never admit how much."
 
-  rhythms:
-    daily_patterns: "how their day structures their speech (morning gruffness, afternoon ease)"
-    seasonal_shifts: "how their voice changes with the time of year"
-    routine_phrases: [things they always say, verbal habits that mark them]
+relationship_to_routine:
+  routine_emotion: "love/resent/safety/suffocation—how they feel about the ordinary"
+  disruption_frequency: "what breaks the routine, how often, welcome or resist"
+  routine_absence: "what they missed when routine broke, what they didn't miss"
+  routine_identity: "is routine who they are, or what they do while being someone else"
 
-  silence_patterns:
-    comfortable_with: [topics they don't need to speak about]
-    avoiding: [topics their silence signals]
-    expressive_silences: "what their pauses mean"
+mundane_sacred:
+  weighted_moment: "what ordinary moment holds extraordinary weight"
+  elevation_trigger: "when does everyday become transcendent, what elevates it"
+  overlooked_attention: "what they notice that others overlook"
+  small_meaning: "where they find meaning in the unremarkable"
+  # Examples:
+  # weighted_moment: "First sip of morning coffee. Not the taste—the ritual, the pause, the beginning."
+  # overlooked_attention: "Notices which regulars are missing. Tracks patterns. Cares about the absence."
+
+change_resistance:
+  small_disruption_handling: "coffee shop closed, route blocked—how they respond"
+  feared_change: "what disruption terrifies them"
+  craved_change: "what change they secretly want"
+  preservation_fight: "what they'd fight to keep"
+  adaptation_capacity: "adapt or fracture—how flexible are they really"
+
+rootedness_markers:
+  local_vocabulary: [words/phrases specific to this place]
+  shorthand_references: [shared history invoked without explanation]
+  geographic_knowledge: [the back way, the shortcut, where to go when]
+
+rhythms:
+  daily_patterns: "how their day structures their speech (morning gruffness, afternoon ease)"
+  seasonal_shifts: "how their voice changes with the time of year"
+  routine_phrases: [things they always say, verbal habits that mark them]
+
+silence_patterns:
+  comfortable_with: [topics they don't need to speak about]
+  avoiding: [topics their silence signals]
+  expressive_silences: "what their pauses mean"
+```
+
+### Examples
+
+**Daily Rituals — Example:**
+```yaml
+daily_rituals:
+  morning_routine: "Alarm at 6. Coffee brewing while shower. Toast, jam, at the table by window. Read paper. Same chair, same mug, same 45 minutes."
+  evening_routine: "Walk the same route. Home by 6:30. Dinner while watching the news. Book in bed by 9. Light off by 10."
+  immutable_rituals: ["Morning coffee at the table, even on vacation", "The walk, even in rain"]
+  disruption_response: "Irritation first. Then anxiety. Then—if disruption persists—realization they needed the break. Won't admit that."
+```
+
+**Small Pleasures — Example:**
+```yaml
+small_pleasures:
+  tuesday_worth: "The table by the window at the cafe. The light at 3pm. The quiet before the evening rush. That specific hour."
+  embarrassing_joy: "The sound of the espresso machine. It's Pavlovian, it's silly, it means comfort and everything's okay."
+  departure_loss: "The barista knowing the order. Being known without having to explain. Being a regular, not a stranger."
+  devastating_absence: "If they moved the table. Stupid. It's just a table. But it's the right table. Others wouldn't get it."
+```
+
+**Relationship to Routine — Example:**
+```yaml
+relationship_to_routine:
+  routine_emotion: "Safety with undercurrent of fear that this is all there is. Comfort laced with occasional panic."
+  disruption_frequency: "Rare. Resists disruption fiercely. When forced to adapt, hates how easily they actually do."
+  routine_absence: "Missed: the structure, the not-having-to-decide. Didn't miss: the sameness, the feeling of being stuck."
+  routine_identity: "The routine IS them. Or they think it is. Terror in discovering they exist without it."
+```
+
+**Mundane Sacred — Example:**
+```yaml
+mundane_sacred:
+  weighted_moment: "First sip of coffee in the morning. Not special coffee. Cheap grocery store brand. But that moment—that's the pause that makes the day possible."
+  elevation_trigger: "When regulars acknowledge each other. Silent nod. Shared ritual. Feels like belonging without demanding anything."
+  overlooked_attention: "Notices when the barista cuts their hair. When the regular at table six stops coming. Others don't track this. They do."
+  small_meaning: "The predictability IS the meaning. Tuesday following Monday. The world making small sense. That's sacred."
+```
+
+**Change Resistance — Example:**
+```yaml
+change_resistance:
+  small_disruption_handling: "Table taken: mild panic, awkward hovering, leave entirely rather than sit elsewhere. Routine broken, day ruined."
+  feared_change: "The cafe closing. Finding a new place means being a stranger again. Means starting over. Means alone."
+  craved_change: "Secretly wants someone to break the routine for them. So it's not their fault. So they can want something different and not feel guilty."
+  preservation_fight: "Would fight to keep: the cafe, the route, the rituals. Change the rituals and what's left? Who are they without Tuesday?"
+  adaptation_capacity: "More flexible than they admit. Hate that about themselves. Prefer to think they're fragile. Makes the routine feel more necessary."
 ```
 
 ---

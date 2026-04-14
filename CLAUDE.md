@@ -83,6 +83,28 @@ TX uses **routing context** instead of explicit type fields:
 | `worker:error` | `{id, error}` | Worker error |
 | `mesh:loaded` | `{mesh, agents}` | Mesh config loaded |
 
+## God Mode (Autonomous Operation)
+
+`tx start --god-mode` enables fully autonomous operation:
+
+**Core**: Runs with `--dangerously-skip-permissions` — no permission prompts.
+
+**Workers**: `bypassPermissions` mode + SDK sandbox:
+- `sandbox.enabled: true` — workers sandboxed
+- `autoAllowBashIfSandboxed: true` — bash auto-approved within sandbox
+- `filesystem.allowWrite: [workDir]` — writes fenced to project directory
+- Bash-guard is skipped (sandbox replaces it as primary boundary)
+
+**Injection**: `injectPrompt()` sends a second Enter after 1s unconditionally, preventing stalled completion→dispatch loops.
+
+**Use case**: Hand core a task list, walk away. Core dispatches meshes sequentially, workers execute without prompts, injection retries keep the loop alive.
+
+**Key files:**
+- `src/worker/sdk-runner.ts` — sandbox config built when `godMode` active
+- `src/worker/permissions.ts` — `resolvePermissions()` returns `bypassPermissions` in god mode
+- `src/core/tmux.ts` — `injectPrompt()` retry Enter logic
+- `src/cli/start.ts:1300` — `--dangerously-skip-permissions` flag passthrough
+
 ## Guardrails
 
 Unified runtime enforcement with **strict/warning mode** on every guardrail. Config: `.ai/tx/data/config.yaml` under `guardrails:`.

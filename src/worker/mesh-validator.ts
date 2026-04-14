@@ -37,6 +37,12 @@ export interface MeshAgentConfig {
  * Workspace configuration schema
  */
 export interface WorkspaceConfigSchema {
+  path?: string;                          // Base workspace path template
+  locations?: Record<string, string>;     // Named location templates (e.g. { workspace: '.ai/{feature}' })
+  variables?: {
+    source?: string;                      // File to read variables from (e.g. session.yaml)
+    mapping?: Record<string, string>;     // Key → path mappings within the source file
+  };
   output?: string;
   schema?: Record<string, unknown>;
 }
@@ -93,6 +99,23 @@ export interface MeshConfigSchema {
 }
 
 /**
+ * Per-agent context query value on a manifest entry.
+ *
+ * 'full'          — read entire file (equivalent to autoInject)
+ * { sections }    — extract specific YAML keys via yq pick (dot-notation paths supported)
+ * { script }      — run an arbitrary shell script; inject stdout
+ *
+ * fallback (on sections/script entries):
+ *   'full'  → fall back to reading the full file when query fails
+ *   'omit'  → silently skip this entry when query fails
+ *   (absent) → warn and omit
+ */
+export type ManifestContextValue =
+  | 'full'
+  | { sections: string[]; fallback?: 'full' | 'omit' }
+  | { script: string; fallback?: 'full' | 'omit' };
+
+/**
  * Manifest entry - declares a file in the mesh I/O manifest
  */
 export interface ManifestEntry {
@@ -102,7 +125,14 @@ export interface ManifestEntry {
   description?: string;
   reads: string[];
   writes: string[];
-  autoInject?: boolean;  // Override mesh-level autoInjectManifestFiles for this entry
+  autoInject?: boolean;      // Override mesh-level autoInjectManifestFiles for this entry
+  injection?: 'prefix';      // 'prefix' → injected before cache break for ALL agents (layer 3)
+  /**
+   * Per-agent context queries. Keys are agent names; values are context query descriptors.
+   * When present for the dispatched agent, replaces autoInject for this entry.
+   * Agents not listed in context receive no content from this entry (autoInject is bypassed).
+   */
+  context?: Record<string, ManifestContextValue>;
 }
 
 /**
@@ -1310,6 +1340,59 @@ export class MeshValidator {
       // Validate autoInject
       if (file.autoInject !== undefined && typeof file.autoInject !== 'boolean') {
         errors.push(`${prefix} '${file.id}': autoInject must be a boolean${context}`);
+      }
+
+      // Validate injection
+      if (file.injection !== undefined && file.injection !== 'prefix') {
+        errors.push(`${prefix} '${file.id}': injection must be 'prefix' if set${context}`);
+      }
+
+      // Validate context field (per-agent context query map)
+      if (file.context !== undefined) {
+        if (typeof file.context !== 'object' || Array.isArray(file.context)) {
+          errors.push(`${prefix} '${file.id}': context must be an object${context}`);
+        } else {
+          const ctx = file.context as Record<string, unknown>;
+          for (const [agentKey, queryVal] of Object.entries(ctx)) {
+            const queryPrefix = `${prefix} '${file.id}' context['${agentKey}']`;
+
+            if (queryVal === 'full') continue; // valid
+
+            if (queryVal === null || typeof queryVal !== 'object' || Array.isArray(queryVal)) {
+              errors.push(`${queryPrefix}: must be 'full', {sections:[...]}, or {script:"..."}${context}`);
+              continue;
+            }
+
+            const q = queryVal as Record<string, unknown>;
+            const hasSections = 'sections' in q;
+            const hasScript = 'script' in q;
+
+            if (!hasSections && !hasScript) {
+              errors.push(`${queryPrefix}: must have 'sections' or 'script' key${context}`);
+              continue;
+            }
+            if (hasSections && hasScript) {
+              errors.push(`${queryPrefix}: cannot have both 'sections' and 'script'${context}`);
+              continue;
+            }
+
+            if (hasSections && !Array.isArray(q.sections)) {
+              errors.push(`${queryPrefix}: 'sections' must be an array${context}`);
+            }
+            if (hasScript && typeof q.script !== 'string') {
+              errors.push(`${queryPrefix}: 'script' must be a string${context}`);
+            }
+            if ('fallback' in q && q.fallback !== 'full' && q.fallback !== 'omit') {
+              errors.push(`${queryPrefix}: 'fallback' must be 'full' or 'omit'${context}`);
+            }
+
+            // Warn if agent key is not a declared agent (but don't block — agents can be
+            // referenced by name before the agents array is fully resolved)
+            if (!agentNames.has(agentKey)) {
+              warnings.push(`${queryPrefix}: agent '${agentKey}' is not declared in this mesh${context}`);
+            }
+          }
+        }
       }
 
       // Validate location against workspace.locations

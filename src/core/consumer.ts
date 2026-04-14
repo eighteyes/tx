@@ -636,7 +636,7 @@ export class MessageConsumer extends EventEmitter {
 
       // Resolve mesh routing with support for partial names
       // CRITICAL: Resolve 'from' first so resolveToAgent can use sender's mesh context
-      // This enables bare agent names to resolve within sender's mesh (e.g., oracle → narrator stays in narrative-engine-v2)
+      // This enables bare agent names to resolve within sender's mesh (e.g., oracle → narrator stays in narrative-engine)
       const fromAgent = this.resolveFromAgent(parsed.frontmatter.from, parsed.frontmatter.to);
       let toAgent = this.resolveToAgent(parsed.frontmatter.to, fromAgent);
 

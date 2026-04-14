@@ -1,0 +1,230 @@
+# manifest.yaml — Single source of truth for NE artifact schemas
+# read-state.sh and write-state.sh validate against this.
+# Agent prompts reference the relevant slice for discovery.
+
+turn:
+  context:
+    write_mode: overwrite
+    writer: [init-turn]
+    readers: [narrator, scribe, architect, sim-planner, gravity]
+    required: {turn: number, game_id: string, workspace: string}
+    keys: {turn: number, game_id: string, campaign_id: string, workspace: string, game_path: string, campaign_path: string, scene: object, characters: object, entropy_pool: array}
+    freeform: [scene, characters]
+
+  intent:
+    write_mode: overwrite
+    writer: [init-turn]
+    readers: [narrator, architect, sim-planner, gravity]
+    required: {raw_input: string}
+    keys: {raw_input: string, interpreted_action: string, player_hopes: array, off_table: array, clarified_intent: string, clarification: string, action: string, locked: boolean, sequence: object, physical_state: object, emotional_register: string, confirmed: boolean, action_weight: number, entropy_mode: string, decomposition: object, subject_to_entropy: array, not_subject_to_entropy: array}
+    freeform: [sequence, physical_state, decomposition]
+
+  collisions:
+    write_mode: overwrite
+    writer: [gravity]
+    readers: [dramaturg, narrator, scribe]
+    required: {collisions: array}
+    keys: {collisions: array, turn: number, collision_count: number, seed_status: array, bond_tensions: array}
+    freeform: []
+
+  director-notes:
+    write_mode: overwrite
+    writer: [init-turn]
+    readers: [architect, narrator, sim-planner, editor]
+    required: {}
+    keys: {turn: number, tone: string, notes: array, dialogue_emphasis: string, beat_targets: array, word_count: number, beat_count: string, constraints: array, focus: string, choreography: array, physical_rules: array, emergence: string}
+    freeform: [choreography]
+
+  dramaturg-notes:
+    write_mode: overwrite
+    writer: [architect]
+    readers: [narrator, scribe, sim-planner]
+    required: {}
+    keys: {turn: number, arc_pressure: number, phase: string, characters: object, world_events: object, guidance: object, emotional_momentum: object, option_seeds: object, ending: object}
+    freeform: [characters, world_events, guidance, emotional_momentum, option_seeds, ending]
+
+  turn-tree:
+    write_mode: overwrite
+    writer: [entropy-gen]
+    readers: [entropy-gen]
+    required: {beat_count: number, characters: object}
+    keys: {turn: number, arc_pressure: number, phase: string, beat_count: number, collision_assignments: object, characters: object, world: object, branches: array, surface_rules: object}
+    freeform: [collision_assignments, characters, world]
+
+  resolved-skeleton:
+    write_mode: overwrite
+    writer: [entropy-gen]
+    readers: [sim-planner, sim-scene, sim-chars, scribe]
+    required: {skeleton: object}
+    keys: {turn: number, seed: number, rolls: object, world_rolls: object, surfaced: object, skeleton: object}
+    freeform: [rolls, world_rolls, surfaced, skeleton]
+
+  turn-mechanics:
+    write_mode: overwrite
+    writer: [entropy-gen]
+    readers: [sim-scene, scribe]
+    required: {running_state: object}
+    keys: {turn: number, running_state: object}
+    freeform: [running_state]
+
+  threads:
+    write_mode: overwrite
+    writer: [architect]
+    readers: [sim-planner, narrator, scribe]
+    required: {}
+    keys: {action_weight: number, threads: array, beat_guidance: array}
+    freeform: []
+
+  sim-plan:
+    write_mode: overwrite
+    writer: [sim-planner]
+    readers: [sim-scene, sim-chars]
+    required: {beats: array}
+    keys: {turn: number, total_target: number, structure: object, beats: array, author_params: object, psychology: object}
+    freeform: [structure, author_params, psychology]
+
+  # RETIRED: sim-progress — vestigial from monolithic simulator
+
+  resolution:
+    write_mode: overwrite
+    writer: [entropy-gen]
+    readers: [narrator, scribe]
+    required: {turn: number}
+    keys: {turn: number, seed: number, outcome_type: string, world_acted: boolean, trajectory_fired: string, synthesis: string, beats: object}
+    freeform: [beats]
+
+  scene_script:
+    write_mode: overwrite
+    writer: [sim-chars]
+    readers: [narrator, oracle, visual, scribe, linter]
+    required: {beats: array}
+    keys: {turn: number, total_beats: number, tempo: string, time_coverage: string, arc_pressure: number, phase: string, rung: string, rung_scene: string, author_params: object, pov: object, director_constraints: object, opening_state: object, character_psychology: object, bond_context: object, beats: array, resolution_summary: object, guaranteed_surfaces: object, scene_themes: object, metadata: object}
+    freeform: [author_params, pov, director_constraints, opening_state, character_psychology, bond_context, resolution_summary, guaranteed_surfaces, scene_themes, metadata]
+
+  narrator-context:
+    write_mode: overwrite
+    writer: [oracle]
+    readers: [narrator, linter, editor]
+    required: {scene_script: object}
+    keys: {scene_script: object, intent: object, context: object, director_notes: object, dramaturg_notes: object, resolution: object, threads: object, collisions: object, character_briefs: object, author: object, campaign_state: object, recent_timeline: string, continuity_last_seen: object, story_concordance: string}
+    freeform: [scene_script, intent, context, director_notes, dramaturg_notes, resolution, threads, collisions, character_briefs, author, campaign_state, continuity_last_seen]
+
+  violations:
+    write_mode: append
+    append_target: .violations
+    writer: [narrator, linter]
+    readers: [linter]
+    required: {}
+    keys: {violations: array}
+    freeform: []
+
+  visual:
+    write_mode: overwrite
+    writer: [visual]
+    readers: [scribe]
+    required: {}
+    keys: {beats: array, style_variants: array}
+    freeform: []
+
+  calibration-state:
+    write_mode: patch
+    writer: [calibrator]
+    readers: [calibrator]
+    required: {}
+    keys: {phase: string, phases_complete: array, current_extraction: object}
+    freeform: [current_extraction]
+
+campaign:
+  state:
+    write_mode: overwrite
+    writer: [scribe]
+    readers: [init-turn, architect, sim-planner, linter, gravity]
+    required: {current_turn: number}
+    keys: {current_turn: number, arc_pressure: number, momentum: string, phase: object, location: object, next_turn_setup: object, last_updated: string, momentum_history: array, arc_pressure_history: array, turn_outcomes: object, dramatic_questions: object}
+    freeform: [phase, location, next_turn_setup, turn_outcomes, dramatic_questions]
+
+  arc:
+    write_mode: delta
+    delta_fields: [arc_pressure]
+    append_target: [.seed_history, .question_history]
+    writer: [scribe, calibrator]
+    readers: [scribe, calibrator]
+    required: {}
+    keys: {arc_pressure: number, momentum: string, acts: array, seed_history: array, question_history: array, dramatic_questions: array}
+    freeform: []
+
+  continuity:
+    write_mode: append
+    append_target: [.used_factoids, .encounters, .notes]
+    writer: [scribe]
+    readers: [oracle, scribe, architect]
+    required: {}
+    keys: {used_factoids: array, encounters: array, notes: array, last_seen: object, world_events: array}
+    freeform: [last_seen]
+
+  trajectories:
+    write_mode: patch
+    writer: [scribe]
+    readers: [architect, gravity]
+    required: {}
+    keys: {trajectories: array}
+    freeform: []
+    transitions:
+      field: status
+      rules:
+        planted: [approaching, active]
+        approaching: [active, expired]
+        active: [fired, expired]
+
+  character:
+    write_mode: patch
+    writer: [scribe, calibrator]
+    readers: [init-turn, narrator, oracle, scribe, calibrator, visual, architect, sim-planner, sim-scene, sim-chars, gravity]
+    required: {id: string}
+    keys: {id: string, name: object, entity_type: string, traits: object, episodes: array, current_state: object, life: object, habits: object, layers: object, appearance: object, backstory: object, sexuality: object, foundation: object, turn_0_psychology: object}
+    freeform: [name, traits, current_state, life, habits, layers, appearance, backstory, sexuality, foundation, turn_0_psychology]
+
+  bond:
+    write_mode: patch
+    writer: [scribe, calibrator]
+    readers: [narrator, oracle, scribe, architect, sim-planner, sim-scene, sim-chars, gravity]
+    required: {bond_id: string}
+    keys: {bond_id: string, participants: array, intensity: number, dimensions: object, baseline: object, established: object, episodes: array}
+    freeform: [dimensions, baseline, established]
+
+  condition:
+    write_mode: patch
+    writer: [scribe]
+    readers: [gravity, architect]
+    required: {id: string}
+    keys: {id: string, status: string, turn: number, type: string, phase: string, description: string}
+    freeform: []
+    transitions:
+      field: status
+      rules:
+        set: [active]
+        active: [resolved, chronic]
+        chronic: [resolved]
+
+game:
+  author:
+    write_mode: overwrite
+    writer: [calibrator]
+    readers: [narrator, editor, visual, calibrator, architect, sim-planner]
+    required: {}
+    keys: {voice: object, pacing: object, balance: object, chaos_register: object, interpretive_frames: object, world_rules: object, forbidden: object, encouraged: object}
+    freeform: [voice, pacing, balance, chaos_register, interpretive_frames, world_rules, forbidden, encouraged]
+
+  setting:
+    write_mode: overwrite
+    writer: [calibrator]
+    readers: [narrator, oracle, calibrator, architect]
+    required: {}
+    keys: {world: object, geography: object, tone: object, genre: object, time_period: object, rules: object}
+    freeform: [world, geography, tone, genre, time_period, rules]
+
+# Freeform workspace directories — no schema validation
+freeform_dirs:
+  - entropy_tables/
+  - beat_tables/
+  - beat_resolutions/

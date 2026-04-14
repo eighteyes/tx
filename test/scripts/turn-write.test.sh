@@ -2,7 +2,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TURN_WRITE="$SCRIPT_DIR/../../meshes/narrative-engine-v2/scripts/turn-write.sh"
+TURN_WRITE="$SCRIPT_DIR/../../meshes/narrative-engine/scripts/turn-write.sh"
 FIXTURES="$SCRIPT_DIR/fixtures"
 WRITE="$TURN_WRITE"
 PASS=0

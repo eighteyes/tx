@@ -246,7 +246,7 @@ headline: Ensemble execution complete: code-review
 ## Performance
 
 - **Latency**: ~1x single agent (parallel execution)
-- **Cost**: Nx single agent cost (N agents run)
+- **Cost**: Nx single agent cost (N agents run), reduced by [prompt cache layering](./prompt-cache-layering.md) (shared prefix cached once, reused across parallel dispatches)
 - **Memory**: Linear with agent count
 - **Timeout**: Per-agent timeout, not total timeout
 

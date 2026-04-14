@@ -493,6 +493,147 @@ Seeds that work well in space opera:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Crew Bonds:**
+- "What's their relationship to the ship and crew? Are they blood, found family, colleagues, or uneasy allies?"
+- "Who would they die for? Who would they let die if it meant saving the ship?"
+- "What ritual or routine binds them to this crew? What would break that bond?"
+- "How long have they been flying together? Does tenure equal trust?"
+
+**Command Presence:**
+- "How do they hold authority—or resist it? Do they lead, follow, or carve their own path?"
+- "What's their leadership voice vs. their private voice? How do they code-switch between ranks?"
+- "When do they pull rank? When do they defer despite their position?"
+- "What's the order they'd refuse to follow? What's the order they'd regret giving?"
+
+**Combat Instincts:**
+- "When shooting starts, what do they do? Fight, fly, freeze, calculate, or something stranger?"
+- "How do they handle adrenaline? Do they sharpen or scatter under fire?"
+- "What's their first kill story? Do they talk about it, or is it the silence they carry?"
+- "How has violence changed them? What do they still feel vs. what's gone numb?"
+
+**Ship Relationship:**
+- "If they're pilot or captain: what's their bond with this vessel? Love? Duty? Desperation?"
+- "What rituals do they have with the ship? Pre-flight checks, lucky routines, the panel they always pat?"
+- "What maintenance do they do themselves? What do they trust to no one else?"
+- "If they lost this ship, what would they lose beyond transport?"
+
+**Frontier Psychology:**
+- "What does the void mean to them? Freedom, terror, home, enemy, indifference?"
+- "How do they handle isolation—the long burns between ports, the empty between stars?"
+- "What do the stars represent? Possibility? Graveyard? Escape? The question they can't answer?"
+- "What keeps them out here instead of planetside? Running from or toward?"
+
+**Cultural Friction:**
+- "What species, faction, or culture shaped them? How does it show in assumptions, prejudices, blind spots?"
+- "What upbringing markers do they carry? Core-world polish? Rim-world pragmatism? Colony-born wariness?"
+- "What do they misunderstand about others because of where they're from? What do others misunderstand about them?"
+- "Who do they distrust on sight? Who earns their respect fastest? Why?"
+
+### Entity Schema Extensions
+
+```yaml
+crew_bonds:
+  relationship_to_crew: "blood/found family/colleagues/uneasy allies—how do they see these people?"
+  would_die_for: [names or roles of those they'd sacrifice for]
+  loyalty_architecture: "what binds them here, what would break that bond"
+  tenure_vs_trust: "length of service vs. depth of trust—do those match?"
+
+command_presence:
+  authority_relationship: "how they hold power or resist it (leader/follower/maverick)"
+  voice_code_switching: "leadership voice vs. private voice—how they shift"
+  rank_deployment: "when they pull rank, when they defer despite position"
+  the_refusal: "the order they wouldn't follow OR wouldn't give"
+
+combat_instincts:
+  fight_flight_freeze: "what they do when shooting starts"
+  adrenaline_pattern: "sharpen or scatter under fire—how does their body respond"
+  first_kill: "the story of it—do they talk about it or carry it silently"
+  violence_cost: "how combat has changed them, what's numb vs. what still hurts"
+
+ship_relationship:
+  bond_type: "love/duty/desperation—why this ship matters"
+  rituals: "pre-flight checks, lucky routines, the panel they always touch"
+  maintenance_intimacy: "what they do themselves, what they trust to no one else"
+  loss_meaning: "if they lost this ship, what would they lose beyond transport"
+  # Note: Only relevant for pilots, captains, engineers—those with deep ship connection
+
+frontier_psychology:
+  void_meaning: "what the empty between stars represents (freedom/terror/home/indifference)"
+  isolation_tolerance: "how they handle long burns, time between ports, the alone"
+  star_symbolism: "what the stars mean to them personally"
+  why_out_here: "what keeps them on the frontier instead of planetside—running from or toward?"
+
+cultural_friction:
+  origin_culture: "species/faction/planet that shaped them"
+  upbringing_markers: "core-world/rim-world/colony markers in speech, assumptions, manners"
+  prejudices: "who they distrust on sight, stereotypes they carry, blind spots from background"
+  misunderstandings: "what they get wrong about others, what others get wrong about them"
+```
+
+### Examples
+
+**Crew Bonds — Example:**
+```yaml
+crew_bonds:
+  relationship_to_crew: "Found family after running from blood family. These people are the ones who stayed."
+  would_die_for: ["The captain—pulled me off a dying station", "The kid—reminds me of my sister"]
+  loyalty_architecture: "Bound by shared survival. Would break if they turned on innocents."
+  tenure_vs_trust: "Three years together. Trust the pilot with my life, not my secrets."
+```
+
+**Command Presence — Example:**
+```yaml
+command_presence:
+  authority_relationship: "Second-in-command who doesn't want the chair. Leads when required, defers when possible."
+  voice_code_switching: "Clipped military precision when giving orders. Dry humor when the crisis passes."
+  rank_deployment: "Pulls rank only when someone's about to do something fatal and stupid."
+  the_refusal: "Wouldn't follow an order to abandon crew. Wouldn't give an order they weren't willing to execute themselves."
+```
+
+**Combat Instincts — Example:**
+```yaml
+combat_instincts:
+  fight_flight_freeze: "Calculated aggression—assess, eliminate threats in order of danger, protect the squishy humans"
+  adrenaline_pattern: "Sharpens. Time slows. Everything irrelevant falls away."
+  first_kill: "Border skirmish at nineteen. Doesn't talk about it. Still sees their face when can't sleep."
+  violence_cost: "The first dozen kills took something. Now it's just... procedure. That scares them more than the killing did."
+```
+
+**Ship Relationship — Example:**
+```yaml
+ship_relationship:
+  bond_type: "Love. This ship is the only home that ever chose them back."
+  rituals: "Touches the bulkhead by the airlock before every departure. Talks to the engine when it's just them."
+  maintenance_intimacy: "Does the calibration checks personally. Trusts no one else with the drive core."
+  loss_meaning: "Losing this ship would be losing their name, their purpose, their only constant."
+```
+
+**Frontier Psychology — Example:**
+```yaml
+frontier_psychology:
+  void_meaning: "The empty is honest. Nothing out here pretends to care. That's a relief."
+  isolation_tolerance: "High. Prefers the quiet between stars to the noise of ports. People are exhausting."
+  star_symbolism: "Every star is a sun someone calls home. The galaxy's full of homes they'll never have."
+  why_out_here: "Can't go back to the core. Out here, no one asks about your past—they assume everyone's running."
+```
+
+**Cultural Friction — Example:**
+```yaml
+cultural_friction:
+  origin_culture: "Outer Rim colony, fourth generation. Earth is a myth we learned in school."
+  upbringing_markers: "Clipped consonants from growing up in low-air environments. Distrust of centralized authority. Suspicious of waste."
+  prejudices: "Distrusts core-worlders on sight—soft, naive, think resources are infinite. Respects anyone with calluses."
+  misunderstandings: "Rim directness reads as rudeness to core diplomats. Core politeness reads as dishonesty to them."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

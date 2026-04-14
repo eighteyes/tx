@@ -1325,7 +1325,7 @@ guardrails:
     strict: false
     warning: true
   meshes:
-    narrative-engine-v2:
+    narrative-engine:
       postcondition:
         strict: true    # Kill gravity if it hallucinates
       agents:

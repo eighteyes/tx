@@ -53,6 +53,7 @@ interface MeshFlags {
   next?: boolean;
   all?: boolean;
   verbose?: boolean;
+  full?: boolean;
   rewindTo?: string;
 }
 
@@ -75,6 +76,8 @@ function parseFlags(args: string[]): MeshFlags {
       flags.all = true;
     } else if (arg === '--verbose') {
       flags.verbose = true;
+    } else if (arg === '--full') {
+      flags.full = true;
     } else if (arg.startsWith('--rewind-to=')) {
       flags.rewindTo = arg.split('=')[1];
     } else if (arg === '--rewind-to') {
@@ -2031,6 +2034,11 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
   // Aggregate data
   const agentMap = new Map<string, AgentCostRecord>();
   const runs: RunCostRecord[] = [];
+  const runDetails: Array<{
+    file: string; runIndex: number; timestamp: string;
+    totalCost: number; durationMs: number;
+    agentCosts: Map<string, { cost: number; model: string }>;
+  }> = [];
 
   for (let idx = 0; idx < logFiles.length; idx++) {
     const logPath = logFiles[idx];
@@ -2041,6 +2049,7 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
     let runDuration = 0;
     const runAgents = new Set<string>();
     let runTimestamp = '';
+    const runAgentCosts = new Map<string, { cost: number; model: string }>();
 
     for (const line of lines) {
       let entry: Record<string, unknown>;
@@ -2085,6 +2094,11 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
       runDuration += durationMs;
       runAgents.add(agent);
       if (!runTimestamp && entry.timestamp) runTimestamp = entry.timestamp as string;
+
+      // Per-run per-agent tracking (for compact default view)
+      const rac = runAgentCosts.get(agent);
+      if (rac) { rac.cost += cost; }
+      else { runAgentCosts.set(agent, { cost, model }); }
     }
 
     if (runAgents.size > 0) {
@@ -2095,6 +2109,14 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
         agentCount: runAgents.size,
         durationMs: runDuration,
         timestamp: runTimestamp,
+      });
+      runDetails.push({
+        file: path.basename(logPath),
+        runIndex: idx + 1,
+        timestamp: runTimestamp,
+        totalCost: runCost,
+        durationMs: runDuration,
+        agentCosts: new Map(runAgentCosts),
       });
     }
   }
@@ -2125,9 +2147,14 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
   if (flags.json) {
     const agentsWithEff = agents.map(a => ({ ...a, cacheHitPct: Math.round(cacheHitPct(a) * 10) / 10 }));
     const totalEff = Math.round(cacheHitPct({ inputTokens: totalIn, cacheRead: totalCacheR, cacheWrite: totalCacheW }) * 10) / 10;
+    const lastRunCost = runs.length > 0 ? runs[0].cost : 0;
+    const recentRuns = runs.slice(0, 5);
+    const avgCost = recentRuns.length > 0 ? recentRuns.reduce((s, r) => s + r.cost, 0) / recentRuns.length : 0;
     console.log(JSON.stringify({
       mesh: meshName || 'all',
       priorRuns: runs.length,
+      lastRunCost,
+      avgCost5: Math.round(avgCost * 1000) / 1000,
       agents: agentsWithEff,
       runs,
       totals: { cost: totalCost, inputTokens: totalIn, outputTokens: totalOut, cacheRead: totalCacheR, cacheWrite: totalCacheW, cacheHitPct: totalEff },
@@ -2141,6 +2168,125 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
     console.log(chalk.yellow(`No SDK metrics found for ${scope} in prior runs.`));
     return;
   }
+
+  // === Default compact view: per-run cost grid ===
+  if (!flags.full) {
+    const displayRuns = runDetails.slice(0, 5);
+    const colW = 10;
+
+    // Pad string then optionally dim — avoids ANSI codes breaking alignment
+    const fmtCell = (n: number, w: number): string => {
+      const str = n > 0 ? `$${n.toFixed(3)}` : '-';
+      const padded = w > 0 ? str.padEnd(w) : str;
+      return n > 0 ? padded : chalk.dim(padded);
+    };
+
+    // Date labels for column headers
+    const dateLabels = displayRuns.map(r => {
+      if (r.timestamp) {
+        return new Date(r.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+      return `R${r.runIndex}`;
+    });
+
+    if (!meshName) {
+      // Per-mesh cost across runs
+      const meshCosts = new Map<string, number[]>();
+      for (let i = 0; i < displayRuns.length; i++) {
+        for (const [agent, data] of displayRuns[i].agentCosts) {
+          const mesh = agent.split('/')[0];
+          if (!meshCosts.has(mesh)) meshCosts.set(mesh, new Array(displayRuns.length).fill(0));
+          meshCosts.get(mesh)![i] += data.cost;
+        }
+      }
+
+      const meshList = Array.from(meshCosts.entries()).sort((a, b) => {
+        const aTotal = a[1].reduce((s, c) => s + c, 0);
+        const bTotal = b[1].reduce((s, c) => s + c, 0);
+        return bTotal - aTotal;
+      });
+
+      const nameW = Math.max(22, ...meshList.map(([m]) => m.length)) + 2;
+      const lineW = nameW + colW * (displayRuns.length + 1);
+
+      console.log(`\n${chalk.bold(chalk.cyan('Cost Summary'))} ${chalk.dim(`(${displayRuns.length} runs)`)}\n`);
+
+      let header = '  ' + 'MESH'.padEnd(nameW);
+      for (const label of dateLabels) header += label.padEnd(colW);
+      header += 'AVG';
+      console.log(chalk.dim(header));
+      console.log(chalk.dim('  ' + '\u2500'.repeat(lineW)));
+
+      for (const [mesh, costs] of meshList) {
+        let line = `  ${chalk.cyan(mesh.padEnd(nameW))}`;
+        for (const c of costs) line += fmtCell(c, colW);
+        const nonZero = costs.filter(c => c > 0);
+        const avg = nonZero.length > 0 ? nonZero.reduce((s, c) => s + c, 0) / nonZero.length : 0;
+        line += fmtCell(avg, 0);
+        console.log(line);
+      }
+
+      console.log(chalk.dim('  ' + '\u2500'.repeat(lineW)));
+      let totalLine = `  ${chalk.bold('TOTAL'.padEnd(nameW))}`;
+      const runTotals = displayRuns.map(r => r.totalCost);
+      for (const t of runTotals) totalLine += chalk.bold(`$${t.toFixed(3)}`.padEnd(colW));
+      const avgTotal = runTotals.reduce((s, c) => s + c, 0) / runTotals.length;
+      totalLine += chalk.bold(`$${avgTotal.toFixed(3)}`);
+      console.log(totalLine);
+    } else {
+      // Per-agent cost across runs
+      const agentCosts = new Map<string, { costs: number[]; model: string }>();
+      for (let i = 0; i < displayRuns.length; i++) {
+        for (const [agent, data] of displayRuns[i].agentCosts) {
+          if (!agentCosts.has(agent)) {
+            agentCosts.set(agent, { costs: new Array(displayRuns.length).fill(0), model: data.model });
+          }
+          agentCosts.get(agent)!.costs[i] += data.cost;
+        }
+      }
+
+      const agentList = Array.from(agentCosts.entries()).sort((a, b) => {
+        const aTotal = a[1].costs.reduce((s, c) => s + c, 0);
+        const bTotal = b[1].costs.reduce((s, c) => s + c, 0);
+        return bTotal - aTotal;
+      });
+
+      const nameW = Math.max(16, ...agentList.map(([a]) => (a.split('/')[1] || a).length)) + 2;
+      const modelW = 9;
+      const lineW = nameW + modelW + colW * (displayRuns.length + 1);
+
+      console.log(`\n${chalk.bold(chalk.cyan(`Cost: ${meshName}`))} ${chalk.dim(`(${displayRuns.length} runs)`)}\n`);
+
+      let header = '  ' + 'AGENT'.padEnd(nameW) + 'MODEL'.padEnd(modelW);
+      for (const label of dateLabels) header += label.padEnd(colW);
+      header += 'AVG';
+      console.log(chalk.dim(header));
+      console.log(chalk.dim('  ' + '\u2500'.repeat(lineW)));
+
+      for (const [agent, { costs, model }] of agentList) {
+        const shortName = agent.split('/')[1] || agent;
+        let line = `  ${chalk.cyan(shortName.padEnd(nameW))}${(model || '-').padEnd(modelW)}`;
+        for (const c of costs) line += fmtCell(c, colW);
+        const nonZero = costs.filter(c => c > 0);
+        const avg = nonZero.length > 0 ? nonZero.reduce((s, c) => s + c, 0) / nonZero.length : 0;
+        line += fmtCell(avg, 0);
+        console.log(line);
+      }
+
+      console.log(chalk.dim('  ' + '\u2500'.repeat(lineW)));
+      let totalLine = `  ${chalk.bold('TOTAL'.padEnd(nameW))}${''.padEnd(modelW)}`;
+      const runTotals = displayRuns.map(r => r.totalCost);
+      for (const t of runTotals) totalLine += chalk.bold(`$${t.toFixed(3)}`.padEnd(colW));
+      const avgTotal = runTotals.reduce((s, c) => s + c, 0) / runTotals.length;
+      totalLine += chalk.bold(`$${avgTotal.toFixed(3)}`);
+      console.log(totalLine);
+    }
+
+    console.log();
+    return;
+  }
+
+  // === Full view (--full): detailed token/cache breakdown ===
 
   // Human output — no mesh name: summary across all meshes
   if (!meshName) {
@@ -2186,6 +2332,15 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
     }
     console.log(chalk.dim('  ' + '\u2500'.repeat(56)));
     console.log(`  ${chalk.bold('TOTAL'.padEnd(26))}${chalk.bold(fmt(totalCost))}`);
+
+    // Last run / trailing avg(5)
+    if (runs.length > 0) {
+      const lastCost = runs[0].cost;
+      const recentRuns = runs.slice(0, 5);
+      const avgCost = recentRuns.reduce((s, r) => s + r.cost, 0) / recentRuns.length;
+      console.log(`\n  ${chalk.bold('Last')} ${fmt(lastCost)}  ${chalk.dim('/')}  ${chalk.bold(`Avg(${recentRuns.length})`)} ${fmt(avgCost)}`);
+    }
+
     console.log();
     return;
   }
@@ -2234,6 +2389,14 @@ async function meshCost(meshName: string | undefined, flags: MeshFlags): Promise
     `${fmtNum(totalCacheW).padEnd(12)}` +
     `${fmtPct(totalPct)}`
   );
+
+  // Last run / trailing avg(5)
+  if (runs.length > 0) {
+    const lastCost = runs[0].cost;
+    const recentRuns = runs.slice(0, 5);
+    const avgCost = recentRuns.reduce((s, r) => s + r.cost, 0) / recentRuns.length;
+    console.log(`\n  ${chalk.bold('Last')} ${fmt(lastCost)}  ${chalk.dim('/')}  ${chalk.bold(`Avg(${recentRuns.length})`)} ${fmt(avgCost)}`);
+  }
 
   // Per-run breakdown
   if (runs.length > 0) {
@@ -4047,7 +4210,7 @@ ${chalk.bold('Actions:')}
   ${chalk.cyan('fsm-reset')} <mesh>       Reset FSM to initial state (preserves sessions)
   ${chalk.cyan('fsm-goto')} <mesh> <state> Force FSM to a specific state
   ${chalk.cyan('run')} <mesh> "<prompt>"    Run full FSM pipeline end-to-end
-  ${chalk.cyan('cost')} [mesh]              Per-agent cost/token/cache from prior runs
+  ${chalk.cyan('cost')} [mesh]              Per-agent cost across last 5 runs (--full for token detail)
   ${chalk.cyan('flow')} <mesh>             Agent execution timeline with concurrency grouping
   ${chalk.cyan('guardrails')} [mesh]       Show guardrail violations from activity logs
   ${chalk.cyan('ideal')} <mesh>            Ideal execution stages from routing + manifest
@@ -4066,6 +4229,7 @@ ${chalk.bold('Options:')}
   ${chalk.dim('--next')}                  Machine-readable dispatch output (status only)
   ${chalk.dim('--all')}                   Dump all runs, not just last (dump only)
   ${chalk.dim('--verbose')}               Show full prompts (dump only)
+  ${chalk.dim('--full')}                  Detailed token/cache breakdown (cost only)
 
 ${chalk.bold('Examples:')}
   tx mesh list
@@ -4076,7 +4240,9 @@ ${chalk.bold('Examples:')}
   tx mesh clear test-mesh
   tx mesh clear test-mesh --force
   tx mesh cost
-  tx mesh cost narrative-engine --json
+  tx mesh cost narrative-engine
+  tx mesh cost narrative-engine --full
+  tx mesh cost --json
   tx mesh flow test-fsm-full
   tx mesh flow test-fsm-full --json
   tx mesh ideal narrative-engine

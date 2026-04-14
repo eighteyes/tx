@@ -7,6 +7,10 @@
 # Overall voice descriptor (1 line)
 voice: "dry, embodied, system-literate; skeptical but non-moralizing"
 
+# Visual generation (opt-in)
+# Set to true to generate image prompts per turn via the visual agent
+visual_generation: false
+
 # Point of view
 pov:
   lens: close_interior          # close_interior | distant_third | omniscient | second_person
@@ -123,6 +127,25 @@ endings:
   # resolution: beat lands, moment of stillness
   # question: explicit or implicit question hanging
   description: "No tidy conclusions. Let it linger."
+
+# Interpretive frames — lens through which each beat is rendered
+# The simulator assigns a frame per beat; the narrator adjusts rendering accordingly.
+# Weights guide selection probability. Define 3-6 frames for good diversity.
+# Remove or comment out this section to disable frame assignment.
+#
+# interpretive_frames:
+#   - id: analytical
+#     description: "Detached observation. Clinical precision."
+#     weight: 25
+#   - id: sensory
+#     description: "Body-first. Texture, temperature, smell before thought."
+#     weight: 30
+#   - id: reflective
+#     description: "The deeper question underneath the moment."
+#     weight: 25
+#   - id: comic
+#     description: "The absurd truth. Finding the ridiculous."
+#     weight: 20
 
 # What to preserve vs transform
 transformation_rule: "Preserve all facts and content; change only diction, cadence, and punctuation."

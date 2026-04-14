@@ -14,7 +14,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/../.."
 HH="/Users/god/projects/tx/tx-core/.ai/worktrees/terminal-by-default-messaging/.ai/games/heathers-hope"
-SCRIPTS="$ROOT/meshes/narrative-engine-v2/scripts"
+SCRIPTS="$ROOT/meshes/narrative-engine/scripts"
 SCHEMA_DIR="$SCRIPTS/schemas"
 PASS=0; FAIL=0; SKIP=0; GAPS=()
 

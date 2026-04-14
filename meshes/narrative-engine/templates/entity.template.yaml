@@ -47,7 +47,7 @@ layers:
 # Full bond data lives in entities/bonds/{a_b}.yaml
 bonds: []
   # Format: ["{bond_id}", "{bond_id}"]
-  # Example: ["{char_a}_{char_b}", "{char_b}_{char_c}"]
+  # Example: ["{character_a}_{character_b}", "{character_b}_{character_c}"]
 
 # EPISODES - Event history (full record, append only)
 # Critical for trait evolution tracking. Never truncate.

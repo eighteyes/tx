@@ -19,7 +19,7 @@ bond:
   # 0: nonexistent  1: emerging  2: tested  3: established  4: deep  5: foundational
   #
   # Asymmetry notation: when one character's experience differs, use
-  # participant initials as keys: {h: N, k: N}
+  # participant initials as keys: {a: N, b: N}
   # Symmetric values use a single number.
   dimensions:
     physical: 0

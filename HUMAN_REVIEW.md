@@ -427,7 +427,7 @@ Date: 2026-03-25
 Commits: 9015890..27a7f79
 
 ### What Was Done
-Added `human: blocking` frontmatter mode. When an agent sends a message to core/core with `human: blocking`, the dispatcher flags the worker instead of killing/suspending. The worker finishes its turn, the complete handler holds (no downstream routing), and when the human responds, the same runner resumes. Fixes the gravity dispatch race in narrative-engine-v2 init-turn.
+Added `human: blocking` frontmatter mode. When an agent sends a message to core/core with `human: blocking`, the dispatcher flags the worker instead of killing/suspending. The worker finishes its turn, the complete handler holds (no downstream routing), and when the human responds, the same runner resumes. Fixes the gravity dispatch race in narrative-engine init-turn.
 
 ### Files Changed
 - `src/worker/types.ts` — BlockingHitlMessageEvent interface
@@ -436,8 +436,8 @@ Added `human: blocking` frontmatter mode. When an agent sends a message to core/
 - `src/reliability/reliability-manager.ts` — unregisterAgent wrapper
 - `src/worker/dispatcher.ts` — Event binding, handler, complete guard, response resume
 - `src/workspace/messaging-protocol.ts` — Agent-facing docs for human: blocking
-- `meshes/narrative-engine-v2/coordinator/init-turn.md` — Use human: blocking
-- `meshes/narrative-engine-v2/config.yaml` — Remove Agent/TaskOutput from sim-voices
+- `meshes/narrative-engine/coordinator/init-turn.md` — Use human: blocking
+- `meshes/narrative-engine/config.yaml` — Remove Agent/TaskOutput from sim-voices
 
 ### Verification Steps
 
@@ -570,7 +570,7 @@ npx tsx --test test/e2e/32-mesh-completion-infra.test.ts
 #### 3. Live HITL test (requires running mesh)
 ```bash
 tx start
-tx msg narrative-engine-v2 "new game: test routing"
+tx msg narrative-engine "new game: test routing"
 # Wait for calibrator to ask-human
 # Answer the question
 # Check if calibrator remembers its routing destinations
@@ -1330,12 +1330,12 @@ tx logs -c tmux | rg "idle|busy"
 
 #### 4. TX_ROOT in agent prompt
 ```bash
-tx prompt narrative-engine-v2 architect --raw 2>&1 | rg TX_ROOT
+tx prompt narrative-engine architect --raw 2>&1 | rg TX_ROOT
 ```
 - [ ] Shows `export TX_ROOT="..."` in prompt preamble
 
 #### 5. Scripts execute successfully
-- [ ] Run narrative-engine-v2 mesh, confirm entropy-resolver.sh executes without "TX_ROOT not set" errors
+- [ ] Run narrative-engine mesh, confirm entropy-resolver.sh executes without "TX_ROOT not set" errors
 
 ---
 

@@ -145,6 +145,61 @@ Character extraction—protagonist and significant others.
 
 ---
 
+### Phase 6-life: Character Life Extraction (REQUIRED for all characters)
+
+**Characters need lives.** Without concerns, expertise, social connections, opinions, memories, and desires beyond the plot, characters orbit each other in a vacuum. They have nothing to talk about except their feelings. Real people reference their world — deadlines, meals, professors, hikes, childhood kitchens, music they love, things they're opinionated about.
+
+**Run this for EVERY significant character (protagonist AND NPCs).**
+
+**Life extraction prompts:**
+
+**Concerns (what's running underneath):**
+- "What's on {name}'s mind this week besides the main story?"
+- "What wakes them up at 4am? What do they worry about that has nothing to do with {central tension}?"
+- "Money? Family? Work? Health? A secret? What's the background noise of their life?"
+
+**Expertise (what they actually know):**
+- "What are they genuinely good at? What would they be doing if this story weren't happening?"
+- "What do they know a surprising amount about? Something that doesn't fit their obvious identity?"
+- "What's a skill they have that nobody would guess?"
+
+**Social web (who else exists):**
+- "Name 3-5 people in {name}'s life who aren't part of the main cast."
+- "Who do they call when they're upset? Who do they avoid? Who owes them something?"
+- "What's their relationship with their family? Distant? Complicated? The only real thing?"
+
+**Opinions (what they'd argue about at dinner):**
+- "What's {name} opinionated about that surprises people?"
+- "What topic gets them talking before they've decided to talk?"
+- "What do they judge other people for? What do they forgive?"
+
+**Desires beyond the plot:**
+- "What does {name} want that has nothing to do with {the central tension}?"
+- "What would they be pursuing if they'd never met {other character}?"
+- "What's the thing they want but would never admit out loud?"
+
+**Memories (the past that shapes the present):**
+- "What's the formative memory — the one that explains something about who they are now?"
+- "What recent memory is emotionally charged? Something from the last month that left a mark?"
+- "What place do they associate with safety? With danger? With home?"
+
+**Listen for:**
+- Specific details that feel *lived* — a grandmother's garden, a specific brand of vodka, the smell of flour
+- Social connections that create story texture — professors, roommates, exes, family members
+- Expertise that could surface naturally in scene — naming plants, cooking, reading rooms, yoga
+- Voice patterns that distinguish this character — code-switching, silence as tool, reformulating others' words
+
+**Extract to:** character entity `life` section. The `life` schema is malleable — add subsections as the author provides material. Standard subsections: `active_concerns`, `expertise`, `social_web`, `opinions`, `desires_beyond_plot`, `voice_markers`, `memories`.
+
+**Why this matters:** Downstream agents (architect, simulator, narrator) use `life` data to:
+- Give characters things to talk about besides their feelings
+- Let expertise color perception (a character who knows plants names what's growing)
+- Let concerns intrude naturally (a deadline worry mid-conversation)
+- Differentiate voice (vocabulary register, verbal habits, things they'd never say)
+- Create texture that makes characters feel like people, not relationship-processing functions
+
+---
+
 ### Phase 6a: Naming Constraints
 
 **Forbidden names** — AI defaults. If a name appears below, reject it and find something specific to this world.
@@ -429,6 +484,8 @@ After a campaign ends or reaches significant revelation, return here to extract 
 - "What ending states became possible that you hadn't imagined?"
 - "What voice patterns emerged that should persist across playthroughs?"
 - "What relationships, factions, or dynamics crystallized through play?"
+- "What life details did the narrator invent that feel TRUE? (memories, social connections, expertise, opinions)"
+- "What concerns or desires emerged through play that belong in the character's `life` section?"
 
 **Distinguishing discovery from contingency:**
 - DISCOVERY: "Jorim's hollowness was 50 years of unanswered love" — this was always true

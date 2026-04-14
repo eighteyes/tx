@@ -3,7 +3,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/../.."
-WRITE="$ROOT/meshes/narrative-engine-v2/scripts/campaign-write.sh"
+WRITE="$ROOT/meshes/narrative-engine/scripts/campaign-write.sh"
 PASS=0
 FAIL=0
 

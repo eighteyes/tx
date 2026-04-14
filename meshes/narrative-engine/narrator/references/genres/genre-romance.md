@@ -327,45 +327,153 @@ Resolution must address ROOT CAUSE, not just reunite bodies.
 
 ---
 
-## Voice Modifiers for Entities
+## Character Depth Extensions
 
-When extracting character voice (Phase 6b), add these dimensions for romantic leads:
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Sexuality and Romantic Identity:**
+- "What's their orientation? Their history with romance—patterns they've fallen into, lessons they've learned or ignored?"
+- "What's the pattern in who they choose? The type they're drawn to vs. the type that's good for them?"
+- "What do they actually like in intimacy—emotional, physical, both? What matters most to them?"
+- "What's the gap between how they talk about sex/romance and how they actually feel about it?"
+
+**New Relationship Energy (NRE):**
+- "How does falling feel for them? Giddy? Terrifying? A mix? What does their body do when they're around the person?"
+- "What reckless thing might they do when swept up? What boundaries blur? What clarity do they lose?"
+- "How does NRE change their mental landscape? Do they obsess? Catastrophize? Float?"
+
+**Romantic Desires:**
+- "What do they want from a relationship that they've never admitted out loud?"
+- "What's the fantasy they'd be embarrassed to name? The emotional need underneath the surface wants?"
+- "What would make them feel truly seen, truly safe, truly chosen?"
+
+**Intimacy Architecture:**
+- "How do they build toward physical closeness—fast, slow, chaotic, calculated?"
+- "What's their comfort level with vulnerability? Do they lead with body or heart? Which scares them more?"
+- "What makes them pull back? What makes them lean in despite fear?"
+
+**Attraction Markers (from original voice section):**
+- "What do they notice about the love interest first? What detail keeps returning to their thoughts?"
+- "How do they try NOT to notice? What do they scold themselves for paying attention to?"
+- "When does attraction show despite their control? Physical tells, verbal slips, the mask that cracks?"
+
+**Vulnerability Patterns:**
+- "What makes their walls drop? What kind of moment or statement undoes their defenses?"
+- "How do they rebuild walls when scared? Humor? Distance? Anger? Going cold?"
+- "What are their tells for genuine emotion? What can't they hide no matter how hard they try?"
+
+**Intimacy Voice Shift:**
+- "How does their voice change in intimate moments vs. public ones? What formality drops? What emerges?"
+- "What do they call the love interest when alone vs. with others? What words are private?"
+- "How do they look at the person when they think no one's watching? What shifts when they're observed?"
+
+**Banter Patterns:**
+- "What's their style of verbal play with the love interest? Teasing? Wit? Absurdity? Provocation?"
+- "What topics are safe for sparring? What subjects carry too much charge to joke about?"
+- "Where's the line where banter becomes too real? What truth hiding in jest would shatter the game?"
+
+### Entity Schema Extensions
 
 ```yaml
-voice:
-  # Standard fields plus:
+sexuality:
+  orientation: "sexual and romantic orientation"
+  history: "pattern of past relationships, what they've learned"
+  the_pattern: "type they're drawn to vs. type that's good for them"
+  what_they_like: "preferences in intimacy (emotional and/or physical)"
+  the_gap: "difference between how they talk about romance/sex vs. how they feel"
 
-  attraction_markers:
-    awareness: "what they notice about the love interest"
-    avoidance: "how they try NOT to notice"
-    slips: "when attraction shows despite control"
-    # Examples:
-    # - "Speaks faster when flustered"
-    # - "Goes formal when feelings surface"
-    # - "Eye contact that breaks too quickly—or holds too long"
+nre:
+  state: "how falling feels for them (giddy, terrifying, overwhelming, quiet)"
+  physical: "what their body does around the person (pulse, breath, awareness)"
+  mental: "how thoughts change (obsession, catastrophizing, floating, clarity loss)"
+  recklessness: "what boundaries blur, what risks they'd take swept up in NRE"
 
-  vulnerability_patterns:
-    trigger: "what makes their walls drop"
-    defense: "how they rebuild walls when scared"
-    tells: "physical/verbal signals of genuine emotion"
-    # Examples:
-    # - "Trigger: being seen accurately; Defense: deflecting humor"
-    # - "Trigger: unexpected kindness; Defense: suspicion"
+desires:
+  romantic_wants: "what they want from relationship but haven't admitted"
+  the_fantasy: "the scenario they'd be embarrassed to name"
+  emotional_need: "the deeper need underneath surface wants"
+  feeling_chosen: "what would make them feel truly seen, safe, chosen"
 
-  intimacy_voice_shift:
-    public_vs_private: "how voice changes in intimate moments"
-    with_others_vs_alone: "formality that drops when it's just them"
-    # Examples:
-    # - "Uses love interest's full name in public, nickname alone"
-    # - "Sarcasm softens to sincerity in private"
-    # - "Makes eye contact when alone; looks away with others present"
+intimacy_architecture:
+  approach_pattern: "how they build toward closeness (fast/slow/chaotic/calculated)"
+  vulnerability_comfort: "comfort with emotional nakedness—do they lead with body or heart?"
+  triggers_retreat: "what makes them pull back"
+  triggers_lean_in: "what makes them move closer despite fear"
 
-  banter_patterns:
-    style: "how they engage in verbal play"
-    topics: "safe subjects for sparring"
-    line: "where banter becomes too real"
-    # Examples:
-    # - "Style: dry one-upmanship; Topic: mutual enemies; Line: family"
+attraction_markers:
+  awareness: "what they notice about the love interest"
+  avoidance: "how they try NOT to notice"
+  slips: "when attraction shows despite control"
+  # Examples:
+  # awareness: "The way they push up their sleeves when concentrating. The scar on their left hand."
+  # avoidance: "Looks away when they smile. Stays busy when they're in the room."
+  # slips: "Speaks faster when flustered. Holds eye contact a beat too long then breaks it."
+
+vulnerability_patterns:
+  trigger: "what makes their walls drop"
+  defense: "how they rebuild walls when scared"
+  tells: "physical/verbal signals of genuine emotion"
+  # Examples:
+  # trigger: "Being seen accurately—when someone names what they haven't said"
+  # defense: "Deflecting humor. Picking a fight. Sudden cold formality."
+  # tells: "Voice goes quiet instead of loud. Looks at hands instead of face."
+
+intimacy_voice_shift:
+  public_vs_private: "how voice changes in intimate moments"
+  with_others_vs_alone: "formality that drops when it's just them"
+  # Examples:
+  # public_vs_private: "Formal distance in public, playful softness alone"
+  # with_others_vs_alone: "Uses their full name in company, whispers nickname in private"
+
+banter_patterns:
+  style: "how they engage in verbal play"
+  topics: "safe subjects for sparring"
+  line: "where banter becomes too real"
+  # Examples:
+  # style: "Dry one-upmanship with escalating absurdity"
+  # topics: "Mutual enemies, bad movies, their respective terrible taste in music"
+  # line: "Anything about family. Anything about the future. Anything too sincere."
+```
+
+### Examples
+
+**Sexuality — Example:**
+```yaml
+sexuality:
+  orientation: "Bisexual, figured it out late, still adjusting to saying it aloud"
+  history: "Serial monogamist. Three long relationships, each ended when they got too close."
+  the_pattern: "Drawn to brilliant, emotionally unavailable people. Good for them: someone steady who stays."
+  what_they_like: "Intimacy that starts with conversation. Needs trust before touch. Craves being known."
+  the_gap: "Jokes about sex easily but goes quiet about actual feelings. Talks like they're casual; isn't."
+```
+
+**NRE — Example:**
+```yaml
+nre:
+  state: "Falling feels like falling—exhilarating and terrifying, can't tell if they're flying or crashing"
+  physical: "Heart rate spikes when they walk in. Hyperaware of proximity. Skin feels too thin."
+  mental: "Can't focus on anything else. Replays conversations obsessively. Reads into every word."
+  recklessness: "Would cancel important plans just to stay in the same room. Would tell truths they usually guard."
+```
+
+**Desires — Example:**
+```yaml
+desires:
+  romantic_wants: "Someone who doesn't need them to perform. Who sees the mess and stays anyway."
+  the_fantasy: "Waking up next to someone for a thousand mornings and still finding them interesting."
+  emotional_need: "To be chosen deliberately, not just fallen into. To be someone's on-purpose."
+  feeling_chosen: "When they remember the small things. When they show up without being asked."
+```
+
+**Intimacy Architecture — Example:**
+```yaml
+intimacy_architecture:
+  approach_pattern: "Slow burn by necessity—needs trust built brick by brick before walls come down"
+  vulnerability_comfort: "Leads with heart, terrified of it. Body feels safer but means less."
+  triggers_retreat: "When it feels too good. When they start imagining a future. When they catch themselves hoping."
+  triggers_lean_in: "Unexpected gentleness. Being seen at their worst and not flinched from. Honesty that costs something."
 ```
 
 ---

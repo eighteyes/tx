@@ -562,6 +562,14 @@ export function injectPrompt(tmux: TmuxSession, prompt: string): boolean {
     return false;
   }
 
+  // Safety net: retry Enter after 1s in case first didn't land
+  try {
+    execSync('sleep 1', { stdio: 'pipe' });
+  } catch {
+    // non-fatal
+  }
+  tmux.sendEnter();
+
   // Reset idle detection state after successful injection
   resetIdleState();
 

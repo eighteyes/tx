@@ -111,17 +111,28 @@ export class WriteGate {
   }
 
   private extractBashRedirects(command: string): string[] {
+    // Strip heredoc bodies — YAML block scalars (>) inside heredocs
+    // were being matched as redirects, producing garbage warnings
+    const stripped = command.replace(/<<-?\s*['"]?(\w+)['"]?\s*\n[\s\S]*?\n\s*\1\b/g, '');
+
     const paths: string[] = [];
     // Match: > file, >> file, | tee file, | tee -a file
     const redirectRegex = /(?:>>?\s*|tee(?:\s+-a)?\s+)([^\s|;&"']+|"[^"]+"|'[^']+')/g;
     let match;
-    while ((match = redirectRegex.exec(command)) !== null) {
+    while ((match = redirectRegex.exec(stripped)) !== null) {
       const filePath = match[1].replace(/^['"]|['"]$/g, '');
-      if (filePath && !filePath.startsWith('-')) {
+      if (filePath && !filePath.startsWith('-') && this.looksLikePath(filePath)) {
         paths.push(filePath);
       }
     }
     return paths;
+  }
+
+  private looksLikePath(token: string): boolean {
+    if (/^[/~$.]/.test(token)) return true;
+    if (token.includes('/')) return true;
+    if (/^\w+\.\w+$/.test(token)) return true; // bare filename.ext
+    return false;
   }
 
   private resolvePath(rawPath: string): string {

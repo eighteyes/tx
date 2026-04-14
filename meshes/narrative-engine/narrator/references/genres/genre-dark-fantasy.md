@@ -295,6 +295,135 @@ Seeds that work well in dark fantasy:
 
 ---
 
+## Character Depth Extensions
+
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Corruption Architecture:**
+- "How does darkness enter them? Through choice, curse, inheritance, or slow erosion?"
+- "What would they sacrifice for power? For survival? For someone they love?"
+- "What's the line they won't cross? What would make them cross it anyway?"
+- "How do they justify what they've done? Or do they even bother justifying?"
+
+**Monstrous Self:**
+- "What part of themselves do they hide? What would others see if the mask slipped?"
+- "What do they become under extreme pressure—desperate, dangerous, something other?"
+- "What transformation do they fear? Becoming like their enemy? Becoming their true self?"
+- "If they're already monstrous: what humanity remains? What do they cling to?"
+
+**Forbidden Knowledge:**
+- "What do they know that they shouldn't? What truth would others kill them for possessing?"
+- "What did it cost them to learn this? Sanity? Innocence? Someone else's life?"
+- "Do they wish they could unknow it? Or is the knowing the only thing that makes sense anymore?"
+- "What would happen if they told the truth? Who would it destroy—themselves or others?"
+
+**Dark Bargains:**
+- "What deals have they made? With whom? For what price?"
+- "What debts are outstanding? What payment comes due? When?"
+- "If they could unmake the bargain, would they? What would they lose if they did?"
+- "What would they trade now that they wouldn't have traded before? How has desperation changed them?"
+
+**Power Relationship:**
+- "How do they relate to dark/magical power? Fear it? Crave it? Both?"
+- "What does using power cost them? Pain? Memory? Pieces of self?"
+- "What's the seduction—strength, control, freedom, revenge? What do they tell themselves about why they use it?"
+- "When do they reach for power? When do they resist? What's the difference?"
+
+### Entity Schema Extensions
+
+```yaml
+corruption_architecture:
+  entry_point: "how darkness entered (choice/curse/inheritance/erosion)"
+  sacrifice_inventory: "what they'd give up for power, survival, love—in that order"
+  the_line: "what they won't do (until they will)"
+  justification: "how they explain their actions to themselves—or if they've stopped trying"
+
+monstrous_self:
+  the_hidden_part: "what they conceal from others"
+  pressure_transformation: "what they become when desperate or cornered"
+  feared_becoming: "the transformation that terrifies them"
+  remaining_humanity: "if already monstrous—what human pieces they protect"
+  # Examples:
+  # the_hidden_part: "The hunger. The way blood smells like home."
+  # pressure_transformation: "Cold. Calculating. The part that doesn't hesitate to kill."
+  # feared_becoming: "Exactly like the one who turned them. Empty. Feeding without feeling."
+
+forbidden_knowledge:
+  what_they_know: "the truth that's dangerous to possess"
+  cost_of_knowing: "what it took to learn (sanity/innocence/someone's life)"
+  wish_to_unknow: "do they regret knowing, or is it the only truth they trust?"
+  consequence_of_telling: "who it would destroy if they spoke it aloud"
+
+dark_bargains:
+  deals_made: [list of bargains, with whom, for what price]
+  debts_outstanding: "what payment is still owed, when it comes due"
+  unmake_cost: "if they broke the bargain, what would they lose?"
+  desperation_shift: "what they'd trade now that they wouldn't have before"
+  # Examples:
+  # deals_made:
+  #   - "Made a pact with the Hollow King: power for memory. Forgot their own name."
+  #   - "Promised their firstborn to the forest witch for passage. Childless by choice ever since."
+
+power_relationship:
+  emotional_stance: "fear it/crave it/both—how they feel about their power"
+  cost_of_use: "what it takes from them (pain/memory/self/life)"
+  seduction: "what draws them to use it (strength/control/freedom/revenge)"
+  threshold_pattern: "when they reach for it vs. when they resist—what's the trigger"
+```
+
+### Examples
+
+**Corruption Architecture — Example:**
+```yaml
+corruption_architecture:
+  entry_point: "Choice. Chose power over morality when their family was threatened. Would choose it again."
+  sacrifice_inventory: "For power: their reputation. For survival: someone else's life. For love: their own soul."
+  the_line: "Won't harm children. That's what they tell themselves. Haven't been tested enough yet."
+  justification: "The world is cruel. The innocent suffer. Power is the only protection. (Starting to sound hollow.)"
+```
+
+**Monstrous Self — Example:**
+```yaml
+monstrous_self:
+  the_hidden_part: "The pleasure they take in violence. The way winning a fight feels better than anything else."
+  pressure_transformation: "Goes silent. Eyes go flat. The person disappears; the weapon remains."
+  feared_becoming: "Their father—a man who loved hurting people and called it discipline."
+  remaining_humanity: "Protects the weak. Remembers every name. Refuses to enjoy the kill no matter how good it feels."
+```
+
+**Forbidden Knowledge — Example:**
+```yaml
+forbidden_knowledge:
+  what_they_know: "The gods are dead. The prayers are answered by things wearing their names."
+  cost_of_knowing: "Saw it happen. Watched a god die screaming. Can't sleep without seeing it."
+  wish_to_unknow: "No. The lie would be worse. At least the truth doesn't pretend to comfort."
+  consequence_of_telling: "The church would burn them. The faithful would riot. Some truths kill civilizations."
+```
+
+**Dark Bargains — Example:**
+```yaml
+dark_bargains:
+  deals_made:
+    - "Traded ten years of life to save their sister. Nine years gone. One remains."
+    - "Promised service to the Winter Court. Owe them three favors. Haven't called them in yet."
+  debts_outstanding: "One year of life. Three favors to immortal fae. Both will be collected."
+  unmake_cost: "Breaking the life bargain would kill them instantly. Breaking the fae debt would destroy their sister."
+  desperation_shift: "Used to think their life was non-negotiable. Now it's just another currency."
+```
+
+**Power Relationship — Example:**
+```yaml
+power_relationship:
+  emotional_stance: "Craves it and loathes the craving. Feels like an addict who knows the drug is poison."
+  cost_of_use: "Every spell takes a memory. Small ones first. Starting to lose the important things."
+  seduction: "Control. In a chaotic world, magic is the only thing that does what they want."
+  threshold_pattern: "Uses it when others are in danger. Resists when it's just for themselves. Failing at that more often."
+```
+
+---
+
 ## Integration Notes
 
 **Combine with other modules:**

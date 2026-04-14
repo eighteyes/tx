@@ -100,17 +100,6 @@ Use Task tool for parallel subprocesses within your session. Use messages for cr
 
 export class PromptInjector {
   /**
-   * Inject preamble with tool guidance
-   * Multi-agent meshes get Task tool guidance based on agent permissions
-   */
-  injectPreamble(basePrompt: string, context: PreambleContext): string {
-    const preamble = this.selectPreamble(context);
-    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
-    const txRootHint = context.txRoot ? `\n\n# Environment\nRun \`export TX_ROOT="${context.txRoot}"\` before any script that references \`$TX_ROOT\`. This path is the TX installation root.` : '';
-    return `${preamble}${identity}${txRootHint}\n\n${basePrompt}`;
-  }
-
-  /**
    * Inject messaging protocol into a system prompt
    * Called for all mesh agents to ensure consistent message handling
    */
@@ -576,14 +565,72 @@ existing work.
   // ============================================
 
   /**
-   * Build preamble section content (identity, tool guidance, address)
-   * Returns the section string without wrapping a base prompt
+   * Build shared preamble — TX platform content identical across all agents and meshes.
+   *
+   * Placed at layer 1 (before CLAUDE.md and prefix files) so the maximum possible
+   * prefix is shared by Anthropic's prompt cache. Content here must not reference
+   * any agent name, mesh name, or project-specific detail — only runtime platform
+   * conventions (tool guidance, multi-agent coordination patterns, autonomous operation).
+   *
+   * Callers: dispatcher (layer 1), headless-runner (via buildPreambleSection compat wrapper).
+   */
+  buildSharedPreamble(context: { agentCount: number; allowedTools?: string[] }): string {
+    return this.selectPreamble(context as PreambleContext);
+  }
+
+  /**
+   * Build agent identity section — agent-specific content placed after the cache break (layer 4).
+   *
+   * Contains the agent's address declaration and TX_ROOT environment hint.
+   * These values differ per agent, so they must sit after the shared prefix to avoid
+   * invalidating the cache for every agent that follows.
+   *
+   * Callers: dispatcher (layer 4), headless-runner (via buildPreambleSection compat wrapper).
+   */
+  buildAgentIdentity(context: { agentName: string; meshName: string; txRoot?: string }): string {
+    const identity = `# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
+    const txRootHint = context.txRoot
+      ? `\n\n# Environment\nRun \`export TX_ROOT="${context.txRoot}"\` before any script that references \`$TX_ROOT\`. This path is the TX installation root.`
+      : '';
+    return `${identity}${txRootHint}`;
+  }
+
+  /**
+   * Build prefix block from manifest entries with injection: 'prefix'.
+   *
+   * These files are identical for all agents within a single dispatch turn, so they
+   * live at layer 3 (before the cache break) and can be shared across agents.
+   * Formats each file as a named section with its content.
+   *
+   * Callers: dispatcher (layer 3 — before agent identity).
+   */
+  buildPrefixBlock(files: Array<{ path: string; content: string }>): string {
+    if (files.length === 0) return '';
+    const parts: string[] = ['# Prefix Files\n'];
+    for (const { path: filePath, content } of files) {
+      const ext = filePath.split('.').pop() || '';
+      parts.push(`## ${filePath}`);
+      parts.push(`\`\`\`${ext}`);
+      parts.push(content.trim());
+      parts.push('```\n');
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * Build preamble section content (identity, tool guidance, address).
+   *
+   * Backward-compatibility wrapper that combines shared preamble + agent identity
+   * into a single string. Use this in headless-runner and other callers that have
+   * not yet adopted the split-layer API.
+   *
+   * Prefer calling buildSharedPreamble() + buildAgentIdentity() separately in new code
+   * so cache-layer ordering can be controlled at the assembly point.
    */
   buildPreambleSection(context: PreambleContext): string {
-    const preamble = this.selectPreamble(context);
-    const identity = `\n\n# Your Address\nYou are \`${context.agentName}\` in the \`${context.meshName}\` mesh (full address: \`${context.meshName}/${context.agentName}\`).\nAlways use \`from: ${context.meshName}/${context.agentName}\` in your messages.`;
-    const txRootHint = context.txRoot ? `\n\n# Environment\nRun \`export TX_ROOT="${context.txRoot}"\` before any script that references \`$TX_ROOT\`. This path is the TX installation root.` : '';
-    return `${preamble}${identity}${txRootHint}`;
+    const sharedPreamble = this.buildSharedPreamble(context);
+    const agentIdentity = this.buildAgentIdentity(context);
+    return `${sharedPreamble}\n\n${agentIdentity}`;
   }
 
   /**

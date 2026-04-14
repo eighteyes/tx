@@ -94,9 +94,14 @@ character:
     desires_beyond_plot: []          # What they want that isn't about the story
     # - "{desire}"
 
-    voice_markers:                   # How they actually talk
-      vocabulary: "{register, code-switching patterns}"
+    voice_markers:                   # How they actually talk — SHOW, don't label
+      vocabulary:
+        guarded: "{EXAMPLE LINE with armor on — actual words in their rhythm}"
+        unguarded: "{EXAMPLE LINE with armor off — show the shift}"
+        the_shift: "{What changes mechanically — not labels like 'accent' or 'register'}"
       rhythm: "{sentence patterns under different states}"
+      nonverbal: []                  # Sounds that aren't words — gasps, hums, laughs, breaths
+      # - "{sound + where it comes from in the body + what it signals}"
       verbal_habits: []              # Signature speech patterns
       # - "{habit}"
       never_says: "{words or phrases they avoid and why}"
@@ -213,7 +218,7 @@ character:
     location: "Unknown"              # Set by scene, not stored long-term
     armor_status: "intact"           # intact | cracked | shattered
     vulnerability_state: "defended"  # defended | exposed | raw
-    # DO NOT store arc_pressure here - that's in scene.yaml
+    # DO NOT store arc_pressure here - that's in state.yaml
     # DO NOT store turn-specific narrative - that's in prose
 
   # --- BONDS (references only) ---
@@ -242,11 +247,11 @@ character:
 # - Bond references
 #
 # NOT IN ENTITY FILE (belongs elsewhere):
-# - arc_pressure (scene.yaml)
+# - arc_pressure (state.yaml)
 # - Turn-specific narrative/prose
 # - Detailed turn-by-turn state changes
 # - Bond intensity/history (bond entities)
-# - Location (scene.yaml.closing.positions)
+# - Location (state.yaml.closing.positions)
 
 # =============================================================================
 # EVOLUTION RULES (for scribe)

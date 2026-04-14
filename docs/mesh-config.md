@@ -160,9 +160,24 @@ routing:
 | Option | Type | Description |
 |--------|------|-------------|
 | `complete` | string | Join agent — gated until all fan-out members send `outcome: complete` |
+| `fan_in` | string | How results are collected: `batch` (wait for all), `queue` (process as they arrive), `drain` (complete when all done) |
 | `discuss` | boolean | Enable peer messaging via `outcome: discuss` + `route_to: peer` |
+| `transform` | string | Optional result transformation (e.g., `summarize`) |
 
 Fan-out members get implicit routing — no individual entries needed. Type detection: string = linear, object = branch, array = fan-out, absent = terminal.
+
+**Discuss mode** — when `discuss: true`, agents in the fan-out group can send messages directly to each other via `route_to` override. Enables debate, peer review, alternating dialogue, and critique cycles.
+
+```yaml
+routing:
+  director: [voice-a, voice-b, { discuss: true, complete: director }]
+```
+
+**Free routing** — agents self-organize, no routing table:
+```yaml
+routing_mode: free
+```
+Agents send messages directly to any agent in the mesh using full mesh-qualified paths (e.g., `to: my-mesh/agent-b`).
 
 ---
 
@@ -755,6 +770,7 @@ load_claude_md: false
 - **Required**: No
 - **Default**: `true`
 - **Behavior**: When enabled, files declared in `manifest[].reads` for an agent are automatically preloaded into the agent's context (merged with explicit `load` field). Individual manifest entries can override this with `autoInject: false`.
+- **See also**: [Prompt Cache Layering](./prompt-cache-layering.md) for how `autoInject`, `injection: 'prefix'`, and `context` queries interact with the cache layer architecture.
 
 ```yaml
 # Disable auto-injection for the entire mesh

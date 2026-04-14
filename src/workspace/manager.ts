@@ -10,10 +10,15 @@ import path from 'node:path';
 import { log } from '../shared/logger.ts';
 
 export interface WorkspaceConfig {
-  path?: string;  // Path template for workspace (can include {topic}, {task-id}, etc.)
-  output?: Record<string, string>;  // filename -> description
-  create_on_init?: boolean;  // Create directory on initialization (default: true)
-  cleanup_on_complete?: boolean;  // Clean up on task completion (default: false)
+  path?: string;                      // Base workspace path template
+  locations?: Record<string, string>; // Named location templates (e.g. { workspace: '.ai/{feature}' })
+  variables?: {
+    source?: string;                  // File to read dynamic variables from (e.g. session.yaml)
+    mapping?: Record<string, string>; // Key → dotted-path mappings within the source file
+  };
+  output?: Record<string, string>;    // filename -> description
+  create_on_init?: boolean;           // Create directory on initialization (default: true)
+  cleanup_on_complete?: boolean;      // Clean up on task completion (default: false)
 }
 
 /**

@@ -110,6 +110,12 @@ Manifest entries with `id` ending in `/` are treated as directories:
 - **Reads**: existence check via `fs.existsSync` (same as files)
 - **Writes**: skipped in writes-incomplete checks (containers, not deliverables)
 
+## Cache Optimisation
+
+Manifest entries with `injection: 'prefix'` are placed in the shared cache layer (Layer 3), before the per-agent cache break. This means prefix files are cached once and reused across all agent dispatches in the same turn.
+
+For per-agent context filtering via `sections` and `script` queries, see [Prompt Cache Layering](./prompt-cache-layering.md).
+
 ## Design Spec
 
 Full design: `docs/superpowers/specs/2026-03-13-manifest-routing-design.md`

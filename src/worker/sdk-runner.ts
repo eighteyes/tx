@@ -5,7 +5,7 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { query, type SDKResultMessage, type McpServerConfig, type CanUseTool, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKResultMessage, type McpServerConfig, type CanUseTool, type PermissionResult, type SandboxSettings } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageQueue } from '../queue/index.ts';
 import type { Message } from '../queue/index.ts';
 import type { SemanticModel, WorkerResult, QueryMetrics, WorkerMetrics } from '../shared/types.ts';
@@ -392,6 +392,33 @@ Reply **allow** to approve or **deny** to reject.`,
   }
 
   /**
+   * Full untruncated tool input for tx spy -f detail view.
+   */
+  private fullToolInput(toolName: string, input: Record<string, unknown>): string {
+    switch (toolName) {
+      case 'Bash':
+        return `command: ${String(input.command || '')}`;
+      case 'Read':
+        return `file: ${input.file_path || input.path || ''}`;
+      case 'Write':
+        return `file: ${input.file_path || ''}\ncontent: ${String(input.content || '')}`;
+      case 'Edit':
+        return `file: ${input.file_path || ''}\nold: ${String(input.old_string || '')}\nnew: ${String(input.new_string || '')}`;
+      case 'Glob':
+        return `pattern: ${input.pattern || ''}${input.path ? `\npath: ${input.path}` : ''}`;
+      case 'Grep':
+        return `pattern: ${input.pattern || ''}${input.path ? `\npath: ${input.path}` : ''}`;
+      default: {
+        const entries = Object.entries(input);
+        if (entries.length === 0) return '(no input)';
+        return entries
+          .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+          .join('\n');
+      }
+    }
+  }
+
+  /**
    * Brief one-line target for tool call display in tx spy.
    * Returns null if no meaningful target can be extracted.
    */
@@ -594,6 +621,15 @@ Reply **allow** to approve or **deny** to reject.`,
           log.info('sdk-runner', `Tool restriction: orchestrator (Read + Write msgs-only)`, { workerId });
         }
 
+        // Sandbox config: fence workers to project dir when god mode active
+        const sandboxConfig: SandboxSettings | undefined = this.config.godMode ? {
+          enabled: true,
+          autoAllowBashIfSandboxed: true,
+          filesystem: {
+            allowWrite: [this.config.workDir],
+          },
+        } : undefined;
+
         try {
           const resumeId = this.currentSessionId || this.config.sessionId;
           if (this.config.forkSession || this.config.resumeSessionAt) {
@@ -629,6 +665,7 @@ Reply **allow** to approve or **deny** to reject.`,
               hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
               ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
               ...(this.config.env ? { env: { ...process.env, ...this.config.env } } : {}),
+              ...(sandboxConfig ? { sandbox: sandboxConfig } : {}),
             }
           });
         } catch (error) {
@@ -663,6 +700,7 @@ Reply **allow** to approve or **deny** to reject.`,
                 hooks: this.config.hooks,  // Chaos contract hooks (write-gate, read-gate)
                 ...(this.config.thinking === false ? { maxThinkingTokens: 0 } : {}),
                 ...(this.config.env ? { env: { ...process.env, ...this.config.env } } : {}),
+                ...(sandboxConfig ? { sandbox: sandboxConfig } : {}),
               }
             });
           } else {
@@ -703,9 +741,13 @@ Reply **allow** to approve or **deny** to reject.`,
                   const target = this.briefToolTarget(t.name, (t as any).input || {});
                   return target ? `${t.name}(${target})` : t.name;
                 });
+                const toolDetails = toolUses.map((t: any) => {
+                  const input = (t as any).input || {};
+                  return `[${t.name}]\n${this.fullToolInput(t.name, input)}`;
+                });
                 const toolNames = toolUses.map((t: any) => t.name).join(', ');
                 log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
-                log.activity('tools', workerId, toolSummaries.join(', '));
+                log.activity('tools', workerId, toolSummaries.join(', '), { detail: toolDetails.join('\n\n') });
 
                 // Capture tool calls with inputs for session transcript
                 for (const toolUse of toolUses) {
@@ -1360,9 +1402,14 @@ Reply **allow** to approve or **deny** to reject.`,
                 const target = this.briefToolTarget(t.name, (t as any).input || {});
                 return target ? `${t.name}(${target})` : t.name;
               });
+              const toolDetails = toolUses.map((t: any) => {
+                const tu = t as { name: string; input?: Record<string, unknown> };
+                const input = tu.input || {};
+                return `[${tu.name}]\n${this.fullToolInput(tu.name, input)}`;
+              });
               const toolNames = toolUses.map((t: any) => t.name).join(', ');
               log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
-              log.activity('tools', workerId, toolSummaries.join(', '));
+              log.activity('tools', workerId, toolSummaries.join(', '), { detail: toolDetails.join('\n\n') });
 
               // Capture tool calls with inputs for session transcript
               for (const toolUse of toolUses) {

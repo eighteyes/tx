@@ -124,7 +124,7 @@ const DEFAULT_MODE: GuardrailMode = { strict: false, warning: true };
 
 /** Per-guardrail default modes — override DEFAULT_MODE where needed */
 const GUARDRAIL_DEFAULT_MODES: Record<string, GuardrailMode> = {
-  bash_guard:       { strict: true,  warning: true },   // Block violations, include reason
+  bash_guard:       { strict: false, warning: false },  // Disabled — re-enable via config.yaml if needed
   identity_gate:    { strict: false, warning: true },   // Warn on identity mismatch
   write_gate:       { strict: false, warning: true },   // Warn on path violations
   read_gate:        { strict: false, warning: true },   // Warn on path violations

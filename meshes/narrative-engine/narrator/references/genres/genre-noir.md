@@ -406,33 +406,159 @@ Noir doesn't build toward solution; it peels toward revelation.
 
 ---
 
-## Voice Modifiers for Characters
+## Character Depth Extensions
 
-When extracting character voice (Phase 6b), add these dimensions for noir characters:
+Genre-specific entity fields for character files. The calibrator adds these sections based on active genre modules.
+
+### Extraction Questions
+
+**Vice Architecture:**
+- "What's their specific vice? Booze? Gambling? Sex? Danger? Violence? Something stranger?"
+- "How do they manage it—or fail to? Functional addict? Barely hanging on? Denial?"
+- "What's the ritual of indulgence? The bottle in the desk drawer? The back-alley game? The call they shouldn't make?"
+- "What does the vice give them? Numbness? Control? Punishment? Pleasure they think they don't deserve?"
+
+**Moral Compromise:**
+- "What's the line between necessary evil and corruption? Where is it for them?"
+- "What have they done that they can't undo? What choice haunts them?"
+- "How do they justify the dirty work? 'It's the job'? 'Someone has to'? Do they even justify anymore?"
+- "What would redeem them? Or is redemption off the table? Do they even want it?"
+
+**Cynicism Structure:**
+- "What idealism is buried underneath the cynicism? What did they used to believe?"
+- "What still makes them angry? If everything's corrupt, why does anything matter?"
+- "What do they pretend not to care about that they actually care about deeply?"
+- "Who they were before vs. who they are now—what's the distance? Can they still see that person?"
+
+**Corruption Tolerance:**
+- "How dirty will they get? What laws will they break? What ethics will they bend?"
+- "Who do they protect despite themselves? Who do they choose over the job?"
+- "When do they draw the line and say 'not this, not here'? What's still sacred?"
+- "What corruption have they accepted as the cost of doing business? What still disgusts them?"
+
+**Loyalty Tests:**
+- "What person or principle won't they betray? What's the one unbreakable thing?"
+- "What would it take to break that loyalty? Money? Threat? Seeing them revealed as false?"
+- "Who's tested them? How did they respond? Did they surprise themselves?"
+- "If pushed to choose between loyalty and survival, what wins? Between loyalty and justice?"
+
+**Damage Markers (from original voice section):**
+- "What broke them? One moment or slow erosion?"
+- "How have they adapted around the wound? What's the scar tissue?"
+- "When does it show despite their control? What reveals the damage underneath?"
+
+**Code Elements:**
+- "What lines won't they cross? (The stated code.)"
+- "What lines do they TELL THEMSELVES they won't cross? (The lie they need.)"
+- "What would make them cross anyway? (The truth about their limits.)"
+
+**Cynicism Calibration:**
+- "How do they deflect with humor? What's their defense mechanism style?"
+- "What still reaches them past the armor? What can't they be cynical about?"
+- "Who were they before? What vestige of that earlier self remains?"
+
+### Entity Schema Extensions
 
 ```yaml
-voice:
-  # Standard fields plus:
+vice_architecture:
+  the_vice: "booze/gambling/sex/danger/violence—what they reach for"
+  management: "functional addict/barely hanging on/denial/controlled/failing"
+  ritual: "the specific how of indulgence—bottle in desk, backroom game, the call"
+  what_it_gives: "numbness/control/punishment/pleasure—why they do it"
+  # Examples:
+  # the_vice: "Rye whiskey. Cheap bottle in the bottom desk drawer. Two fingers when a case closes dirty."
+  # management: "Functional. Mostly. Can stop when they need to. Just don't need to often."
+  # what_it_gives: "Numbness. The edge off. The part of the brain that judges goes quiet."
 
-  damage_markers:
-    the_wound: "what broke them"
-    the_scar: "how they've adapted around it"
-    the_tell: "when it shows despite them"
+moral_compromise:
+  necessary_vs_corrupt: "where they draw the line between dirty work and being dirty"
+  the_undo able: "what they've done that they can't take back"
+  justification: "how they explain the compromises to themselves"
+  redemption_status: "possible/impossible/unwanted—do they think they can be saved"
 
-  code_elements:
-    lines_they_wont_cross: []
-    lines_they_tell_themselves_they_wont_cross: []
-    what_would_make_them_cross_anyway: ""
+cynicism_structure:
+  buried_idealism: "what they used to believe before the world taught them better"
+  what_still_angers: "if everything's corrupt, what still makes them mad"
+  pretend_not_to_care: "what they act indifferent about but actually matters"
+  distance_from_before: "who they were vs. who they are—can they still see that person"
 
-  cynicism_calibration:
-    humor_style: "how they deflect"
-    what_still_reaches_them: "what penetrates the armor"
-    who_they_were_before: "vestige of earlier self"
+corruption_tolerance:
+  how_dirty: "what laws they'll break, what ethics they'll bend"
+  protect_despite_self: "who they choose over the job, who they can't abandon"
+  the_line: "what's still sacred, where they say 'not this'"
+  accepted_corruption: "what they've made peace with vs. what still disgusts them"
 
-  speech_patterns:
-    simile_tendencies: "what they compare things to"
-    silence_uses: "when they don't answer"
-    lie_tells: "how they lie, what they avoid"
+loyalty_tests:
+  the_unbreakable: "person or principle they won't betray"
+  breaking_point: "what it would take to make them turn—money/threat/disillusionment"
+  tested_by: "who tested them, how they responded, if they surprised themselves"
+  loyalty_vs_conflict: "loyalty vs. survival—which wins? loyalty vs. justice—which wins?"
+
+damage_markers:
+  the_wound: "what broke them"
+  the_scar: "how they've adapted around it"
+  the_tell: "when it shows despite them"
+  # Examples:
+  # the_wound: "Partner took a bullet meant for them. Didn't make it."
+  # the_scar: "Works alone now. Won't train rookies. Can't watch someone else get hurt."
+  # the_tell: "Flinches when someone stands on their left. That's where the partner stood."
+
+code_elements:
+  lines_they_wont_cross: ["Don't hurt kids", "Don't sell out a client"]
+  lines_they_tell_themselves_they_wont_cross: ["Don't take dirty money", "Don't kill"]
+  what_would_make_them_cross_anyway: "Life of someone they care about. Then all bets are off."
+
+cynicism_calibration:
+  humor_style: "Dry. Self-deprecating. Gallows humor when it's bad."
+  what_still_reaches_them: "Kids in danger. People trying despite everything. Dogs."
+  who_they_were_before: "Believed in justice. Thought the system worked. That person's dead but the ghost shows up sometimes."
+
+speech_patterns:
+  simile_tendencies: "what they compare things to"
+  silence_uses: "when they don't answer"
+  lie_tells: "how they lie, what they avoid"
+  # Examples:
+  # simile_tendencies: "Noir classics—'smile like a canceled check,' 'about as warm as a landlord's heart'"
+  # silence_uses: "When they don't have a good answer. When the answer would hurt. When they're deciding whether to lie."
+  # lie_tells: "Too much detail. Over-explaining. Won't meet your eyes when usually they do."
+```
+
+### Examples
+
+**Vice Architecture — Example:**
+```yaml
+vice_architecture:
+  the_vice: "Poker. Back-room games where the cops don't look. High stakes, higher risks."
+  management: "Functional when winning. Destructive when losing. Currently on a losing streak."
+  ritual: "Every Friday night. Same table, same dealer. Tells themselves it's networking. It's not."
+  what_it_gives: "The thrill. The only time they feel alive. The risk of losing everything is the point."
+```
+
+**Moral Compromise — Example:**
+```yaml
+moral_compromise:
+  necessary_vs_corrupt: "Breaking rules to catch bad guys: necessary. Breaking rules for personal gain: corrupt. The line's thinner than they pretend."
+  the_undoable: "Let a guilty man walk because he had dirt on someone they cared about. Guilty man killed again. Can't undo that."
+  justification: "Used to say 'greater good.' Now just 'it's the job.' Stopped justifying. Easier that way."
+  redemption_status: "Unwanted. Redemption's for people who deserve a second chance. They've had theirs and blown them."
+```
+
+**Cynicism Structure — Example:**
+```yaml
+cynicism_structure:
+  buried_idealism: "Used to believe the truth mattered. That justice was possible. That good people won sometimes."
+  what_still_angers: "People hurting kids. The powerful crushing the weak. Apathy dressed as sophistication."
+  pretend_not_to_care: "Acts like the client's just a paycheck. Actually gives a damn if they're telling the truth."
+  distance_from_before: "The person they were would be horrified by who they've become. Good. That person was naive."
+```
+
+**Loyalty Tests — Example:**
+```yaml
+loyalty_tests:
+  the_unbreakable: "Their word. Once given, doesn't break. It's the only thing they have left that's worth anything."
+  breaking_point: "If keeping their word would get an innocent killed. Then the word breaks and they live with it."
+  tested_by: "Client asked them to lie under oath. They refused. Lost the case, kept their integrity. Surprised themselves."
+  loyalty_vs_conflict: "Loyalty vs. survival: loyalty wins until it gets stupid. Loyalty vs. justice: depends on who deserves loyalty more."
 ```
 
 ---

@@ -25,6 +25,9 @@ import { isPlanDirectory, deriveCapabilitiesFromPlan, getCachedCapabilities } fr
 /** Base directory for factory-generated meshes. */
 const GENERATED_MESHES_DIR = '.ai/tx/generated-meshes';
 
+/** Archive directory — preserves compiled meshes with provenance. */
+const ARCHIVED_MESHES_DIR = '.ai/tx/archived-meshes';
+
 export interface FactoryOptions {
   inputFile?: string;
   planDir?: string;
@@ -199,8 +202,87 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
     return { success: false, errors: compileErrors };
   }
 
+  // Symlink: mesh-name → hash-dir so consumer can find by name
+  createMeshNameSymlink(meshName, outputDir);
+
+  // Archive: preserve compiled mesh + source capabilities as provenance
+  archiveCompiledMesh(capHash, meshName, outputDir, inputFile, needed);
+
   log.info('factory', `Generated mesh at ${outputDir}`, { agents: result.agents });
   return { success: true, generated: outputDir, meshName, errors: [] };
+}
+
+/**
+ * Create a symlink from mesh name to hash directory in generated-meshes.
+ *
+ * The consumer's tryLoadMeshOnDemand looks up by mesh name, but factory
+ * stores by capability hash. The symlink bridges the gap.
+ */
+function createMeshNameSymlink(meshName: string, outputDir: string): void {
+  try {
+    const parentDir = path.dirname(outputDir);
+    const symlinkPath = path.join(parentDir, meshName);
+
+    // Skip if symlink already exists and points to the right place
+    if (fs.existsSync(symlinkPath)) {
+      const existing = fs.readlinkSync(symlinkPath);
+      if (path.resolve(parentDir, existing) === path.resolve(outputDir)) return;
+      // Wrong target — remove and recreate
+      fs.unlinkSync(symlinkPath);
+    }
+
+    fs.symlinkSync(path.basename(outputDir), symlinkPath);
+    log.info('factory', `Symlinked ${meshName} → ${path.basename(outputDir)}`);
+  } catch (err) {
+    // Non-fatal — consumer won't find the mesh by name, but it still works by hash
+    log.warn('factory', `Failed to create mesh name symlink: ${String(err)}`);
+  }
+}
+
+/**
+ * Archive a compiled mesh with its source capabilities for provenance.
+ *
+ * Copies the compiled output to archived-meshes/{hash}-{meshName}/ and
+ * writes the source capability declaration alongside it. This preserves
+ * the full fork context (input + output) so nothing gets lost.
+ */
+function archiveCompiledMesh(
+  capHash: string,
+  meshName: string,
+  outputDir: string,
+  inputFile: string | undefined,
+  needed: CapabilityNeeded,
+): void {
+  try {
+    const archiveName = `${capHash}-${meshName}`;
+    const archiveDir = path.resolve(ARCHIVED_MESHES_DIR, archiveName);
+
+    // Skip if already archived (idempotent)
+    if (fs.existsSync(archiveDir)) {
+      log.debug('factory', `Archive already exists: ${archiveName}`);
+      return;
+    }
+
+    // Copy compiled mesh to archive
+    fs.cpSync(outputDir, archiveDir, { recursive: true });
+
+    // Preserve source capabilities YAML (the fork context)
+    if (inputFile && fs.existsSync(inputFile)) {
+      fs.copyFileSync(inputFile, path.join(archiveDir, 'source-capabilities.yaml'));
+    } else {
+      // No input file (plan-derived or inline) — write the resolved capabilities
+      fs.writeFileSync(
+        path.join(archiveDir, 'source-capabilities.yaml'),
+        YAML.stringify({ capability: needed }),
+        'utf-8',
+      );
+    }
+
+    log.info('factory', `Archived mesh: ${archiveName}`, { archiveDir });
+  } catch (err) {
+    // Archive failure is non-fatal — log and continue
+    log.warn('factory', `Failed to archive mesh: ${String(err)}`);
+  }
 }
 
 /**

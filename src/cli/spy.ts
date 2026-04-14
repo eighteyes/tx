@@ -61,7 +61,7 @@ const meshStartTimes = new Map<string, number>();
 const agentStartTimes = new Map<string, number>();
 
 /**
- * Extract mesh name from agentId (e.g., "narrative-engine-v2/editor" → "narrative-engine-v2")
+ * Extract mesh name from agentId (e.g., "narrative-engine/editor" → "narrative-engine")
  */
 function getMeshName(agentId: string): string {
   const slash = agentId.indexOf('/');
@@ -417,7 +417,16 @@ function printActivity(entry: ActivityEntry, json?: boolean, full?: boolean): vo
     }
     console.log();
   } else if (entry.event === 'tools') {
-    console.log(`🔧 ${agent} ${chalk.dim(time)} ${chalk.cyan(entry.content)}\n`);
+    if (full && (entry as any).detail) {
+      console.log(`🔧 ${agent} ${chalk.dim(time)}`);
+      const lines = ((entry as any).detail as string).split('\n');
+      for (const line of lines) {
+        console.log(`   ${chalk.cyan(line)}`);
+      }
+      console.log();
+    } else {
+      console.log(`🔧 ${agent} ${chalk.dim(time)} ${chalk.cyan(entry.content)}\n`);
+    }
   } else if (entry.event.startsWith('quality:')) {
     // Quality hook events - format based on pass/fail/etc
     const eventName = entry.event.replace('quality:', '');

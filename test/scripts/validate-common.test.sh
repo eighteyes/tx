@@ -2,7 +2,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCHEMA_DIR="$SCRIPT_DIR/../../meshes/narrative-engine-v2/scripts/schemas"
+SCHEMA_DIR="$SCRIPT_DIR/../../meshes/narrative-engine/scripts/schemas"
 FIXTURES="$SCRIPT_DIR/fixtures"
 PASS=0
 FAIL=0

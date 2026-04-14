@@ -187,12 +187,12 @@ Quick reference for available meshes and when to use them.
 - **Use when**: Running tabletop RPG sessions
 - **Features**: Complex FSM, manifest-driven file I/O, HITL calibration, lint ladder, continuation=false, stateless mechanics with JIT probability tables
 
-### narrative-engine-v2
+### narrative-engine
 
 - **Purpose**: Collapsed single-mesh RPG — entropy architect, scene simulator, and narrative pipeline
-- **Entry**: `narrative-engine-v2/entry`
-- **Agents**: entry, game-coord, init-turn, gravity, architect, sim-planner, sim-tables, sim-voices, narrator (opus), calibrator (opus), editor (opus), oracle, visual, scribe, lint agents
-- **Features**: Collapsed FSM, gravity collision detector, sim-planner/tables/voices phase split, heartbeat reliability config
+- **Entry**: `narrative-engine/entry`
+- **Agents**: entry, game-coord, init-turn, gravity, dramaturg, entropy-gen, sim-planner, sim-scene, sim-chars, narrator (opus), calibrator (opus), editor (opus), oracle, visual, scribe
+- **Features**: Collapsed FSM, gravity collision detector, sim-planner/scene/chars phase split, minimum-necessary injection, 80w dialogue floor
 
 ### opus-soul
 

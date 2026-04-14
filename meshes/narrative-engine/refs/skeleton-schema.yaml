@@ -1,0 +1,58 @@
+# skeleton-schema.yaml
+# Single source of truth for resolved-skeleton.yaml structure.
+# roll-tree.sh outputs this. resolve-mechanics.sh reads this.
+# entropy-gen references this when writing or validating.
+
+# resolved-skeleton.yaml has THREE top-level sections:
+#   rolls:          Raw dice audit trail (roll-tree.sh output, debug only)
+#   world_rolls:    World domain rolls per beat (roll-tree.sh output)
+#   skeleton:       Canonical resolved structure (downstream reads THIS)
+
+# --- skeleton section schema ---
+# resolve-mechanics.sh reads: .skeleton.{beat}.{character}.tier
+# resolve-mechanics.sh reads: .skeleton.{beat}.{character}.register
+# resolve-mechanics.sh reads: .skeleton.{beat}.{character}.collision
+
+skeleton:
+  beat_N:                          # beat_1, beat_2, etc.
+    character_id:                  # character IDs from the scene
+      tier: string                 # catastrophic | failure | mixed | success | breakthrough
+      register: string             # from turn-tree register options (strategic, measured, etc.)
+      collision: string            # collision label from turn-tree
+      label: string                # optional beat label
+    secondary:                     # optional list of secondary seeds/events
+      - id: string                 # seed or event identifier
+        attach_to: string          # character this attaches to
+
+# --- dramaturg-guidance character_mechanics schema ---
+# resolve-mechanics.sh reads: .character_mechanics.{character}.{tier}
+# Source file: dramaturg-guidance.yaml (written Step 3, before entropy-gen)
+
+character_mechanics:
+  character_id:                    # character IDs from the scene
+    catastrophic: string           # e.g. "PROTECTIVE pressure +2; GUILT phase: latent→active"
+    failure: string                # parseable notation only — semicolon-separated
+    mixed: string
+    success: string
+    breakthrough: string
+
+# --- world_rolls section schema ---
+# Each beat has 5 world domains, each with a rolled outcome
+
+world_rolls:
+  beat_N:
+    texture:
+      roll: int
+      result: string
+    atmosphere:
+      roll: int
+      result: string
+    complication:
+      roll: int
+      result: string               # often "none" (65-80% weight)
+    prop:
+      roll: int
+      result: string
+    micro:
+      roll: int
+      result: string

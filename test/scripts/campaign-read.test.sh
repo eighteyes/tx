@@ -2,7 +2,7 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/../.."
-READ="$ROOT/meshes/narrative-engine-v2/scripts/campaign-read.sh"
+READ="$ROOT/meshes/narrative-engine/scripts/campaign-read.sh"
 CP="$SCRIPT_DIR/fixtures/campaign"
 PASS=0; FAIL=0
 
