@@ -103,6 +103,9 @@ export class SdkRunner extends EventEmitter {
   };
   private toolCallRecords: ToolCallRecord[] = [];  // Tool calls for postcondition validation
   private pendingBashCalls: number[] = [];  // Indices of Bash calls awaiting exit code from results
+  private lastToolCalls: string[] = [];  // Last batch of tool names (for abort error context)
+  private lastToolUseAt: number | null = null;  // ms timestamp of last assistant tool_use (start of tool exec)
+  private lastToolResultAt: number | null = null;  // ms timestamp of last tool_use_result (end of tool exec)
 
   constructor(config: SdkRunnerConfig, queue: MessageQueue) {
     super();
@@ -545,6 +548,10 @@ Reply **allow** to approve or **deny** to reject.`,
     this.startedAt = Date.now();
     this.toolCallRecords = [];
     this.pendingBashCalls = [];
+    this.lastToolCalls = [];
+    this.lastToolUseAt = null;
+    this.lastToolResultAt = null;
+    this._killReason = null;
     this.emit('start', { id: workerId });
 
     let totalProcessed = 0;
@@ -746,6 +753,9 @@ Reply **allow** to approve or **deny** to reject.`,
                   return `[${t.name}]\n${this.fullToolInput(t.name, input)}`;
                 });
                 const toolNames = toolUses.map((t: any) => t.name).join(', ');
+                // Track last tool calls for abort error context (overwrite, not accumulate)
+                this.lastToolCalls = toolSummaries;
+                this.lastToolUseAt = Date.now();
                 log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
                 log.activity('tools', workerId, toolSummaries.join(', '), { detail: toolDetails.join('\n\n') });
 
@@ -837,6 +847,7 @@ Reply **allow** to approve or **deny** to reject.`,
               }
               // Capture tool results for session transcript
               if (msg.tool_use_result !== undefined && msg.tool_use_result !== null) {
+                this.lastToolResultAt = Date.now();
                 const resultStr = typeof msg.tool_use_result === 'string'
                   ? msg.tool_use_result
                   : JSON.stringify(msg.tool_use_result, null, 2);
@@ -1108,29 +1119,75 @@ Reply **allow** to approve or **deny** to reject.`,
       if (err.code !== undefined) errorContext.code = err.code;
       if (err.exitCode !== undefined) errorContext.exitCode = err.exitCode;
 
+      // Enrich error context with last known tool calls (for abort/mid-tool-use failures)
+      if (this.lastToolCalls.length > 0) {
+        errorContext.lastToolCalls = this.lastToolCalls.join(', ');
+      }
+
+      // Timing signals to distinguish guardrail-kill vs network-mid-tool vs network-between-turns
+      const now = Date.now();
+      const msSinceToolUse = this.lastToolUseAt ? now - this.lastToolUseAt : null;
+      const msSinceToolResult = this.lastToolResultAt ? now - this.lastToolResultAt : null;
+      if (msSinceToolUse !== null) errorContext.msSinceLastToolUse = msSinceToolUse;
+      if (msSinceToolResult !== null) errorContext.msSinceLastToolResult = msSinceToolResult;
+      if (this._killReason) errorContext.killReason = this._killReason;
+
       // Demote expected exit patterns from error to warn/debug
       const isAbortError = err.message.includes('aborted by user') ||
                           err.message.includes('process aborted') ||
                           err.message.includes('Operation aborted');
+      // SDK emits this when a request is aborted mid-tool-use (network drop, timeout, etc.)
+      const isRequestAbort = err.message.includes('Request was aborted');
       const isExitCode1 = err.message?.includes('exited with code 1');
+
+      // Classify the abort: was it our kill, mid-tool network, or between-turns network?
+      // Mid-tool: tool_use seen but no result after — gap > 0 since use, result older than use (or null)
+      // Between-turns: result came back, then died waiting for next assistant chunk
+      let abortClass: string | null = null;
+      if (isRequestAbort || isAbortError) {
+        if (this._killReason) {
+          abortClass = `guardrail-kill:${this._killReason}`;
+        } else if (
+          msSinceToolUse !== null &&
+          (msSinceToolResult === null || this.lastToolResultAt! < this.lastToolUseAt!)
+        ) {
+          abortClass = `network-mid-tool (${Math.round(msSinceToolUse / 1000)}s into tool exec)`;
+        } else if (msSinceToolResult !== null) {
+          abortClass = `network-between-turns (${Math.round(msSinceToolResult / 1000)}s after last result)`;
+        } else {
+          abortClass = 'unknown (no tool activity recorded)';
+        }
+        errorContext.abortClass = abortClass;
+      }
 
       if (isAbortError) {
         log.debug('sdk-runner', `Worker aborted (expected)`, errorContext);
+      } else if (isRequestAbort) {
+        log.warn('sdk-runner', `Request aborted mid-tool-use`, errorContext);
       } else if (isExitCode1) {
         log.warn('sdk-runner', `Worker exited with code 1`, errorContext);
       } else {
         log.error('sdk-runner', `Worker error`, errorContext);
       }
 
+      // Build enriched error message so the user sees which tool was running
+      let errorMessage = err.message;
+      if (this.lastToolCalls.length > 0) {
+        errorMessage += `\n[last tool calls: ${this.lastToolCalls.join(', ')}]`;
+      }
+      if (abortClass) {
+        errorMessage += `\n[abort class: ${abortClass}]`;
+      }
+
       this.emit('error', {
         id: workerId,
-        error: err.message,
+        error: errorMessage,
         stack: err.stack,
         stderr: err.stderr,
         code: err.code || err.exitCode,
         sessionId: this.currentSessionId,
       });
-      return { success: false, messagesProcessed: totalProcessed, error: err.message };
+      return { success: false, messagesProcessed: totalProcessed, error: errorMessage };
     } finally {
       this.running = false;
       this.abortController = null;
@@ -1410,6 +1467,9 @@ Reply **allow** to approve or **deny** to reject.`,
               const toolNames = toolUses.map((t: any) => t.name).join(', ');
               log.info('sdk-runner', `Tools`, { workerId, tools: toolNames });
               log.activity('tools', workerId, toolSummaries.join(', '), { detail: toolDetails.join('\n\n') });
+              // Track last tool calls for abort error context (resume path)
+              this.lastToolCalls = toolSummaries;
+              this.lastToolUseAt = Date.now();
 
               // Capture tool calls with inputs for session transcript
               for (const toolUse of toolUses) {
@@ -1431,6 +1491,7 @@ Reply **allow** to approve or **deny** to reject.`,
           case 'user':
             // Capture tool results for session transcript (resume flow)
             if (msg.tool_use_result !== undefined && msg.tool_use_result !== null) {
+              this.lastToolResultAt = Date.now();
               const resultStr = typeof msg.tool_use_result === 'string'
                 ? msg.tool_use_result
                 : JSON.stringify(msg.tool_use_result, null, 2);

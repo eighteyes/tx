@@ -341,6 +341,11 @@ export class WorkerDispatcher extends EventEmitter {
   // Routing error tracking for correction injection (key: "sender→target", value: retry count)
   private routingErrorCounts: Map<string, number> = new Map();
 
+  // SDK abort resume attempts per agent (mid-session network drop recovery)
+  // Reset on natural completion. Capped to avoid retry storms on persistent failures.
+  private sdkAbortResumeAttempts: Map<string, number> = new Map();
+  private readonly MAX_SDK_ABORT_RESUMES = 3;
+
   // Edge iteration counters per turn (key: "mesh/from->mesh/to", value: message count)
   // Reset when a new turn starts (entry_point receives a task)
   private edgeCounters: Map<string, number> = new Map();
@@ -5508,6 +5513,9 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // We hold the FSM.complete() until AFTER post-hooks pass to avoid race conditions
       // with quality gate iteration loops
       worker.on('complete', async (data) => {
+        // Reset SDK-abort resume counter on natural completion — next failure starts fresh
+        this.sdkAbortResumeAttempts.delete(agentId);
+
         // Get this specific worker by workerId
         const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
         const activeWorker = workerInfo?.worker;
@@ -6361,6 +6369,63 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         const workerInfo = registeredWorkerId ? this.getWorkerByWorkerId(registeredWorkerId) : null;
         const activeWorker = workerInfo?.worker;
         const workerHookContext = activeWorker?.hookContext || hookContext;
+
+        // SDK abort recovery: network drops mid-session emit "Request was aborted" with stop_reason=tool_use.
+        // The session is still alive at Anthropic's end — resume preserves conversation context (cheaper
+        // than full respawn, no prompt rebill, no lost tool results). Cap attempts to avoid storms on
+        // persistent failures (rate limits, server issues). Falls through to FSM retry on exhaustion.
+        const isSdkAbort = data.error?.includes('Request was aborted');
+        const sessionId = data.sessionId as string | undefined;
+        if (isSdkAbort && sessionId) {
+          const attempts = this.sdkAbortResumeAttempts.get(agentId) || 0;
+          if (attempts < this.MAX_SDK_ABORT_RESUMES) {
+            this.sdkAbortResumeAttempts.set(agentId, attempts + 1);
+            const delayMs = 500 * Math.pow(2, attempts);  // 500 / 1000 / 2000
+
+            log.warn('dispatcher', 'SDK abort — attempting session resume', {
+              agentId, workerId: errorWorkerId,
+              sessionId: sessionId.slice(0, 8),
+              attempt: attempts + 1,
+              maxAttempts: this.MAX_SDK_ABORT_RESUMES,
+              delayMs,
+            });
+            log.activity('sdk-abort-resume', agentId, `Resuming after network abort (attempt ${attempts + 1}/${this.MAX_SDK_ABORT_RESUMES})`);
+
+            await new Promise<void>(r => setTimeout(r, delayMs));
+
+            // The runner's finally block has run by now — async tick guarantees it.
+            // If somehow still running, skip resume and fall through.
+            if (!worker.isRunning()) {
+              try {
+                const result = await worker.resume(
+                  sessionId,
+                  '[continue] Previous turn was interrupted by a network abort. Continue from where you left off.'
+                );
+                if (result.success) {
+                  log.info('dispatcher', 'SDK abort resume succeeded', {
+                    agentId, attempt: attempts + 1,
+                  });
+                  // 'complete' handler already ran — counter reset, cleanup done. Just return.
+                  return;
+                }
+                log.warn('dispatcher', 'SDK abort resume returned failure — falling through', {
+                  agentId, attempt: attempts + 1, error: result.error,
+                });
+              } catch (resumeErr) {
+                log.warn('dispatcher', 'SDK abort resume threw — falling through', {
+                  agentId, attempt: attempts + 1, error: (resumeErr as Error).message,
+                });
+              }
+            } else {
+              log.warn('dispatcher', 'Runner still active during error — skipping resume', { agentId });
+            }
+          } else {
+            log.warn('dispatcher', 'SDK abort resume cap reached — falling through to FSM retry', {
+              agentId, workerId: errorWorkerId, attempts,
+            });
+            this.sdkAbortResumeAttempts.delete(agentId);  // reset for future runs
+          }
+        }
 
         // Check for expected exit patterns (CLI exits with code 1 after work, or abort from kill)
         const isExitCode1 = data.error?.includes('exited with code 1');

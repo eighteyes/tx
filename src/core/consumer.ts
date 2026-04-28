@@ -1462,6 +1462,24 @@ export class MessageConsumer extends EventEmitter {
     else if (fs.existsSync(jsonPath)) configPath = jsonPath;
 
     if (!configPath) {
+      // Parallel-instance fallback: instance names like `dev-economy-batch-chrome`
+      // have no config dir of their own. Resolve to the base mesh and load that.
+      // Router cache keys (and DispatchRouter construction) still use the instance name —
+      // we only substitute base mesh for the config payload itself.
+      const instance = this.queue.getInstanceByName(meshName);
+      if (instance && instance.baseMesh !== meshName) {
+        log.info('consumer', 'Resolved parallel instance to base mesh for config', {
+          instance: meshName,
+          baseMesh: instance.baseMesh,
+        });
+        const baseConfig = await this.loadMeshConfig(instance.baseMesh);
+        if (baseConfig) {
+          // Cache under the instance name too, so subsequent lookups skip the fallback path.
+          this.meshConfigCache.set(meshName, { config: baseConfig, loadedAt: Date.now() });
+          this.dispatchRouters.delete(meshName);
+          return baseConfig;
+        }
+      }
       log.debug('consumer', `No config found for mesh: ${meshName}`);
       return null;
     }
