@@ -1,0 +1,261 @@
+# research-high-signal/config.yaml
+# Practitioner-first research mesh: intake → discovery → orchestration → retrieval (parallel) → verification → synthesis → writing
+# Pattern: FSM-driven pipeline with parallel ensemble retrieval and two-phase coordinator
+
+mesh: research-high-signal
+description: "Practitioner-first research mesh prioritizing high-signal sources (papers, post-mortems, conference talks, podcasts, engineering blogs, GitHub) with parallel retrieval and structured synthesis"
+
+type: ephemeral
+auto_despawn: true
+
+agents:
+  # ==========================================
+  # INTAKE — scope the research request
+  # ==========================================
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer.md
+    description: "Gathers research requirements via HITL, writes research-brief.md and signal-venues.md"
+
+  # ==========================================
+  # DISCOVERY — targeted high-signal search
+  # ==========================================
+  - name: signal-finder
+    model: sonnet
+    prompt: signal-finder.md
+    allowedTools:
+      - WebSearch
+      - Read
+      - Write
+    description: "Targeted search across papers, post-mortems, conference talks, podcasts, engineering blogs, GitHub"
+
+  # ==========================================
+  # COORDINATION — dispatch and verify (two-phase, same agent)
+  # Phase detected by file existence in workspace
+  # ==========================================
+  - name: coordinator
+    model: sonnet
+    prompt: coordinator.md
+    allowedTools:
+      - Read
+      - Write
+    description: "Dispatch phase: categorizes signal-inventory into retrieval queues. Verify phase: confirms retrieval outputs exist."
+
+  # ==========================================
+  # RETRIEVAL — parallel ensemble
+  # ==========================================
+  - name: transcript-retriever
+    model: sonnet
+    prompt: transcript-retriever.md
+    allowedTools:
+      - Bash
+      - Read
+      - Write
+    description: "Fetches YouTube transcripts for conference talks and podcasts via tx tool youtube-transcript"
+
+  - name: content-retriever
+    model: sonnet
+    prompt: content-retriever.md
+    allowedTools:
+      - WebSearch
+      - WebFetch
+      - Read
+      - Write
+    description: "Fetches and extracts content from papers, post-mortems, and engineering blog URLs via WebFetch"
+
+  # ==========================================
+  # SYNTHESIS — cross-source analysis
+  # opus: highest cognitive load task
+  # ==========================================
+  - name: synthesizer
+    model: opus
+    prompt: synthesizer.md
+    description: "Cross-source synthesis with explicit practitioner vs academic vs vendor source labeling"
+
+  # ==========================================
+  # WRITING — deliverable production
+  # ==========================================
+  - name: writer
+    model: sonnet
+    prompt: writer.md
+    description: "Produces final deliverables from synthesis only — no raw source file access"
+
+entry_point: interviewer
+
+completion_agents:
+  - writer
+
+workspace:
+  path: ".ai/research-hs"
+  create_on_init: true
+
+# ==========================================
+# ROUTING — FSM controls transitions; agents signal complete → core
+# ==========================================
+routing:
+  interviewer:
+    complete:
+      core: "Research brief and signal venues written"
+    blocked:
+      core: "Cannot proceed — unclear research requirements"
+
+  signal-finder:
+    complete:
+      core: "Signal inventory written"
+    blocked:
+      core: "Cannot find signals — topic too narrow or search failed"
+
+  coordinator:
+    complete:
+      core: "Coordinator phase complete"
+    blocked:
+      core: "Cannot coordinate — inventory or retrieval outputs missing"
+
+  transcript-retriever:
+    complete:
+      core: "Transcripts retrieved"
+    blocked:
+      core: "Cannot retrieve transcripts — no video IDs or tool failure"
+
+  content-retriever:
+    complete:
+      core: "Content retrieved"
+    blocked:
+      core: "Cannot retrieve content — no URLs or fetch failure"
+
+  synthesizer:
+    complete:
+      core: "Synthesis written"
+    blocked:
+      core: "Cannot synthesize — source files missing or unreadable"
+
+  writer:
+    complete:
+      core: "Research deliverables complete"
+    blocked:
+      core: "Cannot write — synthesis missing or brief unclear"
+
+# ==========================================
+# FSM — state machine controls pipeline flow
+# Two coordinator passes: orchestration (dispatch) and verification (verify)
+# Retrieval is a parallel ensemble
+# ==========================================
+fsm:
+  initial: intake
+
+  states:
+    intake:
+      agents: [interviewer]
+      exit:
+        default: discovery
+
+    discovery:
+      agents: [signal-finder]
+      exit:
+        default: orchestration
+
+    orchestration:
+      agents: [coordinator]
+      exit:
+        default: retrieval
+
+    retrieval:
+      ensemble:
+        type: parallel
+        agents:
+          - transcript-retriever
+          - content-retriever
+        aggregation: concat
+        fault_tolerance:
+          min_success_count: 1
+          retry_failed: false
+      exit:
+        default: verification
+
+    verification:
+      agents: [coordinator]
+      exit:
+        default: synthesis
+
+    synthesis:
+      agents: [synthesizer]
+      exit:
+        default: writing
+
+    writing:
+      agents: [writer]
+      exit:
+        default: complete
+
+    complete:
+      terminal: true
+
+  scripts: {}
+
+# ==========================================
+# GUARDRAILS — turn caps per retrieval agent
+# ==========================================
+guardrails:
+  agents:
+    signal-finder:
+      max_turns:
+        limit: 25
+    transcript-retriever:
+      max_turns:
+        limit: 25
+    content-retriever:
+      max_turns:
+        limit: 20
+
+# ==========================================
+# REARMATTER
+# ==========================================
+rearmatter:
+  enabled: true
+  fields:
+    - confidence
+    - gaps
+    - sources_found
+    - source_types
+
+# ==========================================
+# PLAYBOOK
+# ==========================================
+playbook_notes: |
+  Practitioner-first research mesh. Prioritizes lived experience evidence (post-mortems,
+  conference talks, podcast discussions, engineering blogs) over academic papers alone.
+
+  FSM pipeline:
+    intake → discovery → orchestration → retrieval (parallel) → verification → synthesis → writing
+
+  Coordinator runs TWICE under different FSM states:
+    - orchestration state: dispatch phase — reads signal-inventory, writes dispatch files
+    - verification state: verify phase — confirms retrieval outputs exist and are non-empty
+  Phase detection: coordinator checks if dispatch-transcripts.md already exists.
+  If it exists → verify phase. If not → dispatch phase.
+
+  Retrieval is a parallel ensemble:
+    - transcript-retriever: YouTube transcripts via `tx tool youtube-transcript <id>` (max 8)
+    - content-retriever: WebFetch for papers, post-mortems, blog posts (max 10)
+  fault_tolerance min_success_count: 1 — pipeline continues if one retriever fails completely.
+
+  Synthesizer uses sequential file reads to prevent context blowout.
+  Labels source types explicitly: practitioner experience | academic | vendor.
+
+  Writer reads ONLY 02-synthesis.md — no access to raw source files.
+
+capability:
+  domain:
+    - research
+  input:
+    - question
+    - prompt
+  output:
+    - report
+    - synthesis
+  tools:
+    - web-search
+    - web-fetch
+    - youtube-transcript
+  interaction:
+    - gate-iterative

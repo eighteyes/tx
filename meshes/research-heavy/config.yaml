@@ -1,0 +1,234 @@
+# research-heavy/config.yaml
+# Fan-out research pipeline: interviewer → coordinator → N parallel sourcers → synthesizer → writer
+# Pattern: DISPATCH/COLLECT coordinator with shared sourcer prompt, context-bounded via search cap
+
+mesh: research-heavy
+description: "Fan-out research pipeline: interviewer → coordinator → N parallel sourcers (per domain) → synthesizer → writer"
+
+agents:
+  # ==========================================
+  # ENTRY — scope and brief
+  # ==========================================
+  - name: interviewer
+    model: sonnet
+    prompt: interviewer/prompt.md
+    description: "Gathers research requirements, writes research-brief.md, extracts domain list"
+
+  # ==========================================
+  # COORDINATION — DISPATCH/COLLECT pattern
+  # ==========================================
+  - name: coordinator
+    model: sonnet
+    prompt: coordinator/prompt.md
+    orchestrator: true
+    description: "Fans out to domain sourcers, counts completions, gates synthesizer"
+
+  # ==========================================
+  # SOURCERS — shared prompt, isolated workers
+  # continuation:false = cold start per domain
+  # Tool restriction: web search + file I/O only
+  # ==========================================
+  - name: sourcer-1
+    model: sonnet
+    prompt: sourcer/prompt.md
+    continuation: false
+    permissions:
+      allowedTools:
+        - WebSearch
+        - Read
+        - Write
+    description: "Domain research worker — slot 1"
+
+  - name: sourcer-2
+    model: sonnet
+    prompt: sourcer/prompt.md
+    continuation: false
+    permissions:
+      allowedTools:
+        - WebSearch
+        - Read
+        - Write
+    description: "Domain research worker — slot 2"
+
+  - name: sourcer-3
+    model: sonnet
+    prompt: sourcer/prompt.md
+    continuation: false
+    permissions:
+      allowedTools:
+        - WebSearch
+        - Read
+        - Write
+    description: "Domain research worker — slot 3"
+
+  - name: sourcer-4
+    model: sonnet
+    prompt: sourcer/prompt.md
+    continuation: false
+    permissions:
+      allowedTools:
+        - WebSearch
+        - Read
+        - Write
+    description: "Domain research worker — slot 4"
+
+  - name: sourcer-5
+    model: sonnet
+    prompt: sourcer/prompt.md
+    continuation: false
+    permissions:
+      allowedTools:
+        - WebSearch
+        - Read
+        - Write
+    description: "Domain research worker — slot 5"
+
+  # ==========================================
+  # SYNTHESIS — cross-domain analysis
+  # opus: highest cognitive load task
+  # ==========================================
+  - name: synthesizer
+    model: opus
+    prompt: synthesizer/prompt.md
+    description: "Cross-domain synthesis from domain source files — sequential reads to bound context"
+
+  # ==========================================
+  # WRITING — deliverable production
+  # ==========================================
+  - name: writer
+    model: sonnet
+    prompt: writer/prompt.md
+    description: "Produces final deliverables from synthesis only — no raw source access"
+
+entry_point: interviewer
+completion_agents:
+  - writer
+
+workspace:
+  path: ".ai/research"
+  create_on_init: true
+
+# ==========================================
+# ROUTING — coordinator fan-out/fan-in
+# ==========================================
+routing:
+  interviewer:
+    complete:
+      coordinator: "Research brief written, domain list extracted"
+    blocked:
+      core: "Cannot proceed — unclear research requirements"
+
+  coordinator:
+    message:
+      sourcer-1: "Dispatch domain 1 research"
+      sourcer-2: "Dispatch domain 2 research"
+      sourcer-3: "Dispatch domain 3 research"
+      sourcer-4: "Dispatch domain 4 research"
+      sourcer-5: "Dispatch domain 5 research"
+      synthesizer: "All domain sourcers complete — begin synthesis"
+
+  sourcer-1:
+    message:
+      coordinator: "Domain research complete"
+
+  sourcer-2:
+    message:
+      coordinator: "Domain research complete"
+
+  sourcer-3:
+    message:
+      coordinator: "Domain research complete"
+
+  sourcer-4:
+    message:
+      coordinator: "Domain research complete"
+
+  sourcer-5:
+    message:
+      coordinator: "Domain research complete"
+
+  synthesizer:
+    complete:
+      writer: "Synthesis complete"
+    blocked:
+      core: "Cannot synthesize — source files missing or unreadable"
+
+  writer:
+    complete:
+      core: "Research deliverables complete"
+    blocked:
+      core: "Cannot write — synthesis missing or brief unclear"
+
+# ==========================================
+# GUARDRAILS — sourcer search cap enforcement
+# ==========================================
+guardrails:
+  routing_error:
+    strict: true
+    warning: true
+    max_retries: 2
+  agents:
+    sourcer-1:
+      max_turns:
+        limit: 20
+    sourcer-2:
+      max_turns:
+        limit: 20
+    sourcer-3:
+      max_turns:
+        limit: 20
+    sourcer-4:
+      max_turns:
+        limit: 20
+    sourcer-5:
+      max_turns:
+        limit: 20
+
+# ==========================================
+# REARMATTER
+# ==========================================
+rearmatter:
+  enabled: true
+  fields:
+    - confidence
+    - gaps
+    - domains_covered
+    - search_count
+
+# ==========================================
+# PLAYBOOK
+# ==========================================
+playbook_notes: |
+  Fan-out research pipeline using DISPATCH/COLLECT coordinator pattern.
+
+  Core invariant: Domain isolation is STRUCTURAL.
+  - Each sourcer: continuation:false (cold start, no shared session state)
+  - Each sourcer: restricted to WebSearch + Read + Write (no Bash, no YouTube MCP)
+  - Prompt-enforced search cap: 10 WebSearch calls per sourcer
+  - Guardrail-enforced cap: max_turns:15 per sourcer (allows ~10 searches + framing overhead)
+
+  Coordinator uses the proven DISPATCH/COLLECT state-tracking pattern from lens/coordinator:
+  - DISPATCH mode: triggered by interviewer message — fans out to N sourcers (up to 5)
+  - COLLECT mode: triggered by sourcer-N messages — counts completions, gates synthesizer
+
+  Synthesizer uses sequential file reads (one domain file at a time) to prevent
+  context blowout when source files are large. It extracts findings per domain
+  before loading the next file, building synthesis incrementally.
+
+  Writer isolation: coordinator's synthesizer message includes ONLY the synthesis
+  file path and brief path — no domain source file paths are passed through.
+  Writer has no access route to raw sourcer output.
+
+capability:
+  domain:
+    - research
+  input:
+    - question
+    - prompt
+  output:
+    - report
+    - synthesis
+  tools:
+    - web-search
+  interaction:
+    - none
