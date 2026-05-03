@@ -1455,7 +1455,7 @@ Unified runtime enforcement with **strict/warning mode** on every guardrail. Con
 - **Read gate**: Intercepts Read/Glob/Grep to undeclared paths.
 - **Routing error**: Corrective injection on bad targets (max retries: 3) + per-edge message caps (`routing_retry_max` / `routing_fallback`).
 - **Artifact validation**: Pre/post validation of agent outputs. Default: enabled, 2 retries.
-- **Max messages/turns**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object.
+- **Max messages/turns/cost**: Global or per-agent caps. Accept bare number or `{strict, warning, limit}` object. `max_cost` is a cumulative USD budget per worker invocation, summed from each SDK result's `total_cost_usd`. Strict (default) kills the worker after the query that crosses the limit; warning logs once and continues.
 - **Max mesh messages**: Mesh-wide cap on total messages across all agents in a mesh run.
 - **Max invocations**: Per-agent spawn cap. Counts how many times a worker is spawned for an agent in a mesh run. Ask/respond cycles don't count (worker stays alive). Prevents unbounded iteration loops. Warning at limit injects "final invocation" feedback. Strict past limit blocks spawn and notifies core.
 - **Max turns (warning mode)**: SDK limit bypassed, turns tracked manually, event emitted at threshold.
@@ -1489,6 +1489,10 @@ guardrails:
     strict: false
     warning: true
     limit: null
+  max_cost:
+    strict: true
+    warning: true
+    limit: null            # USD; cumulative per worker invocation
   max_mesh_messages:
     strict: false
     warning: true

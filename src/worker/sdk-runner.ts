@@ -797,6 +797,11 @@ Reply **allow** to approve or **deny** to reject.`,
               };
               this.queryMetrics.push(metrics);
 
+              this.emit('query:result', {
+                id: workerId,
+                queryCostUsd: metrics.totalCostUsd,
+              });
+
               // Log SDK metrics: cost, duration, tokens
               log.info('sdk-runner', `SDK metrics`, {
                 workerId,
@@ -1464,6 +1469,11 @@ Reply **allow** to approve or **deny** to reject.`,
               numTurns: resultMsg.num_turns,
             };
             this.queryMetrics.push(resumeMetrics);
+
+            this.emit('query:result', {
+              id: workerId,
+              queryCostUsd: resumeMetrics.totalCostUsd,
+            });
 
             // Log SDK metrics: cost, duration, tokens
             log.info('sdk-runner', `SDK metrics (resume)`, {

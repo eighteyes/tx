@@ -86,6 +86,7 @@ export interface MeshGuardrailOverrides {
   routing_error?: { strict?: boolean; warning?: boolean; max_retries?: number; routing_retry_max?: number | null; routing_fallback?: string | null };
   max_messages?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   max_turns?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
+  max_cost?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
   postcondition?: { strict?: boolean; warning?: boolean };
   max_invocations?: { strict?: boolean; warning?: boolean; limit?: number | null } | number | null;
 }

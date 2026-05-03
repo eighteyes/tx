@@ -38,6 +38,10 @@ guardrails:
     strict: false
     warning: true
     limit: null                 # default: null (no limit)
+  max_cost:
+    strict: true
+    warning: true
+    limit: null                 # default: null (no limit, USD)
 
   # Per-mesh and per-agent overrides
   meshes:
@@ -71,6 +75,7 @@ Per-guardrail defaults:
 | bash_guard | **true** | true | Block workDir escapes — primary security boundary |
 | max_messages | **true** | true | Kill runaway agents at message limit |
 | max_mesh_messages | **true** | true | Kill runaway meshes at message limit |
+| max_cost | **true** | true | Kill agents that exceed USD cost budget |
 | identity_gate | false | true | Warn on identity mismatch |
 | write_gate | false | true | Warn on path violations |
 | read_gate | false | true | Warn on path violations |
@@ -90,6 +95,7 @@ Per-guardrail defaults:
 | routing_error | Kill/escalate after max_retries; redirect to fallback on edge limit | Log + return (no escalation); log + allow message through |
 | max_messages | Kill worker | Log + allow worker to continue |
 | max_turns | SDK halts session | No SDK limit; emit warning event at threshold |
+| max_cost | Kill worker when cumulative USD cost exceeds limit | Log warning once; allow worker to continue |
 | max_instances | Block new instance spawn | Log + allow spawn |
 
 ### max_turns Special Case
@@ -217,6 +223,37 @@ Per-agent cap on SDK conversation turns.
 | `limit` | null | Turn cap (null = no limit) |
 
 Strict: SDK enforces hard limit. Warning: emits event at threshold, no kill.
+
+### Max Cost
+
+Per-agent cap on cumulative USD cost across SDK queries within a worker invocation. Cost is the SDK's `total_cost_usd` from each `result` message, summed.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `limit` | null | Cumulative USD cap (null = no limit) |
+
+Strict: kills the worker (and runs the standard guardrail-kill cleanup) once cumulative cost exceeds `limit`. Warning: logs a one-shot warning and allows the worker to continue.
+
+Accepts a bare number or the standard `{strict, warning, limit}` object form.
+
+```yaml
+# Mesh config.yaml — bare number
+guardrails:
+  max_cost: 0.50          # $0.50 per worker invocation
+
+# Object form with per-agent override
+guardrails:
+  max_cost:
+    strict: true
+    warning: true
+    limit: 1.00
+  agents:
+    expensive-agent:
+      max_cost:
+        limit: 5.00       # raise budget for this agent only
+```
+
+Enforcement is post-query (after each SDK result), so the gate cannot block mid-query token usage — the worker may run slightly past the limit on the query that crosses the threshold.
 
 ### Max Mesh Messages
 
@@ -432,8 +469,10 @@ Always-on validation that completion agents match boundary agents. Not exposed i
 | `src/worker/write-gate.ts` | WriteGate class — SDK PreToolUse hooks for writes |
 | `src/worker/read-gate.ts` | ReadGate class — SDK PreToolUse hooks for reads |
 | `src/worker/identity-gate.ts` | IdentityGate class — SDK PreToolUse hooks for message identity |
+| `src/worker/message-gate.ts` | MessageGate class — SDK PreToolUse hook for max_messages |
+| `src/worker/cost-gate.ts` | CostGate class — listens to runner `query:result` event for max_cost |
 | `src/worker/dispatcher.ts` | Wires guardrails into worker spawn pipeline |
-| `src/worker/sdk-runner.ts` | max_turns warning mode (manual turn tracking) |
+| `src/worker/sdk-runner.ts` | max_turns warning mode (manual turn tracking); emits `query:result` for cost gating |
 
 ## Setting null vs number
 
@@ -441,7 +480,7 @@ Always-on validation that completion agents match boundary agents. Not exposed i
 - `kill_threshold: null` — block violations but never kill (data gathering)
 - Omit entirely — use parent level or hardcoded default
 
-## max_messages / max_turns as Objects
+## max_messages / max_turns / max_cost as Objects
 
 These fields accept either a bare number (backward compatible) or an object:
 
@@ -449,6 +488,7 @@ These fields accept either a bare number (backward compatible) or an object:
 # Bare number (legacy, strict/warning inherit from parent)
 max_messages: 10
 max_turns: 50
+max_cost: 1.00
 
 # Object (full control)
 max_messages:
@@ -459,6 +499,10 @@ max_turns:
   strict: false
   warning: true
   limit: 50
+max_cost:
+  strict: true
+  warning: true
+  limit: 1.00       # USD
 ```
 
 ## Reliability (Four Nines)

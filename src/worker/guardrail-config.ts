@@ -58,6 +58,12 @@ interface MaxTurnsOverride {
   limit?: number | null;
 }
 
+interface MaxCostOverride {
+  strict?: boolean;
+  warning?: boolean;
+  limit?: number | null;  // USD
+}
+
 interface DuplicateTargetOverride {
   strict?: boolean;
   warning?: boolean;
@@ -82,6 +88,7 @@ interface AgentOverrides {
   routing_error?: RoutingErrorOverride;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
+  max_cost?: MaxCostOverride | number | null;
   duplicate_target?: DuplicateTargetOverride;
   postcondition?: PostconditionOverride;
   max_invocations?: MaxInvocationsOverride | number | null;
@@ -101,6 +108,7 @@ interface GuardrailsSchema {
   routing_error?: RoutingErrorOverride;
   max_messages?: MaxMessagesOverride | number | null;
   max_turns?: MaxTurnsOverride | number | null;
+  max_cost?: MaxCostOverride | number | null;
   max_mesh_messages?: MaxMeshMessagesOverride | number | null;
   max_instances?: MaxInstancesOverride | number | null;
   duplicate_target?: DuplicateTargetOverride;
@@ -131,6 +139,7 @@ const GUARDRAIL_DEFAULT_MODES: Record<string, GuardrailMode> = {
   routing_error:    { strict: false, warning: true },   // Warn on routing failures
   max_messages:     { strict: true,  warning: true },   // Kill on message limit
   max_turns:        { strict: false, warning: true },   // Warn on turn limit (SDK handles hard limit)
+  max_cost:         { strict: true,  warning: true },   // Kill on USD cost limit
   max_mesh_messages:{ strict: false, warning: true },   // Warn on mesh message limit
   duplicate_target: { strict: false, warning: true },   // Warn on duplicate routing
   postcondition:    { strict: false, warning: true },   // Warn on postcondition failure
@@ -145,6 +154,7 @@ const DEFAULTS = {
   routing_error: { max_retries: 3, routing_retry_max: null as number | null, routing_fallback: null as string | null },
   max_messages: null as number | null,
   max_turns: null as number | null,
+  max_cost: null as number | null,
   max_mesh_messages: null as number | null,
   max_instances: null as number | null,
   max_invocations: null as number | null,
@@ -240,7 +250,7 @@ export class GuardrailConfig {
   /**
    * Extract numeric limit from union type (number | null | {limit, strict, warning}).
    */
-  private extractLimit(value: MaxMessagesOverride | MaxTurnsOverride | MaxMeshMessagesOverride | MaxInvocationsOverride | number | null | undefined): number | null | undefined {
+  private extractLimit(value: MaxMessagesOverride | MaxTurnsOverride | MaxCostOverride | MaxMeshMessagesOverride | MaxInvocationsOverride | number | null | undefined): number | null | undefined {
     if (value === undefined) return undefined;
     if (value === null || typeof value === 'number') return value;
     // Object form: { strict, warning, limit }
@@ -301,6 +311,32 @@ export class GuardrailConfig {
     if (globalVal !== undefined) return globalVal;
 
     return DEFAULTS.max_invocations;
+  }
+
+  /**
+   * Resolve max_cost limit (in USD).
+   * Chain: mesh-local agent > mesh-local mesh > global agent > global mesh > global > default (null).
+   */
+  getMaxCost(meshName: string, agentName: string): number | null {
+    const local = this.meshLocal.get(meshName);
+    const g = this.config.guardrails;
+
+    const localAgent = this.extractLimit(local?.agents?.[agentName]?.max_cost);
+    if (localAgent !== undefined) return localAgent;
+
+    const localMesh = this.extractLimit(local?.max_cost);
+    if (localMesh !== undefined) return localMesh;
+
+    const globalAgent = this.extractLimit(g?.meshes?.[meshName]?.agents?.[agentName]?.max_cost);
+    if (globalAgent !== undefined) return globalAgent;
+
+    const globalMesh = this.extractLimit(g?.meshes?.[meshName]?.max_cost);
+    if (globalMesh !== undefined) return globalMesh;
+
+    const globalVal = this.extractLimit(g?.max_cost);
+    if (globalVal !== undefined) return globalVal;
+
+    return DEFAULTS.max_cost;
   }
 
   /**
@@ -428,7 +464,7 @@ export class GuardrailConfig {
    * Default: { strict: false, warning: true }
    */
   getMode(
-    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_mesh_messages' | 'duplicate_target' | 'postcondition' | 'max_invocations',
+    guardrail: 'write_gate' | 'read_gate' | 'identity_gate' | 'bash_guard' | 'routing_error' | 'max_messages' | 'max_turns' | 'max_cost' | 'max_mesh_messages' | 'duplicate_target' | 'postcondition' | 'max_invocations',
     meshName: string,
     agentName?: string,
   ): GuardrailMode {
@@ -485,7 +521,7 @@ export class GuardrailConfig {
 
     // Agent-level guardrails (write_gate, read_gate, identity_gate, bash_guard, routing_error, max_messages, max_turns, duplicate_target, postcondition)
     // max_mesh_messages is mesh-level only
-    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'bash_guard', 'routing_error', 'max_messages', 'max_turns', 'duplicate_target', 'postcondition', 'max_invocations'];
+    const agentGuardrails = ['write_gate', 'read_gate', 'identity_gate', 'bash_guard', 'routing_error', 'max_messages', 'max_turns', 'max_cost', 'duplicate_target', 'postcondition', 'max_invocations'];
     if (agentName && agentGuardrails.includes(guardrail)) {
       // Mesh-local agent
       const localAgentOverrides = local?.agents?.[agentName];

@@ -32,6 +32,7 @@ export function isGuardrailKill(reason: string | null): boolean {
  * - 'usage-policy-error' { id: string, error: object }
  * - 'interrupted'     { id: string, sessionId: string }
  * - 'max-turns-warning' { id: string, turnCount: number, maxTurns: number }
+ * - 'query:result'    { id: string, queryCostUsd: number }    (SdkRunner only)
  */
 export interface Runner extends EventEmitter {
   run(): Promise<WorkerResult>;

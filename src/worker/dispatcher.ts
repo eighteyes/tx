@@ -47,6 +47,7 @@ import { ReadGate } from './read-gate.ts';
 import { IdentityGate } from './identity-gate.ts';
 import { BashGuard } from './bash-guard.ts';
 import { MessageGate } from './message-gate.ts';
+import { CostGate } from './cost-gate.ts';
 import { GuardrailConfig } from './guardrail-config.ts';
 import { GuardrailKillHandler } from './guardrail-kill-handler.ts';
 import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestVariables, resolveManifestPath } from './manifest-validator.ts';
@@ -4759,6 +4760,24 @@ Please advise the agent or check mesh configuration.`;
         });
       }
 
+      // Cost gate: enforce max_cost (USD) per worker invocation. Listener is wired
+      // after the runner is constructed (see workerRef block below).
+      const maxCost = this.guardrails.getMaxCost(meshName!, agent.name);
+      let costGate: CostGate | null = null;
+      if (maxCost != null) {
+        costGate = new CostGate({
+          agentId,
+          maxCostUsd: maxCost,
+          mode: this.guardrails.getMode('max_cost', meshName!, agent.name),
+          killRunner,
+        });
+        log.debug('cost-gate', 'Cost gate enabled', {
+          agentId,
+          maxCostUsd: maxCost,
+          mode: this.guardrails.getMode('max_cost', meshName!, agent.name),
+        });
+      }
+
       // Orchestrator gate: restrict Write to msgs dir only
       if (agent.orchestrator) {
         const msgsDir = this.config.msgsDir;
@@ -5182,6 +5201,12 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
           }, this.queue)
         : new SdkRunner(runnerConfig, this.queue);
       workerRef.current = worker;  // Populate ref for write-gate kill callback
+
+      if (costGate) {
+        worker.on('query:result', (data: { id: string; queryCostUsd: number }) => {
+          costGate!.recordQueryCost(data.queryCostUsd);
+        });
+      }
 
       // Reliability: register agent for heartbeat monitoring + circuit breaker check
       if (this.reliability) {
