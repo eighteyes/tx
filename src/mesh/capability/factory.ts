@@ -19,6 +19,7 @@ import YAML from 'yaml';
 
 import { FragmentLoader, type PromptFragment } from './fragment-loader.ts';
 import { validateGeneratedMesh, type ValidationResult } from './validator.ts';
+import { checkCoverage, writeCoverageReport, type CoverageReport } from './evaluator.ts';
 import type { CapabilityNeeded, Domain, Tool } from './schema.ts';
 
 export interface CompileResult {
@@ -26,7 +27,13 @@ export interface CompileResult {
   agents: string[];
   configPath: string;
   validation: ValidationResult;
+  coverage: CoverageReport;
   errors: string[];
+}
+
+export interface CompileOptions {
+  /** Pinned reflection heuristics, rendered as markdown, embedded into each agent prompt. */
+  insights?: string | null;
 }
 
 /** Tools naturally associated with each domain. */
@@ -80,15 +87,17 @@ const WORKSPACE_OUTPUTS = new Set(['report', 'analysis', 'test-suite', 'plan', '
 
 export class MeshFactory {
   private loader: FragmentLoader;
+  private fragmentsDir: string;
 
   constructor(fragmentsDir: string) {
+    this.fragmentsDir = fragmentsDir;
     this.loader = new FragmentLoader(fragmentsDir);
   }
 
   /**
    * Compile a CapabilityNeeded into a mesh directory with config.yaml and prompt files.
    */
-  compile(needed: CapabilityNeeded, outputDir: string): CompileResult {
+  compile(needed: CapabilityNeeded, outputDir: string, options: CompileOptions = {}): CompileResult {
     const errors: string[] = [];
 
     // 1. Derive agents from domain values
@@ -123,6 +132,7 @@ export class MeshFactory {
         domainFragment,
         toolFragments,
         interactionFragments,
+        options.insights ?? null,
       );
 
       // 8. Write prompt file
@@ -142,11 +152,16 @@ export class MeshFactory {
     // 9. Validate
     const validation = validateGeneratedMesh(config);
 
+    // 10. Compile-time capability coverage (loop 1 of factory self-evaluation)
+    const coverage = checkCoverage(needed, outputDir, this.fragmentsDir);
+    writeCoverageReport(outputDir, coverage);
+
     return {
       success: validation.valid && errors.length === 0,
       agents: agentNames,
       configPath,
       validation,
+      coverage,
       errors,
     };
   }
@@ -193,6 +208,7 @@ export class MeshFactory {
     domainFragment: PromptFragment | null,
     toolFragments: PromptFragment[],
     interactionFragments: PromptFragment[],
+    insights: string | null = null,
   ): string {
     const allFragments = [domainFragment, ...toolFragments, ...interactionFragments].filter(
       (f): f is PromptFragment => f !== null,
@@ -256,6 +272,12 @@ export class MeshFactory {
     lines.push(`responsibilities: Execute ${domain} tasks within mesh pipeline`);
     lines.push('-->');
     lines.push('');
+
+    // Factory guidance (reflection heuristics from prior generated-mesh evals)
+    if (insights && insights.trim()) {
+      lines.push(insights.trim());
+      lines.push('');
+    }
 
     // Identity (domain fragment)
     if (domainFragment) {

@@ -229,7 +229,9 @@ The user's task description here.
 - No single mesh covers the needed capabilities
 - A plan exists but no mesh was built for it yet
 
-**Hash-based reuse:** Same capabilities skip recompilation on subsequent runs.
+**Hash-based reuse:** Same capabilities skip recompilation on subsequent runs — unless prior run evaluations flagged the mesh as underperforming, in which case the factory recompiles it (incorporating accumulated heuristics).
+
+**Self-evaluation:** generated meshes are checked for capability coverage at compile time, scored by a small LLM after each run (results land in \`.ai/tx/archived-meshes/{hash}-{name}/\`), and the factory can re-derive cross-mesh heuristics with \`tx factory --reflect\`. Run \`tx factory --reflect\` occasionally after several generated meshes have run, so future compiles benefit from what worked.
 
 **Generated meshes** appear in the mesh list above once created. They load on demand when messaged.
 

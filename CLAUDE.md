@@ -132,11 +132,23 @@ tx factory capabilities.yaml                        # generate mesh from capabil
 tx factory .ai/plan/my-plan/                         # from plan directory (haiku derives caps)
 tx factory caps.yaml --run "build the auth module"   # generate + dispatch immediately
 tx factory caps.yaml --output meshes/foo             # custom output path
+tx factory --reflect                                 # re-derive factory heuristics from the eval archive
+tx factory --eval <generated-mesh-dir>               # manually score a completed run
 ```
 
 **`--run <prompt>`**: generates mesh AND writes initial message to `.ai/tx/msgs/` to start it. Consumer picks up, dispatcher loads on demand, workers spawn.
 
-**Hash-based reuse**: output defaults to `.ai/tx/generated-meshes/{capability-hash}/`. Same capabilities → same hash → skips compilation on second run.
+**Hash-based reuse**: output defaults to `.ai/tx/generated-meshes/{capability-hash}/`. Same capabilities → same hash → skips compilation on second run — unless run evaluations flagged the mesh for recompile (see Self-Evaluation).
+
+### Self-Evaluation (Hyperagents-style, 3 loops)
+
+1. **Compile-time coverage** — `checkCoverage()` verifies every requested capability value is fragment-backed (domain/tools/interaction) or recorded in the generated config (input/output). Report written to `coverage.yaml` in the mesh dir and archive. Sub-1.0 coverage is logged/printed as a warning, not a hard block.
+2. **Run-time evaluation** — when a factory-generated mesh completes, the dispatcher fires a one-shot haiku evaluator (`evaluateMeshRun`) scoring `capabilityFit` / `outputQuality` / `efficiency`. Each run lands in `.ai/tx/archived-meshes/{hash}-{name}/runs/{runId}.yaml`; `score.yaml` holds the rolling aggregate. Best-effort — failures are swallowed. `tx factory --eval <dir>` triggers the same manually.
+3. **Metacognitive reflection** — `tx factory --reflect` reads all archive scores + coverage reports, asks haiku for cross-mesh heuristics, writes `.ai/tx/archived-meshes/_meta/insights.yaml`. On the next compile the factory embeds those heuristics into each generated agent prompt (`## Factory Guidance`). Manual trigger — run it after several generated meshes have executed.
+
+**Router feedback:** a generated mesh whose rolling `avgOverall` falls below ~0.45 over ≥2 runs (`recommendRecompile`) is recompiled instead of reused on the next request, so it picks up the latest fragments + insights.
+
+**Archive layout** (`.ai/tx/archived-meshes/{hash}-{name}/`): `config.yaml`, `agents/`, `source-capabilities.yaml`, `.factory-meta.json` (locator), `coverage.yaml`, `runs/{runId}.yaml`, `score.yaml`. Recompiles refresh the artefacts but preserve `runs/` + `score.yaml`. Project-wide reflection: `.ai/tx/archived-meshes/_meta/insights.yaml`.
 
 **Search paths**: both `MeshConfigLoader` and consumer search `.ai/tx/generated-meshes/` alongside `meshes/`. Generated meshes load on demand when messaged.
 
@@ -158,10 +170,12 @@ capability:
 **Key files:**
 - `src/mesh/capability/schema.ts` — enums, types, validation, `hashCapability()`
 - `src/mesh/capability/router.ts` — mechanical set-coverage scoring
-- `src/mesh/capability/factory.ts` — fragment assembler + config generator
+- `src/mesh/capability/factory.ts` — fragment assembler + config generator (embeds reflection insights, runs coverage check)
+- `src/mesh/capability/evaluator.ts` — self-evaluation: coverage check, run-eval (haiku), archive scoring, `reflectOnArchive()`
 - `src/mesh/capability/plan-deriver.ts` — plan→capabilities extraction
 - `src/mesh/fragments/` — 42 YAML prompt fragments (domain, input, output, tools, interaction, topology)
-- `src/cli/factory.ts` — CLI entry point, `--run` flag, `resolveEntryPoint()`
+- `src/cli/factory.ts` — CLI entry point, `--run` / `--reflect` / `--eval` flags, `resolveEntryPoint()`
+- `src/worker/dispatcher.ts` — `maybeEvaluateGeneratedMeshRun()` fires run-eval on mesh completion
 - `src/prompt/core.ts` — core agent prompt builder (includes factory section)
 
 <!-- know:start -->

@@ -21,6 +21,10 @@ import { isValidCapability, hashCapability, type CapabilityNeeded } from '../mes
 import { findBestMesh, type CatalogEntry } from '../mesh/capability/router.ts';
 import { MeshFactory } from '../mesh/capability/factory.ts';
 import { isPlanDirectory, deriveCapabilitiesFromPlan, getCachedCapabilities } from '../mesh/capability/plan-deriver.ts';
+import {
+  readInsightsMarkdown, reflectOnArchive, shouldRecompile, readArchiveScore,
+  evaluateMeshRun, recordRunEval, resolveArchiveDir, type CoverageReport,
+} from '../mesh/capability/evaluator.ts';
 
 /** Base directory for factory-generated meshes. */
 const GENERATED_MESHES_DIR = '.ai/tx/generated-meshes';
@@ -42,7 +46,9 @@ export interface FactoryResult {
   matched?: string;
   generated?: string;
   reused?: boolean;
+  recompiled?: boolean;
   meshName?: string;
+  coverage?: CoverageReport;
   errors: string[];
 }
 
@@ -184,17 +190,27 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
   const capHash = hashCapability(needed);
   const meshName = needed.domain.join('-') + '-mesh';
   const outputDir = options.outputDir ?? path.resolve(GENERATED_MESHES_DIR, capHash);
+  const archiveName = `${capHash}-${meshName}`;
+  const archiveDir = path.resolve(ARCHIVED_MESHES_DIR, archiveName);
 
-  // Check for hash-based reuse
+  // Check for hash-based reuse — unless prior run evals say this mesh underperforms (loop 2 → router)
+  let recompiled = false;
   if (fs.existsSync(path.join(outputDir, 'config.yaml'))) {
-    log.info('factory', `Reusing generated mesh: ${capHash}`, { meshName, outputDir });
-    return { success: true, generated: outputDir, reused: true, meshName, errors: [] };
+    if (shouldRecompile(archiveDir)) {
+      const sc = readArchiveScore(archiveDir);
+      log.info('factory', `Recompiling underperforming generated mesh: ${capHash}`, { meshName, avgOverall: sc?.avgOverall, runs: sc?.runs });
+      recompiled = true;
+    } else {
+      log.info('factory', `Reusing generated mesh: ${capHash}`, { meshName, outputDir });
+      return { success: true, generated: outputDir, reused: true, meshName, errors: [] };
+    }
   }
 
-  // Compile via factory
+  // Compile via factory — embed reflection heuristics (loop 3) as a prior
   fs.mkdirSync(outputDir, { recursive: true });
+  const insights = readInsightsMarkdown(path.resolve(ARCHIVED_MESHES_DIR));
   const meshFactory = new MeshFactory(fragmentsDir);
-  const result = meshFactory.compile(needed, outputDir);
+  const result = meshFactory.compile(needed, outputDir, { insights });
 
   if (!result.success) {
     const compileErrors = [...result.errors, ...result.validation.errors];
@@ -202,14 +218,27 @@ export async function runFactory(options: FactoryOptions): Promise<FactoryResult
     return { success: false, errors: compileErrors };
   }
 
+  if (result.coverage.score < 1) {
+    log.warn('factory', `Generated mesh has incomplete capability coverage (${result.coverage.score.toFixed(2)})`, {
+      meshName, missing: result.coverage.missing,
+    });
+  }
+
+  // Provenance pointer: lets the dispatcher / --eval locate the archive for run evals
+  fs.writeFileSync(
+    path.join(outputDir, '.factory-meta.json'),
+    JSON.stringify({ capHash, meshName, archiveName, generatedAt: new Date().toISOString() }, null, 2),
+    'utf-8',
+  );
+
   // Symlink: mesh-name → hash-dir so consumer can find by name
   createMeshNameSymlink(meshName, outputDir);
 
-  // Archive: preserve compiled mesh + source capabilities as provenance
+  // Archive: preserve compiled mesh + source capabilities + coverage report as provenance
   archiveCompiledMesh(capHash, meshName, outputDir, inputFile, needed);
 
-  log.info('factory', `Generated mesh at ${outputDir}`, { agents: result.agents });
-  return { success: true, generated: outputDir, meshName, errors: [] };
+  log.info('factory', `${recompiled ? 'Recompiled' : 'Generated'} mesh at ${outputDir}`, { agents: result.agents, coverage: result.coverage.score });
+  return { success: true, generated: outputDir, meshName, recompiled, coverage: result.coverage, errors: [] };
 }
 
 /**
@@ -256,15 +285,20 @@ function archiveCompiledMesh(
   try {
     const archiveName = `${capHash}-${meshName}`;
     const archiveDir = path.resolve(ARCHIVED_MESHES_DIR, archiveName);
+    const isRefresh = fs.existsSync(archiveDir);
 
-    // Skip if already archived (idempotent)
-    if (fs.existsSync(archiveDir)) {
-      log.debug('factory', `Archive already exists: ${archiveName}`);
-      return;
+    fs.mkdirSync(archiveDir, { recursive: true });
+
+    // Copy the compiled artefacts (config, agent-prompt dirs, coverage, provenance).
+    // On refresh (recompile after poor evals) these overwrite in place; the
+    // accumulated eval history (runs/, score.yaml) lives only in the archive and
+    // is left untouched. The capability hash pins the agent set, so structure is stable.
+    for (const entry of fs.readdirSync(outputDir, { withFileTypes: true })) {
+      const src = path.join(outputDir, entry.name);
+      const dst = path.join(archiveDir, entry.name);
+      if (entry.isDirectory()) fs.cpSync(src, dst, { recursive: true, force: true });
+      else fs.copyFileSync(src, dst);
     }
-
-    // Copy compiled mesh to archive
-    fs.cpSync(outputDir, archiveDir, { recursive: true });
 
     // Preserve source capabilities YAML (the fork context)
     if (inputFile && fs.existsSync(inputFile)) {
@@ -278,7 +312,7 @@ function archiveCompiledMesh(
       );
     }
 
-    log.info('factory', `Archived mesh: ${archiveName}`, { archiveDir });
+    log.info('factory', `${isRefresh ? 'Refreshed' : 'Archived'} mesh: ${archiveName}`, { archiveDir });
   } catch (err) {
     // Archive failure is non-fatal — log and continue
     log.warn('factory', `Failed to archive mesh: ${String(err)}`);
@@ -289,6 +323,35 @@ function archiveCompiledMesh(
  * CLI entry point for `tx factory`.
  */
 export async function factory(args: string[]): Promise<void> {
+  // --reflect: metacognitive loop — re-derive factory heuristics from the eval archive
+  if (args.includes('--reflect')) {
+    const doc = await reflectOnArchive(path.resolve(ARCHIVED_MESHES_DIR));
+    if (!doc) {
+      console.error('Reflection produced no insights (no evaluated archives, or LLM unavailable).');
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Reflected over ${doc.archivesAnalyzed} archived mesh(es) → ${doc.insights.length} heuristic(s):`);
+    for (const i of doc.insights) console.log(`  - (${i.topic}) ${i.heuristic}`);
+    console.log(`Written to ${path.join(ARCHIVED_MESHES_DIR, '_meta', 'insights.yaml')}`);
+    return;
+  }
+
+  // --eval <generated-mesh-dir>: run-time evaluation loop, invoked manually
+  const evalIdx = args.indexOf('--eval');
+  if (evalIdx !== -1) {
+    const target = args[evalIdx + 1];
+    if (!target) {
+      console.error('Usage: tx factory --eval <generated-mesh-dir> [--outcome complete|incomplete]');
+      process.exitCode = 1;
+      return;
+    }
+    const outcomeIdx = args.indexOf('--outcome');
+    const outcome = (outcomeIdx !== -1 ? args[outcomeIdx + 1] : 'unknown') as 'complete' | 'incomplete' | 'unknown';
+    await runManualEval(path.resolve(target), outcome);
+    return;
+  }
+
   // Extract positional arg (skip flags and their values)
   const flagValues = new Set<number>();
   for (let i = 0; i < args.length; i++) {
@@ -303,8 +366,12 @@ export async function factory(args: string[]): Promise<void> {
     console.log('  plan-dir/           Plan directory (derives capabilities from plan.md + tasks.md)');
     console.log('');
     console.log('Options:');
-    console.log('  --output <dir>   Output directory (default: hash-based under .ai/tx/generated-meshes/)');
-    console.log('  --run <prompt>   Generate mesh and write initial message to start it');
+    console.log('  --output <dir>     Output directory (default: hash-based under .ai/tx/generated-meshes/)');
+    console.log('  --run <prompt>     Generate mesh and write initial message to start it');
+    console.log('');
+    console.log('Self-evaluation:');
+    console.log('  --reflect          Re-derive factory heuristics from the eval archive');
+    console.log('  --eval <mesh-dir> [--outcome complete|incomplete]   Evaluate a completed mesh run');
     process.exitCode = 1;
     return;
   }
@@ -339,8 +406,15 @@ export async function factory(args: string[]): Promise<void> {
   if (result.matched) {
     console.log(`Matched existing mesh: ${result.matched}`);
   } else if (result.generated) {
-    const tag = result.reused ? '(reused)' : '(compiled)';
+    const tag = result.reused ? '(reused)' : result.recompiled ? '(recompiled)' : '(compiled)';
     console.log(`Generated mesh: ${result.generated} ${tag}`);
+    if (result.coverage && result.coverage.score < 1) {
+      const missing = Object.entries(result.coverage.missing)
+        .filter(([, v]) => v.length > 0)
+        .map(([k, v]) => `${k}: ${v.join(', ')}`)
+        .join('; ');
+      console.warn(`  ⚠ capability coverage ${(result.coverage.score * 100).toFixed(0)}% — missing ${missing}`);
+    }
   } else {
     console.error(`Factory failed:`);
     for (const err of result.errors) {
@@ -381,6 +455,106 @@ export async function factory(args: string[]): Promise<void> {
     fs.writeFileSync(path.join(msgsDir, fileName), msgContent, 'utf-8');
     console.log(`Dispatched to ${meshName}/${entryAgent}`);
   }
+}
+
+/**
+ * Read a compiled mesh dir and produce a compact human/LLM-readable summary
+ * of its agents, routing, and guardrails.
+ */
+function summarizeMeshConfig(meshDir: string): { summary: string; capability: unknown } {
+  try {
+    const cfg = YAML.parse(fs.readFileSync(path.join(meshDir, 'config.yaml'), 'utf-8'));
+    const agents = Array.isArray(cfg.agents)
+      ? cfg.agents.map((a: Record<string, unknown>) => `${a.name}(${a.model})`).join(', ')
+      : '(none)';
+    const lines = [
+      `mesh: ${cfg.mesh}`,
+      `agents: ${agents}`,
+      `routing: ${cfg.routing_mode ?? 'static'} [${Array.isArray(cfg.routing) ? cfg.routing.join(' → ') : ''}]`,
+      `guardrails: ${YAML.stringify(cfg.guardrails ?? {}).trim()}`,
+    ];
+    return { summary: lines.join('\n'), capability: cfg.capability ?? null };
+  } catch (err) {
+    return { summary: `(unreadable config: ${String(err)})`, capability: null };
+  }
+}
+
+/** Best-effort: pull the most recent agent outputs for a mesh from .ai/tx/sessions/. */
+function gatherAgentOutputs(meshName: string): string {
+  try {
+    const cfg = YAML.parse(fs.readFileSync(path.join(GENERATED_MESHES_DIR, meshName, 'config.yaml'), 'utf-8'));
+    const agentNames: string[] = Array.isArray(cfg.agents) ? cfg.agents.map((a: Record<string, unknown>) => String(a.name)) : [];
+    const sessionsDir = path.resolve('.ai/tx/sessions');
+    let out = '';
+    for (const name of agentNames) {
+      const agentDir = path.join(sessionsDir, `${meshName}-${name}`.replace(/\//g, '-'));
+      const altDir = path.join(sessionsDir, name.replace(/\//g, '-'));
+      const dir = fs.existsSync(agentDir) ? agentDir : (fs.existsSync(altDir) ? altDir : null);
+      if (!dir) continue;
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.md')).sort().reverse();
+      if (files.length === 0) continue;
+      const content = fs.readFileSync(path.join(dir, files[0]), 'utf-8');
+      const m = content.match(/---\n\n([\s\S]+)$/);
+      out += `\n## ${name}\n${m ? m[1] : content}\n`;
+    }
+    return out.trim() || '(no agent session outputs found)';
+  } catch {
+    return '(no agent session outputs found)';
+  }
+}
+
+/**
+ * Manually evaluate a completed generated-mesh run and record it in the archive.
+ * Used by `tx factory --eval`; the dispatcher performs the same evaluation
+ * automatically on mesh completion.
+ */
+async function runManualEval(meshDir: string, outcome: 'complete' | 'incomplete' | 'unknown'): Promise<void> {
+  if (!fs.existsSync(path.join(meshDir, 'config.yaml'))) {
+    console.error(`No config.yaml in ${meshDir}`);
+    process.exitCode = 1;
+    return;
+  }
+  const archiveDir = resolveArchiveDir(meshDir, path.resolve(ARCHIVED_MESHES_DIR));
+  if (!archiveDir) {
+    console.error(`No archive found for ${meshDir} (missing .factory-meta.json or archive dir).`);
+    process.exitCode = 1;
+    return;
+  }
+  let meta: { capHash: string; meshName: string };
+  try {
+    meta = JSON.parse(fs.readFileSync(path.join(meshDir, '.factory-meta.json'), 'utf-8'));
+  } catch {
+    console.error('Unreadable .factory-meta.json');
+    process.exitCode = 1;
+    return;
+  }
+
+  const { summary, capability } = summarizeMeshConfig(meshDir);
+  let needed: unknown = capability;
+  try {
+    const src = YAML.parse(fs.readFileSync(path.join(archiveDir, 'source-capabilities.yaml'), 'utf-8'));
+    needed = src?.capability ?? src ?? capability;
+  } catch { /* keep config capability */ }
+
+  const runId = `${Math.floor(Date.now() / 1000)}`;
+  const evalResult = await evaluateMeshRun({
+    meshName: meta.meshName,
+    capHash: meta.capHash,
+    runId,
+    capabilities: needed,
+    configSummary: summary,
+    agentOutputs: gatherAgentOutputs(meta.meshName),
+    outcome,
+  });
+  if (!evalResult) {
+    console.error('Evaluation failed (LLM unavailable or malformed response).');
+    process.exitCode = 1;
+    return;
+  }
+  const score = recordRunEval(archiveDir, evalResult);
+  console.log(`Run ${runId} scored: overall=${evalResult.overall} (fit=${evalResult.scores.capabilityFit}, quality=${evalResult.scores.outputQuality}, eff=${evalResult.scores.efficiency})`);
+  if (evalResult.notes) console.log(`  notes: ${evalResult.notes}`);
+  if (score) console.log(`  archive avg over ${score.runs} run(s): ${score.avgOverall}${score.recommendRecompile ? ' — flagged for recompile' : ''}`);
 }
 
 /**

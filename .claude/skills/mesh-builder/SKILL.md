@@ -1516,6 +1516,17 @@ Gates activate automatically when manifest entries exist — no additional mesh 
 
 Full reference: `docs/guardrails.md`
 
+## Factory Self-Evaluation
+
+Factory-generated meshes (`tx factory ...`, output under `.ai/tx/generated-meshes/`) are continuously evaluated. You rarely interact with this directly, but be aware:
+
+- **Coverage check** runs at compile time — `coverage.yaml` next to the generated config flags any requested capability value the factory couldn't back with a fragment. Sub-1.0 coverage is a warning, not a block.
+- **Run evaluation** happens automatically when a generated mesh completes: a haiku judge scores `capabilityFit` / `outputQuality` / `efficiency` into `.ai/tx/archived-meshes/{hash}-{name}/runs/`. `tx factory --eval <generated-mesh-dir>` runs it manually.
+- **Reflection** — `tx factory --reflect` distills cross-mesh heuristics from the archive into `.ai/tx/archived-meshes/_meta/insights.yaml`. The factory then prepends a `## Factory Guidance` block (those heuristics) to every generated agent prompt. Run `--reflect` occasionally after several generated meshes have executed.
+- **Recompile-on-poor-score** — a generated mesh whose rolling `avgOverall < ~0.45` over ≥2 runs is recompiled (not reused) on the next matching request. Archive `runs/` + `score.yaml` survive the refresh.
+
+Hand-written meshes in `meshes/` are not part of this loop. Implementation: `src/mesh/capability/evaluator.ts`.
+
 ## Debugging
 
 ```bash

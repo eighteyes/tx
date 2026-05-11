@@ -53,6 +53,7 @@ import { buildPathContext, validateAgentArtifacts, findWriters, resolveManifestV
 import { resolveManifestEligibility, formatDeadlockMessage } from './manifest-resolver.ts';
 import { resolveContextEntry } from './context-resolver.ts';
 import { SystemMessageWriter } from '../core/system-message-writer.ts';
+import { evaluateMeshRun, recordRunEval, resolveArchiveDir } from '../mesh/capability/evaluator.ts';
 import { NudgeDetector } from './nudge-detector.ts';
 import { ReliabilityManager } from '../reliability/reliability-manager.ts';
 import YAML from 'yaml';
@@ -7601,6 +7602,10 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
     // Log session summary
     log.sessionComplete(finalSession);
 
+    // Factory self-evaluation loop 2: if this is a factory-generated mesh, score the run.
+    void this.maybeEvaluateGeneratedMeshRun(meshName, finalSession).catch(err =>
+      log.warn('dispatcher', 'Generated-mesh run eval failed', { meshName, error: String(err) }));
+
     // Emit event for external consumers
     this.emit('session:complete', finalSession);
 
@@ -7613,6 +7618,87 @@ Update BRAIN.md with any critical learnings that should persist across sessions.
       sessionKey,
       workerCount: finalSession.workerCount,
       totalCost: finalSession.totalCostUsd,
+    });
+  }
+
+  /**
+   * Factory self-evaluation, loop 2: when a factory-generated mesh completes,
+   * score the run with a one-shot LLM call and record it in the mesh's archive.
+   * Best-effort — any failure is logged and swallowed.
+   */
+  private async maybeEvaluateGeneratedMeshRun(meshName: string, session: import('../shared/types.ts').SessionMetrics): Promise<void> {
+    const basePath = this.meshConfigs.get(meshName)?._basePath;
+    const generatedMarker = path.join('.ai', 'tx', 'generated-meshes');
+    if (!basePath || !basePath.includes(generatedMarker)) return;
+
+    const metaPath = path.join(basePath, '.factory-meta.json');
+    if (!fs.existsSync(metaPath)) return;
+    let meta: { capHash: string; meshName: string };
+    try {
+      meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    } catch {
+      return;
+    }
+
+    const archivedRoot = path.join(this.config.workDir, '.ai', 'tx', 'archived-meshes');
+    const archiveDir = resolveArchiveDir(basePath, archivedRoot);
+    if (!archiveDir) return;
+
+    // Compact config summary
+    let configSummary = '(config unreadable)';
+    let capability: unknown = null;
+    try {
+      const cfg = YAML.parse(fs.readFileSync(path.join(basePath, 'config.yaml'), 'utf-8'));
+      const agents = Array.isArray(cfg.agents)
+        ? cfg.agents.map((a: Record<string, unknown>) => `${a.name}(${a.model})`).join(', ')
+        : '';
+      configSummary = [
+        `mesh: ${cfg.mesh}`,
+        `agents: ${agents}`,
+        `routing: ${cfg.routing_mode ?? 'static'} [${Array.isArray(cfg.routing) ? cfg.routing.join(' → ') : ''}]`,
+        `guardrails: ${YAML.stringify(cfg.guardrails ?? {}).trim()}`,
+      ].join('\n');
+      capability = cfg.capability ?? null;
+    } catch { /* keep defaults */ }
+    try {
+      const src = YAML.parse(fs.readFileSync(path.join(archiveDir, 'source-capabilities.yaml'), 'utf-8'));
+      capability = src?.capability ?? src ?? capability;
+    } catch { /* keep config capability */ }
+
+    // Aggregate the most recent output per agent from the sessions dir
+    const sessionsDir = path.join(this.config.workDir, '.ai', 'tx', 'sessions');
+    let agentOutputs = '';
+    for (const worker of session.workers) {
+      const agentDir = path.join(sessionsDir, worker.agentId.replace(/\//g, '-'));
+      if (!fs.existsSync(agentDir)) continue;
+      const files = fs.readdirSync(agentDir).filter(f => f.endsWith('.md')).sort().reverse();
+      if (files.length === 0) continue;
+      const content = fs.readFileSync(path.join(agentDir, files[0]), 'utf-8');
+      const m = content.match(/---\n\n([\s\S]+)$/);
+      agentOutputs += `\n## ${worker.agentId}\n${m ? m[1] : content}\n`;
+    }
+    if (!agentOutputs.trim()) agentOutputs = '(no agent outputs available)';
+
+    const runId = `${session.meshInstance}`.replace(/[^A-Za-z0-9._-]/g, '_') || `${Date.now()}`;
+    const evalResult = await evaluateMeshRun({
+      meshName: meta.meshName,
+      capHash: meta.capHash,
+      runId,
+      capabilities: capability,
+      configSummary,
+      agentOutputs,
+      outcome: 'complete',
+      metrics: { workerCount: session.workerCount, durationMs: session.totalDurationMs, costUsd: session.totalCostUsd },
+    });
+    if (!evalResult) return;
+    const score = recordRunEval(archiveDir, evalResult);
+    log.info('factory-eval', 'Scored generated-mesh run', {
+      meshName: meta.meshName,
+      runId,
+      overall: evalResult.overall,
+      avgOverall: score?.avgOverall,
+      runs: score?.runs,
+      recommendRecompile: score?.recommendRecompile ?? false,
     });
   }
 
