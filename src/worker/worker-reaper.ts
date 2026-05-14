@@ -132,6 +132,40 @@ export class WorkerReaper extends EventEmitter {
     this.attached.delete(workerId);
   }
 
+  /**
+   * Resolve true when verified-dead fires for `workerId`, or when the inventory
+   * already records a terminal state. Resolves false on timeout.
+   *
+   * Handles the race where the kill ladder verified synchronously before the
+   * caller had a chance to subscribe — checks inventory first.
+   */
+  waitForVerifiedDead(workerId: string, timeoutMs: number): Promise<boolean> {
+    const current = this.inventory.currentStates().get(workerId);
+    if (current && isTerminal(current.state)) {
+      return Promise.resolve(true);
+    }
+
+    return new Promise(resolve => {
+      let settled = false;
+      const onEvent = (e: { workerId: string }) => {
+        if (e.workerId !== workerId || settled) return;
+        settled = true;
+        this.off('verified-dead', onEvent);
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.off('verified-dead', onEvent);
+        resolve(false);
+      }, timeoutMs);
+      // Note: timer is intentionally NOT unref'd. Callers await this promise
+      // and must let the timeout fire to resolve it.
+      this.on('verified-dead', onEvent);
+    });
+  }
+
   /** Single sweep. Returns the transitions emitted this tick (for tests). */
   async tick(): Promise<StateTransition[]> {
     const transitions: StateTransition[] = [];

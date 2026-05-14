@@ -252,6 +252,53 @@ describe('WorkerReaper events', () => {
   });
 });
 
+describe('WorkerReaper.waitForVerifiedDead', () => {
+  it('resolves true immediately when inventory shows terminal', async () => {
+    const prober = new ScriptedProber();
+    seed('exited');
+    const reaper = buildReaper(prober);
+
+    const ok = await reaper.waitForVerifiedDead('w1', 50);
+    assert.equal(ok, true);
+  });
+
+  it('resolves true when a tick promotes the worker to exited', async () => {
+    const prober = new ScriptedProber();
+    prober.setSticky('w1', { alive: false, lastActivityMs: null, details: {} });
+    seed('killed');
+    const reaper = buildReaper(prober);
+
+    const wait = reaper.waitForVerifiedDead('w1', 500);
+    // Drive a tick which should emit verified-dead
+    await reaper.tick();
+    const ok = await wait;
+    assert.equal(ok, true);
+  });
+
+  it('resolves false on timeout when no verification arrives', async () => {
+    const prober = new ScriptedProber();
+    seed('running');  // never transitions
+    prober.setSticky('w1', { alive: true, lastActivityMs: 9_900, details: {} });
+    const reaper = buildReaper(prober, 10_000);
+
+    const ok = await reaper.waitForVerifiedDead('w1', 20);
+    assert.equal(ok, false);
+  });
+
+  it('does not resolve for a different workerId', async () => {
+    const prober = new ScriptedProber();
+    prober.setSticky('w2', { alive: false, lastActivityMs: null, details: {} });
+    seed('running', 'w1');
+    seed('killed', 'w2');
+    const reaper = buildReaper(prober);
+
+    const wait = reaper.waitForVerifiedDead('w1', 50);
+    await reaper.tick();  // promotes w2 → exited, not w1
+    const ok = await wait;
+    assert.equal(ok, false);
+  });
+});
+
 describe('WorkerReaper multi-worker', () => {
   it('processes each worker independently per tick', async () => {
     const prober = new ScriptedProber();
