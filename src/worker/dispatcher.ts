@@ -37,6 +37,9 @@ import { EnsembleCoordinator } from './ensemble-coordinator.ts';
 import type { FSMStateConfig, FSMEnsembleConfig } from '../shared/types.ts';
 import { SessionStore, SessionSummarizer } from '../session/index.ts';
 import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type AddWorkerOptions } from './worker-lifecycle.ts';
+import { WorkerInventory, type RunnerKind } from './worker-inventory.ts';
+import { WorkerReaper } from './worker-reaper.ts';
+import { WorkerLifecycleAdapter } from './worker-lifecycle-adapter.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
@@ -109,6 +112,12 @@ export interface DispatcherConfig {
   godMode?: boolean;
   /** TX installation root directory (for script resolution via $TX_ROOT env var) */
   txRoot?: string;
+  /** Lifecycle inventory for zombie detection. Optional for backward compat. */
+  inventory?: WorkerInventory;
+  /** Worker reaper for out-of-band liveness monitoring. Optional. */
+  reaper?: WorkerReaper;
+  /** Run ID for inventory tagging. Required when inventory/reaper are set. */
+  runId?: string;
 }
 
 /**
@@ -310,6 +319,12 @@ export class WorkerDispatcher extends EventEmitter {
   private sessionManager: SessionManager;
   private guardrails: GuardrailConfig;
 
+  // Lifecycle tracking (zombie detection / boot recovery)
+  private inventory?: WorkerInventory;
+  private reaper?: WorkerReaper;
+  private currentRunId?: string;
+  private lifecycleAdapters: Map<string, WorkerLifecycleAdapter> = new Map();
+
   // Extracted modules (Phase 2 refactoring)
   private configLoader: MeshConfigLoader;
 
@@ -418,6 +433,15 @@ export class WorkerDispatcher extends EventEmitter {
 
     // Guardrail config (unified thresholds)
     this.guardrails = new GuardrailConfig(config.workDir);
+
+    // Lifecycle tracking — optional, no-op when not provided
+    this.inventory = config.inventory;
+    this.reaper = config.reaper;
+    this.currentRunId = config.runId;
+    if (this.inventory && !this.currentRunId) {
+      log.warn('dispatcher', 'inventory set without runId — lifecycle tracking disabled');
+      this.inventory = undefined;
+    }
 
     // Session awareness - use store from config if provided
     if (config.sessionStore) {
@@ -543,16 +567,53 @@ export class WorkerDispatcher extends EventEmitter {
   // ============================================================================
 
   /**
-   * Add a worker instance (delegates to WorkerLifecycleManager)
+   * Add a worker instance (delegates to WorkerLifecycleManager).
+   * Also creates a lifecycle adapter + attaches the reaper when tracking is enabled.
    */
-  private addActiveWorker(agentId: string, worker: AddWorkerOptions, taskFrom?: string): string {
-    return this.workerLifecycle.add(agentId, worker, taskFrom);
+  private addActiveWorker(
+    agentId: string,
+    worker: AddWorkerOptions,
+    taskFrom?: string,
+    runnerKind: RunnerKind = 'sdk'
+  ): string {
+    const workerId = this.workerLifecycle.add(agentId, worker, taskFrom);
+
+    if (this.inventory && this.currentRunId) {
+      const adapter = new WorkerLifecycleAdapter({
+        inventory: this.inventory,
+        runner: worker.runner,
+        identity: {
+          runId: this.currentRunId,
+          workerId,
+          agentId,
+          runnerKind,
+          workDir: this.config.workDir,
+        },
+      });
+      this.lifecycleAdapters.set(workerId, adapter);
+    }
+    this.reaper?.attachRunner(workerId, worker.runner);
+
+    return workerId;
   }
 
   /**
-   * Remove a worker instance (delegates to WorkerLifecycleManager)
+   * Remove a worker instance (delegates to WorkerLifecycleManager).
+   * Disposes the lifecycle adapter and detaches the reaper.
    */
   private removeActiveWorker(agentId: string, workerId: string): boolean {
+    const adapter = this.lifecycleAdapters.get(workerId);
+    if (adapter) {
+      const cur = adapter.getCurrentState();
+      // Record terminal state if not already there — covers the cleanup path
+      // where no 'complete' event fired (early shutdown, killed worker, etc.)
+      if (cur !== 'exited' && cur !== 'orphaned') {
+        adapter.recordExited('removeActiveWorker');
+      }
+      adapter.dispose();
+      this.lifecycleAdapters.delete(workerId);
+    }
+    this.reaper?.detachRunner(workerId);
     return this.workerLifecycle.remove(agentId, workerId);
   }
 
@@ -2741,7 +2802,7 @@ The system will resume your session when the human responds.`;
         machine,
         startedAt: Date.now(),
         hookContext,
-      }, 'core/core');
+      }, 'core/core', 'sdk');
 
       // Set up minimal event handlers
       runner.on('complete', async (data) => {
@@ -6372,13 +6433,16 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Add worker to active workers with unique workerId for parallel execution
       // Pass taskFrom to track who sent the initial task (for completion message enforcement)
       const taskFrom = nextMsg?.from_agent;
+      // Both SdkRunner and ChromeCliRunner are tagged as 'sdk' here: they're
+      // in-proc to TX (probe via runner.isRunning()). The 'tmux' kind is
+      // reserved for the upcoming TmuxClaudeRunner that owns its own session.
       const workerId = this.addActiveWorker(agentId, {
         runner: worker,
         machine,
         startedAt: Date.now(),
         hookContext,
         startedPromise,  // Add promise to track 'start' transition
-      }, taskFrom);
+      }, taskFrom, 'sdk');
       // Set the registeredWorkerId so event handlers can reference it
       registeredWorkerId = workerId;
       log.debug('dispatcher', `Worker registered`, { agentId, workerId, taskFrom });

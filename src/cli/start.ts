@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { TmuxSession, findClaudePath, getSessionName, injectPrompt, isClaudeIdle } from '../core/tmux.ts';
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer, type MeshCompleteEvent } from '../core/consumer.ts';
-import { WorkerDispatcher } from '../worker/index.ts';
+import { WorkerDispatcher, generateRunId, WorkerInventory, WorkerReaper, runBootReaper } from '../worker/index.ts';
 import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
@@ -411,6 +411,17 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   const consumer = new MessageConsumer(msgsDir, queue, meshesDir);
   await consumer.start();
 
+  // Lifecycle tracking: generate a runId for this tx start, set up the
+  // inventory + reaper, and run the boot reaper before the dispatcher
+  // accepts any work. This reconciles any zombies from a prior crashed
+  // TX process and kills surviving tmux worker sessions.
+  const currentRunId = generateRunId();
+  const inventory = new WorkerInventory(path.join(dataDir, 'worker-inventory.jsonl'));
+  log.info('start', 'lifecycle: starting boot reaper', { runId: currentRunId });
+  const bootResult = await runBootReaper({ inventory, currentRunId });
+  log.info('start', 'lifecycle: boot reaper complete', { ...bootResult });
+  const reaper = new WorkerReaper({ inventory, runId: currentRunId });
+
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,
     msgsDir,
@@ -421,7 +432,14 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     debug: options?.debug,  // Enable forensics and verbose logging
     godMode: options?.godMode,  // Enable god mode (bypass permissions)
     txRoot,  // TX installation root for script resolution via $TX_ROOT
+    inventory,
+    reaper,
+    runId: currentRunId,
   }, queue);
+
+  // Start the polling reaper after dispatcher exists so it can react to
+  // state changes. Stopped on shutdown via the existing cleanup path.
+  reaper.start();
 
   // Register SIGUSR2 control handler now that dispatcher exists
   setupControlHandler(dispatcher);
@@ -1327,6 +1345,8 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
 
   await dispatcher.stop(consumer);
   await consumer.stop();
+  reaper.stop();
+  inventory.compact();  // drop terminal entries; next boot starts clean
   queue.close();
   sessionStore.close();
 
