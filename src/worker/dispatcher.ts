@@ -16,7 +16,7 @@ import { SdkRunner, type SdkRunnerConfig, type AgentRouting, type ToolRestrictio
 import { ChromeCliRunner } from './chrome-cli-runner.ts';
 import type { Runner } from './runner.ts';
 import type {SemanticModel, WorkerConfig, FSMConfig, EnsembleConfig} from '../shared/types.ts';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from './sdk-types.ts';
 import { log } from '../shared/logger.ts';
 import { WorkerStateMachine, createLoggingMiddleware } from '../state-machine/index.ts';
 import {WorkspaceManager, PromptInjector, type WorkspaceConfig, type FSMInjectionContext, type SituationalContext} from '../workspace/index.ts';

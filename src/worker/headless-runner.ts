@@ -26,7 +26,7 @@ import {
   type HookContext,
 } from './hooks.ts';
 import type { SemanticModel, FSMStateConfig } from '../shared/types.ts';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from './sdk-types.ts';
 import { log } from '../shared/logger.ts';
 import { resolveLifecycle } from './lifecycle-utils.ts';
 // Routing now handled through PromptInjector.buildMessagingAndRoutingSection

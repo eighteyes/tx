@@ -21,7 +21,7 @@ import { MeshValidator } from '../worker/mesh-validator.ts';
 import type { ManifestEntry } from '../worker/mesh-validator.ts';
 import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingMode, DispatcherRoutingConfig } from '../shared/types.ts';
 import type { WorkspaceConfig } from '../workspace/manager.ts';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '../worker/sdk-types.ts';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
 import type { AgentPermissions } from '../worker/permissions.ts';
 import type { CapabilityDeclaration } from './capability/schema.ts';
