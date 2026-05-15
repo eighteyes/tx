@@ -40,6 +40,7 @@ import { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage, type Ad
 import { WorkerInventory, type RunnerKind } from './worker-inventory.ts';
 import { WorkerReaper } from './worker-reaper.ts';
 import { WorkerLifecycleAdapter } from './worker-lifecycle-adapter.ts';
+import { runKillLadder, type KillResult } from './kill-ladder.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
@@ -615,6 +616,51 @@ export class WorkerDispatcher extends EventEmitter {
     }
     this.reaper?.detachRunner(workerId);
     return this.workerLifecycle.remove(agentId, workerId);
+  }
+
+  /**
+   * Kill a worker via the kill ladder, awaiting verified-dead before returning.
+   *
+   * Use this when the caller must know the runner is definitively gone —
+   * primarily for external-process runners (tmux, future agent-loop variants
+   * that fork subprocesses) where `runner.kill()` is fire-and-forget but the
+   * underlying OS process may linger.
+   *
+   * For in-proc SDK runners this is equivalent to `runner.kill()` + a short
+   * `isRunning()` poll, since `abortController.abort()` flips `isRunning()`
+   * synchronously. Existing dispatcher kill paths use `runner.kill()` directly
+   * because that's sufficient for SDK runners; this helper exists for callers
+   * that need explicit verification.
+   *
+   * Returns the KillResult, or null if the worker / inventory entry can't be
+   * located (in which case we still issued `runner.kill()` as a best-effort).
+   */
+  async killWorkerVerified(
+    agentId: string,
+    workerId: string,
+    reason: string
+  ): Promise<KillResult | null> {
+    const located = this.workerLifecycle.getByWorkerId(workerId);
+    if (!located) {
+      log.warn('dispatcher', 'killWorkerVerified: worker not in lifecycle map', { agentId, workerId });
+      return null;
+    }
+    if (!this.inventory) {
+      // No inventory tracking configured — fall back to direct kill.
+      located.worker.runner.kill(reason);
+      return null;
+    }
+    const record = this.inventory.currentStates().get(workerId);
+    if (!record) {
+      log.warn('dispatcher', 'killWorkerVerified: no inventory record yet', { agentId, workerId });
+      located.worker.runner.kill(reason);
+      return null;
+    }
+    return runKillLadder(record, {
+      inventory: this.inventory,
+      runner: located.worker.runner,
+      reason,
+    });
   }
 
   /**
