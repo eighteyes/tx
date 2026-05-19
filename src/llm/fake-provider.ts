@@ -70,13 +70,25 @@ export class FakeProvider implements LlmProvider {
   }
 
   async *complete(req: ProviderRequest): AsyncIterable<ProviderEvent> {
-    this.requests.push(req);
+    // Snapshot messages (and tools) so callers can assert on the request
+    // as-sent, not as-mutated-by-AgentLoop later.
+    this.requests.push({
+      ...req,
+      messages: req.messages.map(m => ({ role: m.role, content: [...m.content] })),
+      ...(req.tools ? { tools: req.tools.map(t => ({ ...t })) } : {}),
+    });
     const next = this.script.shift();
     if (!next) {
       yield { type: 'error', error: 'FakeProvider: no scripted response' };
       return;
     }
     for (const ev of next.events) {
+      // Honor an abort signal between event yields so tests can interrupt
+      // long-running scripts via runner.kill() → abortController.abort().
+      if (req.signal?.aborted) {
+        yield { type: 'error', error: 'aborted' };
+        return;
+      }
       yield ev;
     }
   }
