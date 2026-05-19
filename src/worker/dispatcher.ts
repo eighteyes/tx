@@ -41,6 +41,9 @@ import { WorkerInventory, type RunnerKind } from './worker-inventory.ts';
 import { WorkerReaper } from './worker-reaper.ts';
 import { WorkerLifecycleAdapter } from './worker-lifecycle-adapter.ts';
 import { runKillLadder, type KillResult } from './kill-ladder.ts';
+import { TmuxCliRunner } from './tmux-cli-runner.ts';
+import { CliAdapterRegistry } from '../cli-adapter/adapter.ts';
+import { workerSessionName } from './run-id.ts';
 import { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';
 import { MetricsAggregator } from './metrics-aggregator.ts';
 import { DispatchRouter } from './dispatch-router.ts';
@@ -119,6 +122,8 @@ export interface DispatcherConfig {
   reaper?: WorkerReaper;
   /** Run ID for inventory tagging. Required when inventory/reaper are set. */
   runId?: string;
+  /** CLI adapter registry — supplied to enable agent.cli: 'claude' | 'codex' | … runners. */
+  cliAdapters?: CliAdapterRegistry;
 }
 
 /**
@@ -325,6 +330,7 @@ export class WorkerDispatcher extends EventEmitter {
   private reaper?: WorkerReaper;
   private currentRunId?: string;
   private lifecycleAdapters: Map<string, WorkerLifecycleAdapter> = new Map();
+  private cliAdapters?: CliAdapterRegistry;
 
   // Extracted modules (Phase 2 refactoring)
   private configLoader: MeshConfigLoader;
@@ -443,6 +449,7 @@ export class WorkerDispatcher extends EventEmitter {
       log.warn('dispatcher', 'inventory set without runId — lifecycle tracking disabled');
       this.inventory = undefined;
     }
+    this.cliAdapters = config.cliAdapters;
 
     // Session awareness - use store from config if provided
     if (config.sessionStore) {
@@ -5277,17 +5284,44 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
         });
       }
 
-      const worker: Runner = agent.chrome
-        ? new ChromeCliRunner({
-            id: runnerConfig.id,
-            model: runnerConfig.model,
-            systemPrompt: runnerConfig.systemPrompt,
-            workDir: runnerConfig.workDir,
-            msgsDir: runnerConfig.msgsDir,
-            maxTurns: runnerConfig.maxTurns,
-            env: runnerConfig.env,
-          }, this.queue)
-        : new SdkRunner(runnerConfig, this.queue);
+      // Per-agent runner selection:
+      //   agent.cli: '<name>' → TmuxCliRunner wrapping the named CliAdapter (claude/codex/opencode/…)
+      //   agent.chrome: true  → ChromeCliRunner (existing browser-capable path)
+      //   else                → SdkRunner (default Agent SDK in-proc)
+      let worker: Runner;
+      if (agent.cli && this.cliAdapters && this.currentRunId) {
+        const adapter = this.cliAdapters.get(agent.cli);
+        if (!adapter) {
+          throw new Error(`agent '${agentId}' requested cli='${agent.cli}' but no CliAdapter is registered with that name`);
+        }
+        const taskBody = nextMsg?.payload?.body || nextMsg?.payload?.headline || systemPrompt;
+        const sessionName = workerSessionName(this.currentRunId, agentId);
+        worker = new TmuxCliRunner({
+          id: runnerConfig.id,
+          agentId,
+          workerId: agentId,  // updated to true workerId after addActiveWorker
+          sessionName,
+          adapter,
+          model: runnerConfig.model,
+          workDir: runnerConfig.workDir,
+          msgsDir: runnerConfig.msgsDir,
+          txDataDir: path.join(runnerConfig.workDir, '.ai', 'tx', 'data'),
+          task: String(taskBody),
+          env: runnerConfig.env,
+        });
+      } else if (agent.chrome) {
+        worker = new ChromeCliRunner({
+          id: runnerConfig.id,
+          model: runnerConfig.model,
+          systemPrompt: runnerConfig.systemPrompt,
+          workDir: runnerConfig.workDir,
+          msgsDir: runnerConfig.msgsDir,
+          maxTurns: runnerConfig.maxTurns,
+          env: runnerConfig.env,
+        }, this.queue);
+      } else {
+        worker = new SdkRunner(runnerConfig, this.queue);
+      }
       workerRef.current = worker;  // Populate ref for write-gate kill callback
 
       // Reliability: register agent for heartbeat monitoring + circuit breaker check
@@ -6479,16 +6513,17 @@ You are working in an isolated git worktree for feature: **${hookContext.feature
       // Add worker to active workers with unique workerId for parallel execution
       // Pass taskFrom to track who sent the initial task (for completion message enforcement)
       const taskFrom = nextMsg?.from_agent;
-      // Both SdkRunner and ChromeCliRunner are tagged as 'sdk' here: they're
-      // in-proc to TX (probe via runner.isRunning()). The 'tmux' kind is
-      // reserved for the upcoming TmuxClaudeRunner that owns its own session.
+      // Runner kind for inventory + reaper probe routing:
+      //   TmuxCliRunner → 'tmux' (external process; reaper uses session/pid probes)
+      //   ChromeCliRunner / SdkRunner → 'sdk' (in-proc; reaper uses runner.isRunning())
+      const runnerKind = agent.cli ? 'tmux' : 'sdk';
       const workerId = this.addActiveWorker(agentId, {
         runner: worker,
         machine,
         startedAt: Date.now(),
         hookContext,
         startedPromise,  // Add promise to track 'start' transition
-      }, taskFrom, 'sdk');
+      }, taskFrom, runnerKind);
       // Set the registeredWorkerId so event handlers can reference it
       registeredWorkerId = workerId;
       log.debug('dispatcher', `Worker registered`, { agentId, workerId, taskFrom });

@@ -269,6 +269,7 @@ const AGENT_FIELD_SPECS: Record<string, FieldSpec> = {
   orchestrator: { type: 'boolean' },  // Restrict to Read + Write(msgs only)
   // Browser + thinking + prompt config
   chrome: { type: 'boolean' },           // Launch agent with --chrome (ChromeCliRunner)
+  cli: { type: 'string' },               // Wrap an external CLI agent via TmuxCliRunner (e.g. 'claude' | 'codex' | 'opencode')
   thinking: { type: 'object' },          // Extended thinking config { budget_tokens }
   fragments: { type: 'array' },          // Prompt fragment names to inject (string[])
   load_claude_md: { type: 'boolean' },   // Control CLAUDE.md injection (default: true)

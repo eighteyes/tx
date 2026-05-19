@@ -123,6 +123,7 @@ export interface AgentConfig {
   orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
+  cli?: string;      // Wrap external CLI agent via TmuxCliRunner (registered adapter name: 'claude'|'codex'|'opencode'|…)
   postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
   fragments?: Record<string, string> | string;  // Fragment map { name: path } or directory path
 }

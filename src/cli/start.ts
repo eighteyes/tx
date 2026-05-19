@@ -10,6 +10,8 @@ import { TmuxSession, findClaudePath, getSessionName, injectPrompt, isClaudeIdle
 import { MessageQueue, StaleMessageCleaner, DeadlockDetector } from '../queue/index.ts';
 import { MessageConsumer, type MeshCompleteEvent } from '../core/consumer.ts';
 import { WorkerDispatcher, generateRunId, WorkerInventory, WorkerReaper, runBootReaper } from '../worker/index.ts';
+import { CliAdapterRegistry } from '../cli-adapter/adapter.ts';
+import { ClaudeCliAdapter } from '../cli-adapter/claude-adapter.ts';
 import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
@@ -422,6 +424,11 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   log.info('start', 'lifecycle: boot reaper complete', { ...bootResult });
   const reaper = new WorkerReaper({ inventory, runId: currentRunId });
 
+  // CLI adapter registry — meshes opt in per-agent via `cli: 'claude'|'codex'|…`.
+  // Additional adapters (codex, opencode, aider) registered as they land.
+  const cliAdapters = new CliAdapterRegistry()
+    .register(new ClaudeCliAdapter());
+
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,
     msgsDir,
@@ -435,6 +442,7 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
     inventory,
     reaper,
     runId: currentRunId,
+    cliAdapters,
   }, queue);
 
   // Start the polling reaper after dispatcher exists so it can react to
