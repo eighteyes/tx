@@ -7,7 +7,7 @@ import {
   createGenericCliAdapter,
   CODEX_REFERENCE_CONFIG,
   OPENCODE_REFERENCE_CONFIG,
-  AIDER_REFERENCE_CONFIG,
+  PI_MONO_REFERENCE_CONFIG,
 } from '../generic-adapter.ts';
 import type { ProviderMessage } from '../../llm/provider.ts';
 
@@ -219,9 +219,10 @@ describe('reference configurations', () => {
     assert.equal(a.capabilities.trustTier, 'sandbox-only');
   });
 
-  it('AIDER_REFERENCE_CONFIG points at .aider.chat.history.md', () => {
-    const a = createGenericCliAdapter(AIDER_REFERENCE_CONFIG);
-    assert.equal(a.name, 'aider');
-    assert.equal(a.transcriptPath('/w', 'sess'), '/w/sess.aider.chat.history.md');
+  it('PI_MONO_REFERENCE_CONFIG builds a minimal adapter', () => {
+    const a = createGenericCliAdapter(PI_MONO_REFERENCE_CONFIG);
+    assert.equal(a.name, 'pi-mono');
+    assert.equal(a.capabilities.sessionResume, false);  // opt-in once verified
+    assert.equal(a.capabilities.trustTier, 'sandbox-only');
   });
 });

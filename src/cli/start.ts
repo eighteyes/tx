@@ -12,6 +12,12 @@ import { MessageConsumer, type MeshCompleteEvent } from '../core/consumer.ts';
 import { WorkerDispatcher, generateRunId, WorkerInventory, WorkerReaper, runBootReaper } from '../worker/index.ts';
 import { CliAdapterRegistry } from '../cli-adapter/adapter.ts';
 import { ClaudeCliAdapter } from '../cli-adapter/claude-adapter.ts';
+import {
+  createGenericCliAdapter,
+  CODEX_REFERENCE_CONFIG,
+  OPENCODE_REFERENCE_CONFIG,
+  PI_MONO_REFERENCE_CONFIG,
+} from '../cli-adapter/generic-adapter.ts';
 import { log } from '../shared/logger.ts';
 import { server as startServer } from './server.ts';
 import { buildCorePrompt } from '../prompt/core.js';
@@ -424,10 +430,15 @@ export async function start(workDir?: string, options?: StartOptions): Promise<v
   log.info('start', 'lifecycle: boot reaper complete', { ...bootResult });
   const reaper = new WorkerReaper({ inventory, runId: currentRunId });
 
-  // CLI adapter registry — meshes opt in per-agent via `cli: 'claude'|'codex'|…`.
-  // Additional adapters (codex, opencode, aider) registered as they land.
+  // CLI adapter registry — meshes opt in per-agent via `cli: 'claude'|'codex'|'opencode'|'pi-mono'`.
+  // claude has a bespoke adapter (full-hooks trust); codex/opencode/pi-mono use the
+  // configuration-driven generic factory (sandbox-only trust until validated against
+  // the real tool surfaces). Refine the reference configs in src/cli-adapter/generic-adapter.ts.
   const cliAdapters = new CliAdapterRegistry()
-    .register(new ClaudeCliAdapter());
+    .register(new ClaudeCliAdapter())
+    .register(createGenericCliAdapter(CODEX_REFERENCE_CONFIG))
+    .register(createGenericCliAdapter(OPENCODE_REFERENCE_CONFIG))
+    .register(createGenericCliAdapter(PI_MONO_REFERENCE_CONFIG));
 
   const dispatcher = new WorkerDispatcher({
     workDir: cwd,

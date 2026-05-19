@@ -246,18 +246,13 @@ export const OPENCODE_REFERENCE_CONFIG: GenericCliAdapterConfig = {
 };
 
 /**
- * Reference configuration for `aider`. Same caveats. Aider's transcript
- * lives in `<workDir>/.aider.chat.history.md` (markdown, not JSONL); a
- * caller wanting transcript parsing should supply a custom transcriptParser
- * that walks the markdown structure.
+ * Reference configuration for `pi-mono`. Same caveats as codex/opencode —
+ * intentionally minimal until verified against the tool. Refine `binary`,
+ * `argv`, `idleHints`, `transcriptDir`, etc. in-place once the actual CLI
+ * surface is known.
  */
-export const AIDER_REFERENCE_CONFIG: GenericCliAdapterConfig = {
-  name: 'aider',
-  binary: 'aider',
+export const PI_MONO_REFERENCE_CONFIG: GenericCliAdapterConfig = {
+  name: 'pi-mono',
+  binary: 'pi-mono',
   versionArg: '--version',
-  transcriptDir: (workDir) => workDir,
-  transcriptExt: '.aider.chat.history.md',
-  // transcriptParser intentionally absent — aider history is markdown;
-  // if you want structured parsing, supply a parser and flip
-  // capabilities.structuredTranscript = true.
 };
