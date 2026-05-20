@@ -9,6 +9,12 @@
 export { SdkRunner, type SdkRunnerConfig } from './sdk-runner.ts';
 export { WorkerDispatcher, type DispatcherConfig } from './dispatcher.ts';
 
+// Lifecycle tracking (zombie detection, boot recovery)
+export { generateRunId } from './run-id.ts';
+export { WorkerInventory } from './worker-inventory.ts';
+export { WorkerReaper } from './worker-reaper.ts';
+export { runBootReaper } from './boot-reaper.ts';
+
 // Export extracted data managers (Phase 1 refactoring)
 export { WorkerLifecycleManager, type ActiveWorker, type TrackedMessage } from './worker-lifecycle.ts';
 export { SessionManager, type SuspendedSession, type BufferedResponse } from './session-manager.ts';

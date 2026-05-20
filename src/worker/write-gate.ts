@@ -11,7 +11,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
-import type { HookCallbackMatcher, HookJSONOutput } from '@anthropic-ai/claude-agent-sdk';
+import type { HookCallbackMatcher, HookJSONOutput } from './sdk-types.ts';
 import { log } from '../shared/logger.ts';
 import type { GuardrailMode } from './guardrail-config.ts';
 

@@ -21,7 +21,7 @@ import { MeshValidator } from '../worker/mesh-validator.ts';
 import type { ManifestEntry } from '../worker/mesh-validator.ts';
 import type { FSMConfig, FSMStateConfig, EnsembleConfig, SemanticModel, RoutingMode, DispatcherRoutingConfig } from '../shared/types.ts';
 import type { WorkspaceConfig } from '../workspace/manager.ts';
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '../worker/sdk-types.ts';
 import type { ToolRestriction } from '../worker/sdk-runner.ts';
 import type { AgentPermissions } from '../worker/permissions.ts';
 import type { CapabilityDeclaration } from './capability/schema.ts';
@@ -123,6 +123,7 @@ export interface AgentConfig {
   orchestrator?: boolean;  // Restrict to Read + Write(msgs only). For coordinator agents that route, not implement.
   permissions?: AgentPermissions;  // Tool access control (allowedTools, disallowedTools, mode)
   chrome?: boolean;  // Use claude CLI with --chrome for browser access (bypasses SDK runner)
+  cli?: string;      // Wrap external CLI agent via TmuxCliRunner (registered adapter name: 'claude'|'codex'|'opencode'|…)
   postconditions?: import('../worker/postcondition-validator.ts').PostconditionConfig;  // Tool call postconditions
   fragments?: Record<string, string> | string;  // Fragment map { name: path } or directory path
 }

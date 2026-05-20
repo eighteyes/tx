@@ -9,7 +9,7 @@
  * - WorkerDispatcher
  */
 
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from './sdk-types.ts';
 import type { SemanticModel, WorkerConfig, SessionMetrics, FSMConfig, EnsembleConfig, FSMStateConfig } from '../shared/types.ts';
 import type { SdkRunner, AgentRouting, ToolRestriction } from './sdk-runner.ts';
 import type { WorkerStateMachine } from '../state-machine/index.ts';
