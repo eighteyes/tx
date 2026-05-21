@@ -115,4 +115,11 @@ export class PromptBuilder {
       sections: this.buildSections().map(s => s.name),
     };
   }
+
+  /**
+   * Return enabled sections with content — for measurement / breakdown reporting.
+   */
+  getSections(): PromptSection[] {
+    return this.buildSections().filter(s => s.enabled && s.content.length > 0);
+  }
 }

@@ -1,12 +1,14 @@
 /**
  * tx prompt <mesh> <agent>
- * Display the built prompt for a mesh/agent
+ * Display the built prompt for a mesh/agent, with per-section size breakdown.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import YAML from 'yaml';
-import { buildMeshPrompt } from '../prompt/index.js';
+import { PromptBuilder } from '../prompt/builder.js';
+import { buildCorePrompt } from '../prompt/core.js';
+import type { PromptContext, PromptSection } from '../prompt/types.js';
 
 interface PromptOptions {
   mesh?: string;
@@ -15,13 +17,31 @@ interface PromptOptions {
   raw?: boolean;
 }
 
-export async function prompt(options: PromptOptions) {
-  const meshName = options.mesh;
-  let agentName = options.agent;
+function formatBreakdown(sections: PromptSection[], total: number, label: string): string {
+  const lines: string[] = [];
+  lines.push('='.repeat(80));
+  lines.push(`SECTION BREAKDOWN: ${label}`);
+  lines.push('='.repeat(80));
+  lines.push('section              bytes    ~tokens   % of total');
+  lines.push('-'.repeat(60));
+  for (const s of sections) {
+    const bytes = s.content.length;
+    const tok = Math.ceil(bytes / 4);
+    const pct = total > 0 ? ((bytes / total) * 100).toFixed(1) : '0.0';
+    lines.push(`${s.name.padEnd(20)} ${String(bytes).padStart(6)}   ${String(tok).padStart(6)}   ${pct.padStart(5)}%`);
+  }
+  lines.push('-'.repeat(60));
+  lines.push(`${'TOTAL'.padEnd(20)} ${String(total).padStart(6)}   ${String(Math.ceil(total / 4)).padStart(6)}`);
+  lines.push('='.repeat(80));
+  return lines.join('\n');
+}
 
-  // Resolve work directory and TX installation directory
+export async function prompt(options: PromptOptions) {
   const workDir = process.env.TX_CWD || process.cwd();
   const txRoot = process.env.TX_ROOT || workDir;
+
+  const meshName = options.mesh;
+  let agentName = options.agent;
 
   if (!meshName) {
     console.error('Usage: tx prompt <mesh> [agent] [--with-task <msg-id>] [--raw]');
@@ -29,366 +49,113 @@ export async function prompt(options: PromptOptions) {
   }
 
   try {
-    // Special case: "core" generates the core agent prompt
+    // Core: use the REAL builder (src/prompt/core.ts), not a CLI duplicate.
     if (meshName === 'core') {
-      const corePrompt = generateCorePrompt(workDir, txRoot);
+      const meshesDir = join(txRoot, 'meshes');
+      const msgsDir = join(workDir, '.ai/tx/msgs');
+      const corePrompt = buildCorePrompt({ msgsDir, meshesDir });
 
       if (options.raw) {
         console.log(corePrompt);
-      } else {
-        console.log('='.repeat(80));
-        console.log(`PROMPT: core/core`);
-        console.log(`Model: sonnet (dynamic)`);
-        console.log(`Type: Orchestrator (generated)`);
-        console.log('='.repeat(80));
-        console.log();
-        console.log(corePrompt);
-        console.log();
-        console.log('='.repeat(80));
-        console.log(`Length: ${corePrompt.length} chars, ~${Math.ceil(corePrompt.length / 4)} tokens`);
-        console.log('='.repeat(80));
+        return;
       }
+
+      console.log('='.repeat(80));
+      console.log(`PROMPT: core/core`);
+      console.log(`Model: sonnet (dynamic)`);
+      console.log(`Type: Orchestrator (real buildCorePrompt)`);
+      console.log('='.repeat(80));
+      console.log();
+      console.log(corePrompt);
+      console.log();
+      const fakeSection: PromptSection = { name: 'core (monolith)', content: corePrompt, enabled: true };
+      console.log(formatBreakdown([fakeSection], corePrompt.length, 'core/core'));
+      console.log('NOTE: core prompt is a single monolith — no internal sections yet.');
       return;
     }
 
-    // Load mesh config - try YAML first, then JSON (legacy)
+    // Load mesh config
     const meshDir = join(txRoot, 'meshes', meshName);
-    let meshConfigPath: string | null = null;
     let meshConfig: any;
-
-    // Try config.yaml
     if (existsSync(join(meshDir, 'config.yaml'))) {
-      meshConfigPath = join(meshDir, 'config.yaml');
-      meshConfig = YAML.parse(readFileSync(meshConfigPath, 'utf-8'));
-    }
-    // Try config.yml
-    else if (existsSync(join(meshDir, 'config.yml'))) {
-      meshConfigPath = join(meshDir, 'config.yml');
-      meshConfig = YAML.parse(readFileSync(meshConfigPath, 'utf-8'));
-    }
-    // Try config.json (legacy)
-    else if (existsSync(join(meshDir, 'config.json'))) {
-      meshConfigPath = join(meshDir, 'config.json');
-      meshConfig = JSON.parse(readFileSync(meshConfigPath, 'utf-8'));
-    }
-    else {
+      meshConfig = YAML.parse(readFileSync(join(meshDir, 'config.yaml'), 'utf-8'));
+    } else if (existsSync(join(meshDir, 'config.yml'))) {
+      meshConfig = YAML.parse(readFileSync(join(meshDir, 'config.yml'), 'utf-8'));
+    } else if (existsSync(join(meshDir, 'config.json'))) {
+      meshConfig = JSON.parse(readFileSync(join(meshDir, 'config.json'), 'utf-8'));
+    } else {
       console.error(`Mesh config not found: ${meshName}`);
       console.error(`Tried: ${meshDir}/config.{yaml,yml,json}`);
       process.exit(1);
     }
 
-    // If no agent specified, use entry_point from config
     if (!agentName) {
       agentName = meshConfig.entry_point || meshConfig.agents?.[0]?.name;
       if (!agentName) {
-        console.error(`No agent specified and no entry_point defined in mesh config`);
-        console.error(`Available agents: ${meshConfig.agents?.map((a: any) => a.name).join(', ') || 'none'}`);
+        console.error(`No agent specified and no entry_point in mesh config`);
         process.exit(1);
       }
       console.log(`Using entry_point agent: ${agentName}`);
     }
 
-    // Find agent in mesh
-    const agentConfig = meshConfig.agents.find((a: any) => a.name === agentName);
+    const agentConfig = meshConfig.agents?.find((a: any) => a.name === agentName);
     if (!agentConfig) {
       console.error(`Agent '${agentName}' not found in mesh '${meshName}'`);
-      console.error(`Available agents: ${meshConfig.agents.map((a: any) => a.name).join(', ')}`);
+      console.error(`Available: ${meshConfig.agents?.map((a: any) => a.name).join(', ') || 'none'}`);
       process.exit(1);
     }
 
-    // Load task message if specified
     let taskMessage: string | undefined;
     if (options.withTask) {
       const msgPath = join(workDir, '.ai/tx/msgs', `${options.withTask}.md`);
       try {
         taskMessage = readFileSync(msgPath, 'utf-8');
-      } catch (err) {
-        console.error(`Failed to load task message: ${options.withTask}`);
-        console.error(`Tried: ${msgPath}`);
+      } catch {
+        console.error(`Failed to load task message: ${options.withTask} (tried ${msgPath})`);
         process.exit(1);
       }
     }
 
-    // Resolve prompt path relative to mesh directory
     const promptPath = resolve(meshDir, agentConfig.prompt);
     if (!existsSync(promptPath)) {
-      console.error(`Prompt file not found: ${agentConfig.prompt}`);
-      console.error(`Tried: ${promptPath}`);
+      console.error(`Prompt file not found: ${promptPath}`);
       process.exit(1);
     }
 
-    // Build prompt
-    const builtPrompt = buildMeshPrompt(
-      meshName,
-      agentName,
-      promptPath,
-      agentConfig.model || 'sonnet',
+    const context: PromptContext = {
+      mesh: meshName,
+      agent: agentName!,
+      model: agentConfig.model || 'sonnet',
+      agentPromptPath: promptPath,
       taskMessage,
-      meshConfig.agents?.length
-    );
+      agentCount: meshConfig.agents?.length,
+      // NOTE: routing/dispatcherRouting omitted — synthesized at spawn time.
+      // Real spawn is ~50-200 tokens heavier than what this reports.
+    };
 
-    // Output
+    const builder = new PromptBuilder(context);
+    const built = builder.build();
+    const sections = builder.getSections();
+    const total = sections.reduce((sum, s) => sum + s.content.length, 0);
+
     if (options.raw) {
-      // Raw output - just the prompt
-      console.log(builtPrompt);
-    } else {
-      // Pretty output with metadata
-      console.log('='.repeat(80));
-      console.log(`PROMPT: ${meshName}/${agentName}`);
-      console.log(`Model: ${agentConfig.model || 'sonnet'}`);
-      console.log(`Prompt file: ${agentConfig.prompt}`);
-      if (taskMessage) {
-        console.log(`Task message: ${options.withTask}`);
-      }
-      console.log('='.repeat(80));
-      console.log();
-      console.log(builtPrompt);
-      console.log();
-      console.log('='.repeat(80));
-      console.log(`Length: ${builtPrompt.length} chars, ~${Math.ceil(builtPrompt.length / 4)} tokens`);
-      console.log('='.repeat(80));
+      console.log(built);
+      return;
     }
 
+    console.log('='.repeat(80));
+    console.log(`PROMPT: ${meshName}/${agentName}`);
+    console.log(`Model: ${context.model}`);
+    console.log(`Prompt file: ${agentConfig.prompt}`);
+    if (taskMessage) console.log(`Task message: ${options.withTask}`);
+    console.log('='.repeat(80));
+    console.log();
+    console.log(built);
+    console.log();
+    console.log(formatBreakdown(sections, total, `${meshName}/${agentName}`));
+    console.log('NOTE: routing section excluded (synthesized at spawn). Real spawn ~50-200 tokens heavier.');
   } catch (err) {
     console.error('Error building prompt:', err);
     process.exit(1);
   }
-}
-
-/**
- * Generate core agent prompt dynamically
- */
-function generateCorePrompt(workDir: string, txRoot: string): string {
-  const meshesDir = join(txRoot, 'meshes');
-  const msgsDir = join(workDir, '.ai/tx/msgs');
-  const meshList = buildMeshList(meshesDir);
-
-  return `# TX V4 Core Agent
-
-You are the core agent for TX. You coordinate work by writing messages to meshes.
-
-## CRITICAL: How Work Gets Done
-
-When the user asks you to do something like "run tests" or "build the feature":
-- DO NOT run shell commands yourself
-- WRITE A TASK MESSAGE to the appropriate mesh
-- The message triggers a worker agent to handle it
-
-**"run X" = write a task message to mesh X**
-
-## Available Meshes
-
-${meshList}
-
-## Available Tools
-
-Use tools for data gathering and research. Tools are CLI commands, not meshes.
-
-- \`tx tool search <query>\` - Search multiple sources (StackOverflow, GitHub, arXiv, Wikipedia, HackerNews)
-  Use when user wants to: "search for", "find information about", "look up", "research"
-
-- \`tx tool getwww <url>\` - Fetch and extract content from URLs with archive fallback
-  Use when user wants to: "fetch this URL", "get content from", "download page", "scrape"
-
-- \`tx tool youtube-transcript <video-id>\` - Extract YouTube video transcripts
-  Use when user wants to: "get transcript", "YouTube captions", "video text"
-
-- \`tx tool search --providers\` - List available search providers and their status
-  Use when user wants to: "what sources", "available providers", "search engines"
-
-**IMPORTANT**: Tools are for data gathering only. DO NOT write task messages to tools. Execute tools yourself when gathering information for the user.
-
-## Message Directory: ${msgsDir}/
-
-## How to Start Work
-
-Write a \`task\` message to trigger a worker:
-
-\`\`\`markdown
----
-to: test/worker
-from: core/core
-type: task
-msg-id: task-${Date.now()}
-headline: Run the tests
-timestamp: ${new Date().toISOString()}
----
-
-Please run the test suite and report results.
-\`\`\`
-
-Save to: \`${msgsDir}/{timestamp}-task-core--test-worker-{id}.md\`
-
-## CRITICAL: Slash Command Routing
-
-When the user types a slash command pattern like \`/know:prepare\` or \`/know:add feature-name\`:
-
-1. **IMMEDIATELY** write a task message with the \`command\` frontmatter field
-2. Send to the appropriate mesh
-3. The worker will execute the slash command directly
-
-**Pattern**: \`/namespace:action [args]\` → route via \`command\` frontmatter
-
-### Example: User says "/know:prepare"
-
-\`\`\`markdown
----
-to: brain/brain
-from: core/core
-type: task
-command: /know:prepare
-msg-id: task-${Date.now()}
-headline: Execute /know:prepare
-timestamp: ${new Date().toISOString()}
----
-
-User requested: /know:prepare
-\`\`\`
-
-### Example: User says "/know:add auth-system"
-
-\`\`\`markdown
----
-to: brain/brain
-from: core/core
-type: task
-command: /know:add auth-system
-msg-id: task-${Date.now()}
-headline: Execute /know:add auth-system
-timestamp: ${new Date().toISOString()}
----
-
-User requested: /know:add auth-system
-\`\`\`
-
-**DO NOT** try to execute slash commands yourself. Always route them via the \`command\` frontmatter to the appropriate worker.
-
-## Plan Mode Workflow
-
-When you exit plan mode with an accepted plan:
-
-1. **DO NOT proceed directly to build**
-2. Send a \`validate-plan\` message to \`brain/brain\` with the plan file path
-3. Include \`command: /know:plan\` in frontmatter so brain uses the plan validation tool
-4. Wait for brain's validation response before building
-
-### Example: Exiting plan mode
-
-\`\`\`markdown
----
-to: brain/brain
-from: core/core
-type: validate-plan
-command: /know:plan
-msg-id: validate-${Date.now()}
-headline: Validate plan before build
-timestamp: ${new Date().toISOString()}
----
-
-Please validate the plan at: \`.ai/plan/[plan-name]/plan.md\`
-
-Context file: \`.ai/plan/[plan-name]/context.md\`
-Tasks file: \`.ai/plan/[plan-name]/tasks.md\`
-\`\`\`
-
-Only proceed to build after brain approves the plan.
-
-## Handling Responses
-
-1. Message to \`core/core\` - Worker needs user input. Ask the user, then respond.
-2. \`task-complete\` - Worker finished. Acknowledge to user.
-3. \`plan-approved\` - Brain validated the plan. Proceed to build.
-4. \`plan-rejected\` - Brain found issues. Revise the plan or ask user.
-
-## Example response to worker:
-
-\`\`\`markdown
----
-to: test/worker
-from: core/core
-msg-id: resp-123
-headline: User response
----
-
-The user said: [their response here]
-\`\`\`
-
-You are now active. When user asks to run something, write a task message.
-`;
-}
-
-/**
- * Build mesh list from available mesh configs
- */
-function buildMeshList(meshesDir: string): string {
-  const meshConfigs: Array<{
-    mesh: string;
-    description?: string;
-    entry_point?: string;
-    intents?: { patterns?: string[] };
-  }> = [];
-
-  if (!existsSync(meshesDir)) {
-    return '- No meshes available';
-  }
-
-  const scanDir = (dir: string, depth: number = 0) => {
-    if (depth > 2) return;
-    if (!existsSync(dir)) return;
-
-    const entries = readdirSync(dir, { withFileTypes: true });
-
-    // Check for config files in priority order: YAML > JSON
-    const yamlConfig = entries.find(e => e.isFile() && (e.name === 'config.yaml' || e.name === 'config.yml'));
-    const jsonConfig = entries.find(e => e.isFile() && e.name === 'config.json');
-
-    if (yamlConfig) {
-      try {
-        const content = readFileSync(join(dir, yamlConfig.name), 'utf-8');
-        const config = YAML.parse(content);
-        meshConfigs.push(config);
-      } catch {
-        // Skip invalid configs
-      }
-    } else if (jsonConfig) {
-      try {
-        const content = readFileSync(join(dir, 'config.json'), 'utf-8');
-        const config = JSON.parse(content);
-        meshConfigs.push(config);
-      } catch {
-        // Skip invalid configs
-      }
-    }
-
-    for (const entry of entries) {
-      if (entry.isDirectory() && !entry.name.startsWith('.')) {
-        scanDir(join(dir, entry.name), depth + 1);
-      }
-    }
-  };
-
-  scanDir(meshesDir);
-
-  if (meshConfigs.length === 0) {
-    return '- No meshes available';
-  }
-
-  // Format mesh list with descriptions and intents
-  return meshConfigs
-    .map(mesh => {
-      const entryPoint = mesh.entry_point || 'worker';
-      let line = `- \`${mesh.mesh}\` - ${mesh.description || 'No description'}`;
-
-      // Add intents if present
-      if (mesh.intents?.patterns && mesh.intents.patterns.length > 0) {
-        const intentList = mesh.intents.patterns.map(p => `"${p}"`).join(', ');
-        line += `\n  Use when user wants to: ${intentList}`;
-      }
-
-      // Add routing info
-      line += `\n  Route to: \`${mesh.mesh}/${entryPoint}\``;
-
-      return line;
-    })
-    .join('\n\n');
 }
