@@ -1720,3 +1720,30 @@ tx mesh tool-audit
 tx mesh
 ```
 - [ ] `tool-audit` appears in Actions list and Examples
+
+## mesh-to-workflow Skill (mesh → Claude Code Workflow compiler)
+Date: 2026-07-04
+Session: e1a5f438-d752-46cc-a4de-4036d675b873
+Commit: (uncommitted — skill lives outside this repo; compiled artifact inside)
+
+New skill at /Users/god/ai/skills/mesh-to-workflow (symlinked into ~/.claude/skills).
+Compiles a mesh config.yaml + agent prompts into a deterministic Workflow script,
+replacing the SDK-metered tx runtime for session-native execution. Acceptance test:
+meshes/research compiled to .claude/workflows/research.js.
+
+### Review checklist
+
+- [ ] Normalizer output looks right on a simple mesh
+```
+python3 /Users/god/ai/skills/mesh-to-workflow/scripts/mesh_to_json.py meshes/research | jq '{topology, entry_point, completion_agents, lossy}'
+```
+- [ ] Syntax checker passes on the compiled artifact
+```
+/opt/homebrew/bin/node /Users/god/ai/skills/mesh-to-workflow/scripts/check_workflow.js .claude/workflows/research.js
+```
+- [ ] Read the compiled script's control flow (loop + switch mirrors meshes/research/config.yaml routing)
+```
+open .claude/workflows/research.js
+```
+- [ ] Skill triggers: in a fresh Claude Code session say "compile mesh test-echo to a workflow"
+- [ ] End-to-end run (burns tokens): "run the research workflow: <small topic>" then watch /workflows
